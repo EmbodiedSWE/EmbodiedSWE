@@ -1,0 +1,9 @@
+You are controlling a Franka Emika robot for completing Isaac-AutoMate-Assembly-Direct-v0 isaaclab task with API described in @source/isaaclab_tasks/isaaclab_tasks/direct/automate/assembly_env.py . The action space are described in @source/isaaclab_tasks/isaaclab_tasks/direct/automate/assembly_env_cfg.py  
+      Goal:	Insert a plug into its corresponding socket with the Franka robot.
+      You should write an excutable python code for completing the task in Opus/AutoMate-Assembly-Direct-v0 folder. You can render the video for debugging. Once the task is done, render and save a video showing the successfully trajectory in Opus/AutoMate-Assembly-Direct-v0 folder.
+
+
+Addtionally, I want you to complete another task saved under Fable_5/G1_Upper_body_IK. You are controlling a G1 humanoid robot for completing 	
+Isaac-PickPlace-FixedBaseUpperBodyIK-G1-Abs-v0 isaaclab task with configuration described in @source/isaaclab_tasks/isaaclab_tasks/manager_based/locomanipulation/pick_place/fixed_base_upper_body_ik_g1_env_cfg.py  . 
+      Goal:Pick up and place an object in a basket with a Unitree G1 humanoid robot with three-fingered hands. Robot is set up with the base fixed in place..
+      You should write an excutable python code for completing the task in G1_Upper_body_IK folder. You can render the video for debugging and run environment multiple times. Once the task is done, render and save a video showing the successfully trajectory in G1_Upper_body_IK folder.
