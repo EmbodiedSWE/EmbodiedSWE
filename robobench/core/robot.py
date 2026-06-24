@@ -1,0 +1,166 @@
+"""BaseRobot — the actor (embodiment).
+
+A robot declares its assets + the control modes it supports, and how to read/write its own state.
+The per-step action→sim pipeline is handled **generically through a controller**: `bind()`
+orchestrates the lifecycle — bind the robot to the env, acquire its sim handles, then build + bind a
+controller *to the robot* — and `apply_action` / `action_dim` delegate to that controller. A concrete
+robot only fills in **hooks**: `on_bind` (grab handles), `build_controller` (the controller for the
+active `control_mode`), and — unless it's a single articulation — `actuator_sink` / `actuator_limits`.
+It does not re-implement the lifecycle. Controller-less robots (NullRobot, force-driven debug actors)
+just leave `build_controller` returning None.
+
+The env is open, so an agent can drop in its own controller at runtime with `set_controller(...)`
+(or override `apply_action` for a fully custom path). Each controller writes its own command to sim
+through the `actuator_sink` it captured at bind, so a composite can mix command types per joint group.
+
+Heavy imports are deferred so this module imports without AppLauncher.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from .config import BaseCfg, tunable
+
+if TYPE_CHECKING:
+    import torch
+
+    from .controller import BaseController
+    from .env import BaseEnv
+
+
+@dataclass
+class BaseRobotCfg(BaseCfg):
+    """Thin shared base for robot configs: carries only the one universal selectable, the
+    `control_mode`. Concrete robots subclass this and add their own asset / partial body variant (e.g. hands) /
+    `fix_root_link` / ee-frame / gains — morphologies differ too much for a fat shared cfg. Like any
+    `BaseCfg`, fields are declared `tunable()` / `info()` (see `robobench.core.config`)."""
+
+    #: Which of the robot's `control_modes` to use; "" -> the first one the robot declares. The agent
+    #: may switch it (a new actuation of the same hardware) — that's why it's a `tunable` dial.
+    control_mode: str = tunable("", doc="active control mode; '' selects the robot's first")
+
+
+class BaseRobot(ABC):
+    #: Control modes this embodiment supports (e.g. ("joint", "ee_pose", "osc_impedance")).
+    #: Declared per concrete robot; the active one is `self.control_mode`.
+    control_modes: tuple[str, ...] = ()
+
+    def __init__(self, cfg: Any) -> None:
+        self.cfg = cfg
+        self._env: BaseEnv | None = None
+        self.control_mode: str | None = getattr(cfg, "control_mode", None) or (
+            self.control_modes[0] if self.control_modes else None
+        )
+        #: The active controller, built in `bind()` (None for a controller-less robot). The agent may
+        #: swap it at runtime via `set_controller()`.
+        self.controller: BaseController | None = None
+        #: The robot's main articulation handle — set in `on_bind` for the common single-articulation
+        #: case (the default `actuator_sink` / `actuator_limits` use it). None until bound.
+        self.articulation: Any = None
+
+    # ----- assets / state / description (the robot-specific contract) ---------------------------
+    @abstractmethod
+    def assets(self) -> dict[str, Any]:
+        """`{name: cfg}` for the robot prim(s) (ArticulationCfg / RigidObjectCfg / …)."""
+
+    @abstractmethod
+    def reset(self, env_ids: torch.Tensor) -> None:
+        """Reset the robot to its home configuration for `env_ids` (also reset `self.controller`)."""
+
+    @abstractmethod
+    def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
+        """The robot's full restorable state (joint pos/vel, controller targets, …)."""
+
+    @abstractmethod
+    def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
+        """Restore what `get_state` returned."""
+
+    @abstractmethod
+    def describe(self) -> str:
+        """**Natural-language** description of the embodiment + its control, for the agent."""
+
+    # ----- lifecycle: env -> robot -> controller (concrete; override the HOOKS, not bind) -------
+    def bind(self, env: BaseEnv) -> None:
+        """Bind the robot to `env`, then build + bind its controller **to the robot**. The chain:
+        the env builds the scene, calls this once → it caches the env, `on_bind` grabs sim handles,
+        `build_controller` makes the controller for the active mode, and `set_controller` binds it to
+        this robot. Override the hooks (`on_bind` / `build_controller`, or `actuator_sink` /
+        `actuator_limits` for non-articulation robots), not this."""
+        self._env = env
+        self.on_bind(env)
+        controller = self.build_controller()
+        if controller is not None:
+            self.set_controller(controller)
+
+    def on_bind(self, env: BaseEnv) -> None:
+        """Hook: grab sim handles once after build (e.g. `self.articulation = env.iscene["robot"]`).
+        Runs before the controller is built, so the controller can resolve its joints against the
+        handle. No-op by default."""
+
+    def build_controller(self) -> BaseController | None:
+        """Hook: the controller for the active `control_mode` (its `joint_ids` / solver are resolved
+        when it is bound, in `set_controller`). Return None for a controller-less robot (default)."""
+        return None
+
+    def set_controller(self, controller: BaseController) -> None:
+        """Bind `controller` to this robot and install it as the active one. The **supported seam**
+        for an agent to drop in its own controller at runtime —
+        `env.robot.set_controller(MyController(...))` — which takes effect on the next `step()` (the
+        env dispatches through `self.robot`). Bypasses `control_modes`: a custom controller need not
+        be in the menu."""
+        controller.bind(self)
+        self.controller = controller
+
+    # ----- action (generic, via the active controller) -----------------------------------------
+    @property
+    def action_dim(self) -> int:
+        """Width of the action vector = the active controller's (0 if there is none)."""
+        return self.controller.action_dim if self.controller is not None else 0
+
+    def apply_action(self, action: torch.Tensor) -> None:
+        """Run the active controller, which computes **and writes** its command to sim (no-op without
+        a controller). The env dispatches through `self.robot` each step, so a swapped controller /
+        patched method is used at once. Override for a fully custom action path."""
+        if self.controller is not None:
+            self.controller.apply(action)
+
+    def actuator_sink(self, command_type: str):
+        """The **write path** for a controller's `command_type`: a callable `(command, joint_ids) ->
+        None` that sends `command` to sim through the matching joint-target setter. A controller
+        captures this once at bind and writes through it itself — so a `composite` can mix command
+        types (effort arms + position hands), each leaf writing its own group. Default uses
+        `self.articulation`; override for multi-body or non-articulation robots."""
+        art = self.articulation
+        setter = {
+            "position": art.set_joint_position_target,
+            "velocity": art.set_joint_velocity_target,
+            "effort": art.set_joint_effort_target,
+        }[command_type]
+        return lambda command, joint_ids: setter(command, joint_ids=joint_ids)
+
+    def actuator_limits(self, joint_ids: Any) -> dict[str, Any]:
+        """Per-joint actuation bounds for `joint_ids`, handed to a controller at bind (`self.limits`)
+        so it can clamp / scale / validate — most controllers ignore them and stay general. A snapshot
+        from the articulation (re-query for live values). Keys: ``pos`` (n, k, 2 = lower/upper),
+        ``vel`` (n, k), ``effort`` (n, k). Override for non-articulation robots."""
+        d = self.articulation.data
+        return {
+            "pos": d.joint_pos_limits[:, joint_ids, :],
+            "vel": d.joint_vel_limits[:, joint_ids],
+            "effort": d.joint_effort_limits[:, joint_ids],
+        }
+
+    @property
+    def env(self) -> BaseEnv:
+        """The env this robot is bound to. Available after `bind()`; raises if accessed before."""
+        if self._env is None:
+            raise RuntimeError("robot is not bound to an env yet (call happens before bind())")
+        return self._env
+
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        """Step-coupled robot bookkeeping, run by the env once per `step()` after the sim advances.
+        Default no-op. Override for things that must track the new state every step (e.g. advancing
+        a controller's internal target/integrator). Not for the agent to call."""
