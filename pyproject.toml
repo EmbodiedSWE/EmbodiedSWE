@@ -3,19 +3,15 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "robobench"
+name = "cosigen"
 version = "0.1.0"
-description = "RoboBench — a long-horizon robot benchmark for code-generating agents (Isaac Lab / PhysX)."
-requires-python = ">=3.10"
-# Heavy deps (isaaclab, isaacsim, torch, pxr) come from the host venv and are NOT re-declared
-# here — this project is meant to be `pip install -e .`'d into a venv that already has Isaac Lab.
+description = ""
 
 # robobench/ — the relocatable benchmark ENV suite (the focus): core + robots + suites/<flavor>.
 [tool.setuptools.packages.find]
 include = ["robobench*"]
 
-# (No package-data yet: assets live in legacy/ for now; add a package-data entry once a suite
-#  brings curated USD assets into robobench/suites/<flavor>/assets/.)
+# (No package-data yet:  add a package-data entry once a suite  brings curated USD assets into robobench/suites/<flavor>/assets/.)
 
 [tool.pyright]
 reportPrivateUsage = "none"
