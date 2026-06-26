@@ -139,8 +139,8 @@ open object.
 | Class | Children must implement (`@abstractmethod`) | Concrete on the base |
 |---|---|---|
 | `BaseScene` | `assets · reset · get_state · set_state · describe` | `bind` |
-| `BaseRobot` | `assets · reset · get_state · set_state · describe` (+ hooks `on_bind` / `build_controller`) | `bind · apply_action · action_dim · set_controller · actuator_sink · actuator_limits`; declares `control_modes` / `control_mode` |
-| `BaseController` | `action_dim · compute · _resolve_joints` | `bind · apply · reset`; `command_type` set at construction |
+| `BaseRobot` | `assets · reset · describe` (+ hooks `on_bind` / `build_controller`) | `bind · apply_action · action_dim · get_state · set_state · set_controller · actuator_sink · actuator_limits`; declares `control_modes` / `control_mode` |
+| `BaseController` | `action_dim · compute · _resolve_joints` | `bind · apply · reset · get_state · set_state`; `command_type` set at construction |
 | `BaseVerifier` | `verify` → `Any` *(structured result TBD)* | — |
 | `BaseEnv` | *(not abstract — the shell)* | `get_states · set_states · reset · step · describe · describe_stage · verify · close` |
 

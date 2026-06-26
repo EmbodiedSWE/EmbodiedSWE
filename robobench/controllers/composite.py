@@ -55,3 +55,10 @@ class CompositeController(BaseController):
     def reset(self, env_ids: torch.Tensor | None = None) -> None:
         for c in self.controllers:
             c.reset(env_ids)
+
+    def get_state(self, env_ids: torch.Tensor | None = None) -> dict[str, Any]:
+        return {str(i): c.get_state(env_ids) for i, c in enumerate(self.controllers)}
+
+    def set_state(self, state: dict[str, Any], env_ids: torch.Tensor | None = None) -> None:
+        for i, c in enumerate(self.controllers):
+            c.set_state(state[str(i)], env_ids)
