@@ -16,11 +16,19 @@ for the G1 upper body, `diff_ik` for arms) land next, alongside their first robo
 from .composite import CompositeController
 from .joint import JointController, JointControllerCfg
 from .pink_ik import FrameTaskCfg, PinkIKController, PinkIKControllerCfg
+from .task_space import (
+    OperationalSpaceController,
+    TaskSpaceControllerCfg,
+    TaskSpaceImpedanceController,
+)
 
 __all__ = [
     "JointController",
     "JointControllerCfg",
     "CompositeController",
+    "TaskSpaceControllerCfg",
+    "TaskSpaceImpedanceController",
+    "OperationalSpaceController",
     "PinkIKController",
     "PinkIKControllerCfg",
     "FrameTaskCfg",

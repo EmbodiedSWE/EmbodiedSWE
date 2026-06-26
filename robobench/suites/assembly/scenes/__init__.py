@@ -5,5 +5,11 @@ modules defer isaaclab/pxr, so registration is safe without a running app.
 """
 
 from .ikea_table_assembly import IkeaTableAssemblyScene, IkeaTableAssemblySceneCfg
+from .nut_thread_assembly import NutThreadAssemblyScene, NutThreadAssemblySceneCfg
 
-__all__ = ["IkeaTableAssemblyScene", "IkeaTableAssemblySceneCfg"]
+__all__ = [
+    "IkeaTableAssemblyScene",
+    "IkeaTableAssemblySceneCfg",
+    "NutThreadAssemblyScene",
+    "NutThreadAssemblySceneCfg",
+]
