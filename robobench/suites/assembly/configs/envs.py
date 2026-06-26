@@ -21,6 +21,22 @@ SUITE = "assembly"
 
 register_env(SUITE, lambda: EnvCfg(scene="ikea_table", robot="null", env_spacing=3))  # scene physics only
 
+# Fixed-bolt + loose-nut threading scene, scene physics only for now (a robot is added later).
+# -> "assembly.nut_thread"
+register_env(SUITE, lambda: EnvCfg(scene="nut_thread", robot="null", env_spacing=2))
+
+# Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x). Three
+# control modes, switchable by env name:
+#   - "assembly.nut_thread.franka.impedance" — arm by Jacobian-transpose task-space impedance (default)
+#   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped)
+#   - "assembly.nut_thread.franka.joint"     — arm by direct joint position targets
+# (all carry a 2-finger gripper by direct position target.)
+for _mode in ("impedance", "osc", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(scene="nut_thread", robot="franka", control_mode=mode, env_spacing=2),
+    )
+
 # Fixed-base G1 at the IKEA table, upper-body joint control. Two placement tweaks so the G1 (pelvis
 # ~0.75 m) can reach the work:
 #   - the workbench is lowered to a ~0.7 m top (surface_z=0.7; the bench sinks below the floor, like
