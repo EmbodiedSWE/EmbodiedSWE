@@ -70,13 +70,42 @@ class BaseRobot(ABC):
     def reset(self, env_ids: torch.Tensor) -> None:
         """Reset the robot to its home configuration for `env_ids` (also reset `self.controller`)."""
 
-    @abstractmethod
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
-        """The robot's full restorable state (joint pos/vel, controller targets, …)."""
+        """Full restorable state, uniform across single-articulation robots: the articulation's
+        sim-resident state (root, joint pos/vel, and the actuator setpoints) plus the controller's own
+        state (delegated, so it travels with whatever controller is bound).
 
-    @abstractmethod
+        To ADD robot-specific state, extend rather than replace — call `super().get_state(env_ids)` for
+        this uniform part, add your own keys, and restore them after `super().set_state(...)`:
+            def get_state(self, ids):  s = super().get_state(ids); s["tool"] = ...; return s
+            def set_state(self, s, ids):  super().set_state(s, ids); self._tool.write_(s["tool"])
+        `set_state` reads only the base keys, so it ignores any extra keys a subclass adds (no clash).
+        Override fully only if the robot isn't a single articulation (e.g. multi-body)."""
+        state: dict[str, Any] = {}
+        art = self.articulation
+        if art is not None:
+            d = art.data
+            state["root"] = d.root_state_w[env_ids].clone()
+            state["joint_pos"] = d.joint_pos[env_ids].clone()
+            state["joint_vel"] = d.joint_vel[env_ids].clone()
+            state["joint_pos_target"] = d.joint_pos_target[env_ids].clone()
+            state["joint_effort_target"] = d.joint_effort_target[env_ids].clone()
+        if self.controller is not None:
+            state["controller"] = self.controller.get_state(env_ids)
+        return state
+
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
-        """Restore what `get_state` returned."""
+        """Restore what `get_state` returned: write the articulation's root + joint state and re-apply
+        the actuator setpoints (so a restored robot resumes its commanded motion), then restore the
+        controller's state."""
+        art = self.articulation
+        if art is not None:
+            art.write_root_state_to_sim(state["root"], env_ids)
+            art.write_joint_state_to_sim(state["joint_pos"], state["joint_vel"], env_ids=env_ids)
+            art.set_joint_position_target(state["joint_pos_target"], env_ids=env_ids)
+            art.set_joint_effort_target(state["joint_effort_target"], env_ids=env_ids)
+        if self.controller is not None and "controller" in state:
+            self.controller.set_state(state["controller"], env_ids)
 
     @abstractmethod
     def describe(self) -> str:

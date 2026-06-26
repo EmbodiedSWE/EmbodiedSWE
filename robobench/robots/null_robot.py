@@ -35,11 +35,7 @@ class NullRobot(BaseRobot):
     def reset(self, _env_ids: torch.Tensor) -> None:
         pass
 
-    def get_state(self, _env_ids: torch.Tensor) -> dict[str, Any]:
-        return {}
-
-    def set_state(self, _state: dict[str, Any], _env_ids: torch.Tensor) -> None:
-        pass
+    # get_state / set_state inherited from BaseRobot: no articulation + no controller -> {} / no-op.
 
     def describe(self) -> str:
         return "No robot (null embodiment): the scene runs under physics alone; no actor applies actions."

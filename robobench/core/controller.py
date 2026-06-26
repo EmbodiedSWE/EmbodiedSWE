@@ -119,3 +119,11 @@ class BaseController(ABC):
     def reset(self, env_ids: torch.Tensor | None = None) -> None:
         """Reset any internal state (IK integrator, policy hidden state). Default no-op; override for
         stateful controllers."""
+
+    def get_state(self, env_ids: torch.Tensor | None = None) -> dict[str, Any]:
+        """The controller's own restorable state (smoothing buffer, IK warm-start, ...). Default empty
+        (stateless); the robot's `get_state` delegates here so state travels with the controller."""
+        return {}
+
+    def set_state(self, state: dict[str, Any], env_ids: torch.Tensor | None = None) -> None:
+        """Restore what `get_state` returned. Default no-op (stateless)."""
