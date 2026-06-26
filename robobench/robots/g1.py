@@ -204,20 +204,7 @@ class G1Robot(BaseRobot):
     # (composite of arms+hands). Each sub-controller writes its own joints through the actuator sink it
     # captured at bind (the default sink routes through `self.articulation`), so no action code here.
 
-    # ----- state (full, restorable) -------------------------------------------------------------
-    def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
-        art = self.articulation
-        return {
-            "root": art.data.root_state_w[env_ids].clone(),  # world frame (origin already baked in)
-            "joint_pos": art.data.joint_pos[env_ids].clone(),
-            "joint_vel": art.data.joint_vel[env_ids].clone(),
-        }
-
-    def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
-        art = self.articulation
-        art.write_root_state_to_sim(state["root"], env_ids)
-        art.write_joint_state_to_sim(state["joint_pos"], state["joint_vel"], env_ids=env_ids)
-        art.set_joint_position_target(state["joint_pos"], env_ids=env_ids)
+    # get_state / set_state are inherited from BaseRobot (single-articulation sim state + controller).
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:

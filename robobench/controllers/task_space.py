@@ -9,8 +9,8 @@ are computed each step from the live `J`, `M` (not tuned); both forms need `Λ` 
 Robot-general: the driven arm joints and the end-effector frame are config (defaults: all joints / the
 articulation's tip), so it drives any fixed-base arm — a robot overrides them when it has extra DOFs
 (e.g. a gripper). Stateless unless `ema_factor < 1` (action smoothing keeps a prev-action buffer,
-cleared by `reset()`; see docs/controller-state-snapshot.md). `command_type` is "effort" (arm actuators
-must be torque-mode). Assumes a fixed base (the Jacobian drops the root, so the EE column is `idx − 1`).
+cleared by `reset()` and round-tripped by `get_state`/`set_state`). `command_type` is "effort" (arm
+actuators must be torque-mode). Assumes a fixed base (the Jacobian drops the root, so EE col = `idx−1`).
 Heavy math is imported in-method so registration stays app-free.
 """
 
@@ -88,6 +88,20 @@ class _TaskSpaceController(BaseController):
                 self._prev_action.zero_()
             else:
                 self._prev_action[env_ids] = 0.0  # assignment, not [idx].zero_() (which hits a copy)
+
+    def get_state(self, env_ids: Any = None) -> dict[str, Any]:
+        """The smoothing buffer (empty when smoothing is off -> stateless)."""
+        if self._prev_action is None:
+            return {}
+        buf = self._prev_action if env_ids is None else self._prev_action[env_ids]
+        return {"prev_action": buf.clone()}
+
+    def set_state(self, state: dict[str, Any], env_ids: Any = None) -> None:
+        if self._prev_action is not None and "prev_action" in state:
+            if env_ids is None:
+                self._prev_action.copy_(state["prev_action"])
+            else:
+                self._prev_action[env_ids] = state["prev_action"]
 
     def _task_force(self, pose_error, ee_vel, lambda_task):
         """Map task error + velocity (and Λ) to a 6-D task force. Overridden per form."""
