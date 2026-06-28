@@ -27,11 +27,12 @@ register_env(SUITE, lambda: EnvCfg(scene="nut_thread", robot="null", env_spacing
 
 # Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x). Three
 # control modes, switchable by env name:
-#   - "assembly.nut_thread.franka.impedance" — arm by Jacobian-transpose task-space impedance (default)
-#   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped)
+#   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
+#                                              smooth on this arm)
+#   - "assembly.nut_thread.franka.impedance" — arm by Jacobian-transpose task-space impedance (Isaac's form)
 #   - "assembly.nut_thread.franka.joint"     — arm by direct joint position targets
 # (all carry a 2-finger gripper by direct position target.)
-for _mode in ("impedance", "osc", "joint"):
+for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(scene="nut_thread", robot="franka", control_mode=mode, env_spacing=2),

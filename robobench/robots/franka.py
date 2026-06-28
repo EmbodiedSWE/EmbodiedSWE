@@ -3,11 +3,12 @@
 A fixed-base 7-DOF arm with a 2-finger gripper. Three control modes (the gripper is always direct
 position targets; switching the mode swaps only the arm controller):
 
-  - "impedance" -> arm by Jacobian-transpose task-space impedance (`TaskSpaceImpedanceController`,
-                   joint torque); action = 6 EE pose deltas + 2 gripper = 8. (Default; the form Isaac's
-                   Factory tasks use.)
   - "osc"       -> arm by operational-space control (`OperationalSpaceController`, inertia-shaped
-                   torque); same 8-D action.
+                   torque); action = 6 EE pose deltas + 2 gripper = 8. Default — the inertia decoupling
+                   keeps the low-inertia wrist smooth.
+  - "impedance" -> arm by Jacobian-transpose task-space impedance (`TaskSpaceImpedanceController`);
+                   same 8-D action. The form Isaac's Factory tasks use; on this arm it can shake the
+                   wrist (no inertia decoupling), so it's not the default.
   - "joint"     -> arm by direct joint position targets (`JointController`); action = 7 arm + 2 gripper.
 
 The two torque modes load the arm actuators in TORQUE mode (zero stiffness/damping) so the
@@ -54,6 +55,13 @@ class FrankaRobotCfg(BaseRobotCfg):
     # Gripper PD gains (always position-controlled; holds / grasps the part).
     gripper_stiffness: float = tunable(2000.0)
     gripper_damping: float = tunable(100.0)
+    # Home posture of the 7 arm joints: the arm resets here. A forward-facing ready pose; retune per
+    # task (e.g. to start the gripper near the work).
+    default_dof_pos: tuple[float, ...] = tunable((0.0015, -0.197, -0.0014, -1.976, -0.00028, 1.78, 0.786))
+    # Posture the task-space nullspace pulls toward; () -> use default_dof_pos. A non-singular elbow
+    # config that actively resolves the arm's redundancy (keeps the wrist from drifting); kept separate
+    # from the home pose on purpose.
+    nullspace_dof_pos: tuple[float, ...] = tunable((-1.3003, -0.4015, 1.1791, -2.1493, 0.4001, 1.9425, 0.4754))
     franka_usd: str = info("")  # "" -> the vendored robots/assets/franka/panda_instanceable.usd
 
     def __post_init__(self) -> None:
@@ -67,7 +75,7 @@ class FrankaRobot(BaseRobot):
     2 gripper fingers are always direct position targets, the 7 arm joints by the mode's arm controller
     (torque-mode OSC, or position-mode JointController)."""
 
-    control_modes: tuple[str, ...] = ("impedance", "osc", "joint")
+    control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default: smooth on this arm
     cfg: FrankaRobotCfg
 
     ARM_JOINTS: tuple[str, ...] = ("panda_joint[1-7]",)
@@ -91,6 +99,12 @@ class FrankaRobot(BaseRobot):
         robot.spawn.articulation_props.fix_root_link = c.fixed_base
         robot.init_state.pos = c.base_pos
         robot.init_state.rot = c.base_rot
+        # Home the 7 arm joints to cfg.default_dof_pos (reset() reads this via default_joint_pos);
+        # keep the gripper-finger defaults.
+        robot.init_state.joint_pos = {
+            **robot.init_state.joint_pos,
+            **{f"panda_joint{i + 1}": float(q) for i, q in enumerate(c.default_dof_pos)},
+        }
         torque_mode = self.control_mode in ("impedance", "osc")
         for arm_act in ("panda_shoulder", "panda_forearm"):
             robot.actuators[arm_act].stiffness = 0.0 if torque_mode else c.arm_stiffness
@@ -109,7 +123,12 @@ class FrankaRobot(BaseRobot):
         (position)."""
         gripper = JointController(JointControllerCfg(self.GRIPPER_JOINTS), command_type="position")
         if self.control_mode in ("impedance", "osc"):
-            ts_cfg = TaskSpaceControllerCfg(ee_body=self.EE_BODY, arm_joint_names=self.ARM_JOINTS)
+            ts_cfg = TaskSpaceControllerCfg(
+                ee_body=self.EE_BODY,
+                arm_joint_names=self.ARM_JOINTS,
+                nullspace_dof_pos=self.cfg.nullspace_dof_pos or self.cfg.default_dof_pos,  # () -> home pose
+                ema_factor=0.2,  # smooth the action stream
+            )
             cls = TaskSpaceImpedanceController if self.control_mode == "impedance" else OperationalSpaceController
             arm: Any = cls(ts_cfg)
         elif self.control_mode == "joint":
