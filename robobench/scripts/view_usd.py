@@ -38,12 +38,21 @@ def main() -> None:
         raise RuntimeError(f"failed to open {usd}")
     print(f"opened {usd} — Ctrl-C to quit")
 
+    # This is a `/persistent/` setting — it's saved to user.config.json and would otherwise leak into
+    # every future Isaac Sim session. Snapshot the original and restore it on exit so the change is
+    # scoped to this run only (2 = all colliders, 0 = off).
+    settings = carb.settings.get_settings()
+    COLLIDERS_KEY = "/persistent/physics/visualizationDisplayColliders"
+    prev_colliders = settings.get(COLLIDERS_KEY)
     if args.colliders:
-        # PhysX draws the collision approximation as a wireframe over the visual mesh: 2 = all, 0 = off.
-        carb.settings.get_settings().set_int("/persistent/physics/visualizationDisplayColliders", 2)
+        settings.set_int(COLLIDERS_KEY, 2)
 
-    while app.is_running():
-        app.update()
+    try:
+        while app.is_running():
+            app.update()
+    finally:
+        if args.colliders:
+            settings.set_int(COLLIDERS_KEY, int(prev_colliders or 0))
 
 
 if __name__ == "__main__":
