@@ -18,11 +18,14 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("usd", type=str, help="path (or URI) to the USD stage to open")
+parser.add_argument("--colliders", action="store_true",
+                    help="overlay PhysX collision geometry (wireframe) on top of the visual mesh")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
 app = AppLauncher(args).app
 
+import carb  # noqa: E402
 import omni.usd  # noqa: E402
 
 
@@ -34,6 +37,10 @@ def main() -> None:
     if not ctx.open_stage(usd):  # returns a plain bool in Isaac Sim 5.1
         raise RuntimeError(f"failed to open {usd}")
     print(f"opened {usd} — Ctrl-C to quit")
+
+    if args.colliders:
+        # PhysX draws the collision approximation as a wireframe over the visual mesh: 2 = all, 0 = off.
+        carb.settings.get_settings().set_int("/persistent/physics/visualizationDisplayColliders", 2)
 
     while app.is_running():
         app.update()
