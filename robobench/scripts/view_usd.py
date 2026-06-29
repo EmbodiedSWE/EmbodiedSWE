@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
+import sys
 
 from isaaclab.app import AppLauncher
 
@@ -38,21 +40,33 @@ def main() -> None:
         raise RuntimeError(f"failed to open {usd}")
     print(f"opened {usd} — Ctrl-C to quit")
 
-    # This is a `/persistent/` setting — it's saved to user.config.json and would otherwise leak into
-    # every future Isaac Sim session. Snapshot the original and restore it on exit so the change is
-    # scoped to this run only (2 = all colliders, 0 = off).
+    # `visualizationDisplayColliders` is a `/persistent/` setting (saved to user.config.json), so left
+    # on it leaks the overlay into every future Isaac Sim session. We turn it off again on exit, always
+    # settling on 0 (the shipped default) so even an earlier hard-killed run self-heals (2 = all, 0 = off).
     settings = carb.settings.get_settings()
     COLLIDERS_KEY = "/persistent/physics/visualizationDisplayColliders"
-    prev_colliders = settings.get(COLLIDERS_KEY)
+
+    def _disable_colliders() -> None:
+        settings.set_int(COLLIDERS_KEY, 0)
+
     if args.colliders:
         settings.set_int(COLLIDERS_KEY, 2)
+        # Isaac's own SIGINT handler shuts the app down — which FLUSHES /persistent settings to disk —
+        # before any `finally` here would run, so a plain try/finally can't stop the value leaking.
+        # Restore ahead of that flush in our own handler, then hand off to a normal shutdown.
+        def _on_sigint(signum, frame):  # noqa: ANN001
+            _disable_colliders()
+            app.close()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, _on_sigint)
 
     try:
-        while app.is_running():
+        while app.is_running():  # normal exit (e.g. window close): finally restores while app is alive
             app.update()
     finally:
         if args.colliders:
-            settings.set_int(COLLIDERS_KEY, int(prev_colliders or 0))
+            _disable_colliders()
 
 
 if __name__ == "__main__":
