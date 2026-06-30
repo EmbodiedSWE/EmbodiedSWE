@@ -25,6 +25,10 @@ register_env(SUITE, lambda: EnvCfg(scene="ikea_table", robot="null", env_spacing
 # -> "assembly.nut_thread"
 register_env(SUITE, lambda: EnvCfg(scene="nut_thread", robot="null", env_spacing=2))
 
+# Fixed lamp-socket + loose light-bulb screw-in scene, scene physics only for now.
+# -> "assembly.bulb"
+register_env(SUITE, lambda: EnvCfg(scene="bulb", robot="null", env_spacing=2))
+
 # Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x). Three
 # control modes, switchable by env name:
 #   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
@@ -36,6 +40,17 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(scene="nut_thread", robot="franka", control_mode=mode, env_spacing=2),
+    )
+
+# Franka arm at the bulb scene (same setup as nut_thread.franka — base at the origin, reaching the socket
+# on the table at +x). Three control modes, switchable by env name:
+#   - "assembly.bulb.franka.osc"       — operational-space control (default)
+#   - "assembly.bulb.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.bulb.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(scene="bulb", robot="franka", control_mode=mode, env_spacing=2),
     )
 
 # Fixed-base G1 at the IKEA table, upper-body joint control. Two placement tweaks so the G1 (pelvis
