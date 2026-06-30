@@ -25,17 +25,23 @@ if TYPE_CHECKING:
 
 
 # ----- tunable / info markers + BaseCfg ---------------------------------------------------------
-def tunable(default: Any = MISSING, *, factory: Callable[[], Any] | None = None, doc: str = "") -> Any:
-    """Declare a **curriculum/difficulty dial** (the agent may adjust it). Use `factory=` for a
-    mutable default (list/dict), `default=` otherwise."""
+def tunable(default: Any = MISSING, *, factory: Callable[[], Any] | None = None, doc: str = "", kw_only: bool = False) -> Any:
+    """Declare a **curriculum/difficulty dial** (the agent may adjust it). Use `factory=` for a mutable
+    default (list/dict), `default=` otherwise. `kw_only=True` keeps it out of positional order (a shared
+    base can add a field without shifting subclasses' args)."""
     meta = {"kind": "tunable", "doc": doc}
-    return field(default_factory=factory, metadata=meta) if factory is not None else field(default=default, metadata=meta)
+    if factory is not None:
+        return field(default_factory=factory, metadata=meta, kw_only=kw_only)
+    return field(default=default, metadata=meta, kw_only=kw_only)
 
 
-def info(default: Any = MISSING, *, factory: Callable[[], Any] | None = None, doc: str = "") -> Any:
-    """Declare a **structural/fixed fact** about the scene or robot (not a difficulty dial)."""
+def info(default: Any = MISSING, *, factory: Callable[[], Any] | None = None, doc: str = "", kw_only: bool = False) -> Any:
+    """Declare a **structural/fixed fact** about the scene or robot (not a difficulty dial). `kw_only=True`
+    keeps it out of positional order (see `tunable`)."""
     meta = {"kind": "info", "doc": doc}
-    return field(default_factory=factory, metadata=meta) if factory is not None else field(default=default, metadata=meta)
+    if factory is not None:
+        return field(default_factory=factory, metadata=meta, kw_only=kw_only)
+    return field(default=default, metadata=meta, kw_only=kw_only)
 
 
 @dataclass

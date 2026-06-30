@@ -72,6 +72,10 @@ class GR1T2Robot(BaseRobot):
     control_modes: tuple[str, ...] = ("joint", "pink_ik")
     cfg: GR1T2RobotCfg
 
+    # Upper-body control period (s): ~50 Hz (Isaac `Isaac-PickPlace-FixedBaseUpperBodyIK-G1`, decim 4 @
+    # 200 Hz). `bind` rounds to the nearest sim-step multiple -> period 2 (60 Hz) at the 120 Hz table.
+    CONTROL_DT: float = 0.02
+
     # Upper-body joint groups (regexes; find_joints resolves indices). arms = shoulder pitch/roll/yaw,
     # elbow pitch, wrist yaw/roll/pitch (per side); + waist; hands = the Fourier 6-DOF hand joints.
     ARM_WAIST_JOINTS: tuple[str, ...] = (".*_shoulder_.*", ".*_elbow_.*", ".*_wrist_.*", "waist_.*")
@@ -108,15 +112,18 @@ class GR1T2Robot(BaseRobot):
     def build_controller(self) -> CompositeController:
         """`composite([<arm controller>, joint(hands)])` for the active mode. Hands are always direct
         position targets; switching the mode swaps only the arm controller."""
-        hands = JointController(JointControllerCfg(self.HAND_JOINTS), command_type="position")
+        hands = JointController(JointControllerCfg(self.HAND_JOINTS, dt=self.CONTROL_DT), command_type="position")
         if self.control_mode == "joint":
-            arms: Any = JointController(JointControllerCfg(self.ARM_WAIST_JOINTS), command_type="position")
+            arms: Any = JointController(
+                JointControllerCfg(self.ARM_WAIST_JOINTS, dt=self.CONTROL_DT), command_type="position"
+            )
         elif self.control_mode == "pink_ik":
             # Pink IK targets the two hands; base = base_link. URDF link names = USD names prefixed with
             # the robot name; null-space holds the (redundant) shoulders + waist near home.
             pfx = "GR1T2_fourier_hand_6dof_"
             arms = PinkIKController(
                 PinkIKControllerCfg(
+                    dt=self.CONTROL_DT,
                     urdf_path=self.cfg.gr1t2_urdf,
                     base_link="base_link",
                     base_link_frame=pfx + "base_link",

@@ -109,6 +109,10 @@ class G1Robot(BaseRobot):
     control_modes: tuple[str, ...] = ("joint", "pink_ik")
     cfg: G1RobotCfg
 
+    # Upper-body control period (s): ~50 Hz (Isaac `Isaac-PickPlace-FixedBaseUpperBodyIK-G1`, decim 4 @
+    # 200 Hz). `bind` rounds to the nearest sim-step multiple -> period 2 (60 Hz) at the 120 Hz table.
+    CONTROL_DT: float = 0.02
+
     # Upper-body joint groups (regexes, by G1_29DOF_CFG's actuator names; find_joints resolves the
     # indices). arms+waist = 17 (per arm: shoulder pitch/roll/yaw, elbow, wrist pitch/roll/yaw; +
     # waist yaw/roll/pitch); hands = 14 (three-finger index/middle/thumb).
@@ -161,15 +165,18 @@ class G1Robot(BaseRobot):
         """
         # G1's arm + hand actuators are position-PD (G1_29DOF_CFG), so these write position targets
         # (raw pass-through: identity scale/offset; the PD gains live in the actuators, not here).
-        hands = JointController(JointControllerCfg(self.HAND_JOINTS), command_type="position")
+        hands = JointController(JointControllerCfg(self.HAND_JOINTS, dt=self.CONTROL_DT), command_type="position")
         if self.control_mode == "joint":
-            arms: Any = JointController(JointControllerCfg(self.ARM_WAIST_JOINTS), command_type="position")
+            arms: Any = JointController(
+                JointControllerCfg(self.ARM_WAIST_JOINTS, dt=self.CONTROL_DT), command_type="position"
+            )
         elif self.control_mode == "pink_ik":
             # Pink IK targets the two wrists; base = pelvis. URDF link names = USD names prefixed with
             # the robot name; null-space holds the (redundant) shoulders + waist near home.
             pfx = "g1_29dof_with_hand_rev_1_0_"
             arms = PinkIKController(
                 PinkIKControllerCfg(
+                    dt=self.CONTROL_DT,
                     urdf_path=self.cfg.g1_urdf,
                     base_link="pelvis",
                     base_link_frame=pfx + "pelvis",

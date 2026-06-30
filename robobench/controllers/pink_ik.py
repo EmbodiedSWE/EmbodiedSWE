@@ -137,7 +137,9 @@ class PinkIKController(BaseController):
         device = robot.env.device
         self._controllers = [_IsaacPinkIK(make_cfg(), art.cfg, device, self.joint_ids) for _ in range(robot.env.num_envs)]
         self._base_idx = art.data.body_names.index(c.base_link)
-        self._dt = robot.env.dt
+        # IK integration step = the CONTROL period, not the sim dt: the solver fires once per
+        # control_period physics steps (its target is held in between), so it integrates over that span.
+        self._dt = robot.env.dt * self._control_period
         self._n_frames = len(c.frames)
 
     def compute(self, action: torch.Tensor) -> torch.Tensor:

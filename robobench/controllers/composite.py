@@ -1,7 +1,7 @@
 """CompositeController — run several controllers over disjoint DOF groups, each writing its own.
 
-For modes that mix controllers: G1 upper-body = arms/waist by Pink IK **+** hands by direct joint
-targets; loco-manip = arms by IK **+** legs by a frozen policy. The action is split into consecutive
+For modes that mix controllers: e.g. a humanoid upper body = arms/waist by IK **+** hands by direct
+joint targets; loco-manip = arms by IK **+** legs by a frozen policy. The action is split into consecutive
 slices — one per sub-controller, sized by each `action_dim` — and each sub **applies its own slice**
 (computes and writes its own joints through its own sink). Because each leaf writes itself, the
 sub-controllers may use **different `command_type`s** — e.g. effort arms + position hands — with no
@@ -40,16 +40,24 @@ class CompositeController(BaseController):
     def action_dim(self) -> int:
         return sum(c.action_dim for c in self.controllers)
 
+    @property
+    def control_period(self) -> int:
+        """The slowest sub-controller's period (the env loops this many substeps). Each leaf still fires
+        on its own subdivision, so a composite can mix rates — e.g. a fast loco policy (period 1) + a
+        slower arm. All periods align at substep 0 (every leaf updates on the first step after an action)."""
+        return max((c.control_period for c in self.controllers), default=1)
+
     def compute(self, action: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError(
             "CompositeController is heterogeneous (sub-controllers may differ in command_type) — there "
             "is no single command to return. Use apply(), which fans out to each sub-controller."
         )
 
-    def apply(self, action: torch.Tensor) -> None:
+    def apply(self, action: torch.Tensor, substep: int = 0) -> None:
+        # Fan out the action slice to each leaf; each fires on its own control_period (rates interleave).
         i = 0
         for c in self.controllers:
-            c.apply(action[:, i : i + c.action_dim])
+            c.apply(action[:, i : i + c.action_dim], substep)
             i += c.action_dim
 
     def reset(self, env_ids: torch.Tensor | None = None) -> None:

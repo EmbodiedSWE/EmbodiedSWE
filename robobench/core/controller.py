@@ -32,7 +32,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .config import BaseCfg
+from .config import BaseCfg, info
 
 if TYPE_CHECKING:
     import torch
@@ -48,6 +48,10 @@ class BaseControllerCfg(BaseCfg):
     knobs a higher layer (curriculum / env-register, robot-mediated) may dial** (gains, costs, scale).
     Thin base — concrete controllers add their own fields. Not every controller needs a cfg (e.g.
     `composite` takes a list of sub-controllers)."""
+
+    #: Control period in seconds; `None` -> every physics step. Resolved to an integer `control_period`
+    #: at `bind`. Keyword-only so it doesn't shift subclasses' positional args; the robot may override it.
+    dt: float | None = info(None, doc="control period (s); None -> every physics step", kw_only=True)
 
 
 class BaseController(ABC):
@@ -73,6 +77,9 @@ class BaseController(ABC):
         #: Per-joint limits for `joint_ids` (pos/vel/effort), passed by the robot at bind for the
         #: controller to clamp/scale/validate against if it wants. Most controllers ignore them.
         self.limits: Any = None
+        #: Physics substeps between this controller's updates (1 = every step). Resolved in `bind()`
+        #: from the effective control dt and the sim dt; see `control_period`.
+        self._control_period: int = 1
 
     @property
     def robot(self) -> BaseRobot:
@@ -81,9 +88,21 @@ class BaseController(ABC):
             raise RuntimeError("controller is not bound to a robot yet (call happens before bind())")
         return self._robot
 
+    @property
+    def dt(self) -> float | None:
+        """This controller's preferred control period in seconds (`cfg.dt`); None -> every physics
+        step. The robot may override it at bind (`robot.control_dt`)."""
+        return getattr(self.cfg, "dt", None) if self.cfg is not None else None
+
+    @property
+    def control_period(self) -> int:
+        """Physics substeps between this controller's updates (1 = every step), resolved at `bind`."""
+        return self._control_period
+
     def bind(self, robot: BaseRobot) -> None:
         """Bind to `robot`: resolve `joint_ids`, capture the actuator sink for this `command_type`,
-        and snapshot the joint limits for those DOFs. Override `_resolve_joints` (not this) for a leaf;
+        snapshot the joint limits for those DOFs, and resolve `control_period` (robot override ->
+        `cfg.dt` -> sim rate, against the sim dt). Override `_resolve_joints` (not this) for a leaf;
         a composite overrides `bind` to bind its sub-controllers instead."""
         self._robot = robot
         self.joint_ids = self._resolve_joints(robot)
@@ -94,6 +113,10 @@ class BaseController(ABC):
             )
         self._sink = robot.actuator_sink(self.command_type)
         self.limits = robot.actuator_limits(self.joint_ids)
+        dt = robot.control_dt(self)  # robot override wins...
+        if dt is None:
+            dt = self.dt  # ...else this controller's own cfg.dt...
+        self._control_period = 1 if dt is None else max(1, round(dt / robot.env.dt))  # ...else every step
 
     def _resolve_joints(self, robot: BaseRobot) -> Any:
         """Which articulation DOFs this controller drives. Default: all of them. Override to select a
@@ -110,11 +133,13 @@ class BaseController(ABC):
         """**Pure**: map a `(num_envs, action_dim)` action to `(num_envs, len(joint_ids))` joint
         commands for this controller's DOFs, in `command_type` units. No sim writes (see `apply`)."""
 
-    def apply(self, action: torch.Tensor) -> None:
-        """Compute the command and write it to sim through the captured sink. Default = compute then
-        write; a composite overrides this to fan out to its sub-controllers (each writing its own
-        group, possibly with a different command_type)."""
-        self._sink(self.compute(action), self.joint_ids)
+    def apply(self, action: torch.Tensor, substep: int = 0) -> None:
+        """Compute and write the command through the sink, but only on this controller's subdivision
+        (`substep` a multiple of `control_period`); in between, the previously-written command persists
+        (actuator PD holds a position target; a torque stays applied). `substep` is the physics-step
+        index within the `env.step` window. A composite overrides this to fan out to its sub-controllers."""
+        if substep % self._control_period == 0:
+            self._sink(self.compute(action), self.joint_ids)
 
     def reset(self, env_ids: torch.Tensor | None = None) -> None:
         """Reset any internal state (IK integrator, policy hidden state). Default no-op; override for
