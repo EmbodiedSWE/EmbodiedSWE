@@ -66,13 +66,17 @@ class SimCfg:
     dt: float = 0.01
     physx: dict[str, Any] = field(default_factory=lambda: {"solver_type": 1})
     gravity: tuple[float, float, float] = (0.0, 0.0, -9.81)
+    # kwargs splatted into isaaclab's `RenderCfg` (like `physx` -> `PhysxCfg`). Empty -> RTX defaults.
+    # A scene with glass/translucent parts sets `{"enable_translucency": True}` or it renders invisible.
+    render: dict[str, Any] = field(default_factory=dict)
 
     def to_isaaclab(self, device: str) -> Any:
         """Build the isaaclab `SimulationCfg` (needs AppLauncher running)."""
         import isaaclab.sim as sim_utils
 
         return sim_utils.SimulationCfg(
-            device=device, dt=self.dt, gravity=self.gravity, physx=sim_utils.PhysxCfg(**self.physx)
+            device=device, dt=self.dt, gravity=self.gravity, physx=sim_utils.PhysxCfg(**self.physx),
+            render=sim_utils.RenderCfg(**self.render),
         )
 
 
@@ -143,6 +147,8 @@ class EnvCfg:
         ov = dict(cfg.sim_overrides)
         if "physx" in ov:
             sim = replace(sim, physx={**sim.physx, **ov.pop("physx")})
+        if "render" in ov:
+            sim = replace(sim, render={**sim.render, **ov.pop("render")})
         if ov:
             sim = replace(sim, **ov)
         sim_cfg = sim.to_isaaclab(cfg.device)
