@@ -67,6 +67,7 @@ class BaseScene(ABC):
         self._env = env
 
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
-        """Step-coupled scene mechanics, run by the env once per `step()` after the sim advances.
-        Default no-op. Override for things that must react to the new physics state every step
-        (e.g. auto-welding a part the instant it seats). Not for the agent to call."""
+        """Step-coupled scene mechanics, run by the env **once per physics substep** (after the sim
+        advances), so they react at sim rate even under control decimation. Default no-op. Override for
+        things that must react to the new physics state every step (e.g. auto-welding a part the instant
+        it seats). Not for the agent to call."""

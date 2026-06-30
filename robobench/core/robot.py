@@ -143,18 +143,30 @@ class BaseRobot(ABC):
         controller.bind(self)
         self.controller = controller
 
-    # ----- action (generic, via the active controller) -----------------------------------------
+    # ----- action + control rate (generic, via the active controller) ---------------------------
     @property
     def action_dim(self) -> int:
         """Width of the action vector = the active controller's (0 if there is none)."""
         return self.controller.action_dim if self.controller is not None else 0
 
-    def apply_action(self, action: torch.Tensor) -> None:
-        """Run the active controller, which computes **and writes** its command to sim (no-op without
-        a controller). The env dispatches through `self.robot` each step, so a swapped controller /
-        patched method is used at once. Override for a fully custom action path."""
+    @property
+    def control_period(self) -> int:
+        """Physics substeps the env runs per `env.step` = the active controller's `control_period`
+        (1 if there is none, i.e. control at sim rate). For a composite this is its slowest leaf."""
+        return self.controller.control_period if self.controller is not None else 1
+
+    def control_dt(self, controller: BaseController) -> float | None:
+        """Hook: a robot-level control period (s) that OVERRIDES `controller.cfg.dt`; None -> defer to
+        the controller. Takes the controller so a robot can pin per-leaf rates of a composite. Read at
+        bind and turned into an integer `control_period`."""
+        return None
+
+    def apply_action(self, action: torch.Tensor, substep: int = 0) -> None:
+        """Run the active controller, which computes **and writes** its command (no-op without one).
+        `substep` is the physics-step index in the `env.step` window; the controller fires only on its
+        own subdivision (see `BaseController.apply`). Override for a fully custom action path."""
         if self.controller is not None:
-            self.controller.apply(action)
+            self.controller.apply(action, substep)
 
     def actuator_sink(self, command_type: str):
         """The **write path** for a controller's `command_type`: a callable `(command, joint_ids) ->
@@ -190,6 +202,7 @@ class BaseRobot(ABC):
         return self._env
 
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
-        """Step-coupled robot bookkeeping, run by the env once per `step()` after the sim advances.
-        Default no-op. Override for things that must track the new state every step (e.g. advancing
-        a controller's internal target/integrator). Not for the agent to call."""
+        """Step-coupled robot bookkeeping, run by the env **once per physics substep** (after the sim
+        advances), so it tracks every physics step even under control decimation. Default no-op.
+        Override for things that must track the new state every step (e.g. advancing a controller's
+        internal target/integrator). Not for the agent to call."""

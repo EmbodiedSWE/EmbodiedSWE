@@ -80,6 +80,9 @@ class _TaskSpaceController(BaseController):
         self._n_arm = len(self.joint_ids)
         # prev-action buffer iff smoothing is on (else stateless)
         self._prev_action = torch.zeros(robot.env.num_envs, self.action_dim, device=dev) if c.ema_factor < 1.0 else None
+        # EE pose target: latched from the action at the control rate, held while the torque tracks it.
+        self._target_pos: torch.Tensor | None = None
+        self._target_quat: torch.Tensor | None = None
 
     def reset(self, env_ids: Any = None) -> None:
         """Clear the action-smoothing buffer (no-op when smoothing is off)."""
@@ -107,37 +110,54 @@ class _TaskSpaceController(BaseController):
         """Map task error + velocity (and Λ) to a 6-D task force. Overridden per form."""
         raise NotImplementedError
 
-    def compute(self, action: "torch.Tensor") -> "torch.Tensor":
+    # ----- the two rates, decoupled ------------------------------------------------------------
+    # A torque law is state feedback: it must recompute every physics step from the live state, even
+    # while the agent acts more slowly. So we split the work and override `apply`:
+    #   - `_latch_target` (action -> EE pose target) runs at the CONTROL rate (`control_period`).
+    #   - `_compute_torque` (target + live state -> τ) runs EVERY physics substep.
+    # `compute` chains both (one-shot — for direct calls / tests / `control_period == 1`).
+
+    def _latch_target(self, action: "torch.Tensor") -> None:
+        """Latch the EE pose target (current pose + scaled delta) from `action`, held until the next
+        latch. EMA smoothing lives here so it runs at the control rate, not per physics step."""
         import torch
-        from isaaclab.utils.math import axis_angle_from_quat, quat_conjugate, quat_from_angle_axis, quat_mul
+        from isaaclab.utils.math import quat_from_angle_axis, quat_mul
 
         art = self._robot.articulation
         c = self.cfg
-        jids = self.joint_ids
-
         if self._prev_action is not None:  # optional action smoothing (stateful only when on)
             action = c.ema_factor * action + (1.0 - c.ema_factor) * self._prev_action
             self._prev_action.copy_(action)
 
-        # current end-effector pose / velocity (world)
         ee_pos = art.data.body_pos_w[:, self._ee_idx]
         ee_quat = art.data.body_quat_w[:, self._ee_idx]
-        ee_vel = torch.cat((art.data.body_lin_vel_w[:, self._ee_idx], art.data.body_ang_vel_w[:, self._ee_idx]), dim=-1)
-
-        # action -> target pose (current pose + scaled delta)
-        target_pos = ee_pos + action[:, 0:3] * c.pos_scale
+        self._target_pos = ee_pos + action[:, 0:3] * c.pos_scale
         rot_action = action[:, 3:6].clone()
         if c.unidirectional_rot:
             rot_action[:, 2] = -(rot_action[:, 2] + 1.0) * 0.5  # [-1,1] -> [-1,0]: tighten-only
         rot_action = rot_action * c.rot_scale
         angle = rot_action.norm(dim=-1)
         axis = rot_action / angle.clamp_min(1e-6).unsqueeze(-1)
-        target_quat = quat_mul(quat_from_angle_axis(angle, axis), ee_quat)
+        self._target_quat = quat_mul(quat_from_angle_axis(angle, axis), ee_quat)
 
-        # task-space pose error (pos + axis-angle, shortest path)
-        target_quat = torch.where((target_quat * ee_quat).sum(-1, keepdim=True) >= 0, target_quat, -target_quat)
+    def _compute_torque(self) -> "torch.Tensor":
+        """Joint torque toward the latched target from the LIVE state — runs every physics step."""
+        import torch
+        from isaaclab.utils.math import axis_angle_from_quat, quat_conjugate, quat_mul
+
+        art = self._robot.articulation
+        c = self.cfg
+        jids = self.joint_ids
+
+        # current end-effector pose / velocity (world)
+        ee_pos = art.data.body_pos_w[:, self._ee_idx]
+        ee_quat = art.data.body_quat_w[:, self._ee_idx]
+        ee_vel = torch.cat((art.data.body_lin_vel_w[:, self._ee_idx], art.data.body_ang_vel_w[:, self._ee_idx]), dim=-1)
+
+        # task-space pose error to the latched target (pos + axis-angle, shortest path vs the LIVE pose)
+        target_quat = torch.where((self._target_quat * ee_quat).sum(-1, keepdim=True) >= 0, self._target_quat, -self._target_quat)
         quat_error = quat_mul(target_quat, quat_conjugate(ee_quat))
-        pose_error = torch.cat((target_pos - ee_pos, axis_angle_from_quat(quat_error)), dim=-1)  # (n, 6)
+        pose_error = torch.cat((self._target_pos - ee_pos, axis_angle_from_quat(quat_error)), dim=-1)  # (n, 6)
 
         # Jacobian, mass matrix, op-space inertia Λ (all from live state)
         jac = art.root_physx_view.get_jacobians()[:, self._jac_ee_idx, 0:6, :][:, :, jids]  # (n, 6, n_arm)
@@ -151,10 +171,24 @@ class _TaskSpaceController(BaseController):
         dof_pos, dof_vel = art.data.joint_pos[:, jids], art.data.joint_vel[:, jids]
         to_default = (self._q_default - dof_pos + math.pi) % (2 * math.pi) - math.pi  # wrap to [-π, π]
         u_null = (mass @ (c.kp_null * to_default - c.kd_null * dof_vel).unsqueeze(-1)).squeeze(-1)
-        eye = torch.eye(self._n_arm, device=action.device).unsqueeze(0)
+        eye = torch.eye(self._n_arm, device=tau.device).unsqueeze(0)
         tau_null = ((eye - jac_T @ (lambda_task @ jac @ mass_inv)) @ u_null.unsqueeze(-1)).squeeze(-1)
 
         return torch.clamp(tau + tau_null, -c.torque_limit, c.torque_limit)
+
+    def compute(self, action: "torch.Tensor") -> "torch.Tensor":
+        """One-shot latch-then-torque (pure, for direct calls / tests). The per-step path is `apply`,
+        which latches only on the control subdivision but recomputes the torque every physics step."""
+        self._latch_target(action)
+        return self._compute_torque()
+
+    def apply(self, action: "torch.Tensor", substep: int = 0) -> None:
+        """Decouple the two rates: latch a fresh target only on this controller's control subdivision
+        (`control_period`), but recompute + write the torque toward the latched target EVERY physics
+        step. With `control_period == 1` this latches every step = the plain `compute` path."""
+        if substep % self._control_period == 0 or self._target_pos is None:
+            self._latch_target(action)
+        self._sink(self._compute_torque(), self.joint_ids)
 
 
 @CONTROLLERS.register("task_impedance")
