@@ -82,6 +82,12 @@ class FrankaRobot(BaseRobot):
     GRIPPER_JOINTS: tuple[str, ...] = ("panda_finger_joint.*",)
     EE_BODY: str = "panda_hand"  # the OSC control frame (a real body with a Jacobian)
 
+    # Action/target rate (s). Torque modes (osc/impedance): ~15 Hz target (Isaac `Factory-NutThread`,
+    # decim 8 @ 120 Hz), latched while the torque law recomputes every physics step (see
+    # `_TaskSpaceController.apply`). Joint mode: ~50 Hz, held by the actuator PD.
+    TORQUE_CONTROL_DT: float = 1.0 / 15.0
+    JOINT_CONTROL_DT: float = 0.02
+
     def __init__(self, cfg: FrankaRobotCfg | None = None) -> None:
         super().__init__(cfg or FrankaRobotCfg())
 
@@ -121,9 +127,12 @@ class FrankaRobot(BaseRobot):
         """`composite([<arm controller>, joint(gripper)])` for the active mode. The gripper is always a
         position JointController (2 fingers); the arm controller is OSC (torque) or JointController
         (position)."""
-        gripper = JointController(JointControllerCfg(self.GRIPPER_JOINTS), command_type="position")
-        if self.control_mode in ("impedance", "osc"):
+        torque_mode = self.control_mode in ("impedance", "osc")
+        ctrl_dt = self.TORQUE_CONTROL_DT if torque_mode else self.JOINT_CONTROL_DT
+        gripper = JointController(JointControllerCfg(self.GRIPPER_JOINTS, dt=ctrl_dt), command_type="position")
+        if torque_mode:
             ts_cfg = TaskSpaceControllerCfg(
+                dt=ctrl_dt,  # target rate; the torque law itself recomputes every physics step (see apply)
                 ee_body=self.EE_BODY,
                 arm_joint_names=self.ARM_JOINTS,
                 nullspace_dof_pos=self.cfg.nullspace_dof_pos or self.cfg.default_dof_pos,  # () -> home pose
@@ -132,7 +141,7 @@ class FrankaRobot(BaseRobot):
             cls = TaskSpaceImpedanceController if self.control_mode == "impedance" else OperationalSpaceController
             arm: Any = cls(ts_cfg)
         elif self.control_mode == "joint":
-            arm = JointController(JointControllerCfg(self.ARM_JOINTS), command_type="position")
+            arm = JointController(JointControllerCfg(self.ARM_JOINTS, dt=ctrl_dt), command_type="position")
         else:
             raise ValueError(f"unknown Franka control_mode {self.control_mode!r}; known: {self.control_modes}")
         return CompositeController([arm, gripper])

@@ -85,16 +85,19 @@ class BaseEnv:
         self.iscene.write_data_to_sim()
 
     def step(self, action: torch.Tensor, render: bool = False) -> None:
-        """Apply `action` and advance one sim step. No return — read state via `get_states()`.
-        Dispatches through `self.robot` / `self.scene` (late binding), so a patched/swapped part is
-        used at once. After the sim advances, `robot.post_step()` then `scene.post_step()` run any
-        step-coupled bookkeeping/mechanics (both default no-op)."""
-        self.robot.apply_action(action)
-        self.iscene.write_data_to_sim()
-        self.sim.step(render=render)
-        self.iscene.update(self.dt)
-        self.robot.post_step()
-        self.scene.post_step()
+        """Apply `action` and advance one control step = `self.robot.control_period` physics substeps
+        (decimation: controllers update on their own subdivision while physics runs at `self.dt`). No
+        return — read state via `get_states()`. Dispatches through `self.robot`/`self.scene` (late
+        binding). `post_step()` runs every substep, after `iscene.update`, so physics-coupled mechanics
+        (e.g. auto-weld on seat) react at sim rate. `control_period == 1` -> exactly one physics step."""
+        period = self.robot.control_period
+        for k in range(period):
+            self.robot.apply_action(action, substep=k)
+            self.iscene.write_data_to_sim()
+            self.sim.step(render=render and k == period - 1)  # render once, on the last substep
+            self.iscene.update(self.dt)
+            self.robot.post_step()
+            self.scene.post_step()
 
     def describe(self) -> str:
         """CURATED **natural-language** description for the agent: the scene's NL (objects + the
