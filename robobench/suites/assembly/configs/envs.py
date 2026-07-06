@@ -29,6 +29,11 @@ register_env(SUITE, lambda: EnvCfg(scene="nut_thread", robot="null", env_spacing
 # -> "assembly.bulb"
 register_env(SUITE, lambda: EnvCfg(scene="bulb", robot="null", env_spacing=2))
 
+# Fixed threaded steel platform + loose allen bolt + allen key to drive it — the role-inverted
+# nut_thread (the BOLT turns, via the key in its hex socket), scene physics only for now.
+# -> "assembly.allen_bolt"
+register_env(SUITE, lambda: EnvCfg(scene="allen_bolt", robot="null", env_spacing=2))
+
 # Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x). Three
 # control modes, switchable by env name:
 #   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
