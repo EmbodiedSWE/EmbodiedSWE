@@ -3,9 +3,7 @@
 The assembly object-world:
 
   - `proximal`: base + shoulder + upper-arm shell as a FLOATING-base articulation (joints 1-2
-    live) held by a scene-authored, TOGGLEABLE fixture joint at `pin_height` with a Ry(90) rotation
-    — the robot lies on its side (the LeRobot-docs assembly pose) and is never hard-fixed: the
-    fixture frame can be animated (pick the whole robot up) and disabled (release it).
+    live).
   - `motor`: the bare elbow STS3215 as a free rigid body. KEY FRAME FACT: its body frame IS the
     upper_arm link frame, so "seated in the pocket" = identical body poses. Its collision mesh
     is baked 3% smaller (slip fit) so a straight-line push inserts it.
@@ -13,6 +11,9 @@ The assembly object-world:
   - `drill`: the compact power screwdriver articulation (body/trigger/bit).
   - `distal`: lower_arm..gripper as a floating articulation — present but NOT yet under test
     (its fastening story comes later); its assets already carry the same collision hygiene.
+
+Every body is free-floating; the only pre-authored joints are the DISABLED fastening welds (the
+mechanic below).
 
 THE FASTENING MECHANIC (rule-based for fast simulation — see `_fasten_rule`): pre-authored
 DISABLED FixedJoints at the canonical seated frames; a per-step gate (screw in hole + parts
@@ -61,31 +62,18 @@ class SO101SceneCfg(BaseCfg):
     # --- info: the drill (powered screwdriver) -----------------------------------------------------
     bit_speed: float = info(15.0)  # bit spin speed while the trigger is squeezed (rad/s)
     trigger_swing: float = info(math.radians(14.0))  # trigger travel, rest -> full squeeze (rad)
-    drill_quat: tuple[float, float, float, float] = info((0.7071068, -0.7071068, 0.0, 0.0))  # spawn: bit pointing down
     bit_tip: tuple[float, float, float] = info((0.0, 0.055, 0.0))  # bit tip point, in the bit's own link frame
 
-    # --- info: fixture + robot base ----------------------------------------------------------------
-    pin_height: float = info(0.08)  # fixture pin height the lying base hangs from (m)
-    base_lie_quat: tuple[float, float, float, float] = info((0.7071068, 0.0, 0.7071068, 0.0))  # Ry(90): base on its side (reset pose == fixture anchor)
-
-    # --- info: elbow assembly — seats in the upper_arm LINK frame ----------------------------------
-    # Full-arm convention: each joint's servo + screw(s) carry its <joint>_ prefix and seat in that
-    # joint's link frame (from <link>_pose). Adding wrist_*, shoulder_*, ... later is purely additive.
-    elbow_servo_seat_pos: tuple[float, float, float] = info((0.1491, -0.0535, -0.0025))  # seated, vs the pin anchor
-    elbow_servo_seat_quat: tuple[float, float, float, float] = info((0.0, 0.0, 1.0, 0.0))  # seated orientation (world)
-    elbow_servo_start_offset: float = info(0.05)  # starts this far out along -Y, then pushes straight in
+    # --- info: fastening welds — where the screw seats in the upper_arm (LINK frame) ---------------
+    # Per-joint convention: each joint's screw(s) carry its <joint>_ prefix; adding wrist_*/shoulder_*
+    # later is additive. Pose-agnostic — a screw seats relative to its link, wherever the arm is.
     elbow_screw_seat_pts: tuple[tuple[float, float, float], ...] = info(((-0.1227, 0.0010, -0.0035),))  # M2 head-top seated, per hole (z below flush -0.0015 -> proud, bit clears the arm)
     elbow_screw_seat_quat: tuple[float, float, float, float] = info((0.0, 0.0, 1.0, 0.0))  # seated orientation (link frame)
-
-    # --- info: park poses (objects staged clear of the work area) ----------------------------------
-    drill_park: tuple[float, float, float] = info((0.45, -0.3, 0.145))  # drill upright on its battery
-    screw_park: tuple[float, float, float] = info((0.35, 0.15, 0.0035))  # spare screw lying flat
-    distal_park: tuple[float, float, float] = info((0.6, 0.4, 0.06))  # distal half, clear of the finale sweep
 
     # --- info: scene assets ------------------------------------------------------------------------
     light_intensity: float = info(2500.0)
     asset_dir: str = info("")
-    proximal_usd: str = info("")  # floating base — the fixture joint is scene-authored, not baked in
+    proximal_usd: str = info("")  # floating-base build
     distal_usd: str = info("")
     motor_usd: str = info("")
     screw_usd: str = info("")
@@ -127,6 +115,7 @@ class SO101AssemblyScene(BaseScene):
             "light": AssetBaseCfg(
                 prim_path="/World/light",
                 spawn=sim_utils.DomeLightCfg(intensity=c.light_intensity, color=(0.9, 0.9, 0.9))),
+            # every body spawns FREE and spread out (see reset() for SPAWN); a test re-stages them.
             "proximal": ArticulationCfg(
                 prim_path="{ENV_REGEX_NS}/Proximal",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.proximal_usd, rigid_props=contact),
@@ -136,24 +125,23 @@ class SO101AssemblyScene(BaseScene):
             "motor": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Motor",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.motor_usd, rigid_props=contact),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=c.elbow_servo_seat_pos, rot=c.elbow_servo_seat_quat)),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.25, 0.15, 0.06))),
             "screw": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Screw",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.screw_usd, rigid_props=contact),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=c.screw_park)),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.25, -0.15, 0.02))),
             "drill": ArticulationCfg(
                 prim_path="{ENV_REGEX_NS}/Drill",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.drill_usd, rigid_props=contact),
                 init_state=ArticulationCfg.InitialStateCfg(
-                    pos=(0.0, 0.0, 0.3), rot=c.drill_quat,
-                    joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
+                    pos=(0.5, 0.0, 0.12), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
                 actuators=usd_drives),  # gains None -> the USD drives (the trigger spring!)
-            # the NOT-yet-tested half: present in the world, parked on the ground
+            # the NOT-yet-tested half: present in the world, free-floating
             "distal": ArticulationCfg(
                 prim_path="{ENV_REGEX_NS}/Distal",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.distal_usd, rigid_props=contact),
                 init_state=ArticulationCfg.InitialStateCfg(
-                    pos=c.distal_park, joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
+                    pos=(0.5, 0.35, 0.06), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
                 actuators=usd_drives),
         }
 
@@ -190,29 +178,18 @@ class SO101AssemblyScene(BaseScene):
         self._precreate_joints()
 
     def _precreate_joints(self) -> None:
-        """Author the toggleable FIXTURE pin (a real constraint — per-step root-pose writes
-        teleport the arm and break the contact manifolds a dropped screw needs) and the
-        pre-baked, normally-disabled welds at the canonical seated frames. Bit<->screw collision
-        is filtered: that pair is rule-based (the drive gate owns it)."""
+        """Pre-author the normally-DISABLED fastening welds (screw<->upper_arm at each seat, plus
+        motor<->upper_arm); the drive rule enables them at the seat. Bit<->screw collision is
+        filtered: that pair is rule-based (the drive gate owns it)."""
         import omni.usd
         from pxr import Gf, UsdPhysics
 
         stage = omni.usd.get_context().get_stage()
-        lie_q, screw_q = self.cfg.base_lie_quat, self.cfg.elbow_screw_seat_quat
-        self._fixture_paths: list[str] = []
+        screw_q = self.cfg.elbow_screw_seat_quat
         self._weld_paths: list[list[str]] = []
         self._motor_weld_paths: list[str] = []
         for i in range(self.env.num_envs):
             base = f"/World/envs/env_{i}"
-            fx = UsdPhysics.FixedJoint.Define(stage, f"{base}/fixture_pin")
-            fx.CreateBody1Rel().SetTargets([f"{base}/Proximal/base"])
-            origin = self.env_origins[i].tolist()
-            fx.CreateLocalPos0Attr(Gf.Vec3f(origin[0], origin[1], origin[2] + self.cfg.pin_height))
-            fx.CreateLocalRot0Attr(Gf.Quatf(lie_q[0], Gf.Vec3f(*lie_q[1:])))
-            fx.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))
-            fx.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
-            fx.CreateJointEnabledAttr(True)
-            self._fixture_paths.append(f"{base}/fixture_pin")
             paths = []
             for h, seat in enumerate(self.cfg.elbow_screw_seat_pts):
                 j = UsdPhysics.FixedJoint.Define(stage, f"{base}/screw_weld_{h}")
@@ -238,62 +215,38 @@ class SO101AssemblyScene(BaseScene):
             flt.CreateFilteredPairsRel().AddTarget(f"{base}/Screw")
 
     def reset(self, env_ids: torch.Tensor) -> None:
-        """Proximal lying in the fixture with its joint drives holding the zero pose; servo held
-        OUTSIDE at the approach pose; screw + drill + distal parked; welds released; fixture re-
-        enabled at home."""
-        import omni.usd
-        from pxr import Gf, UsdPhysics
-
-        c = self.cfg
+        """Every body reset to its free spawn pose (spread out, upright, resting on the ground);
+        welds released; drive state cleared."""
         dev = self.env.device
         m = len(env_ids)
         origin = self.env_origins[env_ids]
 
-        pin = torch.tensor((0.0, 0.0, c.pin_height), device=dev)
-        home = torch.zeros(m, 13, device=dev)
-        home[:, 0:3] = origin + pin
-        home[:, 3:7] = torch.tensor(c.base_lie_quat, device=dev)
-        self.proximal.write_root_state_to_sim(home, env_ids)
-        zeros = torch.zeros(m, self.proximal.num_joints, device=dev)
-        self.proximal.write_joint_state_to_sim(zeros, zeros, env_ids=env_ids)
-        self.proximal.set_joint_position_target(zeros, env_ids=env_ids)
+        def place(body, pos):  # env-local free spawn (matches assets() init_state), identity quat
+            st = torch.zeros(m, 13, device=dev)
+            st[:, 0:3] = origin + torch.tensor(pos, device=dev)
+            st[:, 3] = 1.0
+            body.write_root_state_to_sim(st, env_ids)
 
-        st = torch.zeros(m, 13, device=dev)  # servo OUTSIDE the pocket at the approach pose;
-        # at the lying zero pose elbow_servo_seat_quat=Ry(180) maps link (0,-s,0) -> world (0,-s,0)
-        st[:, 0:3] = origin + pin + torch.tensor(
-            (c.elbow_servo_seat_pos[0], c.elbow_servo_seat_pos[1] - c.elbow_servo_start_offset, c.elbow_servo_seat_pos[2]), device=dev)
-        st[:, 3:7] = torch.tensor(c.elbow_servo_seat_quat, device=dev)
-        self.motor.write_root_state_to_sim(st, env_ids)
+        place(self.proximal, (0.0, 0.0, 0.0))  # free floating arm at the origin
+        zp = torch.zeros(m, self.proximal.num_joints, device=dev)
+        self.proximal.write_joint_state_to_sim(zp, zp, env_ids=env_ids)
+        self.proximal.set_joint_position_target(zp, env_ids=env_ids)
 
-        st = torch.zeros(m, 13, device=dev)
-        st[:, 0:3] = origin + torch.tensor(c.screw_park, device=dev)
-        st[:, 3:7] = torch.tensor((0.7071068, 0.7071068, 0.0, 0.0), device=dev)  # lying flat
-        self.screw.write_root_state_to_sim(st, env_ids)
+        place(self.motor, (0.25, 0.15, 0.06))
+        place(self.screw, (0.25, -0.15, 0.02))
 
-        st = torch.zeros(m, 13, device=dev)  # drill parked standing on its battery
-        st[:, 0:3] = origin + torch.tensor(c.drill_park, device=dev)
-        st[:, 3] = 1.0
-        self.drill.write_root_state_to_sim(st, env_ids)
-        z = torch.zeros(m, self.drill.num_joints, device=dev)
-        self.drill.write_joint_state_to_sim(z, z, env_ids=env_ids)
+        place(self.drill, (0.5, 0.0, 0.12))
+        zdr = torch.zeros(m, self.drill.num_joints, device=dev)
+        self.drill.write_joint_state_to_sim(zdr, zdr, env_ids=env_ids)
 
-        st = torch.zeros(m, 13, device=dev)  # the untested distal half, parked on the ground
-        st[:, 0:3] = origin + torch.tensor(c.distal_park, device=dev)
-        st[:, 3] = 1.0
-        self.distal.write_root_state_to_sim(st, env_ids)
-        zd = torch.zeros(m, self.distal.num_joints, device=dev)
-        self.distal.write_joint_state_to_sim(zd, zd, env_ids=env_ids)
-        self.distal.set_joint_position_target(zd, env_ids=env_ids)
+        place(self.distal, (0.5, 0.35, 0.06))
+        zdi = torch.zeros(m, self.distal.num_joints, device=dev)
+        self.distal.write_joint_state_to_sim(zdi, zdi, env_ids=env_ids)
+        self.distal.set_joint_position_target(zdi, env_ids=env_ids)
 
-        stage = omni.usd.get_context().get_stage()
-        for i in env_ids.tolist():
-            for h in range(len(c.elbow_screw_seat_pts)):
+        for i in env_ids.tolist():  # release every weld (nothing fastened)
+            for h in range(len(self.cfg.elbow_screw_seat_pts)):
                 self._set_weld(int(i), h, False)
-            fx = UsdPhysics.FixedJoint.Get(stage, self._fixture_paths[int(i)])
-            o = self.env_origins[int(i)].tolist()
-            fx.GetLocalPos0Attr().Set(Gf.Vec3f(o[0], o[1], o[2] + c.pin_height))
-            fx.GetLocalRot0Attr().Set(Gf.Quatf(c.base_lie_quat[0], Gf.Vec3f(*c.base_lie_quat[1:])))
-            fx.GetJointEnabledAttr().Set(True)
         self.fastened[env_ids] = -1
         self.drive_t[env_ids] = 0.0
         self.driving_prev[env_ids] = False
@@ -467,12 +420,12 @@ class SO101AssemblyScene(BaseScene):
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
         return (
-            "The lower half of an SO101 robot arm lies on its side in an assembly fixture, the "
-            "elbow (joint 3) area facing up: a countersunk M2 hole in the outer wall sits over "
-            "the elbow servo's pocket. The bare servo, a loose M2x6 screw, a compact power "
-            "screwdriver, and the assembled distal half (forearm..gripper, not yet attached) "
-            "rest nearby. Goal: push the servo into the pocket, then drop the screw over the "
-            "countersunk hole — the cone funnels it upright and it perches on the servo's pin — "
-            "and drive it home with the driver held vertical, fastening the servo into the arm. "
-            "A seated screw locks in place; an unseated one falls away."
+            "The lower half of an SO101 robot arm (base + shoulder + upper arm), a bare elbow "
+            "servo, a loose M2x6 screw, a compact power screwdriver, and the not-yet-attached "
+            "distal half (forearm..gripper) all rest free in the workspace. In the upper arm's "
+            "outer wall, above the elbow servo's pocket, is a countersunk "
+            "M2 hole (joint 3). Goal: seat the servo into the pocket, drop the screw into the "
+            "countersunk hole — the cone funnels it upright and the servo's pin perches it — and "
+            "drive it home with the screwdriver, fastening the servo into the arm. A seated screw "
+            "locks in place; an unseated one falls away."
         )
