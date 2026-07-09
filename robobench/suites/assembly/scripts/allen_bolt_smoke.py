@@ -1,8 +1,7 @@
 """Smoke test for AllenBoltAssemblyScene — visual or headless, no real robot.
 
-Validates the core mechanic in isolation: the allen bolt threads INTO the platform's hole by real
-SDF thread contact, driven by smooth press + twist applied directly to the bolt — no tool, no
-gripper (`allen_key_smoke` layers the key drive on top of the same thread contact).
+Validates the core mechanic: the allen bolt threads INTO the platform's hole by real SDF thread
+contact, driven by smooth press + twist applied directly to the bolt — no tool, no gripper.
 
 One linear run with a NullRobot, staging by teleport:
   1. show   — leave the reset layout as is;
@@ -90,8 +89,7 @@ def main() -> None:
             engaged = scene.engaged()  # (n, num_pairs)
             for k, bolt in enumerate(scene.bolts):
                 t = torch.zeros(n, 3, device=device)
-                # Gate the twist short of the head stop: driving against the seated head preloads
-                # the threads through the head-plate contact and jams/skips the SDF threads.
+                # Gate the twist short of the head stop (the head bottoms out at 24.8 mm tip depth).
                 drive = (bolt.data.root_ang_vel_w[:, 2] > TARGET_WZ) & (engaged[:, k] < STOP_DEPTH)
                 t[drive, 2] = TWIST
                 bolt.set_external_force_and_torque(f.unsqueeze(1), t.unsqueeze(1))
