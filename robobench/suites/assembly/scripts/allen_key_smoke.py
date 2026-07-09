@@ -1,28 +1,15 @@
-"""Physics smoke test for AllenBoltAssemblyScene — the allen KEY drives the bolt down REAL SDF
-threads. Every body is fully dynamic and the key is driven purely by forces; the bolt<->platform
-thread contact and the key<->socket contact are both live.
+"""Physics smoke test for AllenBoltAssemblyScene — the allen KEY drives the bolt down the
+platform's real SDF threads. Every body is fully dynamic and the key is driven purely by forces;
+the bolt<->platform thread contact and the key<->socket contact are both live.
 
-The bolt is staged upright with its tip just above the hole, so the threads self-engage under
-press + twist (staging deeper cannot match the thread phase). The key is driven like a hand
-would: a ramped press along the bolt's axis, a torque-capped velocity-servo twist, and soft
-xy-centering / tilt-righting PD wrenches (gravity-free key). Two workarounds keep the force
-drive stable:
+Staging teleports the bolt upright with its tip just above the hole — the threads self-engage
+under press + twist — and seats the key in the bolt's hex socket. The key is then driven like a
+hand would: a ramped press along the bolt's axis, a torque-capped velocity-servo twist, and soft
+xy-centering / tilt-righting PD wrenches (gravity-free key) — gently until the thread captures
+(engage), then at full authority (drive).
 
-  * WRENCH FRAME: this Isaac Lab checkout converts `is_global=True` external wrenches with link
-    poses cached at the FIRST call, so a "world" wrench silently rotates with the body — any xy
-    component on a spinning key becomes a rotating force, i.e. an energy pump. The wrench is
-    therefore rotated into the key's CURRENT link frame here and applied with is_global=False.
-  * DRIVER-SYMMETRIC KEY INERTIA (`SYM_INERTIA`): a free L-key is torque-drive unstable — the
-    handle's products of inertia couple the drive torque into tumble faster than the soft
-    steadying PD can arrest at this dt. Authored diagonal inertia + on-axis COM make the key
-    behave like a stubby T-handle driver, while its collision shapes and visuals stay the L-key.
-
-The drive comes up in two stages because the bolt stands tip-on-crest with no lateral captivity
-until the first thread captures: a low-authority ENGAGE (light press, slow spin) until the tip is
-~1 turn in, then the full DRIVE. Phases: show -> stage (teleport + short hands-off settle, key
-re-seated on the bolt as nested) -> engage -> drive -> settle. Verdict: seated count, depth per
-rev vs the 2.0 mm pitch, and key->bolt slip (steady slip within the 15.9 deg hex lash = clean
-form-closure drive). Verified 2026-07-09: seated 1/1, 1.92 mm/rev, slip +7.1 deg.
+Phases: show -> stage -> engage -> drive -> settle. Verdict: seated count, depth gained per rev
+vs the 2.0 mm pitch, and key->bolt slip angle.
 
 python -m robobench.suites.assembly.scripts.allen_key_smoke --livestream 2
 python -m robobench.suites.assembly.scripts.allen_key_smoke \
@@ -66,9 +53,7 @@ SOCKET_FLOOR_Z = 0.0355  # hex recess floor
 KEY_TIP_HOVER = 0.0001   # key tip staged this far above the socket floor
 STAGE_GAP = 0.0015       # staging gap (m) between bolt tip and plate top, just above the thread entry
 # Drive parameters (module constants, like the sibling smokes). The twist is a torque-capped
-# velocity SERVO (tau = clamp(KW*(w_tgt - wz))), not bang-bang: a raw N m-scale torque step slews
-# the key several rad/s in ONE 240 Hz step and hammers the socket corners — before the threads
-# bite, that lash impact simply knocks the free-standing bolt off the hole.
+# velocity servo: tau = clamp(KW * (w_tgt - wz), -cap, +cap).
 DT = 1.0 / 240.0         # sim timestep
 PITCH_MM = 2.0           # M16 coarse pitch, the expected descent per revolution
 STOP_DEPTH = 0.0235      # stop twisting at this tip depth (m) — just before the head bottoms at 24.8 mm
@@ -81,8 +66,8 @@ RAMP_STEPS = 120         # press/twist authority ramp-in at each stage start (st
 # Soft hand-steadying PD wrenches on the key:
 KP_XY, KD_XY = 100.0, 4.0     # N/m, N s/m — recenters the key tip on the socket axis
 KP_TILT, KD_TILT = 0.5, 0.02  # N m/rad, N m s/rad — rights the key onto the bolt axis (spin free)
-# Driver-symmetric key mass properties (see the module docstring): (Ixx, Iyy, Izz, com_z).
-SYM_INERTIA = (1.5e-4, 1.5e-4, 1.0e-4, 0.025)
+# Key mass properties authored at start-up — diagonal inertia, COM on the working-arm axis:
+SYM_INERTIA = (1.5e-4, 1.5e-4, 1.0e-4, 0.025)  # (Ixx, Iyy, Izz, com_z)
 # Phase step budgets at dt=1/240 (rescaled at run time so sim TIME per phase is constant).
 SHOW_END, STAGE_SETTLE, ENGAGE_MAX, DRIVE_MAX, SETTLE_STEPS = 150, 60, 3600, 12000, 300
 
@@ -106,8 +91,7 @@ def main() -> None:
     device = getattr(args, "device", None) or ("cuda:0" if torch.cuda.is_available() else "cpu")
     robobench.discover()
 
-    # Gravity-free key: the soft PD stands in for the steadying hand, and the L-handle's gravity
-    # torque would otherwise have to be fought by that same PD.
+    # Gravity-free key: the soft PD wrenches stand in for the steadying hand.
     env = EnvCfg(scene="allen_bolt", scene_cfg=AllenBoltAssemblySceneCfg(key_disable_gravity=True),
                  robot="null", sim_overrides={"dt": DT}).build(num_envs=args.num_envs, device=device)
     sc: AllenBoltAssemblyScene = env.scene  # type: ignore[assignment]
@@ -119,7 +103,7 @@ def main() -> None:
     zero3 = torch.zeros(n, 1, 3, device=device)
     render = (not args.headless) or livestream_on
 
-    # Author the key's driver-symmetric mass properties. Must happen BEFORE the explicit sim
+    # Author the key's mass properties (`SYM_INERTIA`). Must happen BEFORE the explicit sim
     # reset so the re-parse honours it.
     from pxr import Gf, UsdPhysics
     stage = env.stage
@@ -172,9 +156,7 @@ def main() -> None:
 
     def reseat_key() -> None:
         """Teleport the key into the socket of the bolt AS NESTED — tip 0.1 mm off the floor along
-        the bolt's own (slightly tilted) axis, hex clocking matched — so the drive starts with zero
-        contact preload. Staging against the WORLD axis instead loads the tilted socket's rim, and
-        the first press turns that wedge into a depenetration blast."""
+        the bolt's own axis, hex clocking matched — so the drive starts with zero contact preload."""
         up_b = up_axis_of(bolt.data.root_quat_w)
         kt = torch.zeros(n, 13, device=device)
         kt[:, 0:3] = bolt.data.root_pos_w + up_b * (SOCKET_FLOOR_Z + KEY_TIP_HOVER)
@@ -184,21 +166,18 @@ def main() -> None:
     def drive_key(ctl: tuple[float, float, float], ramp: float) -> None:
         """One force-only 'hand' update on the key, everything in the SOCKET frame: ramped press
         along the bolt's axis + torque-capped velocity-servo twist + soft PD pulling the key tip
-        onto the socket axis and the key's axis onto the bolt's. Forces act at the key's COM
-        (measured behaviour of the wrench path; with `SYM_INERTIA` the COM sits on the arm axis,
-        so the press is axial). `ctl` = (press N, spin target rad/s, twist cap N m)."""
+        onto the socket axis and the key's axis onto the bolt's. `ctl` = (press N, spin target
+        rad/s, twist cap N m)."""
         press, w_tgt, t_cap = ctl
         up_b = up_axis_of(bolt.data.root_quat_w)
         f = torch.zeros(n, 1, 3, device=device)
         t = torch.zeros(n, 1, 3, device=device)
         f[:, 0, :] = -press * ramp * up_b
-        # servo the spin toward -w_tgt (screw-in), authority t_cap; target 0 once travel is done —
-        # the servo then BRAKES the key instead of camming it over the hex lobes at the hard stop
+        # servo the spin toward -w_tgt (screw-in), authority t_cap; target 0 once travel is done
         wz = key.data.root_ang_vel_w[:, 2]
         tgt = torch.where(depth() < STOP_DEPTH, -w_tgt * torch.ones_like(wz), torch.zeros_like(wz))
         t[:, 0, 2] = torch.clamp(KW * (tgt - wz), -t_cap * ramp, t_cap * ramp)
-        # soft PD pulling the key tip onto the socket axis (at the tip's height); tip (link-frame)
-        # position/velocity, which with the on-axis COM are spin-invariant — no pump channel
+        # soft PD pulling the key tip onto the socket axis (at the tip's height)
         pos = key.data.root_link_pos_w
         vel = key.data.root_link_lin_vel_w
         rel = pos - bolt.data.root_pos_w
@@ -207,8 +186,7 @@ def main() -> None:
         # soft tilt righting toward the BOLT's axis; damping only on wx/wy — yaw + spin stay free
         up_k = up_axis_of(key.data.root_quat_w)
         t[:, 0, 0:2] += KP_TILT * torch.cross(up_k, up_b, dim=-1)[:, 0:2] - KD_TILT * key.data.root_ang_vel_w[:, 0:2]
-        # Rotate the WORLD wrench into the key's CURRENT link frame and apply it as a LOCAL wrench
-        # (see the module docstring: is_global=True is frame-stale in this Isaac Lab checkout).
+        # apply the wrench in the key's CURRENT link frame
         qk = key.data.root_link_quat_w
         key.set_external_force_and_torque(quat_apply_inverse(qk, f[:, 0]).unsqueeze(1),
                                           quat_apply_inverse(qk, t[:, 0]).unsqueeze(1))
@@ -251,7 +229,7 @@ def main() -> None:
                 phase, marker = "stage", i
         elif phase == "stage":  # hands off: let the bolt drop the 1.5 mm gap and nest on the crests
             if i - marker >= stage_settle:
-                reseat_key()  # re-seat on the bolt AS NESTED (tilted) — zero preload at handoff
+                reseat_key()  # re-seat on the bolt as nested — zero preload at handoff
                 prev_key_yaw = yaw_of(key.data.root_quat_w)
                 handoff_depth = depth().clone()
                 phase, marker = "engage", i
