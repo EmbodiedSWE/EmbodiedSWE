@@ -29,8 +29,8 @@ register_env(SUITE, lambda: EnvCfg(scene="nut_thread", robot="null", env_spacing
 # -> "assembly.bulb"
 register_env(SUITE, lambda: EnvCfg(scene="bulb", robot="null", env_spacing=2))
 
-# Fixed threaded steel platform + loose allen bolt + allen key to drive it — the role-inverted
-# nut_thread (the BOLT turns, via the key in its hex socket), scene physics only for now.
+# Fixed threaded platform + a loose allen bolt + an allen key that drives the bolt down into the
+# platform's threaded hole, scene physics only for now.
 # -> "assembly.allen_bolt"
 register_env(SUITE, lambda: EnvCfg(scene="allen_bolt", robot="null", env_spacing=2))
 

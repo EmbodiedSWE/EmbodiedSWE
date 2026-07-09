@@ -1,24 +1,18 @@
-"""Physics test for AllenBoltAssemblyScene — the ALLEN KEY drives the bolt down a SCREW JOINT.
+"""Physics smoke test for AllenBoltAssemblyScene — the allen KEY drives the bolt down its thread.
 
-SDF thread contact cannot survive a rigid second contact pair driving the threaded body (ejects,
-jams, or thread-skips), and the key-in-socket form closure is exactly such a pair. So the
-bolt<->insert thread is idealized as a per-step helical projection (z slaved to the accumulated
-turn at the real pitch, xy pinned, tilt zeroed, spin free, Coulomb thread friction, hard stops)
-with the insert's collision disabled — while the key<->socket contact stays LIVE: all drive
-reaches the bolt through the hex walls. Pass --raw-thread to keep real SDF threads for the A/B
-(expected to fail; also stages 6 mm deep with no thread-phase match, so its failure is confounded).
+Real SDF thread contact can't survive a second rigid contact pair driving the threaded body, and the
+key-in-socket form closure is exactly such a pair. So the bolt<->platform thread is idealized as a
+per-step helical projection (bolt z slaved to its accumulated turn at the real pitch, xy pinned, tilt
+zeroed, spin free, with Coulomb thread friction and hard stops) and the platform insert's collision is
+disabled — while the key<->socket contact stays LIVE, so all drive reaches the bolt through the hex walls.
 
-The key is railed: xy pinned to the hole axis, tip riding the socket floor, tilt zeroed — yaw and
-its rate stay FREE, driven by a capped bang-bang torque. The 0.75 mm/side hex clearance gives
-~16 deg free rotation to corner-flat contact, so a steady key-bolt slip up to ~16 deg is geometry,
-not slipping.
+The key is railed: xy pinned to the hole axis, tip riding the socket floor, tilt zeroed; only its yaw
+and spin rate stay free, driven by a capped bang-bang torque.
 
-Phases: show -> stage (bolt pre-engaged, key tip seated) -> drive -> settle. Verdict: bolt revs,
-depth gained, key->bolt slip angle.
+Phases: show -> stage (bolt pre-engaged, key tip seated) -> drive -> settle. Verdict: bolt revs, depth
+gained, and key->bolt slip angle.
 
-    OMNI_KIT_ACCEPT_EULA=YES python -m robobench.suites.assembly.scripts.allen_key_smoke --livestream 2
-    OMNI_KIT_ACCEPT_EULA=YES python -m robobench.suites.assembly.scripts.allen_key_smoke \
-        --headless --enable_cameras --video robobench/suites/assembly/videos/allen_key_screwjoint.mp4
+python -m robobench.suites.assembly.scripts.allen_key_smoke --livestream 2
 """
 
 from __future__ import annotations
@@ -28,17 +22,8 @@ import math
 
 from isaaclab.app import AppLauncher
 
-parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
-parser.add_argument("--twist", type=float, default=0.3, help="screw-in torque on the key about z (N m)")
-parser.add_argument("--twist_cap", type=float, default=3.0, help="cap on the key spin rate while driving (rad/s)")
-parser.add_argument("--pitch", type=float, default=0.002, help="screw-joint thread pitch (m per revolution)")
-parser.add_argument("--thread_friction", type=float, default=0.005, help="Coulomb-style thread-friction torque on the bolt (N m); stops back-drive — the key's torque must exceed it")
-parser.add_argument("--start_depth", type=float, default=0.006, help="bolt tip depth below the plate top at stage (m); the joint needs no thread-phase match")
-parser.add_argument("--raw-thread", action="store_true", help="keep the real SDF thread contact instead of the screw joint (expected to eject/jam — the documented failure regime)")
-parser.add_argument("--dt", type=float, default=1.0 / 240.0, help="sim timestep")
-parser.add_argument("--video", type=str, default="", help="save an mp4 here (needs --headless --enable_cameras)")
-parser.add_argument("--cap", type=int, default=3, help="with --video: capture one frame every N steps")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
@@ -49,8 +34,6 @@ from typing import TYPE_CHECKING  # noqa: E402
 
 import torch  # noqa: E402
 
-import isaaclab.sim as sim_utils  # noqa: E402
-
 import robobench  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
 from robobench.suites.assembly.scenes import AllenBoltAssemblySceneCfg  # noqa: E402
@@ -58,12 +41,19 @@ from robobench.suites.assembly.scenes import AllenBoltAssemblySceneCfg  # noqa: 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes import AllenBoltAssemblyScene
 
-# Bolt-local geometry baked by author_allen_assets.py (bolt origin = thread TIP, +z up):
-THREAD_LEN = 0.0248     # head bottom above the tip: tip depth at which the head bottoms out
+# Bolt-local geometry baked into the committed bolt USD (bolt origin = thread TIP, +z up):
+THREAD_LEN = 0.0248      # head bottom above the tip: tip depth at which the head bottoms out
 SOCKET_FLOOR_Z = 0.0355  # hex recess floor
 KEY_TIP_HOVER = 0.0001   # key tip held this far above the socket floor (rides the bolt down)
 SEAT_MARGIN = 0.0002     # screw-joint hard stop: head held this far above the plate (never preloads it)
 EXIT_MARGIN = 0.0005     # end the drive phase once within this of the hard stop
+# Screw-joint drive parameters (hardcoded to keep the args simple, like the other smoke files):
+DT = 1.0 / 240.0         # sim timestep
+TWIST = 0.3              # screw-in torque on the key about z (N m)
+TWIST_CAP = 3.0          # cap on the key spin rate while driving (rad/s)
+PITCH = 0.002            # screw-joint thread pitch (m per revolution)
+THREAD_FRICTION = 0.005  # Coulomb-style thread-friction torque on the bolt (N m); the key's torque must exceed it
+START_DEPTH = 0.006      # bolt tip depth below the plate top at stage (m); the joint needs no thread-phase match
 # Phase step budgets at dt=1/240 (rescaled at run time so sim TIME per phase is constant).
 SHOW_END, DRIVE_MAX, SETTLE_STEPS = 150, 8000, 300
 
@@ -83,7 +73,7 @@ def main() -> None:
 
     # Gravity-free key: its z is railed to follow the bolt, so gravity would only add socket-floor load.
     env = EnvCfg(scene="allen_bolt", scene_cfg=AllenBoltAssemblySceneCfg(key_disable_gravity=True),
-                 robot="null", sim_overrides={"dt": args.dt}).build(num_envs=args.num_envs, device=device)
+                 robot="null", sim_overrides={"dt": DT}).build(num_envs=args.num_envs, device=device)
     sc: AllenBoltAssemblyScene = env.scene  # type: ignore[assignment]
     n = env.num_envs
     ids = torch.arange(n, device=device)
@@ -91,53 +81,37 @@ def main() -> None:
     bolt, key, plat = sc.bolts[0], sc.keys[0], sc.platforms[0]
     plate_top = sc.cfg.plate_top
     zero3 = torch.zeros(n, 1, 3, device=device)
+    render = (not args.headless) or livestream_on
 
-    # Idealize the thread (default): disable ONLY the insert's collision — the key<->socket pair
-    # stays live. Must happen BEFORE the explicit sim reset so the re-parse honours it.
-    if not args.raw_thread:
-        from pxr import UsdPhysics
-        stage = env.stage
-        for e in range(n):
-            prim = stage.GetPrimAtPath(f"/World/envs/env_{e}/Platform_0/platform/thread_insert")
-            assert prim.IsValid(), f"thread_insert prim missing in env {e}"
-            UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(False)
+    # Idealize the thread: disable ONLY the insert's collision — the key<->socket pair stays live.
+    # Must happen BEFORE the explicit sim reset so the re-parse honours it.
+    from pxr import UsdPhysics
+    stage = env.stage
+    for e in range(n):
+        prim = stage.GetPrimAtPath(f"/World/envs/env_{e}/Platform_0/platform/thread_insert")
+        assert prim.IsValid(), f"thread_insert prim missing in env {e}"
+        UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(False)
 
-    cam = writer = None
-    if args.video:
-        import imageio.v2 as imageio
-        from isaaclab.sensors import Camera, CameraCfg
-        cam = Camera(CameraCfg(prim_path="/World/cam", update_period=0.0, height=720, width=1280, data_types=["rgb"],
-                               spawn=sim_utils.PinholeCameraCfg(focal_length=24.0, clipping_range=(0.01, 100.0))))
-        writer = imageio.get_writer(args.video, fps=30)
-
-    env.sim.reset()  # re-parse physics so the collision edit (and camera) are picked up
+    env.sim.reset()  # re-parse physics so the collision edit is picked up
     env.reset()
 
     hole_xy = plat.data.root_pos_w[:, :2].clone()  # insert bore axis == platform origin (bore-centred)
     plat_z = plat.data.root_pos_w[:, 2].clone()
-
-    if cam is not None:
-        import numpy as np
-        p0 = plat.data.root_pos_w[0]
-        eye = np.array([p0[0].item() + 0.45, p0[1].item() - 0.45, p0[2].item() + 0.35])
-        tgt = np.array([p0[0].item(), p0[1].item(), p0[2].item() + 0.06])
-        cam.set_world_poses_from_view(torch.tensor(eye[None], dtype=torch.float32, device=device),
-                                      torch.tensor(tgt[None], dtype=torch.float32, device=device))
     print(env.describe(), flush=True)
 
     # Screw-joint state; anchors are set at stage time.
     bolt_turn = torch.zeros(n, device=device)  # cumulative screw-in rotation (rad, +ve = descending)
-    z0 = torch.zeros(n, device=device)         # bolt z at stage (depth = start_depth there)
+    z0 = torch.zeros(n, device=device)         # bolt z at stage (depth = START_DEPTH there)
     depth_max = THREAD_LEN - SEAT_MARGIN
-    turn_max = torch.full((n,), (depth_max - args.start_depth) * 2 * math.pi / args.pitch, device=device)
-    turn_min = torch.full((n,), -(args.start_depth - 0.001) * 2 * math.pi / args.pitch, device=device)
+    turn_max = torch.full((n,), (depth_max - START_DEPTH) * 2 * math.pi / PITCH, device=device)
+    turn_min = torch.full((n,), -(START_DEPTH - 0.001) * 2 * math.pi / PITCH, device=device)
 
     def stage_parts() -> torch.Tensor:
-        """Teleport the bolt pre-engaged (upright, tip `start_depth` below the plate top) and seat
+        """Teleport the bolt pre-engaged (upright, tip `START_DEPTH` below the plate top) and seat
         the key tip in its socket at the same yaw."""
         st = torch.zeros(n, 13, device=device)
         st[:, 0:2] = hole_xy
-        st[:, 2] = plat_z + plate_top - args.start_depth
+        st[:, 2] = plat_z + plate_top - START_DEPTH
         st[:, 3] = 1.0
         bolt.write_root_state_to_sim(st, ids)
         kt = torch.zeros(n, 13, device=device)
@@ -153,16 +127,15 @@ def main() -> None:
         t = torch.zeros(n, 1, 3, device=device)
         if twist != 0.0:
             wz = key.data.root_ang_vel_w[:, 2]
-            drive = (wz > -args.twist_cap) & (depth() < depth_max - EXIT_MARGIN)
+            drive = (wz > -TWIST_CAP) & (depth() < depth_max - EXIT_MARGIN)
             t[drive, 0, 2] = -twist
         key.set_external_force_and_torque(zero3, t, is_global=True)
 
     def apply_thread_friction() -> None:
         """Coulomb-style thread friction on the bolt: always resists spin, never drives it."""
         tf = torch.zeros(n, 1, 3, device=device)
-        if not args.raw_thread:
-            wz = bolt.data.root_ang_vel_w[:, 2]
-            tf[:, 0, 2] = -args.thread_friction * torch.tanh(wz / 0.05)
+        wz = bolt.data.root_ang_vel_w[:, 2]
+        tf[:, 0, 2] = -THREAD_FRICTION * torch.tanh(wz / 0.05)
         bolt.set_external_force_and_torque(zero3, tf)
 
     def project_helix(cur_yaw: torch.Tensor) -> None:
@@ -175,10 +148,10 @@ def main() -> None:
         wz = torch.where((bolt_turn <= turn_min) & (wz > 0), torch.zeros_like(wz), wz)  # exit stop
         st = torch.zeros(n, 13, device=device)
         st[:, 0:2] = hole_xy
-        st[:, 2] = z0 - args.pitch * bolt_turn / (2 * math.pi)
+        st[:, 2] = z0 - PITCH * bolt_turn / (2 * math.pi)
         st[:, 3] = torch.cos(cur_yaw / 2)
         st[:, 6] = torch.sin(cur_yaw / 2)
-        st[:, 9] = args.pitch * wz / (2 * math.pi)  # v_z on the helix (wz < 0 -> descending)
+        st[:, 9] = PITCH * wz / (2 * math.pi)  # v_z on the helix (wz < 0 -> descending)
         st[:, 12] = wz
         bolt.write_root_state_to_sim(st, ids)
 
@@ -201,19 +174,8 @@ def main() -> None:
     def depth() -> torch.Tensor:  # bolt tip depth below the plate top (m), per env
         return plat_z + plate_top - bolt.data.root_pos_w[:, 2]
 
-    def step(i: int) -> None:
-        capture = writer is not None and i % args.cap == 0
-        env.step(no_action, render=capture or (not args.headless) or livestream_on)
-        if capture:
-            import numpy as np
-            cam.update(env.dt)
-            img = cam.data.output["rgb"][0].detach().cpu().numpy()
-            if img.dtype != np.uint8:
-                img = (img.clip(0, 1) * 255).astype(np.uint8)
-            writer.append_data(img[..., :3])
-
     # Scale phase STEP budgets by (1/240)/dt so the sim TIME per phase stays constant.
-    ts = (1.0 / 240.0) / args.dt
+    ts = (1.0 / 240.0) / DT
     show_end, drive_max, settle_steps = int(SHOW_END * ts), int(DRIVE_MAX * ts), int(SETTLE_STEPS * ts)
     log_every = max(1, int(300 * ts))
 
@@ -233,7 +195,7 @@ def main() -> None:
                 handoff_depth = depth().clone()
                 phase, marker = "drive", i
         elif phase == "drive":
-            tw = args.twist
+            tw = TWIST
             if float(depth().min()) >= depth_max - EXIT_MARGIN or i - marker >= drive_max:
                 phase, marker = "settle", i
         else:
@@ -244,7 +206,7 @@ def main() -> None:
         if phase != "show":
             key_twist(tw)
             apply_thread_friction()
-        step(i)
+        env.step(no_action, render=render)
         if phase != "show":
             cur = yaw_of(bolt.data.root_quat_w)
             bolt_turn = bolt_turn - _wrap(cur - prev_bolt_yaw)
@@ -252,8 +214,7 @@ def main() -> None:
             kcur = yaw_of(key.data.root_quat_w)
             key_turn = key_turn - _wrap(kcur - prev_key_yaw)
             prev_key_yaw = kcur
-            if not args.raw_thread:
-                project_helix(cur)
+            project_helix(cur)
             project_key()
 
         if i % log_every == 0:
@@ -262,10 +223,6 @@ def main() -> None:
             print(f"  step {i:5d} [{phase:6s}] | tip depth {d.mean():+6.2f}mm | bolt "
                   f"{torch.rad2deg(bolt_turn).mean():+7.0f}deg | key-bolt slip {slip.mean():+6.1f}deg", flush=True)
 
-    if writer is not None:
-        writer.close()
-        print("MP4:", args.video, flush=True)
-
     seated = sc.seated()
     d = depth() * 1e3
     gain = (d - handoff_depth * 1e3) if handoff_depth is not None else d
@@ -273,10 +230,9 @@ def main() -> None:
     turned = revs > 0.5
     mm_per_rev = float((gain[turned] / revs[turned]).median()) if turned.any() else float("nan")
     slip = torch.rad2deg(key_turn - bolt_turn)
-    mode = "RAW-THREAD" if args.raw_thread else "SCREW-JOINT"
-    print(f"ALLEN-KEY [{mode}] | seated {int(seated.all(dim=1).sum())}/{n} | key drove the bolt "
+    print(f"ALLEN-KEY [SCREW-JOINT] | seated {int(seated.all(dim=1).sum())}/{n} | key drove the bolt "
           f"{float(gain.mean()):+.1f}mm over {float(revs.mean()):.1f} revs = {mm_per_rev:.2f} mm/rev "
-          f"(pitch {args.pitch * 1e3:.1f}) | key-bolt slip {float(slip.mean()):+.1f}deg | tip depth mm: "
+          f"(pitch {PITCH * 1e3:.1f}) | key-bolt slip {float(slip.mean()):+.1f}deg | tip depth mm: "
           f"min={d.min():+.1f} mean={d.mean():+.1f} max={d.max():+.1f} (seat>= {sc.cfg.seat_depth * 1e3:.0f})", flush=True)
     env.close()
 
