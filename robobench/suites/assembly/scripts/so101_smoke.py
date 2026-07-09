@@ -6,19 +6,19 @@ embodiment triggers through contact (the fasten gate, the magnetic bit). The onl
 scaffolding is the base clamp (a stand-in for a bench vise) and the re-fixturing teleports
 between holes (a stand-in for re-clamping the workpiece).
 
-Drives ALL FOUR elbow-servo M2 screws: the near pair (countersunk outer wall) and the far pair
-(the ring-boss holes through the opposite wall). The screws are identical and the scene's gate
-pairs any screw with any free hole. The two walls demonstrate the two placement strategies a
-robot has: the NEAR screws are DROPPED into their countersinks and slide in as deep as they
-slide — the bit then reaches in, takes the screw magnetically, and draws it to its seat while
-driving; the FAR screws are picked up and carried to their holes on the drill's MAGNETIC BIT —
-how real M2 assembly is done.
+Assembles the WHOLE elbow joint: the servo into the upper-arm pocket, its four M2 tab screws,
+the forearm fork onto the output horn, and the eight M3 horn screws (four per fork side). All
+twelve screws are picked up and carried to their holes on the drill's MAGNETIC BIT — how real
+small-screw assembly is done: nothing holds a freely released screw upright in these holes (it
+topples off the countersink or slides past the pin), so placement belongs to the bit, not to
+gravity. Within each group the screws are identical and the scene's gate pairs any screw with
+any free compatible hole.
 
 The arm is steadied during the precision phases: before each, the smoke teleports it to the
 working pose for the TARGET hole — near holes face up in the lying pose, far holes face up in a
 flipped pose — and clamps its base there kinematically; it runs free the rest of the time.
-Because the target hole's axis always points up, one pickup/carry/drive choreography serves both
-facings. The procedure, in order:
+Because the target hole's axis always points up, one pickup/carry/drive choreography serves
+every hole. The procedure, in order:
   A) WIGGLE  — everything free; sinusoidal targets on the shoulder (1-2) and wrist (4-5 + gripper)
      joints, then back to zero. Proof the parts are live, not glued.
   B) INSERT  — a second hand (PD force at the CoM, orientation gripped) pushes the servo through
@@ -26,25 +26,30 @@ facings. The procedure, in order:
      to the seat (kinematic — a force push wanders off-axis and jams against the printed walls);
      a firm kinematic press then holds it until the first screw bites.
   C) ROTATE  — joint 2 swings the arm flat under its own drive (the base clamp keeps it steady).
-  Then, for each hole 0..3:
-  D) PLACE   — re-grab facing that hole up. NEAR: the screw is dropped coaxially into the
-     countersunk hole and settles wherever it slides. FAR: the drill hovers over the lying
-     screw, descends, and the MAGNETIC BIT takes it (a scene rule, like the gate: real M2
-     driving carries the screw on a magnetized bit), then lifts it off the ground.
-  E) DESCEND — NEAR: the drill descends onto the screw resting in its hole. FAR: the drill
-     carries the screw over the hole and lowers it straight in, tip-first.
-  F) DRIVE   — trigger -> gate -> the screw drives to its seat from wherever it engaged —
-     descending if above, drawn back up if it slid deep — -> weld at depth (the first screw
-     also welds motor->arm and the hand releases the servo).
-  G) RETREAT — the drill retreats gently to its hover and waits for the next screw.
-  H) PARK    — after ALL screws are driven the drill parks aside, once (its own phase).
-  I) STRESS  — knock a fastened screw, wrench the servo; nothing may come apart.
-  J) FINALE  — the clamp lifts the whole robot, shakes it, rotates 180 deg, sets it down and
-     RELEASES it: the robot rests assembled on the ground.
+  Then, for each of the four M2 tab holes (near pair lying, far pair flipped):
+  D) PLACE   — re-grab facing that hole up; the drill hovers over the lying screw, descends,
+     and the MAGNETIC BIT takes it (a scene rule, like the gate), then lifts it off the ground.
+  E) DESCEND — the drill carries the screw over the hole and lowers it straight in, tip-first.
+  F) DRIVE   — trigger -> gate -> the screw drives to its seat -> weld at depth (the first tab
+     screw also welds motor->arm and the hand releases the servo).
+  G) RETREAT — the drill retreats gently to its hover.
+  H) ATTACH  — the drill parks; back in the lying pose, a hand clips the forearm FORK over the
+     seated servo (the closed fork is a print-flex snap in the kit — the hand presses it on
+     along the elbow axis and keeps HOLDING it until the first horn screw bites).
+  Then, for each of the eight M3 horn holes (near four lying, far four flipped), the same
+  D/E/F/G pickup-carry-drive-retreat: the near heads seat on the fork's inner plate, reached
+  down the outer skin's access channels, threading into the horn; the far heads seat on the
+  far plate over the servo's case-back holes. The first M3 also welds lower_arm->motor.
+  I) STRESS  — knock a fastened M2 and an M3, wrench the servo and the forearm; nothing may
+     come apart.
+  J) FINALE  — the clamp lifts the WHOLE robot (both halves now), shakes it, rotates 180 deg,
+     sets it down and RELEASES it: the robot rests assembled on the ground.
 
 Re-grabbing with welded parts attached does the teleport WELD-SAFE (see `grab`): welds off, arm
-teleported, parts re-seated at the fresh pose, welds back on — never letting an enabled weld see
-a large error (that yanks the servo across the workspace).
+teleported, the welded CHAIN (motor, fork, every screw) re-seated at the fresh pose by the
+scene's reconciler, welds back on — never letting an enabled weld see a large error (that yanks
+the parts across the workspace). The drill PARKS clear before every re-fixture: a teleporting
+arm sweeping through a hole-tracking drill collides mid-flip.
 
   python -m robobench.suites.assembly.scripts.so101_smoke --livestream 2
   python -m robobench.suites.assembly.scripts.so101_smoke --headless
@@ -88,8 +93,10 @@ HOVER = 0.10        # bit-tip standoff above the seat before the drill descends 
 STATE_NAMES = ("free", "driving", "fastened")  # labels for scene.state (0/1/2), for the readout
 PICK_STOP = 0.002   # bit-tip standoff above the lying screw where the magnet takes it (m)
 DRIVE_START = 0.002  # carried-screw head height above the seat where the driving begins (m)
-NEAR_DROP_H = 0.010  # release height of a near-hole drop, head-top above the seat (m)
-NUM_NEAR = 2  # holes 0,1 = near wall; 2,3 = far wall (see the scene cfg seat table)
+NUM_NEAR = 2  # tab holes 0,1 = near wall; 2,3 = far wall (see the scene cfg seat table)
+NUM_NEAR_M3 = 4  # horn holes 0-3 = near (horn) side; 4-7 = far (case-back) side
+FORK_LIFT = 0.0015  # fork hover height off its seat before the press, along the axis (m)
+PRESS_S = 0.75      # how long the fork press takes (s)
 
 # The clamp: during the precision phases, re-write the base root state to the working pose each step
 # (a stand-in for a vise); free otherwise. Kinematic, not a force grasp — a force PD stiff enough
@@ -109,7 +116,9 @@ SERVO_START_OFFSET = 0.05
 CORRIDOR = 0.015    # the last stretch of the insertion (m): force-push down to here, then a
                     # centered kinematic slide to the seat (see phase B)
 DRILL_QUAT = (0.7071068, -0.7071068, 0.0, 0.0)  # drill working orientation: bit pointing down
-DRILL_PARK = (0.45, -0.3, 0.145)                # where the drill parks after ALL screws are in
+DRILL_PARK = (-0.55, -0.35, 0.145)  # the drill's standby spot, used before every re-fixture
+# and at the end — it must clear the WHOLE assembled robot: with the distal attached the robot
+# reaches ~0.55 m from the base, and the finale sweeps it 180 deg
 
 
 def _amp_vec(art, device) -> torch.Tensor:
@@ -144,7 +153,10 @@ def main() -> None:
     i_j2 = scene.proximal.find_joints("shoulder_lift")[0][0]
     j2_target = torch.zeros(n, scene.proximal.num_joints, device=dev)
     distal_target = torch.zeros(n, scene.distal.num_joints, device=dev)
-    cur_hole = 0  # the hole being addressed: seat_axis(), the drill track and the readout follow it
+    # the hole being addressed — seat_axis(), the drill track and the readout follow it.
+    # group "tab" = the M2 tab holes (upper_arm frame), "horn" = the M3 horn-line holes
+    # (lower_arm frame); `screw` is the flat index of the screw being driven into it.
+    cur = {"group": "tab", "hole": 0, "screw": 0}
 
     # THE HAND: "force" = PD push at the CoM with the orientation gripped (the insertability
     # test); "hold" = kinematic press into the seat (until the first screw bites);
@@ -158,27 +170,26 @@ def main() -> None:
     track_drill = False  # the drill stays put until it is actually needed (phase E)
     pick: dict = {"anchor": None}  # bit-tip approach anchor while picking a screw up (see step())
     hold_arm = False  # the kinematic clamp that holds the base in the air (the smoke's vise)
+    hold_fork = False  # the hand holding the fork on the horn until the first M3 bites
+    fork_lift = [0.0]  # the fork hand's current hover offset along the out-of-hole axis (m)
     grab_prev_quat: list = [None]  # last grab facing — a FLIP needs a long ring-down settle
     arm_target_pos = (origin + torch.tensor((0.0, 0.0, HOLD_HEIGHT), device=dev)).contiguous()
-    arm_target_quat = q_hold.expand(n, 4).contiguous()
+    # clone, NOT expand().contiguous(): at n=1 the expanded view is already "contiguous", so
+    # contiguous() returns an ALIAS of q_hold — and grab()'s in-place clamp-target write would
+    # silently overwrite q_hold with the flip pose (every later lying grab then re-applies the
+    # far facing; the horn phases deadlock on the upside-down fork)
+    arm_target_quat = q_hold.expand(n, 4).clone()
     stepno = 0
 
     import logging as _logging
     _logging.getLogger("isaaclab").setLevel(_logging.ERROR)  # the wrench API warns every call
 
-    def seat_axis(hole: int | None = None):
-        s, a = scene.elbow_screw_seats_w()
-        h = cur_hole if hole is None else hole
+    def seat_axis(group: str | None = None, hole: int | None = None):
+        g = cur["group"] if group is None else group
+        h = cur["hole"] if hole is None else hole
+        s, a = (scene.elbow_screw_seats_w() if g == "tab"
+                else scene.elbow_horn_screw_seats_w())
         return s[:, h], a[:, h]
-
-    def drop_screw(s: int, hole: int, height: float) -> None:
-        """Release screw `s` coaxially `height` above hole `hole` — it falls straight in."""
-        seat, axis = seat_axis(hole)
-        st = torch.zeros(n, 13, device=dev)
-        st[:, 0:3] = seat + height * axis
-        st[:, 3:7] = quat_mul(scene.upper_arm_pose()[1],
-                              scene._elbow_screw_seat_quats[hole].expand(n, 4))
-        scene.screws[s].write_root_state_to_sim(st, None)
 
     def step(k: int, phase: str) -> None:
         nonlocal stepno
@@ -214,6 +225,15 @@ def main() -> None:
                 st_[:, 3:7] = aq_
                 st_[:, 7:10] = scene.motor.data.root_lin_vel_w
                 scene.motor.write_root_state_to_sim(st_, None)
+            if hold_fork:  # the fork hand: the fork rides its live seat, lifted by fork_lift
+                seat_p, seat_q = scene.lower_arm_seat_w()
+                _, ax = seat_axis("horn", 0)  # out-of-hole = away from the servo
+                st = torch.zeros(n, 13, device=dev)
+                st[:, 0:3] = seat_p + fork_lift[0] * ax
+                st[:, 3:7] = seat_q
+                scene.distal.write_root_state_to_sim(st, None)
+                zj = torch.zeros(n, scene.distal.num_joints, device=dev)
+                scene.distal.write_joint_state_to_sim(zj, zj)
             if pick["anchor"] is not None:  # pickup: the bit descends vertically onto the
                 # lying screw (a fixed world anchor — the magnet snaps the screw to the bit)
                 st = torch.zeros(n, 13, device=dev)
@@ -237,13 +257,12 @@ def main() -> None:
             stepno += 1
             if stepno % (sps // 4) == 0:
                 s, a = seat_axis()
-                t_a = ((scene.screws[min(cur_hole, cfg.num_screws - 1)].data.root_pos_w - s)
-                       * a).sum(-1)[0].item()
+                t_a = ((scene.screws[cur["screw"]].data.root_pos_w - s) * a).sum(-1)[0].item()
                 tq = math.degrees(scene.drill.data.joint_pos[0, scene.i_trig].item())
                 bv = scene.drill.data.joint_vel[0, scene.i_bit].item()
                 print(f"  step {stepno:5d} [{phase:9s}] {STATE_NAMES[scene.state[0]]:8s} "
-                      f"hole{cur_hole} depth-above-seat {t_a * 1000:+7.2f} mm | trigger "
-                      f"{tq:+6.2f} deg | bit {bv:+6.2f} rad/s | fastened "
+                      f"{cur['group']}{cur['hole']} depth-above-seat {t_a * 1000:+7.2f} mm | "
+                      f"trigger {tq:+6.2f} deg | bit {bv:+6.2f} rad/s | fastened "
                       f"{int((scene.fastened[0] >= 0).sum())}/{cfg.num_screws}", flush=True)
 
     def release_grasp() -> None:
@@ -268,15 +287,40 @@ def main() -> None:
         return quat_apply_inverse(aq, scene.motor.data.root_pos_w - ap).norm(dim=-1)
 
     def screws_rel_err() -> torch.Tensor:
-        """Max distance of any fastened screw from its own hole's seat (m)."""
+        """Max distance of any fastened tab screw from its own hole's seat (m)."""
         seats, _ = scene.elbow_screw_seats_w()
         errs = []
-        for s in range(cfg.num_screws):
+        for s in range(cfg.num_elbow_screws):
             h = scene.fastened[:, s].clamp_min(0)
             err = (scene.screws[s].data.root_pos_w
                    - seats[torch.arange(n, device=dev), h]).norm(dim=-1)
             errs.append(torch.where(scene.fastened[:, s] >= 0, err, torch.zeros_like(err)))
         return torch.stack(errs, dim=1).max(dim=1).values
+
+    def la_err() -> torch.Tensor:
+        """Distance of the forearm fork from its seat on the motor's horn (m)."""
+        exp_p, _ = scene.lower_arm_seat_w()
+        return (scene.distal.data.root_pos_w - exp_p).norm(dim=-1)
+
+    def m3_rel_err() -> torch.Tensor:
+        """Max distance of any fastened M3 from its own hole's seat (m)."""
+        seats, _ = scene.elbow_horn_screw_seats_w()
+        arange = torch.arange(n, device=dev)
+        errs = []
+        for k in range(cfg.num_horn_screws):
+            i_s = cfg.num_elbow_screws + k
+            h = (scene.fastened[:, i_s] - cfg.num_elbow_holes).clamp_min(0)
+            err = (scene.screws[i_s].data.root_pos_w - seats[arange, h]).norm(dim=-1)
+            errs.append(torch.where(scene.fastened[:, i_s] >= 0, err, torch.zeros_like(err)))
+        return torch.stack(errs, dim=1).max(dim=1).values
+
+    def park_drill() -> None:
+        nonlocal track_drill
+        track_drill = False
+        st = torch.zeros(n, 13, device=dev)
+        st[:, 0:3] = origin + torch.tensor(DRILL_PARK, device=dev)
+        st[:, 3] = 1.0
+        scene.drill.write_root_state_to_sim(st, None)
 
     def grab(joint2_deg: float, base_quat: torch.Tensor, height: float) -> None:
         """Teleport the arm to a working pose (base at the anchor in `base_quat`; shoulder_lift =
@@ -285,10 +329,13 @@ def main() -> None:
         WELD-SAFE: enabled welds must never see the teleport as an error (they would yank the
         welded parts across the workspace), and the link poses read back are stale until the sim
         steps — so the welds are dropped, the arm is teleported and stepped under the clamp, the
-        welded parts are re-seated at the FRESH link pose, and the welds are re-enabled."""
+        welds re-enabled, and the whole welded CHAIN (motor, fork, screws) re-seated by the
+        scene's reconciler against the fresh pose. The drill PARKS first: a teleporting arm
+        sweeping through a hole-tracking drill collides mid-flip."""
         nonlocal hold_arm
+        park_drill()
         fastened = scene.fastened.clone()
-        for i in range(n):  # drop every weld (motor weld follows the screws)
+        for i in range(n):  # drop every weld (the part welds follow the screws)
             for s in range(cfg.num_screws):
                 if int(fastened[i, s]) >= 0:
                     scene._set_weld(i, s, 0, False)
@@ -306,24 +353,12 @@ def main() -> None:
         step(2, "re-grab")  # FK refresh under the clamp, enough to re-seat the welded parts
         if bool((fastened >= 0).any()):
             ap, aq = scene.upper_arm_pose()  # fresh now
-            seats, _ = scene.elbow_screw_seats_w()
-            if grasp_offset[0] is None:  # the servo rides its weld (not still in the hand)
-                st = torch.zeros(n, 13, device=dev)
-                st[:, 0:3] = ap
-                st[:, 3:7] = aq
-                scene.motor.write_root_state_to_sim(st, None)
             for i in range(n):
                 for s in range(cfg.num_screws):
                     h = int(fastened[i, s])
-                    if h < 0:
-                        continue
-                    st = torch.zeros(1, 13, device=dev)
-                    st[0, 0:3] = seats[i, h]
-                    st[0, 3:7] = quat_mul(aq[i:i + 1],
-                                          scene._elbow_screw_seat_quats[h].unsqueeze(0))[0]
-                    scene.screws[s].write_root_state_to_sim(
-                        st, torch.tensor([i], device=dev))
-                    scene._set_weld(i, s, h, True)
+                    if h >= 0:
+                        scene._set_weld(i, s, h, True)
+            scene._reconcile_fastened(arm_pose=(ap, aq), motor_pose=(ap, aq))
         # settle to the drives' LOADED equilibrium: the joints are written at their exact
         # targets, then the drives relax (sag) AND the freshly-posed arm rings like a clamped
         # pendulum for a while (worst right after a facing FLIP — the sub-mm oscillation is
@@ -403,107 +438,119 @@ def main() -> None:
         step(1, "C rotate")
     step(sps // 4, "C settle")
 
-    # ============ D-G) per hole: re-grab facing it up, pick up, carry, drive, retreat ===========
-    picked = torch.zeros(cfg.num_screws, dtype=torch.bool)
-    fasten_steps: list[int] = []
-    for hole in range(cfg.num_screws):
-        near = hole < NUM_NEAR
-        cur_hole = hole
-        grab(JOINT2_DEG, q_hold if near else q_far, HOLD_HEIGHT if near else HOLD_HEIGHT_FAR)
-        if near:
-            # NEAR: the screw is DROPPED into the countersunk hole and slides in as deep as it
-            # slides — the gate accepts it anywhere in the bore and the drive draws it to its
-            # seat. The two walls demonstrate the two strategies an agent can use.
-            print(f"[D] hole {hole} (near): screw {hole} dropped into the countersunk hole",
-                  flush=True)
-            drop_screw(hole, hole, NEAR_DROP_H)
-            step((3 * sps) // 4, "D drop")
-            s0, a0 = seat_axis()
-            t_rest = ((scene.screws[hole].data.root_pos_w - s0) * a0).sum(-1)
-            picked[hole] = bool(((t_rest > -cfg.gate_window_below)
-                                 & (t_rest < cfg.gate_window)).all())
-            print(f"[D] dropped screw rests {t_rest.mean() * 1000:+.2f} mm from the seat "
-                  f"({'in the hole' if picked[hole] else 'MISSED the hole'})", flush=True)
-            z_engage = float(t_rest.mean()) + 0.0004
+    # ============ D-G) per hole: pick up, carry, drive, retreat (shared by M2s and M3s) ========
+    def place_and_drive(i_s: int, on_fastened) -> tuple[bool, int]:
+        """One screw, into the CURRENT hole (`cur`): D pickup on the magnetic bit, E carry over
+        the hole and lower in, F trigger -> gate -> drive -> weld (`on_fastened` fires once at
+        the weld), G gentle retreat. Every screw is CARRIED — nothing holds a freely released
+        screw upright in these holes (it topples off the countersink or slides past the pin);
+        the magnet carry is deterministic on every hole."""
+        nonlocal track_drill
+        print(f"[D] {cur['group']} hole {cur['hole']}: the drill picks screw {i_s} up with its "
+              f"magnetic bit", flush=True)
+        pick["anchor"] = scene.screws[i_s].data.root_pos_w.clone()  # the lying screw
+        track_drill = False
+        standoff[:] = HOVER
+        step(sps // 8, "D hover")
+        for j in range(sps):  # descend until the magnet takes the screw
+            standoff[:] = HOVER + (PICK_STOP - HOVER) * (j + 1) / sps
+            step(1, "D pickup")
+            if bool(scene.attached[:, i_s].all()):
+                break
+        got = bool(scene.attached[:, i_s].all())
+        print(f"[D] screw {i_s} {'is on the bit' if got else 'MISSED the pickup'}", flush=True)
+        z_now = float(standoff[0])
+        for j in range(sps // 2):  # lift it off the ground
+            standoff[:] = z_now + (HOVER - z_now) * (j + 1) / (sps // 2)
+            step(1, "D lift")
+        pick["anchor"] = None
 
-            print("[E] the drill descends onto the screw in the hole", flush=True)
-            standoff[:] = HOVER
-            track_drill = True
-            step(sps // 8, "E hover")
-            for j in range(sps):
-                standoff[:] = HOVER + (z_engage - HOVER) * (j + 1) / sps
-                step(1, "E descend")
-        else:
-            # FAR: the drill picks the screw up with its magnetic bit and carries it in.
-            print(f"[D] hole {hole} (far): the drill picks screw {hole} up with its magnetic "
-                  f"bit", flush=True)
-            pick["anchor"] = scene.screws[hole].data.root_pos_w.clone()  # the lying screw
-            track_drill = False
-            standoff[:] = HOVER
-            step(sps // 8, "D hover")
-            for j in range(sps):  # descend until the magnet takes the screw
-                standoff[:] = HOVER + (PICK_STOP - HOVER) * (j + 1) / sps
-                step(1, "D pickup")
-                if bool(scene.attached[:, hole].all()):
-                    break
-            picked[hole] = bool(scene.attached[:, hole].all())
-            print(f"[D] screw {hole} {'is on the bit' if picked[hole] else 'MISSED the pickup'}",
-                  flush=True)
-            z_now = float(standoff[0])
-            for j in range(sps // 2):  # lift it off the ground
-                standoff[:] = z_now + (HOVER - z_now) * (j + 1) / (sps // 2)
-                step(1, "D lift")
-            pick["anchor"] = None
-
-            print("[E] the drill carries the screw over the hole and lowers it in", flush=True)
-            standoff[:] = HOVER
-            track_drill = True
-            step(sps // 8, "E hover")
-            for j in range(sps):
-                standoff[:] = HOVER + (DRIVE_START - HOVER) * (j + 1) / sps
-                step(1, "E descend")
+        print("[E] the drill carries the screw over the hole and lowers it in", flush=True)
+        standoff[:] = HOVER
+        track_drill = True
+        step(sps // 8, "E hover")
+        for j in range(sps):
+            standoff[:] = HOVER + (DRIVE_START - HOVER) * (j + 1) / sps
+            step(1, "E descend")
 
         print("[F] trigger on — driving", flush=True)
         finger[:] = -FINGER
-        fasten_step = -1
+        fastened_at = -1
         for _ in range(int(1.5 * sps)):
             # the bit rides just above the screw's live depth — following it down as it drives
             # in, or back up as a deep-lying screw is drawn to its seat
             s_, a_ = seat_axis()
-            t_live = ((scene.screws[hole].data.root_pos_w - s_) * a_).sum(-1)
+            t_live = ((scene.screws[i_s].data.root_pos_w - s_) * a_).sum(-1)
             standoff[:] = torch.maximum(t_live + 0.0004, torch.full_like(t_live, BIT_STOP))
             step(1, "F drive")
-            if fasten_step < 0 and bool((scene.fastened[:, hole] >= 0).all()):
-                fasten_step = stepno
-                if grasp_offset[0] is not None:
-                    release_grasp()  # the screw holds the servo now — the hand lets go
-            if fasten_step > 0 and stepno - fasten_step > sps // 4:
+            if fastened_at < 0 and bool((scene.fastened[:, i_s] >= 0).all()):
+                fastened_at = stepno
+                on_fastened()
+            if fastened_at > 0 and stepno - fastened_at > sps // 4:
                 break
-        fasten_steps.append(fasten_step)
-        print(f"[F] screw {hole} fastened at step {fasten_step}", flush=True)
+        print(f"[F] screw {i_s} fastened at step {fastened_at}", flush=True)
 
-        print("[G] trigger off, drill lifts off gently and hovers for the next screw", flush=True)
+        print("[G] trigger off, drill lifts off gently", flush=True)
         finger[:] = 0.0
         z_now = float(standoff[0])
-        for j in range(int(RETREAT_S * sps)):  # cosine ease-out so the bit un-seats without a jolt
+        for j in range(int(RETREAT_S * sps)):  # cosine ease-out so the bit un-seats calmly
             ease = 0.5 - 0.5 * math.cos(math.pi * (j + 1) / (RETREAT_S * sps))
             standoff[:] = z_now + (HOVER - z_now) * ease
             step(1, "G retreat")
+        return got, fastened_at
+
+    def release_servo_hand() -> None:  # the first tab screw holds the servo now
+        if grasp_offset[0] is not None:
+            release_grasp()
+
+    picked = torch.zeros(cfg.num_elbow_screws, dtype=torch.bool)
+    fasten_steps: list[int] = []
+    for hole in range(cfg.num_elbow_screws):
+        near = hole < NUM_NEAR
+        cur.update(group="tab", hole=hole, screw=hole)
+        grab(JOINT2_DEG, q_hold if near else q_far, HOLD_HEIGHT if near else HOLD_HEIGHT_FAR)
+        got, at = place_and_drive(hole, release_servo_hand)
+        picked[hole] = got
+        fasten_steps.append(at)
     if grasp_offset[0] is not None:
         release_grasp()
 
-    # ============ H) PARK: all four screws are in — the drill parks aside, once ================
-    print("[H] all screws driven — the drill parks aside", flush=True)
-    st = torch.zeros(n, 13, device=dev)
-    st[:, 0:3] = origin + torch.tensor(DRILL_PARK, device=dev)
-    st[:, 3] = 1.0
-    scene.drill.write_root_state_to_sim(st, None)
-    track_drill = False
-    step(sps // 4, "H park")
+    # ============ H) ATTACH: drill parks; the hand clips the forearm fork onto the horn ========
+    print("[H] all tab screws driven — the drill parks; back in the lying pose, the hand brings "
+          "the forearm fork to a 1.5 mm hover over the horn and presses it on", flush=True)
+    grab(JOINT2_DEG, q_hold, HOLD_HEIGHT)  # the horn side faces up in the lying pose
+    hold_fork = True
+    fork_lift[0] = FORK_LIFT
+    step(sps // 2, "H hover")
+    for j in range(int(PRESS_S * sps)):
+        fork_lift[0] = FORK_LIFT * (1.0 - (j + 1) / (PRESS_S * sps))
+        step(1, "H press")
+    step(sps // 4, "H seated")
+    print(f"[H] fork pressed onto the horn: fork err {la_err().max() * 1000:.2f} mm (the hand "
+          f"keeps holding until the first horn screw bites)", flush=True)
 
-    # ============ I) STRESS: knock a screw, wrench the servo ===================================
+    # ============ D-G again) the eight M3 horn screws: near four lying, far four flipped =======
+    def release_fork_hand() -> None:  # the first horn screw holds the fork now
+        nonlocal hold_fork
+        hold_fork = False
+
+    picked_m3 = torch.zeros(cfg.num_horn_screws, dtype=torch.bool)
+    m3_steps: list[int] = []
+    for k in range(cfg.num_horn_screws):
+        if k == NUM_NEAR_M3:  # the far holes face down in the lying pose — re-fixture flipped
+            print("[re-fixture] flip: far side up (weld-safe re-grab)", flush=True)
+            grab(JOINT2_DEG, q_far, HOLD_HEIGHT_FAR)
+        cur.update(group="horn", hole=k, screw=cfg.num_elbow_screws + k)
+        got, at = place_and_drive(cfg.num_elbow_screws + k, release_fork_hand)
+        picked_m3[k] = got
+        m3_steps.append(at)
+    park_drill()
+    step(sps // 4, "park")
+
+    # ============ I) STRESS: knock an M2 and an M3, wrench the servo and the forearm ===========
     print("[I] back to the lying pose; joint 2 swings back up (the reverse of C), then knock a "
-          "fastened screw and wrench the servo — nothing may come apart", flush=True)
+          "fastened M2 and an M3, wrench the servo and the forearm — nothing may come apart",
+          flush=True)
     grab(JOINT2_DEG, q_hold, HOLD_HEIGHT)  # re-grab at the joints' CURRENT angle — grabbing at 0
     # would snap joint 2 by 90 deg in one frame; instead it swings back under its own drive
     for j in range(int(1.5 * sps)):
@@ -512,12 +559,15 @@ def main() -> None:
     step(sps // 4, "I settle")
     knock = torch.tensor((0.25, 0.0, 0.35, 0.0, 0.0, 0.0), device=dev).expand(n, 6).contiguous()
     scene.screws[0].write_root_velocity_to_sim(knock, None)
+    scene.screws[cfg.num_elbow_screws].write_root_velocity_to_sim(knock, None)
     step(sps // 2, "I knock")
-    err_knock = screws_rel_err()
+    err_knock = torch.maximum(screws_rel_err(), m3_rel_err())
     wrench = torch.tensor((0.0, 0.4, 0.5, 0.0, 0.0, 0.0), device=dev).expand(n, 6).contiguous()
     scene.motor.write_root_velocity_to_sim(wrench, None)
+    scene.distal.write_root_velocity_to_sim(wrench, None)
     step(sps // 2, "I wrench")
     err_motor_stress = motor_rel_err()
+    err_la_stress = la_err()
 
     # ============ J) FINALE: re-grab, then lift, shake, rotate, set down, release ==============
     print("[J] re-grabbed; the clamp lifts the whole robot +15 cm, shakes, rotates 180 deg, sets "
@@ -548,20 +598,28 @@ def main() -> None:
     release()  # let go
     print("[J] clamp RELEASED — the free assembled robot must hold together", flush=True)
     step(int(1.2 * sps), "J free")
-    err_free, err_motor_free = screws_rel_err(), motor_rel_err()
-    print(f"[J] resting free on the ground: max screw-in-seat err {err_free.max() * 1000:.2f} mm, "
-          f"servo-in-pocket err {err_motor_free.max() * 1000:.2f} mm", flush=True)
+    err_free, err_m3_free = screws_rel_err(), m3_rel_err()
+    err_motor_free, err_la_free = motor_rel_err(), la_err()
+    print(f"[J] resting free on the ground: max M2-in-seat err {err_free.max() * 1000:.2f} mm, "
+          f"M3-in-seat err {err_m3_free.max() * 1000:.2f} mm, servo-in-pocket err "
+          f"{err_motor_free.max() * 1000:.2f} mm, fork-on-horn err "
+          f"{err_la_free.max() * 1000:.2f} mm", flush=True)
 
     # ============ verdict ======================================================================
     all_fastened = bool((scene.fastened >= 0).all())
-    ok = (all_fastened and bool(picked.all()) and all(f > 0 for f in fasten_steps)
+    ok = (all_fastened and bool(picked.all()) and bool(picked_m3.all())
+          and all(f > 0 for f in fasten_steps) and all(f > 0 for f in m3_steps)
           and float(err_knock.max()) < 0.0015 and float(err_motor_stress.max()) < 0.0015
-          and float(err_free.max()) < 0.0015 and float(err_motor_free.max()) < 0.0015)
+          and float(err_la_stress.max()) < 0.0015
+          and float(err_free.max()) < 0.0015 and float(err_m3_free.max()) < 0.0015
+          and float(err_motor_free.max()) < 0.0015 and float(err_la_free.max()) < 0.0015)
     print(f"SO101-SMOKE | servo inserted to {ins_err.mean() * 1000:.2f} mm (aligned after) | "
-          f"screws placed {int(picked.sum())}/{cfg.num_screws} | fastened at steps {fasten_steps} | "
-          f"errs (mm): knock {err_knock.max() * 1000:.2f}, "
-          f"wrench {err_motor_stress.max() * 1000:.2f}, finale {err_free.max() * 1000:.2f}/"
-          f"{err_motor_free.max() * 1000:.2f} | {'PASS' if ok else 'FAIL'}", flush=True)
+          f"M2 placed {int(picked.sum())}/{cfg.num_elbow_screws} at {fasten_steps} | "
+          f"M3 placed {int(picked_m3.sum())}/{cfg.num_horn_screws} at {m3_steps} | errs (mm): "
+          f"knock {err_knock.max() * 1000:.2f}, wrench {err_motor_stress.max() * 1000:.2f}/"
+          f"{err_la_stress.max() * 1000:.2f}, finale {err_free.max() * 1000:.2f}/"
+          f"{err_m3_free.max() * 1000:.2f}/{err_motor_free.max() * 1000:.2f}/"
+          f"{err_la_free.max() * 1000:.2f} | {'PASS' if ok else 'FAIL'}", flush=True)
     _close_and_exit(env)
 
 

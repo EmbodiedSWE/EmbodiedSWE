@@ -10,8 +10,14 @@ The assembly object-world:
   - `screw_0..3`: four IDENTICAL slim-head M2x6, free rigid bodies — the servo's four tab
     screws. Any screw fastens into any free hole (the pairing is order-independent).
   - `drill`: the compact power screwdriver articulation (body/trigger/bit).
-  - `distal`: lower_arm..gripper as a floating articulation — present but NOT yet under test
-    (its fastening story comes later); its assets already carry the same collision hygiene.
+  - `distal`: lower_arm..gripper as a floating articulation. Its root link `lower_arm` is a
+    closed fork that clips over the seated servo — the drive-side cup onto the output horn,
+    the far plate onto the back bearing post — and is locked by M3 screws (`horn_screw_0..3`)
+    on the four peripheral screw lines around the elbow axis: near side through the fork's
+    inner plate into the horn's metal holes (reached through the outer skin's access
+    channels), far side through the far plate into the servo's case-back holes. The center
+    bore on the axis is only driver access. The seated lower_arm pose relative to the motor
+    is the elbow_flex joint transform at joint zero.
 
 The servo is held by four M2 screws (upper_arm LINK frame): the NEAR pair enters the countersunk
 outer wall from link -Z; the FAR pair enters from link +Z through the ring bosses on that face.
@@ -23,9 +29,11 @@ mechanic below).
 
 THE FASTENING MECHANIC (rule-based for fast simulation — see `_fasten_rule`): one pre-authored
 DISABLED FixedJoint per screw, its seat frame authored at enable time (so any screw can take any
-hole); a per-step gate (screw in a free hole + parts aligned + bit on that screw + trigger on)
-advances the screw kinematically with a latched depth and snaps its weld on at the seat — any
-fastened screw also welds motor<->arm. THE MAGNETIC BIT (same section): a free screw whose head
+hole in its own group); a per-step gate (screw in a free hole + parts aligned + bit on that
+screw + trigger on) advances the screw kinematically with a latched depth and snaps its weld on
+at the seat. The holes come in per-joint GROUPS, each with its own seat link and part-alignment
+check: any fastened elbow tab screw welds motor<->upper_arm; the fastened horn screw welds
+lower_arm<->motor. THE MAGNETIC BIT (same section): a free screw whose head
 touches the bit tip attaches and rides it, coaxial and spinning, until driven home — real M2
 driving carries the screw on a magnetized bit, and any embodiment holding the drill can use it.
 Everything else is real collision against the parts' actual holes and walls.
@@ -100,6 +108,34 @@ class SO101SceneCfg(BaseCfg):
     screw_spawn_pts: tuple[tuple[float, float], ...] = info(
         ((0.25, -0.15), (0.31, -0.15), (0.25, -0.22), (0.31, -0.22)))
 
+    # --- info: the elbow HORN fastening — the lower_arm clips onto the motor's output horn ---
+    # Seated lower_arm pose in the MOTOR (upper_arm-link) frame: the elbow_flex joint transform
+    # at joint zero. The lower_arm origin sits ON the elbow axis, so this pose is also where the
+    # pre-authored lower_arm<->motor weld is framed.
+    elbow_lower_arm_seat_pos: tuple[float, float, float] = info((-0.11257, -0.028, 0.0))
+    elbow_lower_arm_seat_quat: tuple[float, float, float, float] = info(
+        (0.7071068, 0.0, 0.0, 0.7071068))
+    # The M3 horn screws' seats (driven head-top poses), in the LOWER_ARM link frame: the FOUR
+    # peripheral screw lines around the elbow axis, on EACH side of the fork (the center bore is
+    # only driver access). NEAR (horn) side, holes 0-3: the head seats on the fork's inner plate
+    # — reached through the outer skin's access channels — and the shaft threads into the horn's
+    # metal holes; out-of-hole is lower_arm -Z. FAR side, holes 4-7: the head seats on the far
+    # plate's outer face, threading into the servo's case-back holes; out-of-hole is +Z.
+    elbow_horn_screw_seat_pts: tuple[tuple[float, float, float], ...] = info((
+        (0.00497, -0.00497, -0.0066), (-0.00495, -0.00498, -0.0066),   # near (horn) side
+        (0.00498, 0.00495, -0.0066), (-0.00490, 0.00495, -0.0066),
+        (0.00497, -0.00497, 0.0431), (-0.00495, -0.00498, 0.0431),     # far (case-back) side
+        (0.00498, 0.00495, 0.0431), (-0.00490, 0.00495, 0.0431)))
+    elbow_horn_screw_seat_quats: tuple[tuple[float, float, float, float], ...] = info((
+        (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 1.0, 0.0),    # near: screw +Z (out of head) -> link -Z
+        (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 1.0, 0.0),
+        (1.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0),    # far: screw +Z -> link +Z
+        (1.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)))
+    # eight loose M3s spawn (one per horn-line hole, near + far)
+    horn_screw_spawn_pts: tuple[tuple[float, float], ...] = info(
+        ((0.37, -0.15), (0.43, -0.15), (0.37, -0.22), (0.43, -0.22),
+         (0.49, -0.15), (0.55, -0.15), (0.49, -0.22), (0.55, -0.22)))
+
     # --- info: scene assets ------------------------------------------------------------------------
     light_intensity: float = info(2500.0)
     asset_dir: str = info("")
@@ -107,6 +143,7 @@ class SO101SceneCfg(BaseCfg):
     distal_usd: str = info("")
     motor_usd: str = info("")
     screw_usd: str = info("")
+    horn_screw_usd: str = info("")
     drill_usd: str = info("")
 
     def __post_init__(self) -> None:
@@ -117,11 +154,36 @@ class SO101SceneCfg(BaseCfg):
         self.distal_usd = self.distal_usd or str(a / "so101_distal.usd")
         self.motor_usd = self.motor_usd or str(a / "sts3215_03a.usd")
         self.screw_usd = self.screw_usd or str(a / "screw" / "screw_m2.usd")
+        self.horn_screw_usd = self.horn_screw_usd or str(a / "screw" / "screw_m3.usd")
         self.drill_usd = self.drill_usd or str(a / "drill" / "power_drill.usd")
+
+    # Screws are counted by spawn list, holes by seat table — the counts may differ (e.g. four
+    # loose M3s vs eight horn-line holes). The flat index orders are [elbow tab screws...,
+    # horn screws...] for screws (self.screws, `fastened` rows) and [elbow tab holes..., horn
+    # holes...] for holes (`fastened` values, seat frames).
+    @property
+    def num_elbow_screws(self) -> int:
+        return len(self.screw_spawn_pts)
+
+    @property
+    def num_horn_screws(self) -> int:
+        return len(self.horn_screw_spawn_pts)
 
     @property
     def num_screws(self) -> int:
-        return len(self.elbow_screw_seat_pts)  # one identical loose screw per hole
+        return self.num_elbow_screws + self.num_horn_screws
+
+    @property
+    def num_elbow_holes(self) -> int:
+        return len(self.elbow_screw_seat_pts)
+
+    @property
+    def num_horn_holes(self) -> int:
+        return len(self.elbow_horn_screw_seat_pts)
+
+    @property
+    def num_holes(self) -> int:
+        return self.num_elbow_holes + self.num_horn_holes
 
 
 @SCENES.register("so101")
@@ -179,6 +241,11 @@ class SO101AssemblyScene(BaseScene):
                 prim_path="{ENV_REGEX_NS}/Screw_%d" % s,
                 spawn=sim_utils.UsdFileCfg(usd_path=c.screw_usd, rigid_props=contact),
                 init_state=RigidObjectCfg.InitialStateCfg(pos=(x, y, 0.02)))
+        for s, (x, y) in enumerate(c.horn_screw_spawn_pts):
+            out[f"horn_screw_{s}"] = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/HornScrew_%d" % s,
+                spawn=sim_utils.UsdFileCfg(usd_path=c.horn_screw_usd, rigid_props=contact),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(x, y, 0.02)))
         return out
 
     def sim_cfg(self) -> SimCfg:
@@ -193,7 +260,9 @@ class SO101AssemblyScene(BaseScene):
         self.proximal: Articulation = env.iscene["proximal"]
         self.distal: Articulation = env.iscene["distal"]
         self.motor: RigidObject = env.iscene["motor"]
-        self.screws: list[RigidObject] = [env.iscene[f"screw_{s}"] for s in range(c.num_screws)]
+        self.screws: list[RigidObject] = (
+            [env.iscene[f"screw_{s}"] for s in range(c.num_elbow_screws)]
+            + [env.iscene[f"horn_screw_{s}"] for s in range(c.num_horn_screws)])
         self.drill: Articulation = env.iscene["drill"]
         self.env_origins = env.iscene.env_origins
         self.i_trig = self.drill.find_joints("trigger")[0][0]
@@ -210,42 +279,64 @@ class SO101AssemblyScene(BaseScene):
         self.state = torch.zeros(n, dtype=torch.long, device=dev)  # 0 free, 1 driving, 2 all fastened
         self._elbow_screw_seat_pts = torch.tensor(c.elbow_screw_seat_pts, device=dev)
         self._elbow_screw_seat_quats = torch.tensor(c.elbow_screw_seat_quats, device=dev)
+        self._elbow_horn_screw_seat_pts = torch.tensor(c.elbow_horn_screw_seat_pts, device=dev)
+        self._elbow_horn_screw_seat_quats = torch.tensor(c.elbow_horn_screw_seat_quats, device=dev)
+        self._seat_quats_all = torch.cat(
+            [self._elbow_screw_seat_quats, self._elbow_horn_screw_seat_quats])
+        self._la_seat_pos = torch.tensor(c.elbow_lower_arm_seat_pos, device=dev)
+        self._la_seat_quat = torch.tensor(c.elbow_lower_arm_seat_quat, device=dev)
+        # screw<->hole compatibility: each group's screws only fit its own holes (an M2 fits
+        # nothing on the horn lines; an M3 fits no tab hole)
+        self._pair_ok = torch.zeros(ns, c.num_holes, dtype=torch.bool, device=dev)
+        self._pair_ok[:c.num_elbow_screws, :c.num_elbow_holes] = True
+        self._pair_ok[c.num_elbow_screws:, c.num_elbow_holes:] = True
         self._bit_tip = torch.tensor(c.bit_tip, device=dev)
         self._ey = torch.tensor((0.0, 1.0, 0.0), device=dev)
         self._ez = torch.tensor((0.0, 0.0, 1.0), device=dev)
         self._precreate_joints()
 
+    def _screw_prim(self, base: str, s: int) -> str:
+        ne = self.cfg.num_elbow_screws
+        return f"{base}/Screw_{s}" if s < ne else f"{base}/HornScrew_{s - ne}"
+
     def _precreate_joints(self) -> None:
-        """Pre-author the normally-DISABLED fastening welds: one screw<->upper_arm joint per screw
-        (the seat frame is authored when the drive rule enables it, so any screw may take any
-        hole), plus the single motor<->upper_arm weld. Bit<->screw collision is filtered: that
-        pair is rule-based (the drive gate owns it). Bit<->shell and bit<->motor are filtered
-        too: the drive corridors graze both walls and the servo case, and contact just winds the
-        free-spinning bit to hundreds of rad/s and bats the screw."""
+        """Pre-author the normally-DISABLED fastening welds: one screw<->seat-link joint per
+        screw (elbow tab screws seat in the upper_arm, the horn screw in the lower_arm; the seat
+        frame is authored when the drive rule enables it, so any screw may take any hole in its
+        group), plus the motor<->upper_arm and lower_arm<->motor part welds. Bit<->screw
+        collision is filtered: that pair is rule-based (the drive gate owns it). Bit<->shell,
+        bit<->motor and bit<->lower_arm are filtered too: the drive corridors graze the walls,
+        the servo case and the fork skin, and contact just winds the free-spinning bit to
+        hundreds of rad/s and bats the screw."""
         import omni.usd
         from pxr import Gf, Sdf, UsdPhysics
 
         stage = omni.usd.get_context().get_stage()
+        c = self.cfg
         self._weld_paths: list[list[str]] = []  # [env][screw]
         self._motor_weld_paths: list[str] = []
+        self._lower_arm_weld_paths: list[str] = []
         for i in range(self.env.num_envs):
             base = f"/World/envs/env_{i}"
             flt = UsdPhysics.FilteredPairsAPI.Apply(stage.GetPrimAtPath(f"{base}/Drill/bit"))
             flt.CreateFilteredPairsRel().AddTarget(f"{base}/Proximal/upper_arm")
             flt.CreateFilteredPairsRel().AddTarget(f"{base}/Motor/upper_arm")
-            for s in range(self.cfg.num_screws):  # CCD: a fast-moving M2 must not tunnel the walls
-                stage.GetPrimAtPath(f"{base}/Screw_{s}").CreateAttribute(
+            flt.CreateFilteredPairsRel().AddTarget(f"{base}/Distal/lower_arm")
+            for s in range(c.num_screws):  # CCD: a fast-moving screw must not tunnel the walls
+                stage.GetPrimAtPath(self._screw_prim(base, s)).CreateAttribute(
                     "physxRigidBody:enableCCD", Sdf.ValueTypeNames.Bool).Set(True)
             paths = []
-            for s in range(self.cfg.num_screws):
+            for s in range(c.num_screws):
+                seat_link = (f"{base}/Proximal/upper_arm" if s < c.num_elbow_screws
+                             else f"{base}/Distal/lower_arm")
                 j = UsdPhysics.FixedJoint.Define(stage, f"{base}/screw_weld_{s}")
-                j.CreateBody0Rel().SetTargets([f"{base}/Proximal/upper_arm"])
-                j.CreateBody1Rel().SetTargets([f"{base}/Screw_{s}"])
+                j.CreateBody0Rel().SetTargets([seat_link])
+                j.CreateBody1Rel().SetTargets([self._screw_prim(base, s)])
                 j.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))
                 j.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
                 j.CreateJointEnabledAttr(False)
                 paths.append(f"{base}/screw_weld_{s}")
-                flt.CreateFilteredPairsRel().AddTarget(f"{base}/Screw_{s}")
+                flt.CreateFilteredPairsRel().AddTarget(self._screw_prim(base, s))
             self._weld_paths.append(paths)
             mj = UsdPhysics.FixedJoint.Define(stage, f"{base}/motor_weld")
             mj.CreateBody0Rel().SetTargets([f"{base}/Proximal/upper_arm"])
@@ -256,6 +347,16 @@ class SO101AssemblyScene(BaseScene):
             mj.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
             mj.CreateJointEnabledAttr(False)
             self._motor_weld_paths.append(f"{base}/motor_weld")
+            lj = UsdPhysics.FixedJoint.Define(stage, f"{base}/lower_arm_weld")
+            lj.CreateBody0Rel().SetTargets([f"{base}/Motor/upper_arm"])
+            lj.CreateBody1Rel().SetTargets([f"{base}/Distal/lower_arm"])
+            lj.CreateLocalPos0Attr(Gf.Vec3f(*c.elbow_lower_arm_seat_pos))
+            q = c.elbow_lower_arm_seat_quat
+            lj.CreateLocalRot0Attr(Gf.Quatf(q[0], Gf.Vec3f(*q[1:])))
+            lj.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))
+            lj.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+            lj.CreateJointEnabledAttr(False)
+            self._lower_arm_weld_paths.append(f"{base}/lower_arm_weld")
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Every body reset to its free spawn pose (spread out, upright, resting on the ground);
@@ -278,6 +379,8 @@ class SO101AssemblyScene(BaseScene):
         place(self.motor, (0.25, 0.15, 0.06))
         for s, (x, y) in enumerate(self.cfg.screw_spawn_pts):
             place(self.screws[s], (x, y, 0.02))
+        for s, (x, y) in enumerate(self.cfg.horn_screw_spawn_pts):
+            place(self.screws[self.cfg.num_elbow_screws + s], (x, y, 0.02))
 
         place(self.drill, (0.5, 0.0, 0.12))
         zdr = torch.zeros(m, self.drill.num_joints, device=dev)
@@ -304,22 +407,63 @@ class SO101AssemblyScene(BaseScene):
         return (self.proximal.data.body_pos_w[:, self.b_ua],
                 self.proximal.data.body_quat_w[:, self.b_ua])
 
-    def elbow_screw_seats_w(self, arm_pose: tuple[torch.Tensor, torch.Tensor] | None = None,
-                            ) -> tuple[torch.Tensor, torch.Tensor]:
-        """World head-top seat points of the screw holes (m, nh, 3) and each hole's out-of-hole
-        axis (m, nh, 3) — derived from that hole's seat quat (screw local +Z points out of the
-        head), so the -Z near holes and the +Z far holes each get the right approach direction.
-        `arm_pose` (pos (m, 3), quat (m, 4)) overrides the live upper_arm pose — pass it when the
-        live link FK is stale (right after root writes, e.g. inside set_state)."""
+    def lower_arm_pose(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """World pose of the lower_arm link — the distal articulation's root body."""
+        return self.distal.data.root_pos_w, self.distal.data.root_quat_w
+
+    def lower_arm_seat_w(self, motor_pose: tuple[torch.Tensor, torch.Tensor] | None = None,
+                         ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Where the lower_arm SEATS on the motor's output horn (world pose): the elbow joint
+        transform applied to the (live or given) motor pose. `motor_pose` overrides the live
+        one when it is stale or the caller wants the expected chain (see _reconcile_fastened)."""
         from isaaclab.utils.math import quat_apply, quat_mul
 
-        ap, aq = arm_pose if arm_pose is not None else self.upper_arm_pose()
-        m, nh = len(ap), len(self.cfg.elbow_screw_seat_pts)
-        aq_rep = aq.repeat_interleave(nh, 0)
-        seats = ap.unsqueeze(1) + quat_apply(
-            aq_rep, self._elbow_screw_seat_pts.repeat(m, 1)).view(m, nh, 3)
-        seat_q = quat_mul(aq_rep, self._elbow_screw_seat_quats.repeat(m, 1))
+        mp, mq = motor_pose if motor_pose is not None else (
+            self.motor.data.root_pos_w, self.motor.data.root_quat_w)
+        pos = mp + quat_apply(mq, self._la_seat_pos.expand(len(mp), 3))
+        return pos, quat_mul(mq, self._la_seat_quat.expand(len(mp), 4))
+
+    def _seats_w(self, pose: tuple[torch.Tensor, torch.Tensor], pts: torch.Tensor,
+                 quats: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """World head-top seat points (m, nh, 3) and out-of-hole axes (m, nh, 3) of one hole
+        group, from its seat-link pose and link-frame seat tables. The axis is derived from
+        each hole's seat quat (screw local +Z points out of the head), so every hole gets the
+        right approach direction whatever its facing."""
+        from isaaclab.utils.math import quat_apply, quat_mul
+
+        p, q = pose
+        m, nh = len(p), len(pts)
+        q_rep = q.repeat_interleave(nh, 0)
+        seats = p.unsqueeze(1) + quat_apply(q_rep, pts.repeat(m, 1)).view(m, nh, 3)
+        seat_q = quat_mul(q_rep, quats.repeat(m, 1))
         return seats, quat_apply(seat_q, self._ez.expand(m * nh, 3)).view(m, nh, 3)
+
+    def elbow_screw_seats_w(self, arm_pose: tuple[torch.Tensor, torch.Tensor] | None = None,
+                            ) -> tuple[torch.Tensor, torch.Tensor]:
+        """The elbow tab holes' world seats/axes — see _seats_w. `arm_pose` overrides the live
+        upper_arm pose — pass it when the live link FK is stale (right after root writes, e.g.
+        inside set_state)."""
+        return self._seats_w(arm_pose if arm_pose is not None else self.upper_arm_pose(),
+                             self._elbow_screw_seat_pts, self._elbow_screw_seat_quats)
+
+    def elbow_horn_screw_seats_w(self, la_pose: tuple[torch.Tensor, torch.Tensor] | None = None,
+                                 ) -> tuple[torch.Tensor, torch.Tensor]:
+        """The horn screw holes' world seats/axes — see _seats_w. `la_pose` overrides the live
+        lower_arm pose."""
+        return self._seats_w(la_pose if la_pose is not None else self.lower_arm_pose(),
+                             self._elbow_horn_screw_seat_pts, self._elbow_horn_screw_seat_quats)
+
+    def _hole_frames_w(self, arm_pose=None, la_pose=None):
+        """All holes' world seats (n, nh, 3), axes (n, nh, 3) and seat-link quats (n, nh, 4),
+        concatenated in the flat hole order [elbow tabs..., horn...]."""
+        ap, aq = arm_pose if arm_pose is not None else self.upper_arm_pose()
+        lp, lq = la_pose if la_pose is not None else self.lower_arm_pose()
+        e_s, e_a = self.elbow_screw_seats_w(arm_pose=(ap, aq))
+        h_s, h_a = self.elbow_horn_screw_seats_w(la_pose=(lp, lq))
+        ne, nh = self.cfg.num_elbow_holes, self.cfg.num_horn_holes
+        link_q = torch.cat([aq.unsqueeze(1).expand(-1, ne, -1),
+                            lq.unsqueeze(1).expand(-1, nh, -1)], dim=1)
+        return torch.cat([e_s, h_s], dim=1), torch.cat([e_a, h_a], dim=1), link_q
 
     # ----- the fastening mechanic (runs every physics step) ----------------------------------------
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
@@ -328,33 +472,54 @@ class SO101AssemblyScene(BaseScene):
         self._fasten_rule(squeezed)
 
     def _reconcile_fastened(self, env_ids: torch.Tensor | None = None,
-                            arm_pose: tuple[torch.Tensor, torch.Tensor] | None = None) -> None:
-        """Fastened parts FOLLOW the arm. The welds keep the physics tight, but an external write
-        of the proximal root (a test's vise, a reset-to-pose, a user teleport, a curriculum reset
-        to a phase) moves the arm alone and the enabled welds would yank the parts violently
-        across the workspace. Any fastened screw — and the welded motor — found more than
-        `weld_snap` off its weld frame is snapped back onto it with zero velocity, so teleporting
-        the assembled robot is always legal. Runs each post_step against the live link pose;
-        set_state calls it with the SNAPSHOT's upper_arm pose (rows aligned to `env_ids`), since
-        the live link FK is stale right after root writes."""
+                            arm_pose: tuple[torch.Tensor, torch.Tensor] | None = None,
+                            motor_pose: tuple[torch.Tensor, torch.Tensor] | None = None) -> None:
+        """Fastened parts FOLLOW their seat link. The welds keep the physics tight, but an
+        external write of a root (a test's vise, a reset-to-pose, a user teleport, a curriculum
+        reset to a phase) moves that body alone and the enabled welds would yank the welded
+        parts violently across the workspace. The expected poses form a CHAIN — the motor
+        follows the arm (while tab-screwed), the lower_arm follows the motor (while
+        horn-screwed), each screw follows its own hole's link — and any welded part found more
+        than `weld_snap` off its weld frame is snapped back onto it with zero velocity, so
+        teleporting the assembled robot is always legal. Runs each post_step against the live
+        poses; set_state calls it with the SNAPSHOT's upper_arm + motor poses (rows aligned to
+        `env_ids`), since the live FK is stale right after root writes."""
         from isaaclab.utils.math import quat_mul
 
         c, dev = self.cfg, self.env.device
         ids = torch.arange(self.env.num_envs, device=dev) if env_ids is None else env_ids
-        welded = (self.fastened[ids] >= 0).any(dim=1)
-        if not bool(welded.any()):
+        f = self.fastened[ids]
+        if not bool((f >= 0).any()):
             return
+        ne = c.num_elbow_holes
         ap, aq = arm_pose if arm_pose is not None else self.upper_arm_pose()
         if arm_pose is None:
             ap, aq = ap[ids], aq[ids]
-        seats, _ = self.elbow_screw_seats_w(arm_pose=(ap, aq))
-        fix = welded & ((self.motor.data.root_pos_w[ids] - ap).norm(dim=-1) > c.weld_snap)
+        mp, mq = motor_pose if motor_pose is not None else (
+            self.motor.data.root_pos_w[ids], self.motor.data.root_quat_w[ids])
+        motor_welded = ((f >= 0) & (f < ne)).any(dim=1)
+        la_welded = (f >= ne).any(dim=1)
+        exp_mp = torch.where(motor_welded.unsqueeze(-1), ap, mp)
+        exp_mq = torch.where(motor_welded.unsqueeze(-1), aq, mq)
+        fix = motor_welded & ((self.motor.data.root_pos_w[ids] - ap).norm(dim=-1) > c.weld_snap)
         if fix.any():
             rows = fix.nonzero(as_tuple=False).squeeze(-1)
             st = torch.zeros(len(rows), 13, device=dev)
             st[:, 0:3] = ap[rows]
             st[:, 3:7] = aq[rows]
             self.motor.write_root_state_to_sim(st, ids[rows])
+        la_seat_p, la_seat_q = self.lower_arm_seat_w(motor_pose=(exp_mp, exp_mq))
+        fix = la_welded & ((self.distal.data.root_pos_w[ids] - la_seat_p).norm(dim=-1)
+                           > c.weld_snap)
+        if fix.any():
+            rows = fix.nonzero(as_tuple=False).squeeze(-1)
+            st = torch.zeros(len(rows), 13, device=dev)
+            st[:, 0:3] = la_seat_p[rows]
+            st[:, 3:7] = la_seat_q[rows]
+            self.distal.write_root_state_to_sim(st, ids[rows])
+        exp_lp = torch.where(la_welded.unsqueeze(-1), la_seat_p, self.distal.data.root_pos_w[ids])
+        exp_lq = torch.where(la_welded.unsqueeze(-1), la_seat_q, self.distal.data.root_quat_w[ids])
+        seats, _, link_q = self._hole_frames_w(arm_pose=(ap, aq), la_pose=(exp_lp, exp_lq))
         arange = torch.arange(len(ids), device=dev)
         for s in range(c.num_screws):
             h = self.fastened[ids, s]
@@ -365,7 +530,8 @@ class SO101AssemblyScene(BaseScene):
             rows = fix.nonzero(as_tuple=False).squeeze(-1)
             st = torch.zeros(len(rows), 13, device=dev)
             st[:, 0:3] = exp[rows]
-            st[:, 3:7] = quat_mul(aq[rows], self._elbow_screw_seat_quats[h.clamp_min(0)[rows]])
+            st[:, 3:7] = quat_mul(link_q[arange, h.clamp_min(0)][rows],
+                                  self._seat_quats_all[h.clamp_min(0)[rows]])
             self.screws[s].write_root_state_to_sim(st, ids[rows])
 
     def _spin_bit(self) -> torch.Tensor:
@@ -380,17 +546,20 @@ class SO101AssemblyScene(BaseScene):
         return squeezed
 
     def _fasten_rule(self, squeezed: torch.Tensor) -> None:
-        """THE FASTENING RULE (rule-based, no thread simulation). The screws are identical and
-        the pairing is order-independent (ikea-style): any free screw drives into any FREE hole h
-        while ALL of these hold, re-checked every step:
+        """THE FASTENING RULE (rule-based, no thread simulation). Within each hole GROUP the
+        screws are identical and the pairing is order-independent (ikea-style): any free screw
+        drives into any FREE, COMPATIBLE hole h while ALL of these hold, re-checked every step:
 
           1. SCREW IN A FREE HOLE — screw axis within `gate_axis_deg` of the hole axis, head
              center within `gate_radial` of the axis, inside the engagement window
              (`gate_window_below` below the seat .. `gate_window` above it — the axis check
              is waived below the seat, where the bore constrains the screw), no other screw
-             fastened there;
-          2. PARTS ALIGNED      — the servo sits in the arm pocket within `motor_align_pos` /
-             `motor_align_deg` (their frames coincide exactly when seated);
+             fastened there, and the screw fits the hole (`_pair_ok`: M2 tab screws vs the
+             elbow tab holes, the M3 horn screw vs the horn hole);
+          2. PARTS ALIGNED      — the hole's JOINT is seated within `motor_align_pos` /
+             `motor_align_deg`: a tab hole needs the servo in the arm pocket (their frames
+             coincide exactly when seated); the horn hole needs the lower_arm on the motor's
+             horn (at the elbow joint transform);
           3. DRIVER ON THE SCREW — bit tip within `bit_on_head` of that screw's head-top, bit
              axis within `bit_axis_deg` of the screw axis;
           4. TRIGGER ON          — squeezed past 70% AND the bit actually spinning (> `spin_min`).
@@ -399,27 +568,29 @@ class SO101AssemblyScene(BaseScene):
         descending if engaged above it, drawn back up if it lies deep in the hole — spinning
         with the bit (kinematic-follow with a LATCHED depth; pilot pushback must not slow the
         schedule). Reaching the seat after >= `min_drive_s` enables that screw's pre-authored
-        weld; any fastened screw also holds the motor<->arm weld on: FASTENED until reset. Any
-        condition breaking mid-drive returns the screw to free dynamics on the spot.
+        weld; any fastened tab screw also holds the motor<->arm weld on, and the fastened horn
+        screw the lower_arm<->motor weld: FASTENED until reset. Any condition breaking mid-drive
+        returns the screw to free dynamics on the spot.
         """
         from isaaclab.utils.math import quat_apply, quat_error_magnitude, quat_mul
 
         c, n, dt = self.cfg, self.env.num_envs, self.env.dt
-        ns, nh = c.num_screws, len(c.elbow_screw_seat_pts)
+        ns, nh, ne = c.num_screws, c.num_holes, c.num_elbow_holes
         bit_vel = self.drill.data.joint_vel[:, self.i_bit]
         spinning = bit_vel.abs() > c.spin_min
 
         ap, aq = self.upper_arm_pose()
+        lp, lq = self.lower_arm_pose()
         sp = torch.stack([s.data.root_pos_w for s in self.screws], dim=1)  # (n, ns, 3)
         sq = torch.stack([s.data.root_quat_w for s in self.screws], dim=1)  # (n, ns, 4)
         bit_q = self.drill.data.body_quat_w[:, self.b_bit]
-        seats, axis = self.elbow_screw_seats_w()  # (n, nh, 3) both
+        seats, axis, link_q = self._hole_frames_w(arm_pose=(ap, aq), la_pose=(lp, lq))
         s_axis = quat_apply(sq.view(-1, 4), self._ez.expand(n * ns, 3)).view(n, ns, 3)  # out of head
         tip = self.drill.data.body_pos_w[:, self.b_bit] + quat_apply(
             bit_q, self._bit_tip.expand(n, 3))
         bit_dir = quat_apply(bit_q, self._ey.expand(n, 3))
 
-        # 1. screw in a free hole — all pairs at once: (n, ns, nh)
+        # 1. screw in a free, compatible hole — all pairs at once: (n, ns, nh)
         delta = sp.unsqueeze(2) - seats.unsqueeze(1)
         ax = axis.unsqueeze(1)
         t = (delta * ax).sum(-1)
@@ -432,18 +603,25 @@ class SO101AssemblyScene(BaseScene):
         axis_ok = ((s_axis.unsqueeze(2) * ax).sum(-1)
                    >= math.cos(math.radians(c.gate_axis_deg))) | (t < 0)
         in_hole = ((t > -c.gate_window_below) & (t < c.gate_window)
-                   & (radial < c.gate_radial) & axis_ok & hole_free.unsqueeze(1))
-        # 2. parts aligned
-        parts_aligned = (((self.motor.data.root_pos_w - ap).norm(dim=-1) < c.motor_align_pos)
+                   & (radial < c.gate_radial) & axis_ok & hole_free.unsqueeze(1)
+                   & self._pair_ok.unsqueeze(0))
+        # 2. parts aligned — per hole: the tab holes need the seated servo, the horn hole the
+        # seated lower_arm
+        motor_aligned = (((self.motor.data.root_pos_w - ap).norm(dim=-1) < c.motor_align_pos)
                          & (quat_error_magnitude(self.motor.data.root_quat_w, aq)
                             < math.radians(c.motor_align_deg)))
+        la_exp_p, la_exp_q = self.lower_arm_seat_w()
+        la_aligned = (((lp - la_exp_p).norm(dim=-1) < c.motor_align_pos)
+                      & (quat_error_magnitude(lq, la_exp_q) < math.radians(c.motor_align_deg)))
+        aligned_h = torch.cat([motor_aligned.unsqueeze(1).expand(-1, ne),
+                               la_aligned.unsqueeze(1).expand(-1, nh - ne)], dim=1)  # (n, nh)
         # 3. driver on the screw — per screw: (n, ns)
         on_head = (((tip.unsqueeze(1) - sp).norm(dim=-1) < c.bit_on_head)
                    & ((bit_dir.unsqueeze(1) * s_axis).sum(-1)
                       <= -math.cos(math.radians(c.bit_axis_deg))))
         # 4. trigger on; plus only a FREE screw can drive
-        screw_ok = ~taken & on_head & (parts_aligned & squeezed & spinning).unsqueeze(1)
-        gate = in_hole & screw_ok.unsqueeze(-1)  # (n, ns, nh)
+        screw_ok = ~taken & on_head & (squeezed & spinning).unsqueeze(1)
+        gate = in_hole & screw_ok.unsqueeze(-1) & aligned_h.unsqueeze(1)  # (n, ns, nh)
         driving = gate.any(dim=2)  # (n, ns)
         hsel = torch.where(gate, radial, torch.full_like(radial, torch.inf)).argmin(dim=2)
 
@@ -490,7 +668,7 @@ class SO101AssemblyScene(BaseScene):
             half = 0.5 * self.spin_ang[idx, s]
             zero = torch.zeros_like(half)
             q_spin = torch.stack([half.cos(), zero, zero, half.sin()], dim=-1)
-            quat = quat_mul(quat_mul(aq[idx], self._elbow_screw_seat_quats[h]), q_spin)
+            quat = quat_mul(quat_mul(link_q[idx, h], self._seat_quats_all[h]), q_spin)
             st = torch.cat([pos, quat, torch.zeros(len(idx), 6, device=pos.device)], dim=-1)
             self.screws[s].write_root_state_to_sim(st, idx)
             done = (t_new.abs() <= 1e-6) & (self.drive_time[idx, s] >= c.min_drive_s)
@@ -502,26 +680,35 @@ class SO101AssemblyScene(BaseScene):
         self.state[(self.fastened >= 0).all(dim=1)] = 2  # 2 = fully fastened
 
     def _set_weld(self, env_i: int, screw: int, hole: int, on: bool) -> None:
-        """Toggle screw `screw`'s weld; enabling authors its seat frame from `hole` (any screw can
-        lock into any hole). The screws are what fasten the servo, so the pre-authored motor<->arm
-        weld stays on while ANY screw is fastened."""
+        """Toggle screw `screw`'s weld; enabling authors its seat frame from `hole` (any screw
+        can lock into any hole of its group; hole indices follow the flat order, elbow tabs then
+        horn). The screws are what fasten the parts, so the pre-authored motor<->arm weld stays
+        on while ANY tab screw is fastened, and the lower_arm<->motor weld while any horn screw
+        is."""
         from pxr import Gf, UsdPhysics
 
         stage = self.env.stage
+        c = self.cfg
+        ne = c.num_elbow_holes
         j = UsdPhysics.FixedJoint.Get(stage, self._weld_paths[env_i][screw])
         if on:
-            seat, q = self.cfg.elbow_screw_seat_pts[hole], self.cfg.elbow_screw_seat_quats[hole]
+            if hole < ne:
+                seat, q = c.elbow_screw_seat_pts[hole], c.elbow_screw_seat_quats[hole]
+            else:
+                seat = c.elbow_horn_screw_seat_pts[hole - ne]
+                q = c.elbow_horn_screw_seat_quats[hole - ne]
             j.CreateLocalPos0Attr(Gf.Vec3f(*seat))
             j.CreateLocalRot0Attr(Gf.Quatf(q[0], Gf.Vec3f(*q[1:])))
         j.GetJointEnabledAttr().Set(on)
         self.fastened[env_i, screw] = hole if on else -1
-        self._set_motor_weld(env_i, bool((self.fastened[env_i] >= 0).any()))
+        f = self.fastened[env_i]
+        self._set_part_weld(self._motor_weld_paths[env_i], bool(((f >= 0) & (f < ne)).any()))
+        self._set_part_weld(self._lower_arm_weld_paths[env_i], bool((f >= ne).any()))
 
-    def _set_motor_weld(self, env_i: int, on: bool) -> None:
+    def _set_part_weld(self, path: str, on: bool) -> None:
         from pxr import UsdPhysics
 
-        UsdPhysics.FixedJoint.Get(
-            self.env.stage, self._motor_weld_paths[env_i]).GetJointEnabledAttr().Set(on)
+        UsdPhysics.FixedJoint.Get(self.env.stage, path).GetJointEnabledAttr().Set(on)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -577,18 +764,23 @@ class SO101AssemblyScene(BaseScene):
         self.drive_time[env_ids] = state["drive_time"]
         self.spin_ang[env_ids] = state["spin_ang"]
         self._reconcile_fastened(
-            env_ids, arm_pose=(state["upper_arm"][:, 0:3], state["upper_arm"][:, 3:7]))
+            env_ids, arm_pose=(state["upper_arm"][:, 0:3], state["upper_arm"][:, 3:7]),
+            motor_pose=(state["motor"][:, 0:3], state["motor"][:, 3:7]))
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
         return (
             "The lower half of an SO101 robot arm (base + shoulder + upper arm), a bare elbow "
-            "servo, four identical loose M2x6 screws, a compact power screwdriver with a "
-            "magnetic bit, and the not-yet-attached distal half (forearm..gripper) all rest "
-            "free in the workspace. The upper arm has four M2 screw holes over the elbow "
-            "servo's pocket (joint 3): a countersunk pair in the near outer wall and the "
-            "mirrored pair through the far wall. Goal: seat the servo into the pocket, then "
-            "for each hole pick a screw up with the magnetic bit, insert it, and drive it home. "
-            "Any screw fits any hole; a driven screw locks in place. The servo is fastened once "
-            "all four screws are driven."
+            "servo, four identical loose M2x6 screws, one loose M3 horn screw, a compact power "
+            "screwdriver with a magnetic bit, and the not-yet-attached distal half "
+            "(forearm..gripper) all rest free in the workspace. The upper arm has four M2 screw "
+            "holes over the elbow servo's pocket (joint 3): a countersunk pair in the near "
+            "outer wall and the mirrored pair through the far wall. The distal half's forearm "
+            "fork clips over the seated servo — its cup onto the output horn — and carries "
+            "four M3 screw holes around the elbow axis on each side (near: into the horn, "
+            "reached through the skin's access channels; far: into the servo's case back). "
+            "Goal: seat the servo into the pocket and drive the four M2 tab screws (any tab "
+            "screw fits any tab hole), then clip the forearm onto the horn and drive the M3s "
+            "home (any M3 fits any horn-line hole). A driven screw locks in place; the servo "
+            "is fastened by the tab screws, the forearm by the horn screws."
         )
