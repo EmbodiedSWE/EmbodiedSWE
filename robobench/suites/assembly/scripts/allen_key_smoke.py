@@ -1,22 +1,21 @@
 """Physics smoke test for AllenBoltAssemblyScene — the allen KEY drives the bolt down REAL SDF
-threads. Every body is fully dynamic: no screw-joint idealization, no kinematic railing, only
-forces on the key. The bolt<->platform thread contact and the key<->socket contact are both live.
+threads. Every body is fully dynamic and the key is driven purely by forces; the bolt<->platform
+thread contact and the key<->socket contact are both live.
 
 The bolt is staged upright with its tip just above the hole, so the threads self-engage under
-press + twist (a teleported thread-phase mismatch explodes). The key is then driven like a hand
+press + twist (staging deeper cannot match the thread phase). The key is driven like a hand
 would: a ramped press along the bolt's axis, a torque-capped velocity-servo twist, and soft
-xy-centering / tilt-righting PD wrenches (gravity-free key). Two force-only workarounds make this
-possible:
+xy-centering / tilt-righting PD wrenches (gravity-free key). Two workarounds keep the force
+drive stable:
 
   * WRENCH FRAME: this Isaac Lab checkout converts `is_global=True` external wrenches with link
     poses cached at the FIRST call, so a "world" wrench silently rotates with the body — any xy
     component on a spinning key becomes a rotating force, i.e. an energy pump. The wrench is
     therefore rotated into the key's CURRENT link frame here and applied with is_global=False.
   * DRIVER-SYMMETRIC KEY INERTIA (`SYM_INERTIA`): a free L-key is torque-drive unstable — the
-    handle's products of inertia couple z-torque into tumble, which no soft "steadying hand" PD
-    can arrest at this dt (a mid-air probe locked into a ~95 rad/s propeller state). Authored
-    diagonal inertia + on-axis COM make the key behave like a stubby T-handle driver, while its
-    collision shapes and visuals stay the L-key.
+    handle's products of inertia couple the drive torque into tumble faster than the soft
+    steadying PD can arrest at this dt. Authored diagonal inertia + on-axis COM make the key
+    behave like a stubby T-handle driver, while its collision shapes and visuals stay the L-key.
 
 The drive comes up in two stages because the bolt stands tip-on-crest with no lateral captivity
 until the first thread captures: a low-authority ENGAGE (light press, slow spin) until the tip is
@@ -79,7 +78,7 @@ KW = 0.05                # twist servo gain (N m s/rad)
 ENGAGE_CTL = (1.0, 1.5, 0.04)
 DRIVE_CTL = (3.0, 2.5, 0.12)
 RAMP_STEPS = 120         # press/twist authority ramp-in at each stage start (steps at dt=1/240)
-# Soft hand-steadying PD on the key (forces/torques only — never pose writes):
+# Soft hand-steadying PD wrenches on the key:
 KP_XY, KD_XY = 100.0, 4.0     # N/m, N s/m — recenters the key tip on the socket axis
 KP_TILT, KD_TILT = 0.5, 0.02  # N m/rad, N m s/rad — rights the key onto the bolt axis (spin free)
 # Driver-symmetric key mass properties (see the module docstring): (Ixx, Iyy, Izz, com_z).
