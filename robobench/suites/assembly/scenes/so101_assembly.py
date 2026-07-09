@@ -32,8 +32,9 @@ DISABLED FixedJoint per screw, its seat frame authored at enable time (so any sc
 hole in its own group); a per-step gate (screw in a free hole + parts aligned + bit on that
 screw + trigger on) advances the screw kinematically with a latched depth and snaps its weld on
 at the seat. The holes come in per-joint GROUPS, each with its own seat link and part-alignment
-check: any fastened elbow tab screw welds motor<->upper_arm; the fastened horn screw welds
-lower_arm<->motor. THE MAGNETIC BIT (same section): a free screw whose head
+check: any fastened elbow tab screw welds motor<->upper_arm; the fastened horn screws CLOSE THE
+DRIVEN ELBOW JOINT (a revolute about the horn axis with the servo's drive — the assembled robot
+articulates; command it via set_elbow_target). THE MAGNETIC BIT (same section): a free screw whose head
 touches the bit tip attaches and rides it, coaxial and spinning, until driven home — real M2
 driving carries the screw on a magnetized bit, and any embodiment holding the drill can use it.
 Everything else is real collision against the parts' actual holes and walls.
@@ -111,10 +112,20 @@ class SO101SceneCfg(BaseCfg):
     # --- info: the elbow HORN fastening — the lower_arm clips onto the motor's output horn ---
     # Seated lower_arm pose in the MOTOR (upper_arm-link) frame: the elbow_flex joint transform
     # at joint zero. The lower_arm origin sits ON the elbow axis, so this pose is also where the
-    # pre-authored lower_arm<->motor weld is framed.
+    # pre-authored elbow JOINT is framed.
     elbow_lower_arm_seat_pos: tuple[float, float, float] = info((-0.11257, -0.028, 0.0))
     elbow_lower_arm_seat_quat: tuple[float, float, float, float] = info(
         (0.7071068, 0.0, 0.0, 0.7071068))
+    # Fastening the horn screws doesn't weld the forearm rigid — it closes the REAL elbow
+    # joint: a revolute about the horn axis, driven with the URDF elbow_flex servo drive.
+    # Enabled while any horn screw is fastened; command it via set_elbow_target().
+    elbow_joint_stiffness: float = info(5.2859)  # USD angular drive units (per-degree); the
+    # URDF elbow_flex servo stiffness
+    elbow_joint_damping: float = info(0.025)  # near-critical for the forearm about this axis —
+    # the URDF's 0.0021 is tuned for the implicit articulation solver and leaves this LOOSE
+    # joint ~10x underdamped (the forearm rings as a pendulum)
+    elbow_joint_max_force: float = info(10.0)
+    elbow_joint_limit_deg: float = info(96.83)
     # The M3 horn screws' seats (driven head-top poses), in the LOWER_ARM link frame: the FOUR
     # peripheral screw lines around the elbow axis, on EACH side of the fork (the center bore is
     # only driver access). NEAR (horn) side, holes 0-3: the head seats on the fork's inner plate
@@ -315,7 +326,7 @@ class SO101AssemblyScene(BaseScene):
         c = self.cfg
         self._weld_paths: list[list[str]] = []  # [env][screw]
         self._motor_weld_paths: list[str] = []
-        self._lower_arm_weld_paths: list[str] = []
+        self._elbow_joint_paths: list[str] = []
         for i in range(self.env.num_envs):
             base = f"/World/envs/env_{i}"
             flt = UsdPhysics.FilteredPairsAPI.Apply(stage.GetPrimAtPath(f"{base}/Drill/bit"))
@@ -347,16 +358,25 @@ class SO101AssemblyScene(BaseScene):
             mj.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
             mj.CreateJointEnabledAttr(False)
             self._motor_weld_paths.append(f"{base}/motor_weld")
-            lj = UsdPhysics.FixedJoint.Define(stage, f"{base}/lower_arm_weld")
+            lj = UsdPhysics.RevoluteJoint.Define(stage, f"{base}/elbow_joint")
             lj.CreateBody0Rel().SetTargets([f"{base}/Motor/upper_arm"])
             lj.CreateBody1Rel().SetTargets([f"{base}/Distal/lower_arm"])
+            lj.CreateAxisAttr("Z")  # the horn axis — the servo's output DOF
             lj.CreateLocalPos0Attr(Gf.Vec3f(*c.elbow_lower_arm_seat_pos))
             q = c.elbow_lower_arm_seat_quat
             lj.CreateLocalRot0Attr(Gf.Quatf(q[0], Gf.Vec3f(*q[1:])))
             lj.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))
             lj.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+            lj.CreateLowerLimitAttr(-c.elbow_joint_limit_deg)
+            lj.CreateUpperLimitAttr(c.elbow_joint_limit_deg)
+            drv = UsdPhysics.DriveAPI.Apply(lj.GetPrim(), "angular")
+            drv.CreateTypeAttr("force")
+            drv.CreateStiffnessAttr(c.elbow_joint_stiffness)
+            drv.CreateDampingAttr(c.elbow_joint_damping)
+            drv.CreateMaxForceAttr(c.elbow_joint_max_force)
+            drv.CreateTargetPositionAttr(0.0)
             lj.CreateJointEnabledAttr(False)
-            self._lower_arm_weld_paths.append(f"{base}/lower_arm_weld")
+            self._elbow_joint_paths.append(f"{base}/elbow_joint")
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Every body reset to its free spawn pose (spread out, upright, resting on the ground);
@@ -509,6 +529,13 @@ class SO101AssemblyScene(BaseScene):
             st[:, 3:7] = aq[rows]
             self.motor.write_root_state_to_sim(st, ids[rows])
         la_seat_p, la_seat_q = self.lower_arm_seat_w(motor_pose=(exp_mp, exp_mq))
+        # the fork hangs on the assembled elbow JOINT (a revolute): a small heal keeps the live
+        # joint ANGLE, but a row that needs a real SNAP (> weld_snap = a teleport) resets the
+        # angle to ZERO — the pre-teleport pose it would be extracted from is stale garbage,
+        # and an arbitrary angle can violate the joint limits at re-enable; the drive re-tracks
+        # its target from zero
+        qz, _ = self._elbow_angle_split(self.distal.data.root_quat_w[ids], la_seat_q)
+        la_exp_q = quat_mul(la_seat_q, qz)
         fix = la_welded & ((self.distal.data.root_pos_w[ids] - la_seat_p).norm(dim=-1)
                            > c.weld_snap)
         if fix.any():
@@ -517,8 +544,9 @@ class SO101AssemblyScene(BaseScene):
             st[:, 0:3] = la_seat_p[rows]
             st[:, 3:7] = la_seat_q[rows]
             self.distal.write_root_state_to_sim(st, ids[rows])
+            la_exp_q[rows] = la_seat_q[rows]
         exp_lp = torch.where(la_welded.unsqueeze(-1), la_seat_p, self.distal.data.root_pos_w[ids])
-        exp_lq = torch.where(la_welded.unsqueeze(-1), la_seat_q, self.distal.data.root_quat_w[ids])
+        exp_lq = torch.where(la_welded.unsqueeze(-1), la_exp_q, self.distal.data.root_quat_w[ids])
         seats, _, link_q = self._hole_frames_w(arm_pose=(ap, aq), la_pose=(exp_lp, exp_lq))
         arange = torch.arange(len(ids), device=dev)
         for s in range(c.num_screws):
@@ -611,8 +639,11 @@ class SO101AssemblyScene(BaseScene):
                          & (quat_error_magnitude(self.motor.data.root_quat_w, aq)
                             < math.radians(c.motor_align_deg)))
         la_exp_p, la_exp_q = self.lower_arm_seat_w()
+        # angle-agnostic: the horn holes rotate WITH the assembled elbow joint, so only the
+        # position and the OFF-AXIS orientation must match the seat
+        _, la_residual = self._elbow_angle_split(lq, la_exp_q)
         la_aligned = (((lp - la_exp_p).norm(dim=-1) < c.motor_align_pos)
-                      & (quat_error_magnitude(lq, la_exp_q) < math.radians(c.motor_align_deg)))
+                      & (la_residual < math.radians(c.motor_align_deg)))
         aligned_h = torch.cat([motor_aligned.unsqueeze(1).expand(-1, ne),
                                la_aligned.unsqueeze(1).expand(-1, nh - ne)], dim=1)  # (n, nh)
         # 3. driver on the screw — per screw: (n, ns)
@@ -625,7 +656,13 @@ class SO101AssemblyScene(BaseScene):
         driving = gate.any(dim=2)  # (n, ns)
         hsel = torch.where(gate, radial, torch.full_like(radial, torch.inf)).argmin(dim=2)
 
-        self.drive_time = torch.where(driving, self.drive_time + dt, torch.zeros_like(self.drive_time))
+        # accumulated drive time survives a momentary gate break while the screw stays ON the
+        # bit (the magnet re-takes it instantly and the driver never stopped spinning on it) —
+        # requiring an uninterrupted window starves the weld whenever a contact flicker at the
+        # seat breaks the gate for single steps
+        self.drive_time = torch.where(
+            driving, self.drive_time + dt,
+            torch.where(self.attached, self.drive_time, torch.zeros_like(self.drive_time)))
         self.spin_ang = torch.where(driving, self.spin_ang + bit_vel.unsqueeze(1) * dt, self.spin_ang)
         t_sel = t.gather(2, hsel.unsqueeze(-1)).squeeze(-1)
         self.drive_t = torch.where(driving & ~self.driving_prev, t_sel, self.drive_t)
@@ -703,12 +740,34 @@ class SO101AssemblyScene(BaseScene):
         self.fastened[env_i, screw] = hole if on else -1
         f = self.fastened[env_i]
         self._set_part_weld(self._motor_weld_paths[env_i], bool(((f >= 0) & (f < ne)).any()))
-        self._set_part_weld(self._lower_arm_weld_paths[env_i], bool((f >= ne).any()))
+        self._set_part_weld(self._elbow_joint_paths[env_i], bool((f >= ne).any()))
 
     def _set_part_weld(self, path: str, on: bool) -> None:
         from pxr import UsdPhysics
 
-        UsdPhysics.FixedJoint.Get(self.env.stage, path).GetJointEnabledAttr().Set(on)
+        UsdPhysics.Joint.Get(self.env.stage, path).GetJointEnabledAttr().Set(on)
+
+    def set_elbow_target(self, target_rad: float) -> None:
+        """Position target for the ASSEMBLED elbow joint (live once a horn screw is fastened).
+        The servo drive tracks it exactly like the arm's own joint drives."""
+        from pxr import UsdPhysics
+
+        deg = math.degrees(target_rad)
+        for path in self._elbow_joint_paths:
+            UsdPhysics.DriveAPI.Get(self.env.stage.GetPrimAtPath(path),
+                                    "angular").GetTargetPositionAttr().Set(deg)
+
+    def _elbow_angle_split(self, lq: torch.Tensor, la_seat_q: torch.Tensor,
+                           ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Split the fork's orientation relative to its seat into the elbow-axis rotation
+        Rz(theta) (the assembled joint's DOF) and the off-axis residual (rad)."""
+        from isaaclab.utils.math import quat_conjugate, quat_error_magnitude, quat_mul
+
+        rel = quat_mul(quat_conjugate(la_seat_q), lq)
+        half = torch.atan2(rel[:, 3], rel[:, 0])
+        zero = torch.zeros_like(half)
+        qz = torch.stack([half.cos(), zero, zero, half.sin()], dim=-1)
+        return qz, quat_error_magnitude(rel, qz)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:

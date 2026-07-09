@@ -600,6 +600,22 @@ def main() -> None:
         ph = 2.0 * math.pi * 3.0 * (j + 1) / sps
         move_arm(0.15, dx=0.015 * math.sin(ph), dy=0.010 * math.sin(0.7 * ph))
         step(1, "J shake")
+    # the payoff: the joint the screws just closed is a REAL driven servo joint
+    print("[J] the assembled elbow ARTICULATES — driven by the servo it was screwed onto",
+          flush=True)
+    step(sps // 2, "J settle")  # let the shake ring down before the joint sweep
+    elbow_max = 0.0
+    for j in range(int(3.0 * sps)):
+        scene.set_elbow_target(math.radians(30.0)
+                               * math.sin(2.0 * math.pi * (j + 1) / (3.0 * sps)))
+        step(1, "J elbow")
+        _, sq_ = scene.lower_arm_seat_w()
+        qz_, _ = scene._elbow_angle_split(scene.distal.data.root_quat_w, sq_)
+        elbow_max = max(elbow_max, abs(math.degrees(
+            2.0 * math.atan2(qz_[0, 3].item(), qz_[0, 0].item()))))
+    scene.set_elbow_target(0.0)
+    step(sps // 2, "J elbow0")
+    print(f"[J] elbow articulated to {elbow_max:.1f} deg and back", flush=True)
     for j in range(int(1.5 * sps)):
         move_arm(0.15, yaw=math.pi * (j + 1) / (1.5 * sps))
         step(1, "J rotate")
@@ -620,13 +636,15 @@ def main() -> None:
     all_fastened = bool((scene.fastened >= 0).all())
     ok = (all_fastened and bool(picked.all()) and bool(picked_m3.all())
           and all(f > 0 for f in fasten_steps) and all(f > 0 for f in m3_steps)
+          and elbow_max > 20.0
           and float(err_knock.max()) < 0.0015 and float(err_motor_stress.max()) < 0.0015
           and float(err_la_stress.max()) < 0.0015
           and float(err_free.max()) < 0.0015 and float(err_m3_free.max()) < 0.0015
           and float(err_motor_free.max()) < 0.0015 and float(err_la_free.max()) < 0.0015)
     print(f"SO101-SMOKE | servo inserted to {ins_err.mean() * 1000:.2f} mm (aligned after) | "
           f"M2 placed {int(picked.sum())}/{cfg.num_elbow_screws} at {fasten_steps} | "
-          f"M3 placed {int(picked_m3.sum())}/{cfg.num_horn_screws} at {m3_steps} | errs (mm): "
+          f"M3 placed {int(picked_m3.sum())}/{cfg.num_horn_screws} at {m3_steps} | "
+          f"elbow swung {elbow_max:.1f} deg | errs (mm): "
           f"knock {err_knock.max() * 1000:.2f}, wrench {err_motor_stress.max() * 1000:.2f}/"
           f"{err_la_stress.max() * 1000:.2f}, finale {err_free.max() * 1000:.2f}/"
           f"{err_m3_free.max() * 1000:.2f}/{err_motor_free.max() * 1000:.2f}/"
