@@ -95,8 +95,14 @@ PICK_STOP = 0.002   # bit-tip standoff above the lying screw where the magnet ta
 DRIVE_START = 0.002  # carried-screw head height above the seat where the driving begins (m)
 NUM_NEAR = 2  # tab holes 0,1 = near wall; 2,3 = far wall (see the scene cfg seat table)
 NUM_NEAR_M3 = 4  # horn holes 0-3 = near (horn) side; 4-7 = far (case-back) side
-FORK_LIFT = 0.0015  # fork hover height off its seat before the press, along the axis (m)
-PRESS_S = 0.75      # how long the fork press takes (s)
+# The fork ATTACH is a SLIDE-ON (the clevis path): the fork approaches from the servo's front
+# — where the forearm naturally extends, open space — mouth-first along the servo's long axis,
+# lifted slightly off the engagement bosses, then presses down onto the horn. In the kit this
+# is the print-flex snap; rigid bodies get the swept locating features' collision trimmed.
+SLIDE_IN = 0.028    # slide travel along the fork's mouth axis (m): mouth starts past the nose
+SLIDE_S = 1.2       # how long the slide takes (s)
+FORK_LIFT = 0.0010  # lift off the seat during the slide, along the out-axis (m)
+PRESS_S = 0.75      # how long the final press takes (s)
 
 # The clamp: during the precision phases, re-write the base root state to the working pose each step
 # (a stand-in for a vise); free otherwise. Kinematic, not a force grasp — a force PD stiff enough
@@ -171,7 +177,8 @@ def main() -> None:
     pick: dict = {"anchor": None}  # bit-tip approach anchor while picking a screw up (see step())
     hold_arm = False  # the kinematic clamp that holds the base in the air (the smoke's vise)
     hold_fork = False  # the hand holding the fork on the horn until the first M3 bites
-    fork_lift = [0.0]  # the fork hand's current hover offset along the out-of-hole axis (m)
+    fork_off = {"slide": 0.0, "lift": 0.0}  # hand offset in the SEAT frame: slide = out along
+    # the mouth axis (toward the servo's front), lift = off the seat along the out-axis
     grab_prev_quat: list = [None]  # last grab facing — a FLIP needs a long ring-down settle
     arm_target_pos = (origin + torch.tensor((0.0, 0.0, HOLD_HEIGHT), device=dev)).contiguous()
     # clone, NOT expand().contiguous(): at n=1 the expanded view is already "contiguous", so
@@ -225,11 +232,11 @@ def main() -> None:
                 st_[:, 3:7] = aq_
                 st_[:, 7:10] = scene.motor.data.root_lin_vel_w
                 scene.motor.write_root_state_to_sim(st_, None)
-            if hold_fork:  # the fork hand: the fork rides its live seat, lifted by fork_lift
+            if hold_fork:  # the fork hand: the fork rides its live seat, offset by fork_off
                 seat_p, seat_q = scene.lower_arm_seat_w()
-                _, ax = seat_axis("horn", 0)  # out-of-hole = away from the servo
+                off = torch.tensor((-fork_off["slide"], 0.0, -fork_off["lift"]), device=dev)
                 st = torch.zeros(n, 13, device=dev)
-                st[:, 0:3] = seat_p + fork_lift[0] * ax
+                st[:, 0:3] = seat_p + quat_apply(seat_q, off.expand(n, 3))
                 st[:, 3:7] = seat_q
                 scene.distal.write_root_state_to_sim(st, None)
                 zj = torch.zeros(n, scene.distal.num_joints, device=dev)
@@ -515,19 +522,23 @@ def main() -> None:
     if grasp_offset[0] is not None:
         release_grasp()
 
-    # ============ H) ATTACH: drill parks; the hand clips the forearm fork onto the horn ========
-    print("[H] all tab screws driven — the drill parks; back in the lying pose, the hand brings "
-          "the forearm fork to a 1.5 mm hover over the horn and presses it on", flush=True)
+    # ============ H) ATTACH: drill parks; the hand slides the forearm fork onto the servo ======
+    print("[H] all tab screws driven — the drill parks; back in the lying pose, the hand slides "
+          "the forearm fork onto the servo, mouth-first along its axis (the clevis path), then "
+          "presses it down onto the horn", flush=True)
     grab(JOINT2_DEG, q_hold, HOLD_HEIGHT)  # the horn side faces up in the lying pose
     hold_fork = True
-    fork_lift[0] = FORK_LIFT
+    fork_off.update(slide=SLIDE_IN, lift=FORK_LIFT)
     step(sps // 2, "H hover")
+    for j in range(int(SLIDE_S * sps)):
+        fork_off["slide"] = SLIDE_IN * (1.0 - (j + 1) / (SLIDE_S * sps))
+        step(1, "H slide")
     for j in range(int(PRESS_S * sps)):
-        fork_lift[0] = FORK_LIFT * (1.0 - (j + 1) / (PRESS_S * sps))
+        fork_off["lift"] = FORK_LIFT * (1.0 - (j + 1) / (PRESS_S * sps))
         step(1, "H press")
     step(sps // 4, "H seated")
-    print(f"[H] fork pressed onto the horn: fork err {la_err().max() * 1000:.2f} mm (the hand "
-          f"keeps holding until the first horn screw bites)", flush=True)
+    print(f"[H] fork slid on and pressed onto the horn: fork err {la_err().max() * 1000:.2f} mm "
+          f"(the hand keeps holding until the first horn screw bites)", flush=True)
 
     # ============ D-G again) the eight M3 horn screws: near four lying, far four flipped =======
     def release_fork_hand() -> None:  # the first horn screw holds the fork now
