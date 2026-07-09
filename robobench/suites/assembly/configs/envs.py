@@ -34,6 +34,11 @@ register_env(SUITE, lambda: EnvCfg(scene="bulb", robot="null", env_spacing=2))
 # -> "assembly.allen_bolt"
 register_env(SUITE, lambda: EnvCfg(scene="allen_bolt", robot="null", env_spacing=2))
 
+# PC case lying on its side, motherboard up: 7 threaded case-mount holes, 7 loose allen bolts, and
+# one allen key that drives each bolt down into its hole, scene physics only for now.
+# -> "assembly.pc_motherboard"
+register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spacing=2))
+
 # Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x). Three
 # control modes, switchable by env name:
 #   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
