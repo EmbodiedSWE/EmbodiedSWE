@@ -73,7 +73,7 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
     key_init_z: float = info(0.0075)  # resting on a hex flat (apothem 6.25 mm) + margin
     key_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # wxyz; flat
     key_mass: float = info(0.08)  # steel 12.5 mm L-key (kg)
-    key_disable_gravity: bool = info(False)  # smokes that rail the key per-step set this True
+    key_disable_gravity: bool = info(False)  # the force-driven key smoke sets this True (no hand to bear the handle's weight)
     key_contact_offset: float = info(0.0005)  # must stay well below the 0.75 mm/side socket clearance
     bolt_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # wxyz; lying
     # Selectable work surface (same presets as the sibling scenes).
