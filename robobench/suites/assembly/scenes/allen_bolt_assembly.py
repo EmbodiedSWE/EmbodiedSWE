@@ -3,14 +3,14 @@
 A small steel platform (a plate on two legs) stands fixed on a table, its plate carrying an M16
 threaded through-hole; a loose M16 socket-head cap screw and an L-shaped allen key rest beside it.
 Goal (carried here, no task layer): stand the bolt in the hole and drive it down with the key
-(clockwise while pressing) until it seats — the role-inverted nut_thread: the fixed part carries
-the internal thread and the BOLT is the part that turns, via the key in its 14 mm hex socket.
+(clockwise while pressing) until it seats — the platform holds the internal thread and the BOLT is
+the part that turns, via the key in its 14 mm hex socket.
 
-The platform is kinematic; its visible plate is plain boxes and the threads live in an invisible,
-collision-only copy of the Factory nut mesh spanning the plate (see `scripts/author_allen_assets.py`).
-The bolt is a free rigid body — origin at the thread TIP, +z up through the head, so tip depth
-below the plate top is the direct progress measure, read live by `seated()`/`engaged()`. The key
-is a free rigid body with exact convex hex-prism colliders (tip at origin, arm up +z, handle +x).
+The platform stays fixed and never moves; the M16 thread lives inside the plate's hole and is the
+only part of the platform that touches the bolt shank. The bolt is a free rigid body — origin at
+the thread TIP, +z up through the head, so tip depth below the plate top is the direct progress
+measure, read live by `seated()`/`engaged()`. The key is a free rigid body with exact convex
+hex-prism colliders (tip at origin, arm up +z, handle +x).
 
 Heavy imports (isaaclab, pxr) are deferred so importing this module stays app-free.
 """
@@ -53,7 +53,7 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     num_pairs: int = info(1)  # number of platform+bolt pairs
     platform_slots: tuple[tuple[float, float], ...] = info(((0.0, 0.0),))  # platform xy, table-rel.
-    # Geometry baked by `scripts/author_allen_assets.py` (defaults; regenerate assets if changed):
+    # Geometry baked into the committed USD assets (defaults; keep in sync if the assets change):
     plate_top: float = info(0.038)  # plate top above the platform origin (legs 25 mm + plate 13 mm)
     thread_len: float = info(0.0248)  # bolt thread length: tip depth at which the head bottoms out
     bolt_mass: float = info(0.05)  # M16 socket-head cap screw (kg)
@@ -89,7 +89,7 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
                     "orient": (1.0, 0.0, 0.0, 0.0), "surface_z": 0.994, "pos": (0.0, 0.0),
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
-    # Asset USDs; empty -> the assets authored by `scripts/author_allen_assets.py`.
+    # Asset USDs; empty -> the prebuilt assets committed under `assets/`.
     asset_dir: str = info("")
     bolt_usd: str = info("")
     platform_usd: str = info("")
@@ -132,8 +132,8 @@ class AllenBoltAssemblyScene(BaseScene):
         for usd in (c.bolt_usd, c.platform_usd, c.key_usd):
             if not Path(usd).is_file():
                 raise FileNotFoundError(
-                    f"{usd} not found — generate it with "
-                    f"`python -m robobench.suites.assembly.scripts.author_allen_assets`"
+                    f"{usd} not found — the allen-bolt assets ship with the repo under "
+                    f"`suites/assembly/assets/`"
                 )
         preset = c.TABLES[c.table]
         wx, wy = c.workbench_pos
