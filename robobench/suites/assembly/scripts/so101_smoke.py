@@ -7,9 +7,12 @@ scaffolding is the base clamp (a stand-in for a bench vise) and the re-fixturing
 between holes (a stand-in for re-clamping the workpiece).
 
 Drives ALL FOUR elbow-servo M2 screws: the near pair (countersunk outer wall) and the far pair
-(the ring-boss holes through the opposite wall). The screws are identical and carried to their
-holes on the drill's MAGNETIC BIT — how real M2 assembly is done; the scene's gate pairs any
-screw with any free hole.
+(the ring-boss holes through the opposite wall). The screws are identical and the scene's gate
+pairs any screw with any free hole. The two walls demonstrate the two placement strategies a
+robot has: the NEAR screws are DROPPED into their countersinks and slide in as deep as they
+slide — the bit then reaches in, takes the screw magnetically, and draws it to its seat while
+driving; the FAR screws are picked up and carried to their holes on the drill's MAGNETIC BIT —
+how real M2 assembly is done.
 
 The arm is steadied during the precision phases: before each, the smoke teleports it to the
 working pose for the TARGET hole — near holes face up in the lying pose, far holes face up in a
@@ -24,12 +27,15 @@ facings. The procedure, in order:
      a firm kinematic press then holds it until the first screw bites.
   C) ROTATE  — joint 2 swings the arm flat under its own drive (the base clamp keeps it steady).
   Then, for each hole 0..3:
-  D) PICKUP  — re-grab facing that hole up; the drill hovers over the lying screw, descends,
-     and the MAGNETIC BIT takes it (a scene rule, like the gate: real M2 driving carries the
-     screw on a magnetized bit), then lifts it off the ground.
-  E) DESCEND — the drill carries the screw over the hole and lowers it straight in, tip-first.
-  F) DRIVE   — trigger -> gate -> the carried screw drives to its seat -> weld at depth (the
-     first screw also welds motor->arm and the hand releases the servo).
+  D) PLACE   — re-grab facing that hole up. NEAR: the screw is dropped coaxially into the
+     countersunk hole and settles wherever it slides. FAR: the drill hovers over the lying
+     screw, descends, and the MAGNETIC BIT takes it (a scene rule, like the gate: real M2
+     driving carries the screw on a magnetized bit), then lifts it off the ground.
+  E) DESCEND — NEAR: the drill descends onto the screw resting in its hole. FAR: the drill
+     carries the screw over the hole and lowers it straight in, tip-first.
+  F) DRIVE   — trigger -> gate -> the screw drives to its seat from wherever it engaged —
+     descending if above, drawn back up if it slid deep — -> weld at depth (the first screw
+     also welds motor->arm and the hand releases the servo).
   G) RETREAT — the drill retreats gently to its hover and waits for the next screw.
   H) PARK    — after ALL screws are driven the drill parks aside, once (its own phase).
   I) STRESS  — knock a fastened screw, wrench the servo; nothing may come apart.
@@ -82,6 +88,7 @@ HOVER = 0.10        # bit-tip standoff above the seat before the drill descends 
 STATE_NAMES = ("free", "driving", "fastened")  # labels for scene.state (0/1/2), for the readout
 PICK_STOP = 0.002   # bit-tip standoff above the lying screw where the magnet takes it (m)
 DRIVE_START = 0.002  # carried-screw head height above the seat where the driving begins (m)
+NEAR_DROP_H = 0.010  # release height of a near-hole drop, head-top above the seat (m)
 NUM_NEAR = 2  # holes 0,1 = near wall; 2,3 = far wall (see the scene cfg seat table)
 
 # The clamp: during the precision phases, re-write the base root state to the working pose each step
@@ -163,6 +170,15 @@ def main() -> None:
         s, a = scene.elbow_screw_seats_w()
         h = cur_hole if hole is None else hole
         return s[:, h], a[:, h]
+
+    def drop_screw(s: int, hole: int, height: float) -> None:
+        """Release screw `s` coaxially `height` above hole `hole` — it falls straight in."""
+        seat, axis = seat_axis(hole)
+        st = torch.zeros(n, 13, device=dev)
+        st[:, 0:3] = seat + height * axis
+        st[:, 3:7] = quat_mul(scene.upper_arm_pose()[1],
+                              scene._elbow_screw_seat_quats[hole].expand(n, 4))
+        scene.screws[s].write_root_state_to_sim(st, None)
 
     def step(k: int, phase: str) -> None:
         nonlocal stepno
@@ -392,42 +408,70 @@ def main() -> None:
     fasten_steps: list[int] = []
     for hole in range(cfg.num_screws):
         near = hole < NUM_NEAR
-        side = "near" if near else "far"
         cur_hole = hole
-        print(f"[D] hole {hole} ({side}): re-grabbed with it facing up; the drill picks "
-              f"screw {hole} up with its magnetic bit", flush=True)
         grab(JOINT2_DEG, q_hold if near else q_far, HOLD_HEIGHT if near else HOLD_HEIGHT_FAR)
-        pick["anchor"] = scene.screws[hole].data.root_pos_w.clone()  # the lying screw
-        track_drill = False
-        standoff[:] = HOVER
-        step(sps // 8, "D hover")
-        for j in range(sps):  # descend until the magnet takes the screw
-            standoff[:] = HOVER + (PICK_STOP - HOVER) * (j + 1) / sps
-            step(1, "D pickup")
-            if bool(scene.attached[:, hole].all()):
-                break
-        picked[hole] = bool(scene.attached[:, hole].all())
-        print(f"[D] screw {hole} {'is on the bit' if picked[hole] else 'MISSED the pickup'}",
-              flush=True)
-        z_now = float(standoff[0])
-        for j in range(sps // 2):  # lift it off the ground
-            standoff[:] = z_now + (HOVER - z_now) * (j + 1) / (sps // 2)
-            step(1, "D lift")
-        pick["anchor"] = None
+        if near:
+            # NEAR: the screw is DROPPED into the countersunk hole and slides in as deep as it
+            # slides — the gate accepts it anywhere in the bore and the drive draws it to its
+            # seat. The two walls demonstrate the two strategies an agent can use.
+            print(f"[D] hole {hole} (near): screw {hole} dropped into the countersunk hole",
+                  flush=True)
+            drop_screw(hole, hole, NEAR_DROP_H)
+            step((3 * sps) // 4, "D drop")
+            s0, a0 = seat_axis()
+            t_rest = ((scene.screws[hole].data.root_pos_w - s0) * a0).sum(-1)
+            picked[hole] = bool(((t_rest > -cfg.gate_window_below)
+                                 & (t_rest < cfg.gate_window)).all())
+            print(f"[D] dropped screw rests {t_rest.mean() * 1000:+.2f} mm from the seat "
+                  f"({'in the hole' if picked[hole] else 'MISSED the hole'})", flush=True)
+            z_engage = float(t_rest.mean()) + 0.0004
 
-        print("[E] the drill carries the screw over the hole and lowers it in", flush=True)
-        standoff[:] = HOVER
-        track_drill = True
-        step(sps // 8, "E hover")
-        for j in range(sps):
-            standoff[:] = HOVER + (DRIVE_START - HOVER) * (j + 1) / sps
-            step(1, "E descend")
+            print("[E] the drill descends onto the screw in the hole", flush=True)
+            standoff[:] = HOVER
+            track_drill = True
+            step(sps // 8, "E hover")
+            for j in range(sps):
+                standoff[:] = HOVER + (z_engage - HOVER) * (j + 1) / sps
+                step(1, "E descend")
+        else:
+            # FAR: the drill picks the screw up with its magnetic bit and carries it in.
+            print(f"[D] hole {hole} (far): the drill picks screw {hole} up with its magnetic "
+                  f"bit", flush=True)
+            pick["anchor"] = scene.screws[hole].data.root_pos_w.clone()  # the lying screw
+            track_drill = False
+            standoff[:] = HOVER
+            step(sps // 8, "D hover")
+            for j in range(sps):  # descend until the magnet takes the screw
+                standoff[:] = HOVER + (PICK_STOP - HOVER) * (j + 1) / sps
+                step(1, "D pickup")
+                if bool(scene.attached[:, hole].all()):
+                    break
+            picked[hole] = bool(scene.attached[:, hole].all())
+            print(f"[D] screw {hole} {'is on the bit' if picked[hole] else 'MISSED the pickup'}",
+                  flush=True)
+            z_now = float(standoff[0])
+            for j in range(sps // 2):  # lift it off the ground
+                standoff[:] = z_now + (HOVER - z_now) * (j + 1) / (sps // 2)
+                step(1, "D lift")
+            pick["anchor"] = None
+
+            print("[E] the drill carries the screw over the hole and lowers it in", flush=True)
+            standoff[:] = HOVER
+            track_drill = True
+            step(sps // 8, "E hover")
+            for j in range(sps):
+                standoff[:] = HOVER + (DRIVE_START - HOVER) * (j + 1) / sps
+                step(1, "E descend")
 
         print("[F] trigger on — driving", flush=True)
         finger[:] = -FINGER
         fasten_step = -1
         for _ in range(int(1.5 * sps)):
-            standoff[:] = (standoff - cfg.drive_rate * env.dt).clamp_min(BIT_STOP)
+            # the bit rides just above the screw's live depth — following it down as it drives
+            # in, or back up as a deep-lying screw is drawn to its seat
+            s_, a_ = seat_axis()
+            t_live = ((scene.screws[hole].data.root_pos_w - s_) * a_).sum(-1)
+            standoff[:] = torch.maximum(t_live + 0.0004, torch.full_like(t_live, BIT_STOP))
             step(1, "F drive")
             if fasten_step < 0 and bool((scene.fastened[:, hole] >= 0).all()):
                 fasten_step = stepno
@@ -514,7 +558,7 @@ def main() -> None:
           and float(err_knock.max()) < 0.0015 and float(err_motor_stress.max()) < 0.0015
           and float(err_free.max()) < 0.0015 and float(err_motor_free.max()) < 0.0015)
     print(f"SO101-SMOKE | servo inserted to {ins_err.mean() * 1000:.2f} mm (aligned after) | "
-          f"screws picked {int(picked.sum())}/{cfg.num_screws} | fastened at steps {fasten_steps} | "
+          f"screws placed {int(picked.sum())}/{cfg.num_screws} | fastened at steps {fasten_steps} | "
           f"errs (mm): knock {err_knock.max() * 1000:.2f}, "
           f"wrench {err_motor_stress.max() * 1000:.2f}, finale {err_free.max() * 1000:.2f}/"
           f"{err_motor_free.max() * 1000:.2f} | {'PASS' if ok else 'FAIL'}", flush=True)

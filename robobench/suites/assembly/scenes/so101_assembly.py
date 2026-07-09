@@ -61,6 +61,10 @@ class SO101SceneCfg(BaseCfg):
     gate_axis_deg: float = tunable(15.0)  # max screw-vs-hole axis misalignment (deg)
     gate_radial: float = tunable(0.0025)  # max head-center offset from the hole axis (m)
     gate_window: float = tunable(0.014)  # engagement window above the seat, along the axis (m)
+    gate_window_below: float = tunable(0.008)  # engagement window BELOW the seat (m): a screw
+    # that slid deep into its hole still drives. Below the seat the bore itself constrains the
+    # screw, so the axis check is waived there — inside the hole, messy is acceptable; only
+    # what happens above the surface must be precise.
     motor_align_pos: float = tunable(0.004)  # max servo-vs-pocket position error to fasten (m)
     motor_align_deg: float = tunable(10.0)  # max servo-vs-pocket orientation error to fasten (deg)
     bit_on_head: float = tunable(0.004)  # bit tip -> screw head-top distance for the gate (m)
@@ -382,18 +386,21 @@ class SO101AssemblyScene(BaseScene):
 
           1. SCREW IN A FREE HOLE — screw axis within `gate_axis_deg` of the hole axis, head
              center within `gate_radial` of the axis, inside the engagement window
-             (-1 mm .. `gate_window` above the seat), no other screw fastened there;
+             (`gate_window_below` below the seat .. `gate_window` above it — the axis check
+             is waived below the seat, where the bore constrains the screw), no other screw
+             fastened there;
           2. PARTS ALIGNED      — the servo sits in the arm pocket within `motor_align_pos` /
              `motor_align_deg` (their frames coincide exactly when seated);
           3. DRIVER ON THE SCREW — bit tip within `bit_on_head` of that screw's head-top, bit
              axis within `bit_axis_deg` of the screw axis;
           4. TRIGGER ON          — squeezed past 70% AND the bit actually spinning (> `spin_min`).
 
-        While driving, the screw advances along its hole's axis at `drive_rate`, spinning with the
-        bit (kinematic-follow with a LATCHED depth — pilot pushback must not slow the schedule).
-        Reaching the seat after >= `min_drive_s` enables that screw's pre-authored weld; any fastened
-        screw also holds the motor<->arm weld on: FASTENED until reset. Any condition breaking
-        mid-drive returns the screw to free dynamics on the spot.
+        While driving, the screw moves along its hole's axis TOWARD the seat at `drive_rate` —
+        descending if engaged above it, drawn back up if it lies deep in the hole — spinning
+        with the bit (kinematic-follow with a LATCHED depth; pilot pushback must not slow the
+        schedule). Reaching the seat after >= `min_drive_s` enables that screw's pre-authored
+        weld; any fastened screw also holds the motor<->arm weld on: FASTENED until reset. Any
+        condition breaking mid-drive returns the screw to free dynamics on the spot.
         """
         from isaaclab.utils.math import quat_apply, quat_error_magnitude, quat_mul
 
@@ -420,10 +427,12 @@ class SO101AssemblyScene(BaseScene):
         hole_free = torch.ones(n, nh, dtype=torch.bool, device=sp.device)
         taken = self.fastened >= 0
         hole_free.scatter_(1, self.fastened.clamp_min(0), ~taken)
-        in_hole = ((t > -1e-3) & (t < c.gate_window) & (radial < c.gate_radial)
-                   & ((s_axis.unsqueeze(2) * ax).sum(-1)
-                      >= math.cos(math.radians(c.gate_axis_deg)))
-                   & hole_free.unsqueeze(1))
+        # below its seat the screw is inside the bore, which constrains it better than the
+        # axis check could — the check applies only above
+        axis_ok = ((s_axis.unsqueeze(2) * ax).sum(-1)
+                   >= math.cos(math.radians(c.gate_axis_deg))) | (t < 0)
+        in_hole = ((t > -c.gate_window_below) & (t < c.gate_window)
+                   & (radial < c.gate_radial) & axis_ok & hole_free.unsqueeze(1))
         # 2. parts aligned
         parts_aligned = (((self.motor.data.root_pos_w - ap).norm(dim=-1) < c.motor_align_pos)
                          & (quat_error_magnitude(self.motor.data.root_quat_w, aq)
@@ -442,8 +451,12 @@ class SO101AssemblyScene(BaseScene):
         self.spin_ang = torch.where(driving, self.spin_ang + bit_vel.unsqueeze(1) * dt, self.spin_ang)
         t_sel = t.gather(2, hsel.unsqueeze(-1)).squeeze(-1)
         self.drive_t = torch.where(driving & ~self.driving_prev, t_sel, self.drive_t)
-        self.drive_t = torch.where(driving, (self.drive_t - c.drive_rate * dt).clamp_min(0.0),
-                                   self.drive_t)
+        # the drive works TOWARD the seat from either side: a screw engaged above descends, one
+        # that slid deep into its hole is drawn back up as it is driven
+        step_d = c.drive_rate * dt
+        toward = torch.where(self.drive_t.abs() <= step_d, torch.zeros_like(self.drive_t),
+                             self.drive_t - self.drive_t.sign() * step_d)
+        self.drive_t = torch.where(driving, toward, self.drive_t)
         self.driving_prev = driving.clone()
 
         # THE MAGNETIC BIT (rule-based, like the gate): a free screw whose head-top comes within
@@ -480,7 +493,7 @@ class SO101AssemblyScene(BaseScene):
             quat = quat_mul(quat_mul(aq[idx], self._elbow_screw_seat_quats[h]), q_spin)
             st = torch.cat([pos, quat, torch.zeros(len(idx), 6, device=pos.device)], dim=-1)
             self.screws[s].write_root_state_to_sim(st, idx)
-            done = (t_new <= 1e-6) & (self.drive_time[idx, s] >= c.min_drive_s)
+            done = (t_new.abs() <= 1e-6) & (self.drive_time[idx, s] >= c.min_drive_s)
             for k in done.nonzero(as_tuple=False).squeeze(-1).tolist():
                 self._set_weld(int(idx[k]), s, int(h[k]), True)
 
