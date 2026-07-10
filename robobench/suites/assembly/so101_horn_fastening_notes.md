@@ -140,16 +140,17 @@ catches — place gently, don't drop.
 
 ## Smoke
 
-`so101_horn_smoke.py` — the standalone debug smoke: starts FULLY ELBOW-ASSEMBLED (hand-built
-post-[G] state), hand places + holds the fork, drives all eight M3s (near four lying, weld-safe
-flip, far four), stress, finale.
+`so101_horn_smoke.py` — the standalone debug smoke (started FULLY ELBOW-ASSEMBLED, hand-built
+post-[G] state; drove all eight M3s with the weld-safe flip, stress, finale). RETIRED from the
+tree once its phases merged into the full smoke — it only ever existed to debug the horn
+mechanic in isolation.
 
 **MERGED into `so101_smoke.py`** (the full-assembly sequence): A wiggle -> B servo insert ->
 C rotate -> 4 M2 tabs (all magnetic-bit carried; free drops retired — every free-release recipe
 hinged on SDF-marginal catches that re-roll on each motor bake) -> H fork attach (hand press +
 hold) -> 8 M3s (near lying, flip, far) -> stress (M2+M3 knock, servo+fork wrench) -> finale.
-The drill parks at DRILL_PARK (-0.55, -0.35 — OUTSIDE the assembled robot's ~0.55 m reach and
-the finale's 180-degree sweep) before every re-fixture.
+The drill parks at DRILL_PARK (0.70, -0.2 — on the workbench top, OUTSIDE the assembled
+robot's ~0.55 m reach and the finale's 180-degree sweep) before every re-fixture.
 
 The merge surfaced a LATENT one-word bug that had been in the committed smoke all along:
 `arm_target_quat = q_hold.expand(n, 4).contiguous()` — at n=1 the expanded view already counts
