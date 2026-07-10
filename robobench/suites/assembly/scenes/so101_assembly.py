@@ -24,8 +24,10 @@ outer wall from link -Z; the FAR pair enters from link +Z through the ring bosse
 Each hole carries its own seat pose; the out-of-hole axis is derived from it, so both facings
 run the same mechanic.
 
-Every body is free-floating; the only pre-authored joints are the DISABLED fastening welds (the
-mechanic below).
+Everything rests on a WORKBENCH (a static table under the whole layout; its top is at
+`surface_z` — by default the ikea_table scene's packing table standing on the floor, top at
+0.994 m). Every body is free-floating; the only pre-authored joints are the DISABLED fastening
+welds (the mechanic below).
 
 THE FASTENING MECHANIC (rule-based for fast simulation — see `_fasten_rule`): one pre-authored
 DISABLED FixedJoint per screw, its seat frame authored at enable time (so any screw can take any
@@ -47,7 +49,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
@@ -105,7 +107,7 @@ class SO101SceneCfg(BaseCfg):
         (1.0, 0.0, 0.0, 0.0),  # far: screw +Z -> link +Z
         (1.0, 0.0, 0.0, 0.0),
     ))
-    # free spawn xy of each loose screw (env frame, resting on the ground; z from the asset)
+    # free spawn xy of each loose screw (env frame, resting on the workbench top; z from the asset)
     screw_spawn_pts: tuple[tuple[float, float], ...] = info(
         ((0.25, -0.15), (0.31, -0.15), (0.25, -0.22), (0.31, -0.22)))
 
@@ -149,6 +151,30 @@ class SO101SceneCfg(BaseCfg):
 
     # --- info: scene assets ------------------------------------------------------------------------
     light_intensity: float = info(2500.0)
+    # Selectable work surface (the same vendored presets as bulb/nut_thread). All spawn poses are
+    # env-frame xy with heights ABOVE the top, so the whole layout rides `surface_z`. Default:
+    # the ikea_table scene's Heavy-Duty packing table standing on the floor (top at 0.994 m —
+    # per Haoxiang's preference); "lab_table" (top at z = 0, ground sunk to its feet) stays an
+    # option. The smokes read `surface_z` too, so their choreography rides along.
+    table: str = info("packing")  # which work surface: "packing" | "lab_table"
+    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
+    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    # so101 defaults differ from bulb/nut_thread: identity orient lays the lab table's LONG side
+    # (1.28 m vs 0.91 m) along the arm->parts spread (x in [-0.3, 0.62]), and `pos` centres the
+    # physical top under the layout. MEASURED (physics probe, 2026-07-09): the spawner REPLACES
+    # the USD root prim's authored xform (DemoTable carries a +0.55 x offset), so the collision
+    # cube spans x [-0.796, 0.484], y [-0.455, 0.455] about the SPAWNED origin — pos (0.30,
+    # 0.075) puts the top at x [-0.50, 0.78], y [-0.38, 0.53].
+    TABLES: ClassVar[dict[str, dict[str, Any]]] = {
+        "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
+                      "orient": (1.0, 0.0, 0.0, 0.0), "surface_z": 0.0, "pos": (0.30, 0.075),
+                      "top_offset": 0.0, "height": 1.05, "kinematic": False},
+        # packing top (root xform is identity): +/-1.237 x +/-0.381 about the origin
+        "packing": {"usd": ("packing_table", "SM_HeavyDutyPackingTable_C02_01_physics.usd"), "scale": 0.01,
+                    "orient": (1.0, 0.0, 0.0, 0.0), "surface_z": 0.994, "pos": (0.2, 0.0),
+                    "top_offset": 0.994, "height": 0.994, "kinematic": True},
+    }
     asset_dir: str = info("")
     proximal_usd: str = info("")  # floating-base build
     distal_usd: str = info("")
@@ -167,6 +193,14 @@ class SO101SceneCfg(BaseCfg):
         self.screw_usd = self.screw_usd or str(a / "screw" / "screw_m2.usd")
         self.horn_screw_usd = self.horn_screw_usd or str(a / "screw" / "screw_m3.usd")
         self.drill_usd = self.drill_usd or str(a / "drill" / "power_drill.usd")
+        # Fill the table placement from the chosen preset wherever the user left it unset.
+        preset = self.TABLES[self.table]
+        if self.surface_z is None:
+            self.surface_z = preset["surface_z"]
+        if self.workbench_pos is None:
+            self.workbench_pos = preset["pos"]
+        self.workbench_usd = self.workbench_usd or str(
+            assets / "props" / preset["usd"][0] / preset["usd"][1])
 
     # Screws are counted by spawn list, holes by seat table — the counts may differ (e.g. four
     # loose M3s vs eight horn-line holes). The flat index orders are [elbow tab screws...,
@@ -211,6 +245,15 @@ class SO101AssemblyScene(BaseScene):
         from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 
         c = self.cfg
+        preset = c.TABLES[c.table]
+        wx, wy = c.workbench_pos
+        sz = c.surface_z
+        # Place the table so its top surface lands at `surface_z`, and sink the ground to its feet.
+        table_z = sz - preset["top_offset"]
+        ground_z = sz - preset["height"]
+        table_spawn = sim_utils.UsdFileCfg(usd_path=c.workbench_usd, scale=(preset["scale"],) * 3)
+        if preset["kinematic"]:
+            table_spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
         contact = sim_utils.RigidBodyPropertiesCfg(
             solver_position_iteration_count=32,
             solver_velocity_iteration_count=1,
@@ -218,45 +261,56 @@ class SO101AssemblyScene(BaseScene):
         )
         usd_drives = {"all": ImplicitActuatorCfg(joint_names_expr=[".*"], stiffness=None, damping=None)}
         out: dict[str, Any] = {
-            "ground": AssetBaseCfg(prim_path="/World/ground", spawn=sim_utils.GroundPlaneCfg()),
+            "ground": AssetBaseCfg(
+                prim_path="/World/ground",
+                spawn=sim_utils.GroundPlaneCfg(),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, ground_z))),
             "light": AssetBaseCfg(
                 prim_path="/World/light",
                 spawn=sim_utils.DomeLightCfg(intensity=c.light_intensity, color=(0.9, 0.9, 0.9))),
-            # every body spawns FREE and spread out (see reset() for SPAWN); a test re-stages them.
+            "workbench": AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/Table",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=preset["orient"]),
+                spawn=table_spawn),
+            # every body spawns FREE and spread out on the workbench top (see reset() for SPAWN);
+            # a test re-stages them.
             "proximal": ArticulationCfg(
                 prim_path="{ENV_REGEX_NS}/Proximal",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.proximal_usd, rigid_props=contact),
                 init_state=ArticulationCfg.InitialStateCfg(
-                    pos=(0.0, 0.0, 0.0), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
+                    pos=(0.0, 0.0, sz), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
                 actuators=usd_drives),
             "motor": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Motor",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.motor_usd, rigid_props=contact),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.25, 0.15, 0.06))),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.25, 0.15, sz + 0.06))),
             "drill": ArticulationCfg(
                 prim_path="{ENV_REGEX_NS}/Drill",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.drill_usd, rigid_props=contact),
                 init_state=ArticulationCfg.InitialStateCfg(
-                    pos=(0.5, 0.0, 0.12), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
+                    pos=(0.5, 0.0, sz + 0.12), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
                 actuators=usd_drives),  # gains None -> the USD drives (the trigger spring!)
-            # the NOT-yet-tested half: present in the world, free-floating
+            # the NOT-yet-tested half: present in the world, free-floating. Spawned on the
+            # roomy east side, well inboard of the table edges — its free chain WANDERS when
+            # its joints are driven (e.g. a smoke's wiggle) and the old (0.5, 0.35) spot was
+            # 3 cm from the packing top's +y edge (it crawled off).
             "distal": ArticulationCfg(
                 prim_path="{ENV_REGEX_NS}/Distal",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.distal_usd, rigid_props=contact),
                 init_state=ArticulationCfg.InitialStateCfg(
-                    pos=(0.5, 0.35, 0.06), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
+                    pos=(0.75, 0.15, sz + 0.06), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
                 actuators=usd_drives),
         }
         for s, (x, y) in enumerate(c.screw_spawn_pts):
             out[f"screw_{s}"] = RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Screw_%d" % s,
                 spawn=sim_utils.UsdFileCfg(usd_path=c.screw_usd, rigid_props=contact),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(x, y, 0.02)))
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(x, y, sz + 0.02)))
         for s, (x, y) in enumerate(c.horn_screw_spawn_pts):
             out[f"horn_screw_{s}"] = RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/HornScrew_%d" % s,
                 spawn=sim_utils.UsdFileCfg(usd_path=c.horn_screw_usd, rigid_props=contact),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(x, y, 0.02)))
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(x, y, sz + 0.02)))
         return out
 
     def sim_cfg(self) -> SimCfg:
@@ -379,15 +433,17 @@ class SO101AssemblyScene(BaseScene):
             self._elbow_joint_paths.append(f"{base}/elbow_joint")
 
     def reset(self, env_ids: torch.Tensor) -> None:
-        """Every body reset to its free spawn pose (spread out, upright, resting on the ground);
-        welds released; drive state cleared."""
+        """Every body reset to its free spawn pose (spread out, upright, resting on the
+        workbench top); welds released; drive state cleared."""
         dev = self.env.device
         m = len(env_ids)
         origin = self.env_origins[env_ids]
+        surf = torch.tensor((0.0, 0.0, self.cfg.surface_z), device=dev)
 
-        def place(body, pos):  # env-local free spawn (matches assets() init_state), identity quat
+        def place(body, pos):  # env-local free spawn (matches assets() init_state), identity
+            # quat; z rides the workbench top
             st = torch.zeros(m, 13, device=dev)
-            st[:, 0:3] = origin + torch.tensor(pos, device=dev)
+            st[:, 0:3] = origin + surf + torch.tensor(pos, device=dev)
             st[:, 3] = 1.0
             body.write_root_state_to_sim(st, env_ids)
 
@@ -406,7 +462,7 @@ class SO101AssemblyScene(BaseScene):
         zdr = torch.zeros(m, self.drill.num_joints, device=dev)
         self.drill.write_joint_state_to_sim(zdr, zdr, env_ids=env_ids)
 
-        place(self.distal, (0.5, 0.35, 0.06))
+        place(self.distal, (0.75, 0.15, 0.06))
         zdi = torch.zeros(m, self.distal.num_joints, device=dev)
         self.distal.write_joint_state_to_sim(zdi, zdi, env_ids=env_ids)
         self.distal.set_joint_position_target(zdi, env_ids=env_ids)
@@ -832,7 +888,7 @@ class SO101AssemblyScene(BaseScene):
             "The lower half of an SO101 robot arm (base + shoulder + upper arm), a bare elbow "
             "servo, four identical loose M2x6 screws, one loose M3 horn screw, a compact power "
             "screwdriver with a magnetic bit, and the not-yet-attached distal half "
-            "(forearm..gripper) all rest free in the workspace. The upper arm has four M2 screw "
+            "(forearm..gripper) all rest free on a workbench. The upper arm has four M2 screw "
             "holes over the elbow servo's pocket (joint 3): a countersunk pair in the near "
             "outer wall and the mirrored pair through the far wall. The distal half's forearm "
             "fork clips over the seated servo — its cup onto the output horn — and carries "

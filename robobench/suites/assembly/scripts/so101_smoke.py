@@ -28,7 +28,7 @@ every hole. The procedure, in order:
   C) ROTATE  — joint 2 swings the arm flat under its own drive (the base clamp keeps it steady).
   Then, for each of the four M2 tab holes (near pair lying, far pair flipped):
   D) PLACE   — re-grab facing that hole up; the drill hovers over the lying screw, descends,
-     and the MAGNETIC BIT takes it (a scene rule, like the gate), then lifts it off the ground.
+     and the MAGNETIC BIT takes it (a scene rule, like the gate), then lifts it off the workbench.
   E) DESCEND — the drill carries the screw over the hole and lowers it straight in, tip-first.
   F) DRIVE   — trigger -> gate -> the screw drives to its seat -> weld at depth (the first tab
      screw also welds motor->arm and the hand releases the servo).
@@ -43,7 +43,7 @@ every hole. The procedure, in order:
   I) STRESS  — knock a fastened M2 and an M3, wrench the servo and the forearm; nothing may
      come apart.
   J) FINALE  — the clamp lifts the WHOLE robot (both halves now), shakes it, rotates 180 deg,
-     sets it down and RELEASES it: the robot rests assembled on the ground.
+     sets it down and RELEASES it: the robot rests assembled on the workbench.
 
 Re-grabbing with welded parts attached does the teleport WELD-SAFE (see `grab`): welds off, arm
 teleported, the welded CHAIN (motor, fork, every screw) re-seated at the fresh pose by the
@@ -111,7 +111,7 @@ PRESS_S = 0.75      # how long the final press takes (s)
 HOLD = True
 HOLD_HEIGHT = 0.08                              # base clamp height, near (lying) pose (m)
 HOLD_HEIGHT_FAR = 0.12                          # far (flipped) pose: just high enough that the
-                                                # flipped arm clears the ground, so the flip stays
+                                                # flipped arm clears the table top, so the flip stays
                                                 # visually near the lying pose (no big jump)
 HOLD_QUAT = (0.7071068, 0.0, 0.7071068, 0.0)    # Ry(90): arm on its side, near holes facing up
 FLIP_QUAT = (0.0, 1.0, 0.0, 0.0)                # Rx(180) pre-rotation: far holes facing up
@@ -122,9 +122,10 @@ SERVO_START_OFFSET = 0.05
 CORRIDOR = 0.015    # the last stretch of the insertion (m): force-push down to here, then a
                     # centered kinematic slide to the seat (see phase B)
 DRILL_QUAT = (0.7071068, -0.7071068, 0.0, 0.0)  # drill working orientation: bit pointing down
-DRILL_PARK = (-0.55, -0.35, 0.145)  # the drill's standby spot, used before every re-fixture
+DRILL_PARK = (0.70, -0.2, 0.145)  # the drill's standby spot, used before every re-fixture
 # and at the end — it must clear the WHOLE assembled robot: with the distal attached the robot
-# reaches ~0.55 m from the base, and the finale sweeps it 180 deg
+# reaches ~0.55 m from the base, and the finale sweeps it 180 deg. On the workbench top (its
+# east end, past the screw rows, 0.73 m from the base) — the old -x spot is off the table now.
 
 
 def _amp_vec(art, device) -> torch.Tensor:
@@ -150,7 +151,9 @@ def main() -> None:
           f"distal joints={scene.distal.joint_names} dt={env.dt:.5f} ({sps} steps/s) "
           f"| {cfg.num_screws} screws / holes", flush=True)
 
-    origin = env.iscene.env_origins
+    # env-frame anchor ON the working surface: every choreography height (clamp, park, hover)
+    # is surface-relative, so the whole smoke rides the scene's workbench preset
+    origin = env.iscene.env_origins + torch.tensor((0.0, 0.0, cfg.surface_z), device=dev)
     q_hold = torch.tensor(HOLD_QUAT, device=dev)
     q_far = quat_mul(torch.tensor(FLIP_QUAT, device=dev).unsqueeze(0), q_hold.unsqueeze(0))[0]
     q_drill = torch.tensor(DRILL_QUAT, device=dev).expand(n, 4)
@@ -382,7 +385,7 @@ def main() -> None:
         hold_arm = False
 
     # ============ A) WIGGLE: everything free; both halves articulate =============================
-    print("[A] settle + wiggle: the free arm articulates; the servo lies free on the ground", flush=True)
+    print("[A] settle + wiggle: the free arm articulates; the servo lies free on the workbench", flush=True)
     amp_p = _amp_vec(scene.proximal, dev).expand(n, -1)
     amp_d = _amp_vec(scene.distal, dev).expand(n, -1)
     step(sps // 4, "A settle")
@@ -467,7 +470,7 @@ def main() -> None:
         got = bool(scene.attached[:, i_s].all())
         print(f"[D] screw {i_s} {'is on the bit' if got else 'MISSED the pickup'}", flush=True)
         z_now = float(standoff[0])
-        for j in range(sps // 2):  # lift it off the ground
+        for j in range(sps // 2):  # lift it off the workbench
             standoff[:] = z_now + (HOVER - z_now) * (j + 1) / (sps // 2)
             step(1, "D lift")
         pick["anchor"] = None
@@ -627,7 +630,7 @@ def main() -> None:
     step(int(1.2 * sps), "J free")
     err_free, err_m3_free = screws_rel_err(), m3_rel_err()
     err_motor_free, err_la_free = motor_rel_err(), la_err()
-    print(f"[J] resting free on the ground: max M2-in-seat err {err_free.max() * 1000:.2f} mm, "
+    print(f"[J] resting free on the workbench: max M2-in-seat err {err_free.max() * 1000:.2f} mm, "
           f"M3-in-seat err {err_m3_free.max() * 1000:.2f} mm, servo-in-pocket err "
           f"{err_motor_free.max() * 1000:.2f} mm, fork-on-horn err "
           f"{err_la_free.max() * 1000:.2f} mm", flush=True)
