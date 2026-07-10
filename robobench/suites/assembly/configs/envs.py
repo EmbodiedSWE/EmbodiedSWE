@@ -29,7 +29,18 @@ register_env(SUITE, lambda: EnvCfg(scene="nut_thread", robot="null", env_spacing
 # -> "assembly.bulb"
 register_env(SUITE, lambda: EnvCfg(scene="bulb", robot="null", env_spacing=2))
 
-# SO101 elbow-servo assembly (seat + screw the elbow servo into the upper_arm), scene physics only.
+# Fixed threaded platform + a loose allen bolt + an allen key that drives the bolt down into the
+# platform's threaded hole, scene physics only for now.
+# -> "assembly.allen_bolt"
+register_env(SUITE, lambda: EnvCfg(scene="allen_bolt", robot="null", env_spacing=2))
+
+# PC case lying on its side, motherboard up: 7 threaded case-mount holes, 7 loose allen bolts, and
+# one allen key that drives each bolt down into its hole, scene physics only for now.
+# -> "assembly.pc_motherboard"
+register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spacing=2))
+
+# SO101 full-arm assembly (seat + screw the elbow servo, clip + screw the forearm fork onto its
+# horn) on a workbench, scene physics only.
 # -> "assembly.so101"
 register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
 
