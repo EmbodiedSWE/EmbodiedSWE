@@ -39,6 +39,11 @@ register_env(SUITE, lambda: EnvCfg(scene="allen_bolt", robot="null", env_spacing
 # -> "assembly.pc_motherboard"
 register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spacing=2))
 
+# SO101 full-arm assembly (seat + screw the elbow servo, clip + screw the forearm fork onto its
+# horn) on a workbench, scene physics only.
+# -> "assembly.so101"
+register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
+
 # Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x). Three
 # control modes, switchable by env name:
 #   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
