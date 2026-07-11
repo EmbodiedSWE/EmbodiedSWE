@@ -39,6 +39,11 @@ register_env(SUITE, lambda: EnvCfg(scene="allen_bolt", robot="null", env_spacing
 # -> "assembly.pc_motherboard"
 register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spacing=2))
 
+# The same PC case with its primary PCIe x16 slot empty and a loose graphics card beside it, to be
+# stood upright and pressed straight down into the slot, scene physics only for now.
+# -> "assembly.pc_gpu"
+register_env(SUITE, lambda: EnvCfg(scene="pc_gpu", robot="null", env_spacing=2))
+
 # SO101 full-arm assembly (seat + screw the elbow servo, clip + screw the forearm fork onto its
 # horn) on a workbench, scene physics only.
 # -> "assembly.so101"

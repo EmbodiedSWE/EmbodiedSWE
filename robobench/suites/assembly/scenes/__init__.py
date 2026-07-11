@@ -8,6 +8,7 @@ from .allen_bolt_assembly import AllenBoltAssemblyScene, AllenBoltAssemblySceneC
 from .bulb_assembly import BulbAssemblyScene, BulbAssemblySceneCfg
 from .ikea_table_assembly import IkeaTableAssemblyScene, IkeaTableAssemblySceneCfg
 from .nut_thread_assembly import NutThreadAssemblyScene, NutThreadAssemblySceneCfg
+from .pc_gpu_assembly import PcGpuAssemblyScene, PcGpuAssemblySceneCfg
 from .pc_motherboard_assembly import PcMotherboardAssemblyScene, PcMotherboardAssemblySceneCfg
 from .so101_assembly import SO101AssemblyScene, SO101SceneCfg
 
@@ -20,6 +21,8 @@ __all__ = [
     "BulbAssemblySceneCfg",
     "AllenBoltAssemblyScene",
     "AllenBoltAssemblySceneCfg",
+    "PcGpuAssemblyScene",
+    "PcGpuAssemblySceneCfg",
     "PcMotherboardAssemblyScene",
     "PcMotherboardAssemblySceneCfg",
     "SO101AssemblyScene",
