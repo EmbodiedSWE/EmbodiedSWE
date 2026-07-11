@@ -58,6 +58,11 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spa
 # -> "assembly.pc_gpu"
 register_env(SUITE, lambda: EnvCfg(scene="pc_gpu", robot="null", env_spacing=2))
 
+# PC case lying on its side, motherboard up: two empty DIMM slots (invisible grip channels) and
+# two loose RAM sticks to press in, scene physics only for now.
+# -> "assembly.pc_ram"
+register_env(SUITE, lambda: EnvCfg(scene="pc_ram", robot="null", env_spacing=2))
+
 # SO101 full-arm assembly (seat + screw the elbow servo, clip + screw the forearm fork onto its
 # horn) on a workbench, scene physics only.
 # -> "assembly.so101"
