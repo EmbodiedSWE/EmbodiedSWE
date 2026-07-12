@@ -15,7 +15,7 @@ Run from the repo root (the repo is pip-installed editable, so no PYTHONPATH nee
 
     # an experiment solver (.py path), only the first 20s, higher quality:
     .venv/bin/python scripts/record_video.py \
-        experiments/nut_thread_osc/solve.py --max-seconds 20 --quality 9
+        experiments/../solve.py --max-seconds 20 --quality 9
 
     # a smoke in another suite (dotted module), custom camera + output:
     .venv/bin/python scripts/record_video.py \
