@@ -221,6 +221,7 @@ __marimo__/
 robobench/suites/assembly/so101_assembly_handoff.md
 robobench/suites/assembly/so101_fastening_notes.md
 robobench/suites/assembly/so101_horn_fastening_notes.md
+robobench/suites/assembly/scripts/build_so101_assets.py
 
 # Experiments — the workspace for agent runs / generated solutions / logs / checkpoints / learned
 # skills. Nothing here is committed except the README (so the folder exists, but solutions stay out
