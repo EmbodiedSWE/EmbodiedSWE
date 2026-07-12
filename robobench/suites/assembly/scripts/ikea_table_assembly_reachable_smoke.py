@@ -20,8 +20,8 @@ solves each near target.)
 NOTE: `import pinocchio` is FIRST, before AppLauncher — required for the pink_ik solver (see
 `robobench.controllers.pink_ik`). It's a visual check — watch live with --livestream 2.
 
-    python -m robobench.suites.assembly.scripts.ikea_table_assembly_reachable_test --livestream 2 --leg 0
-    python -m robobench.suites.assembly.scripts.ikea_table_assembly_reachable_test --robot gr1t2 --leg 3 --arm left
+    python -m robobench.suites.assembly.scripts.ikea_table_assembly_reachable_smoke --livestream 2 --leg 0
+    python -m robobench.suites.assembly.scripts.ikea_table_assembly_reachable_smoke --robot gr1t2 --leg 3 --arm left
 """
 
 from __future__ import annotations
