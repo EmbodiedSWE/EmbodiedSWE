@@ -100,7 +100,7 @@ class FrankaRobot(BaseRobot):
 
         c = self.cfg
         robot = FRANKA_PANDA_HIGH_PD_CFG.copy()  # type: ignore[attr-defined]
-        robot.prim_path = "{ENV_REGEX_NS}/Robot"
+        robot.prim_path = f"{{ENV_REGEX_NS}}/{self.prim_name}"  # cfg.name-namespaced (default "Robot")
         robot.spawn.usd_path = c.franka_usd  # vendored local panda (resolved in cfg.__post_init__)
         robot.spawn.articulation_props.fix_root_link = c.fixed_base
         robot.init_state.pos = c.base_pos
@@ -117,11 +117,11 @@ class FrankaRobot(BaseRobot):
             robot.actuators[arm_act].damping = 0.0 if torque_mode else c.arm_damping
         robot.actuators["panda_hand"].stiffness = c.gripper_stiffness
         robot.actuators["panda_hand"].damping = c.gripper_damping
-        return {"robot": robot}
+        return {self.name: robot}
 
     # ----- lifecycle (hooks; the base orchestrates bind -> on_bind -> build_controller) ---------
     def on_bind(self, env: BaseEnv) -> None:
-        self.articulation: Articulation = env.iscene["robot"]
+        self.articulation: Articulation = env.iscene[self.name]
 
     def build_controller(self) -> CompositeController:
         """`composite([<arm controller>, joint(gripper)])` for the active mode. The gripper is always a
