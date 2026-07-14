@@ -22,7 +22,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .config import BaseCfg, tunable
+from .config import BaseCfg, info, tunable
 
 if TYPE_CHECKING:
     import torch
@@ -42,6 +42,13 @@ class BaseRobotCfg(BaseCfg):
     #: may switch it (a new actuation of the same hardware) — that's why it's a `tunable` dial.
     control_mode: str = tunable("", doc="active control mode; '' selects the robot's first")
 
+    #: The robot's scene namespace: its asset key in `env.iscene` and (capitalized) its prim name —
+    #: "robot" -> `iscene["robot"]` at `{ENV_REGEX_NS}/Robot`. Single-robot envs keep the default; a
+    #: composite parent (`MultiRobot`) stamps each child's name ("left", "right", ...) so several
+    #: robots coexist in one scene without key/prim collisions. Concrete robots read it through
+    #: `BaseRobot.name` / `BaseRobot.prim_name` rather than hardcoding "robot".
+    name: str = info("robot", doc="scene-asset key / prim namespace for this robot", kw_only=True)
+
 
 class BaseRobot(ABC):
     #: Control modes this embodiment supports (e.g. ("joint", "ee_pose", "osc_impedance")).
@@ -60,6 +67,21 @@ class BaseRobot(ABC):
         #: The robot's main articulation handle — set in `on_bind` for the common single-articulation
         #: case (the default `actuator_sink` / `actuator_limits` use it). None until bound.
         self.articulation: Any = None
+
+    # ----- naming (the robot's scene namespace; see BaseRobotCfg.name) --------------------------
+    @property
+    def name(self) -> str:
+        """This robot's scene-asset key (`cfg.name`; "robot" for a plain single-robot env). Concrete
+        robots use it in `assets()` and `on_bind` (`env.iscene[self.name]`) so a composite parent can
+        re-namespace them just by stamping `cfg.name`."""
+        return getattr(self.cfg, "name", None) or "robot"
+
+    @property
+    def prim_name(self) -> str:
+        """USD prim name under `{ENV_REGEX_NS}`: `cfg.name` with the first letter upper-cased
+        ("robot" -> "Robot", "left" -> "Left"), so default single-robot prim paths stay unchanged."""
+        n = self.name
+        return n[:1].upper() + n[1:]
 
     # ----- assets / state / description (the robot-specific contract) ---------------------------
     @abstractmethod

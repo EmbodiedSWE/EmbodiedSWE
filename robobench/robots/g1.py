@@ -138,7 +138,7 @@ class G1Robot(BaseRobot):
 
         c = self.cfg
         robot = G1_29DOF_CFG.copy()  # type: ignore[attr-defined]
-        robot.prim_path = "{ENV_REGEX_NS}/Robot"
+        robot.prim_path = f"{{ENV_REGEX_NS}}/{self.prim_name}"  # cfg.name-namespaced (default "Robot")
         robot.spawn.usd_path = c.g1_usd
         robot.spawn.articulation_props.fix_root_link = c.fixed_base  # weld pelvis to world if fixed
         robot.init_state.pos = c.base_pos
@@ -150,12 +150,12 @@ class G1Robot(BaseRobot):
         robot.actuators["hands"].damping = c.hand_damping
         robot.actuators["waist"].stiffness = c.waist_stiffness
         robot.actuators["waist"].damping = c.waist_damping
-        return {"robot": robot}
+        return {self.name: robot}
 
     # ----- lifecycle (hooks; the base orchestrates bind -> on_bind -> build_controller) ---------
     def on_bind(self, env: BaseEnv) -> None:
         """Grab the articulation handle; the base then builds + binds the controller against it."""
-        self.articulation: Articulation = env.iscene["robot"]
+        self.articulation: Articulation = env.iscene[self.name]
 
     def build_controller(self) -> CompositeController:
         """`composite([<arm controller>, joint(hands)])` for the active `control_mode`. Switching the
