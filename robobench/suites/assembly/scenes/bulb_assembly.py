@@ -38,9 +38,22 @@ class BulbAssemblySceneCfg(BaseCfg):
     seat_z: float = tunable(0.027)  # max bulb-origin height above the socket origin (m) to count as seated
     align_xy: float = tunable(0.015)  # max lateral distance (m) from the nearest socket axis
     align_axis_deg: float = tunable(12.0)  # max tilt of the bulb's screw axis off the socket axis (deg)
+    # The bulb LIGHTS UP as it screws home: the centre-contact spring compresses progressively, so
+    # contact resistance falls and current rises with depth — the light ramps from dark at first
+    # contact (light_start_z) to fully bright at the seated depth (light_full_z = seat_z), following
+    # progress**light_gamma (higher gamma = fainter early turns, steeper finish), the filament colour
+    # warming yellow -> white along the way (cool filament at low current). Driven per-step by the
+    # glass OmniPBR emissive inputs (verified live-settable).
+    light_start_z: float = tunable(0.032)  # depth (m, socket frame) where the glow begins (~free-rest height)
+    light_full_z: float = tunable(0.027)  # depth at/below which it is fully bright (default = seat_z)
+    light_gamma: float = tunable(3.0)  # brightness = lit_intensity * progress**gamma
+    lit_intensity: float = tunable(500000.0)  # emissive_intensity fully lit (0 disables the mechanic)
     reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter per bulb at reset (m)
-    # Part friction (static = dynamic): slick cap threads steadily, grippy socket holds.
-    bulb_friction: float = tunable(0.01)
+    # Part friction (static = dynamic), split per shape on the bulb: the metal cap/thread stays slick so
+    # it threads steadily, while the GLASS is grippy — torque on the round glass is pad friction only, and
+    # below ~0.3 no parallel-jaw gripper can self-lock on it (verified robot-unsolvable at glass mu=0.01).
+    bulb_friction: float = tunable(0.01)  # the cap/thread shape
+    bulb_glass_friction: float = tunable(0.3)  # the glass envelope shape
     socket_friction: float = tunable(0.75)
 
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
@@ -56,7 +69,9 @@ class BulbAssemblySceneCfg(BaseCfg):
     bulb_row_x0: float = info(0.13)  # x of bulb0 (the loose bulbs lie to the +x side of the sockets)
     bulb_row_y: float = info(0.0)  # y of the row
     bulb_spacing: float = info(0.12)  # x gap between adjacent bulbs (bulb k at x0 + k*spacing)
-    bulb_init_z: float = info(0.024)  # [TUNE: to the asset] bulb-origin height above the surface when lying (~glass radius)
+    bulb_init_z: float = info(0.024)  # bulb-origin DROP height above the surface; the lying bulb then settles
+    # tilted ~25 deg (its Ø20 cap end droops to the table, origin ends ~5 mm up) — read the live pose, don't
+    # assume a horizontal axis at this height.
     bulb_init_quat: tuple[float, float, float, float] = info((2 ** -0.5, 2 ** -0.5, 0.0, 0.0))  # wxyz; 90° about x -> lying
     # Selectable work surface. `table` picks a preset in `TABLES`; the three fields below default to it
     # when left None/empty, or override it (e.g. raise `surface_z` so a standing robot can reach).
@@ -166,12 +181,14 @@ class BulbAssemblyScene(BaseScene):
         return out
 
     def sim_cfg(self) -> SimCfg:
-        # Standard PhysX recipe + translucency (else the glass renders invisible). dt=1/240 not 1/120: the
-        # fine thread tunnels at 1/120 under the gravity-driven plunge; the smaller step resolves the contact
-        # so the bulb threads cleanly.
+        # Standard PhysX recipe. dt=1/240 not 1/120: the fine thread tunnels at 1/120 under the
+        # gravity-driven plunge; the smaller step resolves the contact so the bulb threads cleanly.
+        # No translucency: the bulb glass is OPAQUE frosted OmniPBR (clear OmniGlass drew over the robot —
+        # real-time translucency sorting — and can't glow; the frosted look supports the runtime
+        # emissive_intensity dial for a lit bulb). Re-enable translucency if switching back to OmniGlass.
         return SimCfg(
             dt=1.0 / 240.0,
-            render={"enable_translucency": True, "enable_reflections": True},
+            render={"enable_reflections": True},
             physx={
                 "solver_type": 1,
                 "bounce_threshold_velocity": 0.2,
@@ -191,13 +208,36 @@ class BulbAssemblyScene(BaseScene):
         self.sockets: list[Articulation] = [env.iscene[f"socket_{i}"] for i in range(self.cfg.num_pairs)]
         self.bulbs: list[RigidObject] = [env.iscene[f"bulb_{i}"] for i in range(self.cfg.num_pairs)]
         self.env_origins = env.iscene.env_origins
-        # Friction (static = dynamic) on every shape, all envs: slick cap threads, grippy socket holds.
+        # Friction (static = dynamic), all envs. The bulb is split per shape — slick cap/thread vs grippy
+        # glass: bulb.usd binds a distinct physics material to each collider, and the glass shape is
+        # identified by that authored read-back (glass authored grippier), not by shape order.
         ids = torch.arange(env.num_envs, device="cpu")
-        for assets, mu in ((self.bulbs, self.cfg.bulb_friction), (self.sockets, self.cfg.socket_friction)):
-            for a in assets:
-                mats = a.root_physx_view.get_material_properties()
-                mats[..., 0:2] = mu
-                a.root_physx_view.set_material_properties(mats, ids)
+        for s in self.sockets:
+            mats = s.root_physx_view.get_material_properties()
+            mats[..., 0:2] = self.cfg.socket_friction
+            s.root_physx_view.set_material_properties(mats, ids)
+        for b in self.bulbs:
+            mats = b.root_physx_view.get_material_properties()  # (n, n_shapes, 3)
+            glass = int(mats[0, :, 0].argmax())
+            mats[..., 0:2] = self.cfg.bulb_friction
+            mats[:, glass, 0:2] = self.cfg.bulb_glass_friction
+            b.root_physx_view.set_material_properties(mats, ids)
+        # Lit-bulb mechanic: cache each bulb's glass emissive_intensity attr (per env — the cloner copies
+        # the material under every env) and the last written on/off state, so post_step only writes on
+        # transitions. Missing attrs (asset without the OmniPBR glass) disable the mechanic for that bulb.
+        stage = env.stage
+
+        def _emissive_attrs(n: int, i: int):
+            prim = stage.GetPrimAtPath(f"/World/envs/env_{n}/Bulb_{i}/visual/Materials/GLASS/OmniPBR")
+            if not prim.IsValid():
+                return None
+            attrs = (prim.GetAttribute("inputs:emissive_intensity"), prim.GetAttribute("inputs:emissive_color"))
+            return attrs if all(a.IsValid() for a in attrs) else None
+
+        self._emissive = [[_emissive_attrs(n, i) for i in range(self.cfg.num_pairs)] for n in range(env.num_envs)]
+        # last written brightness, quantized to 1/64 steps of full (so the per-step ramp only touches USD
+        # when the visible level actually moves)
+        self._lit_q = torch.zeros(env.num_envs, self.cfg.num_pairs, dtype=torch.int16, device=env.device)
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Re-place the bulbs at their start pose (`bulb_init_xy/_z/_quat` + xy jitter); the fixed-base
@@ -216,6 +256,36 @@ class BulbAssemblyScene(BaseScene):
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 3:7] = quat
             bulb.write_root_state_to_sim(st, env_ids)
+
+    # filament colour endpoints: low current -> cool filament, warm yellow; full current -> warm white.
+    _LIT_COLOR: ClassVar[tuple[float, float, float]] = (1.0, 0.85, 0.55)
+    _DIM_COLOR: ClassVar[tuple[float, float, float]] = (1.0, 0.55, 0.18)
+
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        """Lit-bulb mechanic, every step: a bulb aligned in a socket glows brighter as it screws home —
+        intensity ramps as progress**light_gamma from dark at light_start_z to lit_intensity at
+        light_full_z, the filament colour warming yellow -> white with it. Writes USD only when the
+        quantized (1/64) brightness level moves."""
+        import math
+
+        c = self.cfg
+        if c.lit_intensity <= 0:
+            return
+        off = self._bulb_offsets_in_socket()  # (n, N, B, 3)
+        near_dist, near_socket = off[..., :2].norm(dim=-1).min(dim=-1)
+        depth = torch.gather(off[..., 2], 2, near_socket.unsqueeze(-1)).squeeze(-1)
+        aligned = (near_dist <= c.align_xy) & (self._bulb_axis_cos() >= math.cos(math.radians(c.align_axis_deg)))
+        t = ((c.light_start_z - depth) / max(c.light_start_z - c.light_full_z, 1e-6)).clamp(0.0, 1.0)
+        q = (t.pow(c.light_gamma) * 64).round().to(torch.int16) * aligned  # gamma ramp, 1/64 steps
+        changed = q != self._lit_q
+        if changed.any():
+            for n, i in changed.nonzero().tolist():
+                attrs = self._emissive[n][i]
+                if attrs is not None:
+                    s = float(q[n, i]) / 64.0  # 0..1 brightness fraction
+                    attrs[0].Set(c.lit_intensity * s)
+                    attrs[1].Set(tuple(d + (l - d) * s for d, l in zip(self._DIM_COLOR, self._LIT_COLOR)))
+            self._lit_q = q
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -243,7 +313,9 @@ class BulbAssemblyScene(BaseScene):
             f"ready to be picked up and fitted. Each socket carries a real internal thread.\n"
             f"Goal: pick up {'the' if n == 1 else 'each'} bulb, set it on {'the' if n == 1 else 'a'} socket, "
             f"and screw it down (turn it clockwise while pressing down) until it seats. A seated bulb is held "
-            f"by its thread. The task is complete once {'the bulb is' if n == 1 else f'all {n} bulbs are'} seated."
+            f"by its thread, and GLOWS ever brighter as it screws home — from a faint orange at first "
+            f"electrical contact to fully bright warm white exactly when seated. The task is complete once "
+            f"{'the bulb is' if n == 1 else f'all {n} bulbs are'} seated."
         )
 
     # ----- progress (public: seated(); reads how far the assembly has got) -------------
