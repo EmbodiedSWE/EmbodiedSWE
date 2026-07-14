@@ -47,12 +47,12 @@ if TYPE_CHECKING:
 # open-loop drive threads the bulb cleanly down to its seat.
 PRESS, TWIST, TARGET_WZ = -2.5, -0.15, -3.0
 KP_XY, KD_XY = 30.0, 3.0
-# Staging geometry (from build_socket / bulb.usd): the bulb's thread free end sits BULB_FREE_END above
-# its origin; drop it so that free end starts GAP above the socket bore mouth, ready to engage.
+# Staging slack: the bulb origin IS its lowest point (measured bbox — the thread collider starts 4 mm up),
+# so this just drops the bulb a few mm of clearance above the socket bore mouth, ready to engage.
 BULB_FREE_END = 0.004
 GAP = 0.001
 # Phase boundaries, cumulative sim steps: show -> stage(teleport) -> screw -> settle.
-SHOW_END, ASSEMBLE_END, END = 300, 8000, 8300  # more steps: the scene runs at dt=1/480 (4x the usual)
+SHOW_END, ASSEMBLE_END, END = 300, 8000, 8300  # more steps: the scene runs at dt=1/240
 
 
 def main() -> None:

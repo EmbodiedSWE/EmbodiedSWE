@@ -90,7 +90,7 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
     workbench_usd: str = info("")  # empty -> the preset's vendored USD
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
-                      "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.55, 0.0),
+                      "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.5, 0.0),
                       "top_offset": 0.0, "height": 1.05, "kinematic": False},
         "packing": {"usd": ("packing_table", "SM_HeavyDutyPackingTable_C02_01_physics.usd"), "scale": 0.01,
                     "orient": (1.0, 0.0, 0.0, 0.0), "surface_z": 0.994, "pos": (0.0, 0.0),
