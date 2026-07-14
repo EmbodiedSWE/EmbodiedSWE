@@ -93,7 +93,7 @@ class GR1T2Robot(BaseRobot):
 
         c = self.cfg
         robot = GR1T2_HIGH_PD_CFG.copy()  # type: ignore[attr-defined]
-        robot.prim_path = "{ENV_REGEX_NS}/Robot"
+        robot.prim_path = f"{{ENV_REGEX_NS}}/{self.prim_name}"  # cfg.name-namespaced (default "Robot")
         robot.spawn.usd_path = c.gr1t2_usd
         robot.spawn.articulation_props.fix_root_link = c.fixed_base
         robot.init_state.pos = c.base_pos
@@ -103,11 +103,11 @@ class GR1T2Robot(BaseRobot):
             robot.actuators[grp].damping = c.arm_damping
         robot.actuators["trunk"].stiffness = c.waist_stiffness
         robot.actuators["trunk"].damping = c.waist_damping
-        return {"robot": robot}
+        return {self.name: robot}
 
     # ----- lifecycle (hooks; the base orchestrates bind -> on_bind -> build_controller) ---------
     def on_bind(self, env: BaseEnv) -> None:
-        self.articulation: Articulation = env.iscene["robot"]
+        self.articulation: Articulation = env.iscene[self.name]
 
     def build_controller(self) -> CompositeController:
         """`composite([<arm controller>, joint(hands)])` for the active mode. Hands are always direct
