@@ -9,7 +9,7 @@ One linear run with a NullRobot. It can't pick-and-place, so it cheats the stagi
 Bodies are placed / driven straight through the scene handles (env.scene.nuts / .bolts); the
 NullRobot applies nothing. Watch with --livestream; --headless runs the same motion non-visually.
 
-python -m robobench.suites.assembly.scripts.nut_thread_assembly_smoke --livestream 2
+python -m robobench.suites.assembly.smokes.nut_thread_assembly_smoke --livestream 2
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ import torch  # noqa: E402
 
 import robobench  # noqa: E402
 from robobench.core import ENVS  # noqa: E402
+from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes import NutThreadAssemblyScene
@@ -89,9 +90,8 @@ def main() -> None:
     h0 = (scene.nuts[0].data.root_pos_w - scene.bolts[0].data.root_pos_w)[:, 2] * 1e3
     print(f"NUT-THREAD | seated {int(seated.all(dim=1).sum())}/{n} envs | seat_z={scene.cfg.seat_z * 1e3:.0f}mm "
           f"| nut0 height mm: min={h0.min():+.1f} mean={h0.mean():+.1f} max={h0.max():+.1f}", flush=True)
-    env.close()
+    close_and_exit(env, app)
 
 
 if __name__ == "__main__":
     main()
-    app.close()

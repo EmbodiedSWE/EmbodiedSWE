@@ -12,7 +12,7 @@ One linear run with a NullRobot. It can't pick-and-place, so it cheats the stagi
 Bodies are placed / driven straight through the scene handles (env.scene.legs / .table); the
 NullRobot applies nothing. Watch with --livestream; --headless runs the same motion non-visually.
 
-python -m robobench.suites.assembly.scripts.ikea_table_assembly_smoke --livestream 2
+python -m robobench.suites.assembly.smokes.ikea_table_assembly_smoke --livestream 2
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ from isaaclab.utils.math import quat_apply, quat_apply_inverse  # noqa: E402
 
 import robobench  # noqa: E402
 from robobench.core import ENVS  # noqa: E402
+from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes import IkeaTableAssemblyScene
@@ -141,9 +142,8 @@ def main() -> None:
     slip_mm = ((leg_offsets() - ref_off).norm(dim=-1)[0] * 1e3).tolist()
     print(f"FIRMNESS env0 | welded={scene.welded[0].int().tolist()} | seated={scene.seated()[0].int().tolist()} "
           f"| leg-slip(mm)={[round(v, 1) for v in slip_mm]}")
-    env.close()
+    close_and_exit(env, app)
 
 
 if __name__ == "__main__":
     main()
-    app.close()
