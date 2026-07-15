@@ -14,8 +14,8 @@ xy-centering / tilt-righting PD wrenches (gravity-free key).
 Phases: show -> stage -> [lift -> glide -> align -> insert -> drive] x 7 -> settle. Verdict:
 seated count, per-hole depth gained per rev vs the 1.0 mm pitch, and key->bolt slip angle.
 
-python -m robobench.suites.assembly.scripts.pc_motherboard_smoke --livestream 2
-python -m robobench.suites.assembly.scripts.pc_motherboard_smoke \
+python -m robobench.suites.assembly.smokes.pc_motherboard_smoke --livestream 2
+python -m robobench.suites.assembly.smokes.pc_motherboard_smoke \
     --headless --enable_cameras --video robobench/suites/assembly/videos/pc_motherboard.mp4
 """
 
@@ -48,6 +48,7 @@ import robobench  # noqa: E402
 from isaaclab.utils.math import quat_apply_inverse  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
 from robobench.suites.assembly.scenes import PcMotherboardAssemblySceneCfg  # noqa: E402
+from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes import PcMotherboardAssemblyScene
@@ -387,9 +388,8 @@ def main() -> None:
           f"({int(seated.sum())}/{sc.cfg.num_holes * n} bolts) | {mm_per_rev:.2f} mm/rev "
           f"(pitch {PITCH_MM:.1f}) | last-hole key-bolt slip {float(slip_last.mean()):+.1f}deg | "
           f"depth gains (seat >= {sc.cfg.seat_depth * 1e3:.0f}mm): {per_hole}", flush=True)
-    env.close()
+    close_and_exit(env, app)
 
 
 if __name__ == "__main__":
     main()
-    app.close()
