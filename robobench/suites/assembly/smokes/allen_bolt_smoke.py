@@ -11,7 +11,7 @@ One linear run with a NullRobot, staging by teleport:
 
 Verdict: descent-per-revolution over the screw phase must track the M16 pitch (~2.0 mm/rev).
 
-python -m robobench.suites.assembly.scripts.allen_bolt_smoke --livestream 2
+python -m robobench.suites.assembly.smokes.allen_bolt_smoke --livestream 2
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ import torch  # noqa: E402
 
 import robobench  # noqa: E402
 from robobench.core import ENVS  # noqa: E402
+from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes import AllenBoltAssemblyScene
@@ -122,9 +123,8 @@ def main() -> None:
           f"| tip depth mm: min={d.min():+.1f} mean={d.mean():+.1f} max={d.max():+.1f} "
           f"| bolt0 {float(revs.mean()):.1f} revs, {float(mm_per_rev):.2f} mm/rev median "
           f"(pitch {PITCH_MM:.1f}, {int(turned.sum())}/{n} turned)", flush=True)
-    env.close()
+    close_and_exit(env, app)
 
 
 if __name__ == "__main__":
     main()
-    app.close()

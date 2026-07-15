@@ -11,8 +11,8 @@ xy-centering / tilt-righting PD wrenches (gravity-free key) — gently until the
 Phases: show -> stage -> engage -> drive -> settle. Verdict: seated count, depth gained per rev
 vs the 2.0 mm pitch, and key->bolt slip angle.
 
-python -m robobench.suites.assembly.scripts.allen_key_smoke --livestream 2
-python -m robobench.suites.assembly.scripts.allen_key_smoke \
+python -m robobench.suites.assembly.smokes.allen_key_smoke --livestream 2
+python -m robobench.suites.assembly.smokes.allen_key_smoke \
     --headless --enable_cameras --video robobench/suites/assembly/videos/allen_key.mp4
 """
 
@@ -44,6 +44,7 @@ import robobench  # noqa: E402
 from isaaclab.utils.math import quat_apply_inverse  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
 from robobench.suites.assembly.scenes import AllenBoltAssemblySceneCfg  # noqa: E402
+from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes import AllenBoltAssemblyScene
@@ -283,9 +284,8 @@ def main() -> None:
           f"{float(gain.mean()):+.1f}mm over {float(revs.mean()):.1f} revs = {mm_per_rev:.2f} mm/rev "
           f"(pitch {PITCH_MM:.1f}) | key-bolt slip {float(slip.mean()):+.1f}deg | tip depth mm: "
           f"min={d.min():+.1f} mean={d.mean():+.1f} max={d.max():+.1f} (seat>= {sc.cfg.seat_depth * 1e3:.0f})", flush=True)
-    env.close()
+    close_and_exit(env, app)
 
 
 if __name__ == "__main__":
     main()
-    app.close()
