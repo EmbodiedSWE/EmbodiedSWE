@@ -4,7 +4,7 @@ Runs the target headless and grabs the viewport camera every ~1/fps of sim time 
 so the video plays at real-time speed. Fully headless — safe to run next to another Isaac Sim.
 
 The target can be given three ways:
-  - a bare smoke name          -> resolved under --package (default: the assembly scripts pkg)
+  - a bare smoke name          -> resolved under --package (default: the assembly smokes pkg)
   - a full dotted module path  -> run as `python -m <module>`
   - a path to a .py file       -> run as a standalone script (e.g. an experiments/ solver)
 
@@ -19,7 +19,7 @@ Run from the repo root (the repo is pip-installed editable, so no PYTHONPATH nee
 
     # a smoke in another suite (dotted module), custom camera + output:
     .venv/bin/python scripts/record_video.py \
-        robobench.suites.assembly.scripts.pc_gpu_smoke \
+        robobench.suites.assembly.smokes.pc_gpu_smoke \
         --video videos/gpu.mp4 --eye 0.9 -1.1 0.65 --target-at 0.3 -0.05 0.1
 """
 
@@ -37,7 +37,7 @@ parser = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("target", help="smoke name (bare, resolved under --package), a dotted module "
                                     "path, or a path to a standalone .py script")
-parser.add_argument("--package", default="robobench.suites.assembly.scripts",
+parser.add_argument("--package", default="robobench.suites.assembly.smokes",
                     help="package a bare smoke name is resolved under")
 parser.add_argument("--video", default=None,
                     help="output mp4 path (default: videos/<target>-<timestamp>.mp4)")

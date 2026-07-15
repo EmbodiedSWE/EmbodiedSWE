@@ -51,8 +51,8 @@ scene's reconciler, welds back on — never letting an enabled weld see a large 
 the parts across the workspace). The drill PARKS clear before every re-fixture: a teleporting
 arm sweeping through a hole-tracking drill collides mid-flip.
 
-  python -m robobench.suites.assembly.scripts.so101_smoke --livestream 2
-  python -m robobench.suites.assembly.scripts.so101_smoke --headless
+  python -m robobench.suites.assembly.smokes.so101_smoke --livestream 2
+  python -m robobench.suites.assembly.smokes.so101_smoke --headless
 """
 
 from __future__ import annotations
@@ -76,6 +76,7 @@ import torch  # noqa: E402
 
 import robobench  # noqa: E402
 from robobench.core import ENVS  # noqa: E402
+from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes.so101_assembly import SO101AssemblyScene
@@ -652,21 +653,7 @@ def main() -> None:
           f"{err_la_stress.max() * 1000:.2f}, finale {err_free.max() * 1000:.2f}/"
           f"{err_m3_free.max() * 1000:.2f}/{err_motor_free.max() * 1000:.2f}/"
           f"{err_la_free.max() * 1000:.2f} | {'PASS' if ok else 'FAIL'}", flush=True)
-    _close_and_exit(env)
-
-
-def _close_and_exit(env) -> None:
-    """Kit teardown regularly hangs INSIDE env.close()/app.close() — everything is printed by
-    the time we get here, so arm the force-exit BEFORE closing."""
-    import os
-    import threading
-
-    watchdog = threading.Timer(10.0, lambda: os._exit(0))
-    watchdog.daemon = True
-    watchdog.start()
-    env.close()
-    app.close()
-    os._exit(0)
+    close_and_exit(env, app)
 
 
 if __name__ == "__main__":
