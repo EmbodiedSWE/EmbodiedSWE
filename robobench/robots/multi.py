@@ -168,7 +168,7 @@ class MultiRobot(BaseRobot):
         for name, r in self.robots.items():
             r.set_state(state[name], env_ids)
 
-    # ----- description ---------------------------------------------------------------------------
+    # ----- description (fanned out; see BimanualFranka below for a named preset) ------------------
     def describe(self) -> str:
         slices = self.action_slices
         layout = ", ".join(f"'{n}' dims [{s.start}:{s.stop})" for n, s in slices.items())  # half-open, like the slices
@@ -178,3 +178,39 @@ class MultiRobot(BaseRobot):
         ]
         parts += [f"[{n}] {r.describe()}" for n, r in self.robots.items()]
         return "\n".join(parts)
+
+
+# ----- named composite presets --------------------------------------------------------------------
+# A preset is a thin `MultiRobot` subclass under its own `ROBOTS` name, so the composite reads as a
+# first-class embodiment everywhere a registry name appears — env names derive as
+# `<suite>.<scene>.bimanual_franka.<mode>` (instead of the anonymous `.multi.`), and ad-hoc combos
+# (`--robot bimanual_franka`) resolve. Only the DEFAULT children are preset; a cfg with explicit
+# `robots` re-places / re-configures them freely (a suite pins base poses per scene).
+
+
+@dataclass
+class BimanualFrankaCfg(MultiRobotCfg):
+    """`MultiRobotCfg` preset: two Frankas, "left" / "right" (action order). Empty `robots` (the
+    default) fills the generic flanking layout — bases at y = +/-0.35 on the table level, both facing
+    +x. Pass explicit `robots` to place them for a scene (keep the "left"/"right" names so agent
+    recipes transfer)."""
+
+    def __post_init__(self) -> None:
+        from .franka import FrankaRobotCfg  # local: keep module import order franka-free
+
+        if not self.robots:
+            self.robots = {
+                "left": ("franka", FrankaRobotCfg(base_pos=(0.0, 0.35, 0.0))),
+                "right": ("franka", FrankaRobotCfg(base_pos=(0.0, -0.35, 0.0))),
+            }
+
+
+@ROBOTS.register("bimanual_franka")
+class BimanualFranka(MultiRobot):
+    """Two Franka Panda arms as one env-facing robot — `MultiRobot` under a first-class name.
+    Everything (action concat, per-child controllers, namespacing) is inherited; see `MultiRobot`."""
+
+    cfg: BimanualFrankaCfg
+
+    def __init__(self, cfg: BimanualFrankaCfg | None = None) -> None:
+        super().__init__(cfg or BimanualFrankaCfg())
