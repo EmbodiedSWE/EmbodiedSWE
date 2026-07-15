@@ -14,7 +14,7 @@ derivations the harness or agent can make — nothing here is locked.
 from __future__ import annotations
 
 from robobench.core import EnvCfg, register_env
-from robobench.robots import G1RobotCfg, GR1T2RobotCfg
+from robobench.robots import BimanualFrankaCfg, FrankaRobotCfg, G1RobotCfg, GR1T2RobotCfg
 from robobench.suites.assembly.scenes import IkeaTableAssemblySceneCfg
 
 SUITE = "assembly"
@@ -71,6 +71,35 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(scene="bulb", robot="franka", control_mode=mode, env_spacing=2),
+    )
+
+# Two Frankas at the SO101 workbench as ONE robot (`BimanualFranka`: action = [left | right];
+# address one arm via `env.robot["left"]`). Bases stand on the bench top (z = 0.994, the default
+# packing table), 0.94 m apart — each arm works best 0.3-0.55 m from its own base, so the shared
+# zone sits around (0.4, 0).
+# Reach-verified (P2/P2b probes, experiments/so101_bimanual_franka_osc_20260715): in-zone tracking
+# <= 0.6 mm, both arms simultaneously at the shared zone OK. Known gotcha: the default home pose
+# parks each hand over the other arm's zone — tuck the idle arm.
+# TO VERIFY: arm-arm collision limits when one arm stretches cross-body (> 0.55 m); per-task base
+# retuning for hold+insert style work.
+# -> "assembly.so101.bimanual_franka.{osc,impedance,joint}" (mode applies to both arms)
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="so101",
+                robot="bimanual_franka",
+                control_mode=mode,
+                robot_cfg=BimanualFrankaCfg(robots={
+                    "left": ("franka", FrankaRobotCfg(  # yaw -50 deg, faces the proximal/motor zone
+                        base_pos=(0.0, 0.28, 0.994), base_rot=(0.90631, 0.0, 0.0, -0.42262))),
+                    "right": ("franka", FrankaRobotCfg(  # yaw +135 deg, faces the drill/fixture zone
+                        base_pos=(0.75, -0.28, 0.994), base_rot=(0.38268, 0.0, 0.0, 0.92388))),
+                }),
+                env_spacing=3,
+            )
+        ),
     )
 
 # Fixed-base G1 at the IKEA table, upper-body joint control. Two placement tweaks so the G1 (pelvis
