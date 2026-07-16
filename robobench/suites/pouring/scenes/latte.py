@@ -39,24 +39,23 @@ TABLE_TOP_Z = 0.04  # table top height [m]; cups stand here, layout numbers assu
 
 # ----- procedural geometry (numpy only; app-free) -------------------------------------------------
 def cup_mesh(
-    r_inner: float, height: float, wall: float, bottom: float, segments: int = 64
+    r_inner_bottom: float, r_inner_top: float, height: float, wall: float, bottom: float, segments: int = 64
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Open-cup trimesh: inner floor ring, inner+outer walls, rim, outer floor, and center caps.
-    Local origin at the *outside bottom center*, +z up (same topology as the in-tree MPM pour
-    demo's catch bowl, straight-walled)."""
+    """Open-cup trimesh (optionally tapered): inner floor ring, inner+outer walls, rim, outer
+    floor, and center caps. Local origin at the *outside bottom center*, +z up (same topology as
+    the in-tree MPM pour demo's catch bowl)."""
     theta = np.linspace(0.0, 2.0 * math.pi, segments, endpoint=False)
     cos_t, sin_t = np.cos(theta), np.sin(theta)
-    r_outer = r_inner + wall
 
     def ring(radius: float, z: float) -> np.ndarray:
         return np.column_stack([radius * cos_t, radius * sin_t, np.full(segments, z)])
 
     vertices = np.vstack(
         [
-            ring(r_inner, bottom),  # 0: inner floor
-            ring(r_inner, height),  # 1: inner rim
-            ring(r_outer, height),  # 2: outer rim
-            ring(r_outer, 0.0),  # 3: outer floor
+            ring(r_inner_bottom, bottom),  # 0: inner floor
+            ring(r_inner_top, height),  # 1: inner rim
+            ring(r_inner_top + wall, height),  # 2: outer rim
+            ring(r_inner_bottom + wall, 0.0),  # 3: outer floor
             np.array([[0.0, 0.0, bottom], [0.0, 0.0, 0.0]], dtype=np.float32),  # center caps
         ]
     ).astype(np.float32)
@@ -76,12 +75,22 @@ def cup_mesh(
 
 
 def cylinder_lattice(
-    radius: float, z_lo: float, z_hi: float, voxel: float, particles_per_cell: float, density: float, seed: int
+    radius: float,
+    z_lo: float,
+    z_hi: float,
+    voxel: float,
+    particles_per_cell: float,
+    density: float,
+    seed: int,
+    radius_top: float | None = None,
 ) -> tuple[np.ndarray, float, float]:
-    """Jittered particle lattice filling a local-space cylinder (axis +z, centered on xy=0).
-    Returns (points, particle_radius, particle_mass) — the in-tree pour demo's seeding recipe."""
-    lo = np.array([-radius, -radius, z_lo], dtype=np.float32)
-    hi = np.array([radius, radius, z_hi], dtype=np.float32)
+    """Jittered particle lattice filling a local-space cylinder — or truncated cone when
+    `radius_top` differs (axis +z, centered on xy=0). Returns (points, particle_radius,
+    particle_mass) — the in-tree pour demo's seeding recipe."""
+    r_top = radius if radius_top is None else radius_top
+    r_max = max(radius, r_top)
+    lo = np.array([-r_max, -r_max, z_lo], dtype=np.float32)
+    hi = np.array([r_max, r_max, z_hi], dtype=np.float32)
     resolution = np.maximum(np.ceil(particles_per_cell * (hi - lo) / voxel), 1).astype(int)
     cell = (hi - lo) / resolution
     cell_volume = float(np.prod(cell))
@@ -92,7 +101,9 @@ def cylinder_lattice(
     rng = np.random.default_rng(seed)
     points += (rng.random(points.shape) - 0.5) * (0.10 * float(cell.max()))
     points += lo
-    keep = points[:, 0] ** 2 + points[:, 1] ** 2 < radius**2
+    t = np.clip((points[:, 2] - z_lo) / max(z_hi - z_lo, 1e-9), 0.0, 1.0)
+    r_at_z = radius + (r_top - radius) * t
+    keep = points[:, 0] ** 2 + points[:, 1] ** 2 < r_at_z**2
     points = points[keep]
     if points.shape[0] == 0:
         raise RuntimeError("cylinder_lattice produced no particles; shrink voxel_size or grow the fill volume.")
@@ -114,16 +125,19 @@ class LatteSceneCfg(BaseCfg):
     liquid_friction: float = tunable(0.0)
     yield_pressure: float = tunable(1.0e15)  # huge -> never yields as a granular (stays liquid)
     tensile_yield_ratio: float = tunable(5.0)
-    # --- coffee mug (textured USD asset; origin at the mug CENTER, handle on -y). The vendored
-    # mug_x170.usd is the original mug.usd with a 1.7x scale BAKED INTO THE GEOMETRY (this render
-    # stack's Fabric delegate drops USD xform scale ops, so runtime scaling silently no-ops).
-    # Baked dimensions: straight cylindrical interior r~0.040, interior floor ~9 mm above the
-    # base, rim 0.139 above the base, half-depth 0.0704. The dials below match that bake. ---
-    mug_usd: str = info("", doc="'' -> the vendored assets/mug/mug_x170.usd (meters, center origin)")
+    # --- coffee mug (textured USD asset, VISUAL-ONLY; the invisible tapered collider below is
+    # the physics). The vendored BlackCeramicMug/mug_black_zup.usd is the original model with the
+    # fix-up BAKED INTO THE GEOMETRY (this render stack's Fabric delegate drops USD xform
+    # scale/orient fix-ups, so runtime transforms can't be trusted): rotated Y-up -> Z-up, body
+    # axis centered on the origin, base at z=0. Baked dimensions: tapered interior r 0.034 (near
+    # floor) -> 0.046 (rim), interior floor ~16 mm above the base, rim at 0.0832, handle on -x.
+    # The dials below match that bake. ---
+    mug_usd: str = info("", doc="'' -> the vendored assets/BlackCeramicMug/mug_black_zup.usd (base origin)")
     mug_scale: float = info(1.0, doc="extra runtime scale — WARNING: dropped by the Fabric renderer; bake instead")
-    coffee_cup_r: float = tunable(0.039)  # [TUNE] collider/fill/metric radius: baked mug cavity - 1 mm
-    coffee_cup_h: float = tunable(0.139)  # rim height above the table (trajectory anchor)
-    coffee_floor_z: float = tunable(0.009)  # interior floor height above the table
+    coffee_cup_r: float = tunable(0.045)  # [TUNE] collider/metric radius at the RIM (mug cavity - 1 mm)
+    coffee_cup_r_floor: float = tunable(0.034)  # [TUNE] collider radius at the FLOOR (tapered interior)
+    coffee_cup_h: float = tunable(0.0832)  # rim height above the table (trajectory anchor)
+    coffee_floor_z: float = tunable(0.016)  # interior floor height above the table
     # --- milk cup (procedural open cylinder; local origin at outside bottom center) ---
     milk_cup_r: float = tunable(0.030)
     milk_cup_h: float = tunable(0.075)
@@ -148,8 +162,8 @@ class LatteSceneCfg(BaseCfg):
     # reads as liquid. Keep scaled width < cup_wall or particles bulge through the cup exterior.
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parents[1] / "assets" / "mug"
-        self.mug_usd = self.mug_usd or str(assets / "mug_x170.usd")
+        assets = Path(__file__).resolve().parents[1] / "assets" / "BlackCeramicMug"
+        self.mug_usd = self.mug_usd or str(assets / "mug_black_zup.usd")
 
 
 @SCENES.register("latte")
@@ -206,8 +220,12 @@ class LatteScene(BaseScene):
             wall: float | None = None,
             bottom: float | None = None,
             visible: bool = True,
+            r_inner_top: float | None = None,
         ) -> CupMeshCfg:
-            vertices, faces = cup_mesh(r_inner, height, wall or c.cup_wall, bottom or c.cup_bottom)
+            vertices, faces = cup_mesh(
+                r_inner, r_inner_top if r_inner_top is not None else r_inner, height, wall or c.cup_wall,
+                bottom or c.cup_bottom,
+            )
             return CupMeshCfg(
                 visible=visible,
                 vertices=vertices.tolist(),
@@ -232,11 +250,24 @@ class LatteScene(BaseScene):
             )
 
         def liquid(
-            cup_r: float, depth: float, color: tuple, cup_xy: tuple[float, float], seed: int, z_lo: float
+            cup_r: float,
+            depth: float,
+            color: tuple,
+            cup_xy: tuple[float, float],
+            seed: int,
+            z_lo: float,
+            cup_r_top: float | None = None,
         ) -> MPMObjectCfg:
-            fill_r = cup_r - 2.0 * c.voxel_size / c.particles_per_cell  # stay off the wall
+            margin = 2.0 * c.voxel_size / c.particles_per_cell  # stay off the wall
             points, p_radius, p_mass = cylinder_lattice(
-                fill_r, z_lo, z_lo + depth, c.voxel_size, c.particles_per_cell, c.liquid_density, seed
+                cup_r - margin,
+                z_lo,
+                z_lo + depth,
+                c.voxel_size,
+                c.particles_per_cell,
+                c.liquid_density,
+                seed,
+                radius_top=None if cup_r_top is None else cup_r_top - margin,
             )
             return MPMObjectCfg(
                 prim_path="{ENV_REGEX_NS}/" + ("Coffee" if seed == 0 else "Milk"),
@@ -289,23 +320,24 @@ class LatteScene(BaseScene):
             # invisible procedural cup below is the actual collider.
             "coffee_cup": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/CoffeeCup",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, TABLE_TOP_Z + 0.0704 * c.mug_scale)),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, TABLE_TOP_Z)),  # baked origin = base center
                 spawn=VisualUsdRefCfg(usd_path=c.mug_usd, scale=(c.mug_scale, c.mug_scale, c.mug_scale)),
             ),
-            # Watertight collider matched to the mug cavity: inner radius = coffee_cup_r, rim =
-            # coffee_cup_h, floor top = coffee_floor_z (liquid rests at the mug's visual floor),
-            # outer wall 0.045 m < the mug's 0.050 m outer wall, so it stays hidden inside.
+            # Watertight tapered collider matched to the mug cavity (r_floor -> r_rim), floor top
+            # at coffee_floor_z (liquid rests at the mug's visual floor); it stays hidden inside
+            # the mug's 6 mm visual wall.
             "coffee_cup_collider": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/CoffeeCupCollider",
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, TABLE_TOP_Z)),
                 spawn=cup_spawn(
-                    c.coffee_cup_r,
+                    c.coffee_cup_r_floor,
                     c.coffee_cup_h,
                     kinematic=False,
                     color=None,
                     wall=0.005,
                     bottom=c.coffee_floor_z,
                     visible=False,
+                    r_inner_top=c.coffee_cup_r,
                 ),
             ),
             "milk_cup": RigidObjectCfg(
@@ -314,7 +346,17 @@ class LatteScene(BaseScene):
                 spawn=cup_spawn(c.milk_cup_r, c.milk_cup_h, kinematic=True, color=(0.72, 0.72, 0.75)),
             ),
             "coffee": liquid(
-                c.coffee_cup_r, c.coffee_depth, c.coffee_color, (0.0, 0.0), seed=0, z_lo=c.coffee_floor_z + 0.004
+                c.coffee_cup_r_floor,
+                c.coffee_depth,
+                c.coffee_color,
+                (0.0, 0.0),
+                seed=0,
+                z_lo=c.coffee_floor_z + 0.004,
+                # collider inner radius at the fill's top (linear taper floor -> rim)
+                cup_r_top=c.coffee_cup_r_floor
+                + (c.coffee_cup_r - c.coffee_cup_r_floor)
+                * (0.004 + c.coffee_depth)
+                / (c.coffee_cup_h - c.coffee_floor_z),
             ),
             "milk": liquid(c.milk_cup_r, c.milk_depth, c.milk_color, (mx, my), seed=1, z_lo=c.cup_bottom + 0.004),
         }
@@ -467,7 +509,7 @@ class LatteScene(BaseScene):
     def describe(self) -> str:
         c = self.cfg
         return (
-            f"A ceramic mug (cavity radius {c.coffee_cup_r:.3f} m, rim {c.coffee_cup_h:.3f} m above the table) stands at"
+            f"A black ceramic mug (cavity radius {c.coffee_cup_r:.3f} m at the rim, {c.coffee_cup_h:.3f} m tall) stands at"
             f" (0, 0) on a table (top at z={TABLE_TOP_Z}) holding brown coffee (liquid particles,"
             f" ~{c.coffee_depth * 1e3:.0f} mm deep). A smaller steel milk cup at"
             f" ({c.milk_cup_pos[0]}, {c.milk_cup_pos[1]}) holds white milk. The milk cup is kinematic: write its"
