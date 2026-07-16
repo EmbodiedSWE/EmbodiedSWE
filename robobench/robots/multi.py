@@ -214,3 +214,60 @@ class BimanualFranka(MultiRobot):
 
     def __init__(self, cfg: BimanualFrankaCfg | None = None) -> None:
         super().__init__(cfg or BimanualFrankaCfg())
+
+
+@dataclass
+class AlohaCfg(MultiRobotCfg):
+    """`MultiRobotCfg` preset: two Trossen WXAI follower arms, "left" / "right" (action order).
+    Empty `robots` (the default) fills the generic flanking layout — bases at y = +/-0.25 on the
+    table level (tighter than the Frankas: ~0.5 m reach per arm), both facing +x. Pass explicit
+    `robots` to place them for a scene (keep the "left"/"right" names so agent recipes transfer)."""
+
+    def __post_init__(self) -> None:
+        from .wxai import WxaiRobotCfg  # local: keep module import order wxai-free
+
+        if not self.robots:
+            self.robots = {
+                "left": ("wxai", WxaiRobotCfg(base_pos=(0.0, 0.25, 0.0))),
+                "right": ("wxai", WxaiRobotCfg(base_pos=(0.0, -0.25, 0.0))),
+            }
+
+
+@ROBOTS.register("aloha")
+class Aloha(MultiRobot):
+    """Bimanual WXAI — two Trossen WidowX AI follower arms as one env-facing robot, i.e. the
+    ALOHA-style setup (Trossen's Stationary AI kit, the successor of the ViperX-based ALOHA,
+    is exactly this pair on a frame), hence the name. Everything is inherited; see `MultiRobot`."""
+
+    cfg: AlohaCfg
+
+    def __init__(self, cfg: AlohaCfg | None = None) -> None:
+        super().__init__(cfg or AlohaCfg())
+
+
+@dataclass
+class BimanualPiperCfg(MultiRobotCfg):
+    """`MultiRobotCfg` preset: two AgileX PiPER arms, "left" / "right" (action order). Empty
+    `robots` (the default) fills the generic flanking layout — bases at y = +/-0.30 on the table
+    level (~0.6 m reach per arm), both facing +x. Pass explicit `robots` to place them for a scene
+    (keep the "left"/"right" names so agent recipes transfer)."""
+
+    def __post_init__(self) -> None:
+        from .piper import PiperRobotCfg  # local: keep module import order piper-free
+
+        if not self.robots:
+            self.robots = {
+                "left": ("piper", PiperRobotCfg(base_pos=(0.0, 0.30, 0.0))),
+                "right": ("piper", PiperRobotCfg(base_pos=(0.0, -0.30, 0.0))),
+            }
+
+
+@ROBOTS.register("bimanual_piper")
+class BimanualPiper(MultiRobot):
+    """Two AgileX PiPER arms as one env-facing robot — `MultiRobot` under a first-class name
+    (the small-cobot sibling of `BimanualFranka`). Everything is inherited; see `MultiRobot`."""
+
+    cfg: BimanualPiperCfg
+
+    def __init__(self, cfg: BimanualPiperCfg | None = None) -> None:
+        super().__init__(cfg or BimanualPiperCfg())
