@@ -18,9 +18,8 @@ SUITE = "folding"
 # -> "folding.tshirt"
 register_env(SUITE, lambda: EnvCfg(scene="tshirt", robot="null", env_spacing=3, sim_overrides={"coupled": False}))
 
-# Franka at the original demo base pose (0.5 m to -x/-y of the table center), arm by direct joint
-# position targets — the fold smoke computes those targets with differential IK from the ported
-# key-pose script. Home pose + gripper effort mirror the original demo / the in-tree cloth task.
+# Franka based 0.5 m to -x/-y of the table center, arm by direct joint position targets — the
+# fold smoke computes those targets with differential IK from its key-pose script.
 # -> "folding.tshirt.franka.joint"
 register_env(
     SUITE,
@@ -34,10 +33,10 @@ register_env(
             # (1,0,0,0) is the 2.x wxyz identity — under develop it reads as a 180° X-flip and
             # mounts the arm upside-down beneath the world.
             base_rot=(0.0, 0.0, 0.0, 1.0),
-            default_dof_pos=(0.0, 0.0, 0.0, -1.59695, 0.0, 2.5307, 0.0),  # original demo home
-            gripper_effort_limit=500.0,  # strong pinch for cloth (in-tree cloth task value)
-            arm_effort_limit=300.0,  # the original drove joints kinematically; real limits crawl
-            gravity_compensation=1.0,  # weightless arm (the original zeroed robot gravity outright)
+            default_dof_pos=(0.0, 0.0, 0.0, -1.59695, 0.0, 2.5307, 0.0),  # elbow-bent ready pose over the table
+            gripper_effort_limit=500.0,  # strong pinch for cloth
+            arm_effort_limit=300.0,  # scripted joint tracking must not crawl at the real Panda limits
+            gravity_compensation=1.0,  # weightless arm — the position servo must not sag at extended reach
         ),
         env_spacing=3,
     ),

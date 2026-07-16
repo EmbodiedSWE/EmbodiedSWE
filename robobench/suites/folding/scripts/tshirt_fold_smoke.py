@@ -1,36 +1,31 @@
-"""Fold smoke for the folding suite — scene + Franka, the ported key-pose folding script.
+"""Fold smoke for the folding suite — scene + Franka driving a scripted key-pose fold.
 
-Port of the Newton example `cloth_folding` (iter_05 trajectory): the Franka folds the T-shirt in
-three moves (left sleeve to the center line, right sleeve to the center line, bottom hem up to
-the collar), then tucks the crease and pats the bundle flat. Two deliberate deviations from the
-original's fixed key-pose table:
+The Franka folds the T-shirt in three moves (left sleeve to the center line, right sleeve to the
+center line, bottom hem up to the collar), then tucks the crease and pats the bundle flat,
+following the timed key-pose table `KEY_POSES`. Two adaptive elements on top of the fixed table:
 
   - **Adaptive grasp anchoring**: each grasp/tuck/pat block re-anchors its approach rows on the
-    MEASURED cloth extremes at approach time (`retarget_grasp`). The original hand-tuned those
-    coordinates per iteration; the cloth's settle position shifts with material params and with
-    each completed fold, so fixed coordinates pinch air. Fold DESTINATIONS stay scripted.
+    MEASURED cloth extremes at approach time (`retarget_grasp`) — the cloth's settle position
+    shifts with material params and with each completed fold, so fixed coordinates pinch air.
+    Fold DESTINATIONS stay scripted.
   - **Tilted near-base approach** (`QR_NEAR`) for the right sleeve: a straight-down pinch 0.19 m
-    from the base axis stalls ~14 cm short of the target on joint limits (the original's
-    kinematic velocity controller was not limit-constrained there).
+    from the base axis stalls ~14 cm short of the target on joint limits.
 
-Actuation port:
+Actuation:
 
-  - The original drives link7 by resolved-rate velocity IK toward each key pose, converging
-    exponentially with a ~1 s time constant. Here the Cartesian target is low-pass filtered with
-    the same time constant (``--tau``) and tracked by absolute-pose **damped-least-squares
-    differential IK** (isaaclab's `DifferentialIKController`, the same method the in-tree Newton
-    cloth task uses), whose joint-position output feeds the robot's "joint" control mode.
-  - Frames: original key poses are world-frame link7 poses with a +0.22 m tip offset. Ported to
-    robot-root-frame `panda_hand` poses: positions ``(x,y,z)/100 + (0.5, 0.5, 0)`` (base at
-    (-0.5,-0.5,0)), quats right-multiplied by Rz(-pi/4) (the hand frame's -45° yaw vs link7,
-    verified against the sim: link7-in-hand = Rz(+45°)), tip offset ``(0, 0, 0.113)`` in the hand
-    frame (0.107 + 0.113 = 0.22). NOTE: isaaclab develop uses **xyzw** quaternions throughout
-    (warp convention) — data layer, math utils, and DiffIK commands alike.
-  - Gripper: original finger target = activation * 4 cm -> open 0.032 m, close 0.004 m (pinch gap).
+  - The Cartesian target is low-pass filtered with a ~1 s time constant (``--tau``) and tracked
+    by absolute-pose **damped-least-squares differential IK** (isaaclab's
+    `DifferentialIKController`, the same method the in-tree Newton cloth task uses), whose
+    joint-position output feeds the robot's "joint" control mode.
+  - Frames: `KEY_POSES` rows are authored as cm world positions and mapped to robot-root-frame
+    `panda_hand` poses: positions ``(x,y,z)/100 + (0.5, 0.5, 0)`` (base at (-0.5,-0.5,0)),
+    fingertip offset ``(0, 0, 0.113)`` in the hand frame. NOTE: isaaclab develop uses **xyzw**
+    quaternions throughout (warp convention) — data layer, math utils, and DiffIK commands alike.
+  - Gripper: finger targets open 0.032 m, close 0.004 m (pinch gap).
 
 Verdict: cloth footprint < 0.30 m² (a completed 3-fold run lands ~0.17; failure modes stay >=
-0.41; the original example reached ~0.142; settled unfolded ~0.50), particles in bounds, and the
-first hover pose reached within ~2 cm (validates the frame/quat port).
+0.41; settled unfolded ~0.50), particles in bounds, and the first hover pose reached within
+~2 cm (validates the frame/quat conventions).
 
 Runs ONLY under the Newton venv:
   env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --headless
@@ -47,10 +42,10 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
-parser.add_argument("--tau", type=float, default=0.3, help="target low-pass time constant [s]; the DLS+servo stack adds its own ~1-2 s lag, so keep this small (the original's ~1 s was its TOTAL loop lag)")
+parser.add_argument("--tau", type=float, default=0.3, help="target low-pass time constant [s]; the DLS+servo stack adds its own ~1-2 s lag, so keep this small")
 parser.add_argument("--time_scale", type=float, default=1.0, help="multiply every key-pose duration (slower, more settled folds)")
 parser.add_argument("--lam", type=float, default=0.05, help="DLS damping lambda (small: workspace-edge poses need it)")
-parser.add_argument("--k_null", type=float, default=1.0, help="nullspace pull gain toward home posture [1/s] (original 1.0)")
+parser.add_argument("--k_null", type=float, default=1.0, help="nullspace pull gain toward home posture [1/s]")
 parser.add_argument("--hold", type=float, default=3.0, help="extra settle time after the last key pose [s]")
 parser.add_argument("--print_every", type=int, default=120, help="progress print period [steps]")
 parser.add_argument("--max_steps", type=int, default=None, help="cap total steps (debugging)")
@@ -101,27 +96,25 @@ if TYPE_CHECKING:
     from robobench.suites.folding.scenes import TshirtFoldingScene
 
 FPS = 60
-OPEN, CLOSE = 0.8 * 0.04, 0.1 * 0.04  # original activation * 4 cm, in m
-# Original link7 gripper quats right-multiplied by Rz(-pi/4) (panda_hand yaw vs link7). Both come
-# out as clean 180° flips (gripper pointing down). Quats in **xyzw** (isaaclab develop convention):
+OPEN, CLOSE = 0.8 * 0.04, 0.1 * 0.04  # 80% / 10% of the 4 cm finger stroke, in m
+# Gripper-down grasp quats for the panda_hand frame (link7-frame downward flips right-multiplied
+# by Rz(-pi/4), the hand frame's -45° yaw vs link7). Quats in **xyzw** (isaaclab develop convention):
 QL = (0.92388, 0.0, 0.38268, 0.0)  # grasps on the +x half of the table: 180° about (cos22.5°, 0, sin22.5°)
 QR = (1.0, 0.0, 0.0, 0.0)  # grasps on the -x half / center line: 180° about x
 # Near-base grasp (right sleeve): approach tilted 45° away from the base so the wrist clears the
-# joint-limit envelope — a straight-down pinch 0.19 m from the base axis stalls ~14 cm short
-# (the original's kinematic controller wasn't limit-constrained there).
+# joint-limit envelope — a straight-down pinch 0.19 m from the base axis stalls ~14 cm short.
 QR_NEAR = (-0.92388, 0.0, 0.38268, 0.0)  # 180° about (-cos22.5°, 0, sin22.5°)
-TIP_OFFSET = (0.0, 0.0, 0.113)  # in the panda_hand frame; hand(0.107) + 0.113 = original link7 + 0.22
+TIP_OFFSET = (0.0, 0.0, 0.113)  # fingertip point in the panda_hand frame (link7 +0.22 m = hand 0.107 + 0.113)
 
 
 def _row(dur: float, x_cm: float, y_cm: float, z_cm: float, quat: tuple, grip_m: float) -> tuple:
-    """One key pose: original cm world position -> robot-root-frame meters (base at (-0.5,-0.5,0))."""
+    """One key pose: cm world position -> robot-root-frame meters (base at (-0.5,-0.5,0))."""
     return (dur, x_cm / 100.0 + 0.5, y_cm / 100.0 + 0.5, z_cm / 100.0, *quat, grip_m)
 
 
-# The iter_05 robot_key_poses table, row for row. Durations unchanged; the sleeve GRASP
-# coordinates are retuned to where OUR cloth parameters settle the shirt (measured: sleeve tips
-# (+0.379,-0.62) / (-0.374,-0.611), hem y=-0.16, collar y=-0.83; the original's tips were
-# (+/-0.34, -0.58)) — same ~3 cm inset from the tip as the original used.
+# The timed key-pose table. Sleeve GRASP coordinates target where the tuned cloth parameters
+# settle the shirt (measured: sleeve tips (+0.379,-0.62) / (-0.374,-0.611), hem y=-0.16,
+# collar y=-0.83), pinching ~3 cm inside the tip; `retarget_grasp` re-measures at run time.
 KEY_POSES = [
     # wait for the cloth to settle, hover above the left sleeve
     _row(3.5, 35, -62, 28.0, QL, OPEN),
@@ -170,8 +163,7 @@ KEY_POSES = [
 
 # Verdict thresholds (env-local meters).
 # Smoke gate: a completed 3-fold run lands ~0.17 m^2 (settled unfolded ~0.50); every observed
-# failure mode (missed/slipped grasps, spring-back) stays >= 0.41. The original example reached
-# ~0.142 with two extra hand-tuned iterations of tuck/pat placement — parity is the stretch goal.
+# failure mode (missed/slipped grasps, spring-back) stays >= 0.41.
 FOOTPRINT_TARGET = 0.30  # m^2
 BOUNDS_LO = (-0.45, -1.00, -0.05)
 BOUNDS_HI = (0.45, 0.10, 0.60)
@@ -261,8 +253,8 @@ def main() -> None:
 
     env.reset()
     # Seed the target filter at the arm's ACTUAL tip pose so the command ramps smoothly from the
-    # home configuration to the first key pose with the tau time constant (the original converges
-    # the same way); seeding at the key pose would command a ~40 cm jump and blow up the contacts.
+    # home configuration to the first key pose with the tau time constant; seeding at the key
+    # pose would command a ~40 cm jump and blow up the contacts.
     ee_p0, ee_q0 = ee_pose_b()
     filt_pos = ee_p0.clone()
     filt_quat = ee_q0.clone()
@@ -274,10 +266,10 @@ def main() -> None:
         return scene.cloth.data.nodal_pos_w.torch[0] - art.data.root_pos_w.torch[0]
 
     def retarget_grasp(k_new: int) -> None:
-        """Adaptive grasp anchoring: the original hand-tuned its grasp coordinates per iteration;
-        here each grasp block re-anchors on the MEASURED cloth extreme when its approach begins
-        (the cloth drifts as folds progress and with material params). Only the approach/pinch/lift
-        rows move — the fold destinations stay scripted. Uses env 0 (this smoke is single-env)."""
+        """Adaptive grasp anchoring: each grasp block re-anchors on the MEASURED cloth extreme
+        when its approach begins (the cloth drifts as folds progress and with material params) —
+        fixed coordinates pinch air. Only the approach/pinch/lift rows move — the fold
+        destinations stay scripted. Uses env 0 (this smoke is single-env)."""
         p = cloth_root()
         if k_new == 1:  # left sleeve: descend rows 1-2 at tip - 3 cm (x), lift row 3 another 2 cm in
             tip = p[p[:, 0].argmax()]
@@ -318,7 +310,7 @@ def main() -> None:
                 flush=True,
             )
     max_dq = 0.20  # per-tick joint step clamp [rad] (~12 rad/s commanded; the servo is the real limiter)
-    # Nullspace posture target, as the original: pull joints 2..7 back toward home, joint 1 free.
+    # Nullspace posture target: pull joints 2..7 back toward home, joint 1 free.
     q_home = art.data.joint_pos.torch[:, arm_ids].clone()
     eye7 = torch.eye(len(arm_ids), device=device).expand(n, -1, -1)
 
@@ -335,8 +327,7 @@ def main() -> None:
         q_arm = art.data.joint_pos.torch[:, arm_ids]
         J = jacobian_b()
         q_des = ik.compute(ee_p, ee_q, J, q_arm)
-        # Nullspace posture pull (the original's K_null=1 term): project (home - q) through I - J+J,
-        # leaving joint 1 free (the original pulled initial_pose[1:] only).
+        # Nullspace posture pull: project (home - q) through I - J+J, leaving joint 1 free.
         dq_null = (q_home - q_arm) * (args.k_null / FPS)
         dq_null[:, 0] = 0.0
         J_pinv = torch.linalg.pinv(J)
@@ -392,7 +383,7 @@ def main() -> None:
                 flush=True,
             )
             last_k = k
-        if step == int(t_edges[0] * FPS) - 1:  # end of the settle/hover pose: validates the frame/quat port
+        if step == int(t_edges[0] * FPS) - 1:  # end of the settle/hover pose: validates the frame/quat conventions
             hover_err = float((ee_pose_b()[0] - poses[0, :3]).norm(dim=-1).max())
             print(f"  hover reached | ee err {hover_err * 100:.1f} cm (want < ~2 cm)", flush=True)
         if step % args.print_every == 0:
@@ -416,7 +407,7 @@ def main() -> None:
     verdict = "PASS" if (folded and in_bounds and hover_ok) else "FAIL"
     print(
         f"TSHIRT-FOLD {verdict} | footprint {fp:.3f} m^2 = {ext_x:.2f} x {ext_y:.2f} m"
-        f" (gate < {FOOTPRINT_TARGET}, example ~0.142, unfolded ~0.50) | in_bounds={in_bounds}"
+        f" (gate < {FOOTPRINT_TARGET}, unfolded ~0.50) | in_bounds={in_bounds}"
         f" | hover_err={None if hover_err is None else round(hover_err * 100, 1)} cm",
         flush=True,
     )
