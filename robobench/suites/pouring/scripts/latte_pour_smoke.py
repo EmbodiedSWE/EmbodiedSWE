@@ -148,6 +148,8 @@ def main() -> None:
         return phases[-1][2](1.0)
 
     env.reset()
+    if render_on:
+        scene.setup_particle_visuals()  # Fabric-side liquid rendering (see LatteScene docstring)
     env_origin = env.iscene.env_origins[0]
     action = torch.zeros((n, 0), device=device)
     prev_pos, prev_theta = pose_at(0.0)
@@ -175,6 +177,8 @@ def main() -> None:
         prev_pos, prev_theta = pos, theta
 
         env.step(action, render=render)
+        if render_on and step % 5 == 0:  # ~40 Hz particle visual push (capture samples ~30 Hz)
+            scene.push_particle_visuals()
 
         phase = next((nm for (nm, _, _), edge in zip(phases, t_edges) if t < edge), "hold")
         if phase != last_phase:

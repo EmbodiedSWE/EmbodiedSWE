@@ -153,4 +153,10 @@ particles into a cup of brown coffee. Same GUI/headless semantics as above:
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.pouring.scripts.latte_pour_smoke            # headless
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.pouring.scripts.latte_pour_smoke --viz kit  # GUI
+
+# record a video (looking down into the cups)
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/record_video.py \
+  robobench.suites.pouring.scripts.latte_pour_smoke \
+  --video robobench/suites/pouring/videos/latte_pour.mp4 \
+  --eye 0.22 -0.28 0.65 --target-at 0.06 0.0 0.06
 ```
