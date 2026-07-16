@@ -134,6 +134,9 @@ class LatteSceneCfg(BaseCfg):
     coffee_color: tuple[float, float, float] = info((0.36, 0.22, 0.12), doc="coffee particle display color")
     milk_color: tuple[float, float, float] = info((0.93, 0.90, 0.85), doc="milk particle display color")
     visual_update_frequency: int = info(4, doc="Kit particle visual update period [render frames]")
+    visual_width_scale: float = tunable(2.2)  # [TUNE] Kit display width vs physical particle diameter:
+    # at 1x the ~1.4 mm particles read as sparse mist; ~2.2x closes the lattice gaps so the surface
+    # reads as liquid. Keep scaled width < cup_wall or particles bulge through the cup exterior.
 
 
 @SCENES.register("latte")
@@ -280,6 +283,68 @@ class LatteScene(BaseScene):
         local = torch.tensor([*self.cfg.milk_cup_pos, TABLE_TOP_Z], device=origins.device)
         quat = torch.tensor([0.0, 0.0, 0.0, 1.0], device=origins.device).expand(origins.shape[0], 4)
         self._default_cup_pose = torch.cat([origins + local, quat], dim=-1)
+        self._fabric_particle_attrs: list[tuple[Any, Any]] = []
+
+    # ----- Kit particle visuals ---------------------------------------------------------------
+    # The Newton backend creates a UsdGeom.Points prim per MPM object for Kit rendering, but its
+    # per-frame position sync writes the plain USD layer, which the Fabric scene delegate (active
+    # in the headless-rendering/recording experience) ignores — the liquids render frozen at
+    # their spawn state, hidden inside the cups. Verified fix: push positions through usdrt
+    # (Fabric) ourselves. Display-only; physics is untouched.
+    def setup_particle_visuals(self) -> None:
+        """Prepare Kit particle rendering: scale display widths by `cfg.visual_width_scale`
+        (at 1x the ~1.4 mm points read as sparse mist) and attach the Fabric stage for
+        `push_particle_visuals`. Idempotent; silent no-op without the kit visualizer."""
+        if self._fabric_particle_attrs:
+            return
+        try:
+            import numpy as np
+
+            import isaaclab.sim as sim_utils
+            import usdrt
+            from isaaclab.sim.utils.stage import get_current_stage
+            from pxr import UsdGeom, Vt
+
+            stage = sim_utils.get_current_stage()
+            if not stage.GetPrimAtPath("/World/Visuals/MPMParticles").IsValid():
+                return
+            vis_prims = [
+                p
+                for p in stage.Traverse()
+                if p.GetTypeName() == "Points" and str(p.GetPath()).startswith("/World/Visuals/MPMParticles")
+            ]
+            scale = float(self.cfg.visual_width_scale)
+            rt_stage = get_current_stage(fabric=True)
+            for prim in vis_prims:
+                scaled = np.array(UsdGeom.Points(prim).GetWidthsAttr().Get(), dtype=np.float32) * scale
+                # Write widths on BOTH layers: USD for non-Fabric viewers (interactive GUI), and
+                # usdrt for the Fabric scene delegate (headless-rendering capture) — plain USD
+                # writes are unreliably picked up once the prim is Fabric-resident.
+                UsdGeom.Points(prim).GetWidthsAttr().Set(Vt.FloatArray.FromNumpy(scaled))
+                path = str(prim.GetPath())
+                obj = self.coffee if "Coffee" in path else self.milk if "Milk" in path else None
+                rt_prim = rt_stage.GetPrimAtPath(path)
+                if obj is not None and rt_prim:
+                    try:
+                        w_attr = rt_prim.GetAttribute("widths") or rt_prim.CreateAttribute(
+                            "widths", usdrt.Sdf.ValueTypeNames.FloatArray, False
+                        )
+                        w_attr.Set(usdrt.Vt.FloatArray(scaled.reshape(-1, 1)))  # usdrt arrays are 2-D
+                    except Exception as e:  # noqa: BLE001
+                        print(f"[latte] fabric widths write skipped ({e}); USD-layer widths still set", flush=True)
+                    self._fabric_particle_attrs.append((rt_prim.GetAttribute("points"), obj))
+            self._usdrt_vt = usdrt.Vt
+        except Exception as e:  # noqa: BLE001 — display sugar must never kill a run
+            print(f"[latte] Kit particle visual setup skipped: {e}", flush=True)
+
+    def push_particle_visuals(self) -> None:
+        """Write current particle positions into Fabric so the Kit render shows live liquid.
+        Call at render cadence (every few physics steps); no-op if setup found no prims."""
+        import numpy as np
+
+        for attr, obj in self._fabric_particle_attrs:
+            pts = obj.data.nodal_pos_w.torch[0].cpu().numpy().astype(np.float32)
+            attr.Set(self._usdrt_vt.Vec3fArray(pts))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         import torch
