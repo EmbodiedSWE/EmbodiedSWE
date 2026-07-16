@@ -92,8 +92,19 @@ def main() -> None:
         f"RAN {args.steps} steps, no crash | {fps:.0f} fps/env "
         f"({n * fps:.0f} env-steps/s total over {n} env{'s' if n != 1 else ''}, {elapsed:.1f}s)"
     )
+    # Kit teardown regularly hangs INSIDE env.close()/app.close() (a 100% CPU spin), wedging headless
+    # runs — the same hard-exit as `suites/assembly/smokes.close_and_exit`. Everything is printed by
+    # now; `os._exit` is looked up at call time so scripts/record_video.py can patch it to flush the
+    # mp4 first.
+    import os
+    import threading
+
+    watchdog = threading.Timer(10.0, lambda: os._exit(0))
+    watchdog.daemon = True
+    watchdog.start()
     env.close()
     app.close()
+    os._exit(0)
 
 
 if __name__ == "__main__":
