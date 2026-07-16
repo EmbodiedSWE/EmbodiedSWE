@@ -52,9 +52,20 @@ class FrankaRobotCfg(BaseRobotCfg):
     # Arm position-PD gains — used in "joint" mode only (OSC sets the arm actuators to torque mode).
     arm_stiffness: float = tunable(400.0)
     arm_damping: float = tunable(80.0)
+    # Arm actuator effort cap [N*m]; None -> keep the preset's real-Panda limits (87/12). Raise for
+    # scripted joint-position tracking that must not crawl at the real limits (kinematic-demo ports).
+    arm_effort_limit: float | None = tunable(None)
+    # Body-level gravity compensation fraction (Newton/MuJoCo backend only; 1.0 = weightless arm).
+    # The preset's PhysX `disable_gravity` flag is IGNORED by the Newton pipeline — MuJoCo needs
+    # `gravcomp`, else a kp=400 servo sags ~tau_g/kp (~0.1 rad on the shoulder when extended).
+    # None -> leave the preset untouched (required under the PhysX/2.x venv).
+    gravity_compensation: float | None = tunable(None)
     # Gripper PD gains (always position-controlled; holds / grasps the part).
     gripper_stiffness: float = tunable(2000.0)
     gripper_damping: float = tunable(100.0)
+    # Gripper actuator effort cap [N]; None -> keep the preset's default. Raise for pinch grips
+    # that must not saturate (e.g. 500.0 for cloth, the isaaclab soft-lift tasks' value).
+    gripper_effort_limit: float | None = tunable(None)
     # Home posture of the 7 arm joints: the arm resets here. A forward-facing ready pose; retune per
     # task (e.g. to start the gripper near the work).
     default_dof_pos: tuple[float, ...] = tunable((0.0015, -0.197, -0.0014, -1.976, -0.00028, 1.78, 0.786))
@@ -115,8 +126,18 @@ class FrankaRobot(BaseRobot):
         for arm_act in ("panda_shoulder", "panda_forearm"):
             robot.actuators[arm_act].stiffness = 0.0 if torque_mode else c.arm_stiffness
             robot.actuators[arm_act].damping = 0.0 if torque_mode else c.arm_damping
+            if c.arm_effort_limit is not None:
+                robot.actuators[arm_act].effort_limit_sim = c.arm_effort_limit
         robot.actuators["panda_hand"].stiffness = c.gripper_stiffness
         robot.actuators["panda_hand"].damping = c.gripper_damping
+        if c.gripper_effort_limit is not None:
+            robot.actuators["panda_hand"].effort_limit_sim = c.gripper_effort_limit
+        if c.gravity_compensation is not None:
+            # Newton-backend gravity compensation: swap in the MuJoCo rigid-body schema carrying
+            # `gravcomp` (imported lazily so the PhysX/2.x venv never touches isaaclab_newton).
+            from isaaclab_newton.sim.schemas.schemas_cfg import MujocoRigidBodyPropertiesCfg
+
+            robot.spawn.rigid_props = MujocoRigidBodyPropertiesCfg(gravcomp=c.gravity_compensation)
         return {self.name: robot}
 
     # ----- lifecycle (hooks; the base orchestrates bind -> on_bind -> build_controller) ---------
