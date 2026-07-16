@@ -143,3 +143,14 @@ OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/record_video.py \
   --video robobench/suites/folding/videos/tshirt_fold.mp4 \
   --eye 0.9 -1.6 0.9 --target-at 0.0 -0.5 0.2
 ```
+
+### 4. Run the pouring suite (same venv)
+
+The `pouring` suite (`robobench/suites/pouring/`) runs particle liquids on the same Newton env
+via the implicit **MPM** solver — first scene: `latte`, a kinematic milk cup pouring white
+particles into a cup of brown coffee. Same GUI/headless semantics as above:
+
+```bash
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.pouring.scripts.latte_pour_smoke            # headless
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.pouring.scripts.latte_pour_smoke --viz kit  # GUI
+```
