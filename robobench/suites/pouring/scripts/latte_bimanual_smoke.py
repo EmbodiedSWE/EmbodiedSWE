@@ -35,9 +35,9 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--time_scale", type=float, default=1.0, help="multiply every phase duration")
-parser.add_argument("--tilt_deg", type=float, default=118.0, help="full pour tilt [deg]")
-parser.add_argument("--lip_height", type=float, default=0.06, help="lip anchor height above the mug rim [m]")
-parser.add_argument("--lip_x", type=float, default=0.02, help="lip anchor x over the mug mouth [m]")
+parser.add_argument("--tilt_deg", type=float, default=118.0, help="full pour tilt of the milk cup [deg]")
+parser.add_argument("--mug_tilt_deg", type=float, default=25.0, help="the mug tilts this far TOWARD the cup during the pour [deg]")
+parser.add_argument("--lip_clear", type=float, default=0.032, help="cup-lip clearance above the mug's low rim [m]")
 parser.add_argument("--hold", type=float, default=2.0, help="extra settle time after the trajectory [s]")
 parser.add_argument("--print_every", type=int, default=200, help="progress print period [steps]")
 parser.add_argument("--max_steps", type=int, default=None, help="cap total steps (debugging)")
@@ -180,38 +180,33 @@ def main() -> None:
         return t.to(device).reshape(1, 4)
 
     def qlerp(qa: torch.Tensor, qb: torch.Tensor, s: float) -> torch.Tensor:
-        """Normalized quat lerp with sign correction — fine for slow target sweeps."""
         qb = torch.where((qa * qb).sum(-1, keepdim=True) < 0, -qb, qb)
         q = qa + (qb - qa) * s
         return q / q.norm(dim=-1, keepdim=True)
 
-    Q_LEFT = q4(QD)  # fingers along world y — across the mug handle bar (bar runs along x)
-    # Right: HORIZONTAL side grasp from the +x side of the cup (away from the mug) — gripper axis
-    # Ry(-(90 + grasp_pitch)) so the hand points at the cup tilted `grasp_pitch` deg down, fingers
-    # along world y straddling the body diametrically. During the -118 deg pour swing the hand
-    # arcs from beside the cup to above it, keeping its swept volume on the far side of the mug
-    # (and of the left arm).
-    a_half = math.radians(-(90.0 + args.grasp_pitch)) / 2.0
-    Q_RIGHT = q4((0.0, math.sin(a_half), 0.0, math.cos(a_half)))
+    def q_ry(deg: float) -> torch.Tensor:
+        half = math.radians(deg) / 2.0
+        return q4((0.0, math.sin(half), 0.0, math.cos(half)))
+
+    # BOTH hands grasp horizontally, pointing INWARD from opposite sides (gripper axes tilted
+    # `grasp_pitch` deg down). During the pour the vessels rotate toward each other, so the hands
+    # rotate OUTWARD — their swept volumes never cross the center line between the vessels.
+    Q_LEFT = q_ry(90.0 + args.grasp_pitch)  # from -x, pointing +x-down at the mug handle
+    Q_RIGHT = q_ry(-(90.0 + args.grasp_pitch))  # from +x, pointing -x-down at the milk cup
 
     # --- grasp geometry (world; see the scene cfg for the measured mug numbers) ---
     mx, my = c.milk_cup_pos
     z_hat = torch.tensor([[0.0, 0.0, 1.0]], device=device)
 
     def hand_from_tip(tip_xyz: tuple, quat: torch.Tensor) -> torch.Tensor:
-        """Hand-origin target that puts the fingertip midpoint (0.113 m along the hand z-axis)
-        at `tip_xyz`, for any hand orientation."""
         return t3(*tip_xyz) - 0.113 * math_utils.quat_apply(quat, z_hat)
 
-    # Left: pinch the mug handle's top bar (bar along x at x ~[-0.092,-0.055], z ~0.075; 1 cm bite)
-    lh_grasp = hand_from_tip((-0.073, 0.0, 0.065), Q_LEFT)
-    # Right: diametric side grasp around the upper cup body (outer dia 0.062 < the 0.08 stroke);
-    # the hover sits beside-and-above so the approach slides in from the +x side.
+    # Left: pinch the handle loop's outer vertical bar (x ~ -0.085, loop z ~0.02..0.08)
+    lh_grasp = hand_from_tip((-0.080, 0.0, 0.093), Q_LEFT)
+    # Right: diametric side grasp around the upper cup body (outer dia 0.062 < the 0.08 stroke)
     rh_grasp = hand_from_tip((mx, my, 0.085), Q_RIGHT)
-    lift6 = torch.tensor([0.0, 0.0, 0.06], device=device)
-    lh_hover = lh_grasp + lift6
+    lh_hover = lh_grasp + torch.tensor([-0.06, 0.0, 0.05], device=device)
     rh_hover = rh_grasp + torch.tensor([0.07, 0.0, 0.05], device=device)
-    lh_lift = lh_grasp + lift6  # carry height for the mug
     GRIP_MUG_BAR, GRIP_CUP_BODY = 0.006, c.milk_cup_r + c.cup_wall + 0.001
 
     # --- phases ---
@@ -231,6 +226,7 @@ def main() -> None:
         ("release", 1.5),
     ]
     CUP_PHASES = {"lift", "traverse", "pour", "drain", "recover", "return", "set_down"}
+    MUG_ATTACHED = CUP_PHASES | {"mug_lift", "mug_down"}
     durs = [d * args.time_scale for _, d in phases]
     t_edges = [sum(durs[: i + 1]) for i in range(len(durs))]
     total_steps = int(round((t_edges[-1] + args.hold) * FPS))
@@ -240,54 +236,88 @@ def main() -> None:
     env.reset()
     action = torch.zeros((1, env.robot.action_dim), device=device)
 
-    # starting hand poses — reach interpolates from here (no target jump)
     lh_p0, lh_q0 = (x.clone() for x in left.hand_pose_w())
     rh_p0, rh_q0 = (x.clone() for x in right.hand_pose_w())
 
-    # attachment state
-    off_cup: tuple[torch.Tensor, torch.Tensor] | None = None
-    off_mug: tuple[torch.Tensor, torch.Tensor] | None = None
-    prev_cup_pose: torch.Tensor | None = None
-    prev_mug_pose: torch.Tensor | None = None
-    rh_final: tuple[torch.Tensor, torch.Tensor] | None = None
-    traj = None  # (p_start, p_travel, lip_target, lip_local) — built from the LIVE mug pose at lift
+    off_cup = off_mug = None
+    prev_cup_pose = prev_mug_pose = None
+    rh_final = None
     theta_max = math.radians(args.tilt_deg)
+    phi_max = math.radians(args.mug_tilt_deg)
+    lip_local = torch.tensor([-(c.milk_cup_r + c.cup_wall), 0.0, c.milk_cup_h], device=device)
+    rim_local = torch.tensor([[c.coffee_cup_r - 0.002, 0.0, c.coffee_cup_h]], device=device)  # low-rim pt
+    mug_base = t3(0.0, 0.0, TABLE_TOP_Z)
+    mug_carry = mug_base + torch.tensor([0.0, 0.0, 0.06], device=device)
+    cup_start = t3(mx, my, TABLE_TOP_Z)
     last_phase = ""
     err_l = err_r = 0.0
 
     def fd_twist(pose: torch.Tensor, prev: torch.Tensor | None) -> torch.Tensor:
         if prev is None:
             return torch.zeros((1, 6), device=device)
-        ang = math_utils.axis_angle_from_quat(
-            math_utils.quat_mul(pose[:, 3:], math_utils.quat_inv(prev[:, 3:]))
-        )
+        ang = math_utils.axis_angle_from_quat(math_utils.quat_mul(pose[:, 3:], math_utils.quat_inv(prev[:, 3:])))
         return torch.cat([(pose[:, :3] - prev[:, :3]) * FPS, ang * FPS], dim=-1)
-
-    def anchor_pos(theta: float) -> torch.Tensor:
-        _, _, lip_target, lip_local = traj
-        st, ct = math.sin(-theta), math.cos(-theta)
-        lx, lz = lip_local[0], lip_local[2]
-        lip_rot = torch.tensor([ct * lx + st * lz, 0.0, -st * lx + ct * lz], device=device)
-        return lip_target - lip_rot
 
     def lerp(a: torch.Tensor, b: torch.Tensor, s: float) -> torch.Tensor:
         return a + (b - a) * s
 
-    def cup_target(name: str, s: float) -> tuple[torch.Tensor, float]:
-        p_start, p_travel, _, _ = traj
-        if name == "lift":
-            return lerp(p_start, p_travel, s), 0.0
-        if name == "traverse":
-            return lerp(p_travel, anchor_pos(0.0), s), 0.0
+    def tilt_of(name: str, s: float) -> tuple[float, float]:
+        """(cup theta, mug phi) for phase-synced counter-rotation."""
         if name == "pour":
-            return anchor_pos(theta_max * s), theta_max * s
+            return theta_max * s, phi_max * s
         if name == "drain":
-            return anchor_pos(theta_max), theta_max
+            return theta_max, phi_max
         if name == "recover":
-            return anchor_pos(theta_max * (1.0 - s)), theta_max * (1.0 - s)
+            return theta_max * (1.0 - s), phi_max * (1.0 - s)
+        return 0.0, 0.0
+
+    def mug_target(name: str, s: float) -> tuple[torch.Tensor, torch.Tensor]:
+        """Scripted mug pose: lift to carry height, tilt +phi toward the cup during the pour."""
+        _, phi = tilt_of(name, s)
+        if name in ("reach", "descend", "grasp", "release"):
+            return mug_base, q4((0.0, 0.0, 0.0, 1.0))
+        if name == "mug_lift":
+            return lerp(mug_base, mug_carry, s), q4((0.0, 0.0, 0.0, 1.0))
+        if name == "mug_down":
+            return lerp(mug_carry, mug_base, s), q4((0.0, 0.0, 0.0, 1.0))
+        half = phi / 2.0
+        return mug_carry, q4((0.0, math.sin(half), 0.0, math.cos(half)))
+
+    def cup_target(name: str, s: float) -> tuple[torch.Tensor, torch.Tensor]:
+        """Scripted cup pose: the lip rides just above the (tilting) mug's LOW rim. The lip
+        anchor starts OUTBOARD of the rim and slides inboard as theta grows — by the time the
+        cup body has rotated up clear of the rim plane, the lip overhangs the mouth."""
+        theta, _ = tilt_of(name, s)
+        mp, mq = mug_target(name, s)
+        low_rim = mp + math_utils.quat_apply(mq, rim_local)
+        frac = theta / theta_max if theta_max > 0 else 0.0
+        lip_dx = 0.015 - 0.023 * frac
+        lip_target = low_rim[0] + torch.tensor([lip_dx, 0.0, args.lip_clear], device=device)
+        st, ct = math.sin(-theta), math.cos(-theta)
+        lx, lz = lip_local[0], lip_local[2]
+        lip_rot = torch.tensor([ct * lx + st * lz, 0.0, -st * lx + ct * lz], device=device)
+        anchor = lip_target - lip_rot
+        half = -theta / 2.0
+        quat = q4((0.0, math.sin(half), 0.0, math.cos(half)))
+        if name == "lift":
+            return lerp(cup_start, torch.stack([cup_start[0, 0], cup_start[0, 1], anchor[2] + 0.02]).unsqueeze(0), s), quat
+        if name == "traverse":
+            high = torch.stack([cup_start[0, 0], cup_start[0, 1], anchor[2] + 0.02]).unsqueeze(0)
+            return lerp(high, anchor.unsqueeze(0), s), quat
+        if name in ("pour", "drain", "recover"):
+            return anchor.unsqueeze(0), quat
         if name == "return":
-            return lerp(anchor_pos(0.0), p_travel, s), 0.0
-        return lerp(p_travel, p_start, s), 0.0  # set_down
+            high = torch.stack([cup_start[0, 0], cup_start[0, 1], anchor[2] + 0.02]).unsqueeze(0)
+            return lerp(anchor.unsqueeze(0), high, s), quat
+        if name == "set_down":
+            high = torch.stack([cup_start[0, 0], cup_start[0, 1], anchor[2] + 0.02]).unsqueeze(0)
+            return lerp(high, cup_start, s), quat
+        return cup_start, quat
+
+    def hand_target_from(obj_p: torch.Tensor, obj_q: torch.Tensor, off) -> tuple[torch.Tensor, torch.Tensor]:
+        inv_q = math_utils.quat_inv(off[1])
+        inv_p = -math_utils.quat_apply(inv_q, off[0])
+        return math_utils.combine_frame_transforms(obj_p, obj_q, inv_p, inv_q)
 
     def status() -> str:
         return (
@@ -295,7 +325,7 @@ def main() -> None:
             f" | retention {float(scene.retention_fraction().mean()):.3f}"
             f" | spilled {float(scene.spilled_fraction().mean()):.3f}"
             f" | err L {err_l * 100:4.1f} R {err_r * 100:4.1f} cm"
-            f" | rot R {right.rot_err:4.2f} rad"
+            f" | rot L {left.rot_err:4.2f} R {right.rot_err:4.2f} rad"
         )
 
     for step in range(total_steps):
@@ -314,34 +344,28 @@ def main() -> None:
             left.grip = min(0.04, GRIP_MUG_BAR + (0.04 - GRIP_MUG_BAR) * s)
             right.grip = min(0.04, GRIP_CUP_BODY + (0.04 - GRIP_CUP_BODY) * s)
 
-        # --- left arm target (mug side) ---
+        # --- left arm: direct targets pre-attach, then derived from the scripted mug pose ---
         if name == "reach":
-            lh_t, lh_q = lerp(lh_p0, lh_hover, s), qlerp(lh_q0, Q_LEFT, s)
+            err_l = left.track(lerp(lh_p0, lh_hover, s), qlerp(lh_q0, Q_LEFT, s), args.max_dq)
         elif name == "descend":
-            lh_t, lh_q = lerp(lh_hover, lh_grasp, s), Q_LEFT
-        elif name == "grasp":
-            lh_t, lh_q = lh_grasp, Q_LEFT
-        elif name == "mug_lift":
-            lh_t, lh_q = lerp(lh_grasp, lh_lift, s), Q_LEFT
-        elif name == "mug_down":
-            lh_t, lh_q = lerp(lh_lift, lh_grasp, s), Q_LEFT
-        else:  # cup phases + release: hold the carry (or rest) pose
-            lh_t, lh_q = (lh_grasp, Q_LEFT) if name == "release" else (lh_lift, Q_LEFT)
-        err_l = left.track(lh_t, lh_q, args.max_dq)
-
-        # --- mug attachment (rides the left hand's ACTUAL pose from mug_lift through mug_down) ---
-        if name == "mug_lift" and off_mug is None:
+            err_l = left.track(lerp(lh_hover, lh_grasp, s), Q_LEFT, args.max_dq)
+        elif name in ("grasp", "release"):
+            err_l = left.track(lh_grasp, Q_LEFT, args.max_dq)
+        else:
+            if off_mug is None:
+                hp, hq = left.hand_pose_w()
+                off_mug = math_utils.subtract_frame_transforms(hp, hq, scene.mug_pose_w[:, :3], scene.mug_pose_w[:, 3:])
+                print(f"  [attach] mug offset recorded | hand err L {err_l * 100:.1f} cm", flush=True)
+            mp, mq = mug_target(name, s)
+            lh_t, lh_q = hand_target_from(mp, mq, off_mug)
+            err_l = left.track(lh_t, lh_q, args.max_dq)
             hp, hq = left.hand_pose_w()
-            off_mug = math_utils.subtract_frame_transforms(hp, hq, scene.mug_pose_w[:, :3], scene.mug_pose_w[:, 3:])
-            print(f"  [attach] mug offset recorded | hand err L {err_l * 100:.1f} cm", flush=True)
-        if off_mug is not None and (name in ("mug_lift", "mug_down") or name in CUP_PHASES):
-            hp, hq = left.hand_pose_w()
-            mp, mq = math_utils.combine_frame_transforms(hp, hq, off_mug[0], off_mug[1])
-            mug_pose = torch.cat([mp, mq], dim=-1)
+            mpp, mqq = math_utils.combine_frame_transforms(hp, hq, off_mug[0], off_mug[1])
+            mug_pose = torch.cat([mpp, mqq], dim=-1)
             scene.write_mug_pose(mug_pose, fd_twist(mug_pose, prev_mug_pose))
             prev_mug_pose = mug_pose.clone()
 
-        # --- right arm target (cup side) ---
+        # --- right arm: direct targets pre-attach, then derived from the scripted cup pose ---
         if name == "reach":
             err_r = right.track(lerp(rh_p0, rh_hover, s), qlerp(rh_q0, Q_RIGHT, s), args.max_dq)
         elif name == "descend":
@@ -351,29 +375,14 @@ def main() -> None:
         elif name in CUP_PHASES:
             if off_cup is None:
                 hp, hq = right.hand_pose_w()
-                cup_p, cup_q = t3(mx, my, TABLE_TOP_Z), q4((0.0, 0.0, 0.0, 1.0))
-                off_cup = math_utils.subtract_frame_transforms(hp, hq, cup_p, cup_q)
-                mug_w = scene.mug_pose_w[0, :3]
-                lip_target = torch.stack(
-                    [mug_w[0] + args.lip_x, mug_w[1], mug_w[2] + c.coffee_cup_h + args.lip_height]
-                ).to(device)
-                lip_local = torch.tensor([-(c.milk_cup_r + c.cup_wall), 0.0, c.milk_cup_h], device=device)
-                traj = (
-                    t3(mx, my, TABLE_TOP_Z)[0],
-                    t3(mx, my, float(lip_target[2] - origin[2]) + 0.02)[0],
-                    lip_target,
-                    lip_local,
-                )
-                print(f"  [attach] cup offset + trajectory anchored to the lifted mug", flush=True)
-            cup_tgt_p, theta = cup_target(name, s)
-            half = -theta / 2.0
-            cup_tgt_q = q4((0.0, math.sin(half), 0.0, math.cos(half)))
-            inv_q = math_utils.quat_inv(off_cup[1])
-            inv_p = -math_utils.quat_apply(inv_q, off_cup[0])
-            ht_p, ht_q = math_utils.combine_frame_transforms(cup_tgt_p.unsqueeze(0), cup_tgt_q, inv_p, inv_q)
-            err_r = right.track(ht_p, ht_q, args.max_dq)
-            cp, cq = math_utils.combine_frame_transforms(*right.hand_pose_w(), off_cup[0], off_cup[1])
-            pose = torch.cat([cp, cq], dim=-1)
+                off_cup = math_utils.subtract_frame_transforms(hp, hq, cup_start, q4((0.0, 0.0, 0.0, 1.0)))
+                print("  [attach] cup offset recorded", flush=True)
+            cp_t, cq_t = cup_target(name, s)
+            rh_t, rh_q = hand_target_from(cp_t, cq_t, off_cup)
+            err_r = right.track(rh_t, rh_q, args.max_dq)
+            hp, hq = right.hand_pose_w()
+            cpp, cqq = math_utils.combine_frame_transforms(hp, hq, off_cup[0], off_cup[1])
+            pose = torch.cat([cpp, cqq], dim=-1)
             scene.milk_cup.write_root_link_pose_to_sim_index(root_pose=pose)
             scene.milk_cup.write_root_link_velocity_to_sim_index(root_velocity=fd_twist(pose, prev_cup_pose))
             prev_cup_pose = pose.clone()
