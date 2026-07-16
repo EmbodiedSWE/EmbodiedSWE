@@ -488,12 +488,16 @@ class LatteScene(BaseScene):
         return obj.data.nodal_pos_w.torch - self.env.iscene.env_origins[:, None, :]
 
     def _in_coffee_cup(self, p: torch.Tensor) -> torch.Tensor:
-        """Boolean mask: particles inside the mug's inner cylinder, relative to the mug's CURRENT
-        pose (upright carry assumed — the pour never tilts the mug)."""
+        """Boolean mask: particles inside the mug's inner cylinder, in the mug's CURRENT frame
+        (position AND orientation — honest under a tilted carry)."""
+        import isaaclab.utils.math as math_utils
+
         c = self.cfg
         origins = self.env.iscene.env_origins
         mug = self.mug_pose_w[:, :3] - origins  # env-local mug base center
         d = p - mug[:, None, :]
+        quat = self.mug_pose_w[:, 3:].unsqueeze(1).expand(-1, d.shape[1], 4)
+        d = math_utils.quat_apply_inverse(quat.reshape(-1, 4), d.reshape(-1, 3)).reshape(d.shape)
         r2 = d[..., 0] ** 2 + d[..., 1] ** 2
         return (r2 < c.coffee_cup_r**2) & (d[..., 2] > 0.0) & (d[..., 2] < c.coffee_cup_h + 0.02)
 
