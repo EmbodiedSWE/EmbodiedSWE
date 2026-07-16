@@ -132,6 +132,10 @@ in headless runs):
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --headless
 
+# watch it live in the Isaac Sim GUI: isaaclab develop runs headless unless a kit visualizer is
+# requested — pass --viz kit (and do NOT pass --headless, which force-disables visualizers)
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --viz kit
+
 # record a video (the folding smoke auto-enables the kit visualizer when cameras are on —
 # isaaclab develop pumps rendering through visualizers, else the capture stays empty)
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/record_video.py \
