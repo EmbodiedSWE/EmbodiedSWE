@@ -27,9 +27,11 @@ Verdict: cloth footprint < 0.30 m² (a completed 3-fold run lands ~0.17; failure
 0.41; settled unfolded ~0.50), particles in bounds, and the first hover pose reached within
 ~2 cm (validates the frame/quat conventions).
 
-Runs ONLY under the Newton venv:
-  env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --headless
-  env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --livestream 2
+Runs ONLY under the Newton venv (isaaclab develop runs headless unless a kit visualizer is
+requested; an explicit --headless force-disables visualizers, so don't combine it with --viz):
+  env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --headless       # fastest
+  env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --viz kit        # GUI (Kit window)
+  env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --livestream 2   # remote (WebRTC client)
 """
 
 from __future__ import annotations
