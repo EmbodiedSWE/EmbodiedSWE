@@ -14,7 +14,16 @@ derivations the harness or agent can make — nothing here is locked.
 from __future__ import annotations
 
 from robobench.core import EnvCfg, register_env
-from robobench.robots import G1RobotCfg, GR1T2RobotCfg
+from robobench.robots import (
+    AlohaCfg,
+    BimanualFrankaCfg,
+    BimanualPiperCfg,
+    FrankaRobotCfg,
+    G1RobotCfg,
+    GR1T2RobotCfg,
+    PiperRobotCfg,
+    WxaiRobotCfg,
+)
 from robobench.suites.assembly.scenes import IkeaTableAssemblySceneCfg
 
 SUITE = "assembly"
@@ -71,6 +80,94 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(scene="bulb", robot="franka", control_mode=mode, env_spacing=2),
+    )
+
+# Two Frankas at the SO101 workbench as ONE robot (`BimanualFranka`: action = [left | right];
+# address one arm via `env.robot["left"]`). Bases stand on the bench top (z = 0.994, the default
+# packing table), 0.94 m apart — each arm works best 0.3-0.55 m from its own base, so the shared
+# zone sits around (0.4, 0).
+# Reach-verified (P2/P2b probes, experiments/so101_bimanual_franka_osc_20260715): in-zone tracking
+# <= 0.6 mm, both arms simultaneously at the shared zone OK. Known gotcha: the default home pose
+# parks each hand over the other arm's zone — tuck the idle arm.
+# TO VERIFY: arm-arm collision limits when one arm stretches cross-body (> 0.55 m); per-task base
+# retuning for hold+insert style work.
+# -> "assembly.so101.bimanual_franka.{osc,impedance,joint}" (mode applies to both arms)
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="so101",
+                robot="bimanual_franka",
+                control_mode=mode,
+                robot_cfg=BimanualFrankaCfg(robots={
+                    "left": ("franka", FrankaRobotCfg(  # yaw -50 deg, faces the proximal/motor zone
+                        base_pos=(0.0, 0.28, 0.994), base_rot=(0.90631, 0.0, 0.0, -0.42262))),
+                    "right": ("franka", FrankaRobotCfg(  # yaw +135 deg, faces the drill/fixture zone
+                        base_pos=(0.75, -0.28, 0.994), base_rot=(0.38268, 0.0, 0.0, 0.92388))),
+                }),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# Bimanual pairs at the IKEA table, bases on the bench top (z = 0.994), facing each other.
+# The small pairs face off ACROSS the bench (x = 0, yaw -/+90 deg), separation tracking reach
+# (WXAI ~0.5 m -> y = +/-0.30, PiPER ~0.6 m -> +/-0.35); the Frankas face off ALONG the bench
+# (y = 0) instead — the top is only +/-0.38 in y, too narrow for their bases. The Franka pair is
+# asymmetric on purpose: the slab (x in [-0.75, -0.15]) is a keep-out, so the -x base sits behind
+# it at -0.95 (slab side) and the +x base at +0.55 (leg-row side), workspaces overlapping around
+# the slab edge.
+# CAUTION: base poses / reachability are NOT fully verified yet — treat them as a starting guess.
+# -> "assembly.ikea_table.aloha.{joint,osc,impedance}"           (bimanual WXAI, as ALOHA)
+# -> "assembly.ikea_table.bimanual_piper.{joint,osc,impedance}"  (bimanual AgileX PiPER)
+# -> "assembly.ikea_table.bimanual_franka.{joint,osc,impedance}" (bimanual Franka)
+for _mode in ("joint", "osc", "impedance"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="ikea_table",
+                robot="aloha",
+                control_mode=mode,
+                robot_cfg=AlohaCfg(robots={
+                    "left": ("wxai", WxaiRobotCfg(base_pos=(0.0, 0.30, 0.994), base_rot=(0.7071, 0.0, 0.0, -0.7071))),
+                    "right": ("wxai", WxaiRobotCfg(base_pos=(0.0, -0.30, 0.994), base_rot=(0.7071, 0.0, 0.0, 0.7071))),
+                }),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="ikea_table",
+                robot="bimanual_piper",
+                control_mode=mode,
+                robot_cfg=BimanualPiperCfg(robots={
+                    "left": ("piper", PiperRobotCfg(base_pos=(0.0, 0.35, 0.994), base_rot=(0.7071, 0.0, 0.0, -0.7071))),
+                    "right": ("piper", PiperRobotCfg(base_pos=(0.0, -0.35, 0.994), base_rot=(0.7071, 0.0, 0.0, 0.7071))),
+                }),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="ikea_table",
+                robot="bimanual_franka",
+                control_mode=mode,
+                robot_cfg=BimanualFrankaCfg(robots={
+                    "left": ("franka", FrankaRobotCfg(base_pos=(-0.95, 0.0, 0.994))),  # slab side, faces +x
+                    "right": ("franka", FrankaRobotCfg(  # leg-row side, faces -x (yaw 180 deg)
+                        base_pos=(0.55, 0.0, 0.994), base_rot=(0.0, 0.0, 0.0, 1.0))),
+                }),
+                env_spacing=3,
+            )
+        ),
     )
 
 # Fixed-base G1 at the IKEA table, upper-body joint control. Two placement tweaks so the G1 (pelvis
