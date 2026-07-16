@@ -42,7 +42,7 @@ parser.add_argument("--hold", type=float, default=2.0, help="extra settle time a
 parser.add_argument("--print_every", type=int, default=200, help="progress print period [steps]")
 parser.add_argument("--max_steps", type=int, default=None, help="cap total steps (debugging)")
 parser.add_argument("--max_dq", type=float, default=0.04, help="per-tick joint step clamp [rad]")
-parser.add_argument("--grasp_pitch", type=float, default=30.0, help="right grasp pre-tilt about +y [deg]: starts the wrist tilted AWAY from the pour so the 118 deg swing ends less past vertical")
+parser.add_argument("--grasp_pitch", type=float, default=30.0, help="downward tilt of the right arm's HORIZONTAL side grasp [deg]: 0 = gripper level with the table, 30 = pointing 30 deg down at the cup")
 parser.add_argument("--scene", nargs="*", default=None, metavar="K=V", help="scene cfg overrides")
 AppLauncher.add_app_launcher_args(parser)
 if "--enable_cameras" in sys.argv:
@@ -185,13 +185,14 @@ def main() -> None:
         q = qa + (qb - qa) * s
         return q / q.norm(dim=-1, keepdim=True)
 
-    rz90 = torch.tensor([0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4)])
     Q_LEFT = q4(QD)  # fingers along world y — across the mug handle bar (bar runs along x)
-    # Right: diametric body grasp of the milk cup (fingers along world y around the cup wall),
-    # pre-tilted about +y so the -118 deg pour swing ends inside wrist limits.
-    half_pitch = math.radians(args.grasp_pitch) / 2.0
-    ry_pitch = torch.tensor([0.0, math.sin(half_pitch), 0.0, math.cos(half_pitch)])
-    Q_RIGHT = q4(math_utils.quat_mul(ry_pitch.unsqueeze(0), QD.unsqueeze(0)).squeeze(0))
+    # Right: HORIZONTAL side grasp from the +x side of the cup (away from the mug) — gripper axis
+    # Ry(-(90 + grasp_pitch)) so the hand points at the cup tilted `grasp_pitch` deg down, fingers
+    # along world y straddling the body diametrically. During the -118 deg pour swing the hand
+    # arcs from beside the cup to above it, keeping its swept volume on the far side of the mug
+    # (and of the left arm).
+    a_half = math.radians(-(90.0 + args.grasp_pitch)) / 2.0
+    Q_RIGHT = q4((0.0, math.sin(a_half), 0.0, math.cos(a_half)))
 
     # --- grasp geometry (world; see the scene cfg for the measured mug numbers) ---
     mx, my = c.milk_cup_pos
@@ -204,10 +205,12 @@ def main() -> None:
 
     # Left: pinch the mug handle's top bar (bar along x at x ~[-0.092,-0.055], z ~0.075; 1 cm bite)
     lh_grasp = hand_from_tip((-0.073, 0.0, 0.065), Q_LEFT)
-    # Right: diametric grasp around the cup body (outer diameter 0.062 < the 0.08 finger stroke)
-    rh_grasp = hand_from_tip((mx, my, 0.048), Q_RIGHT)
+    # Right: diametric side grasp around the upper cup body (outer dia 0.062 < the 0.08 stroke);
+    # the hover sits beside-and-above so the approach slides in from the +x side.
+    rh_grasp = hand_from_tip((mx, my, 0.085), Q_RIGHT)
     lift6 = torch.tensor([0.0, 0.0, 0.06], device=device)
-    lh_hover, rh_hover = lh_grasp + lift6, rh_grasp + lift6
+    lh_hover = lh_grasp + lift6
+    rh_hover = rh_grasp + torch.tensor([0.07, 0.0, 0.05], device=device)
     lh_lift = lh_grasp + lift6  # carry height for the mug
     GRIP_MUG_BAR, GRIP_CUP_BODY = 0.006, c.milk_cup_r + c.cup_wall + 0.001
 
