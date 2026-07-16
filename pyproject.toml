@@ -11,7 +11,9 @@ description = ""
 [tool.setuptools.packages.find]
 include = ["robobench*"]
 
-# (No package-data yet:  add a package-data entry once a suite  brings curated USD assets into robobench/suites/<flavor>/assets/.)
+# Curated USD assets shipped with suites (editable installs work without this; wheels need it).
+[tool.setuptools.package-data]
+"robobench.suites.folding" = ["assets/**/*.usd"]
 
 [tool.pyright]
 reportPrivateUsage = "none"
