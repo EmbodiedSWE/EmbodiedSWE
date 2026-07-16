@@ -15,7 +15,7 @@ GLOBAL frame). Watch with --livestream; --headless runs the same motion non-visu
 It also prints the bulb-origin height above the socket origin across the run — use the resting-on-top
 vs fully-seated spread to calibrate `BulbAssemblySceneCfg.seat_z`.
 
-python -m robobench.suites.assembly.scripts.bulb_assembly_smoke --livestream 2
+python -m robobench.suites.assembly.smokes.bulb_assembly_smoke --livestream 2
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ import torch  # noqa: E402
 
 import robobench  # noqa: E402
 from robobench.core import ENVS  # noqa: E402
+from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes import BulbAssemblyScene
@@ -47,12 +48,12 @@ if TYPE_CHECKING:
 # open-loop drive threads the bulb cleanly down to its seat.
 PRESS, TWIST, TARGET_WZ = -2.5, -0.15, -3.0
 KP_XY, KD_XY = 30.0, 3.0
-# Staging geometry (from build_socket / bulb.usd): the bulb's thread free end sits BULB_FREE_END above
-# its origin; drop it so that free end starts GAP above the socket bore mouth, ready to engage.
+# Staging slack: the bulb origin IS its lowest point (measured bbox — the thread collider starts 4 mm up),
+# so this just drops the bulb a few mm of clearance above the socket bore mouth, ready to engage.
 BULB_FREE_END = 0.004
 GAP = 0.001
 # Phase boundaries, cumulative sim steps: show -> stage(teleport) -> screw -> settle.
-SHOW_END, ASSEMBLE_END, END = 300, 8000, 8300  # more steps: the scene runs at dt=1/480 (4x the usual)
+SHOW_END, ASSEMBLE_END, END = 300, 8000, 8300  # more steps: the scene runs at dt=1/240
 
 
 def main() -> None:
@@ -100,9 +101,8 @@ def main() -> None:
     h0 = (scene.bulbs[0].data.root_pos_w - scene.sockets[0].data.root_pos_w)[:, 2] * 1e3
     print(f"BULB-ASSEMBLY | seated {int(seated.all(dim=1).sum())}/{n} envs | seat_z={scene.cfg.seat_z * 1e3:.0f}mm "
           f"| bulb0 height mm: min={h0.min():+.1f} mean={h0.mean():+.1f} max={h0.max():+.1f}", flush=True)
-    env.close()
+    close_and_exit(env, app)
 
 
 if __name__ == "__main__":
     main()
-    app.close()

@@ -18,8 +18,8 @@ Phases: show -> lift -> cross -> drop (inside, at the forward offset) -> align -
 ward through the cutout) -> press (with logged re-tries) -> release -> settle. Verdict: seated
 count, tab depth below the slot mouth vs the 5 mm stroke, and the residual errors after release.
 
-python -m robobench.suites.assembly.scripts.pc_gpu_smoke --livestream 2
-python -m robobench.suites.assembly.scripts.pc_gpu_smoke \
+python -m robobench.suites.assembly.smokes.pc_gpu_smoke --livestream 2
+python -m robobench.suites.assembly.smokes.pc_gpu_smoke \
     --headless --enable_cameras --video robobench/suites/assembly/videos/pc_gpu.mp4
 """
 
@@ -50,6 +50,7 @@ import isaaclab.sim as sim_utils  # noqa: E402
 import robobench  # noqa: E402
 from isaaclab.utils.math import axis_angle_from_quat, quat_apply_inverse  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
+from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes import PcGpuAssemblyScene
@@ -286,9 +287,8 @@ def main() -> None:
           f"{float(depth().mean() * 1e3):+.2f} mm (stroke 5.0, seat >= {sc.cfg.seat_depth * 1e3:.0f}) | "
           f"residual xy {float(xy_err().mean() * 1e3):.2f} mm, "
           f"rot {float(torch.rad2deg(e.norm(dim=-1)).mean()):.2f} deg | retries {retries}", flush=True)
-    env.close()
+    close_and_exit(env, app)
 
 
 if __name__ == "__main__":
     main()
-    app.close()
