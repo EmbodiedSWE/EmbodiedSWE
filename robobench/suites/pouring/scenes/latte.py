@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -113,9 +114,17 @@ class LatteSceneCfg(BaseCfg):
     liquid_friction: float = tunable(0.0)
     yield_pressure: float = tunable(1.0e15)  # huge -> never yields as a granular (stays liquid)
     tensile_yield_ratio: float = tunable(5.0)
-    # --- cups (open cylinders; local origin at outside bottom center) ---
-    coffee_cup_r: float = tunable(0.040)  # [TUNE] inner radius [m]
-    coffee_cup_h: float = tunable(0.095)  # rim height [m]
+    # --- coffee mug (textured USD asset; origin at the mug CENTER, handle on -y). The vendored
+    # mug_x170.usd is the original mug.usd with a 1.7x scale BAKED INTO THE GEOMETRY (this render
+    # stack's Fabric delegate drops USD xform scale ops, so runtime scaling silently no-ops).
+    # Baked dimensions: straight cylindrical interior r~0.040, interior floor ~9 mm above the
+    # base, rim 0.139 above the base, half-depth 0.0704. The dials below match that bake. ---
+    mug_usd: str = info("", doc="'' -> the vendored assets/mug/mug_x170.usd (meters, center origin)")
+    mug_scale: float = info(1.0, doc="extra runtime scale — WARNING: dropped by the Fabric renderer; bake instead")
+    coffee_cup_r: float = tunable(0.039)  # [TUNE] collider/fill/metric radius: baked mug cavity - 1 mm
+    coffee_cup_h: float = tunable(0.139)  # rim height above the table (trajectory anchor)
+    coffee_floor_z: float = tunable(0.009)  # interior floor height above the table
+    # --- milk cup (procedural open cylinder; local origin at outside bottom center) ---
     milk_cup_r: float = tunable(0.030)
     milk_cup_h: float = tunable(0.075)
     cup_wall: float = tunable(0.006)  # [TUNE] >= ~2 voxels or particles tunnel the wall
@@ -137,6 +146,10 @@ class LatteSceneCfg(BaseCfg):
     visual_width_scale: float = tunable(2.2)  # [TUNE] Kit display width vs physical particle diameter:
     # at 1x the ~1.4 mm particles read as sparse mist; ~2.2x closes the lattice gaps so the surface
     # reads as liquid. Keep scaled width < cup_wall or particles bulge through the cup exterior.
+
+    def __post_init__(self) -> None:
+        assets = Path(__file__).resolve().parents[1] / "assets" / "mug"
+        self.mug_usd = self.mug_usd or str(assets / "mug_x170.usd")
 
 
 @SCENES.register("latte")
@@ -174,9 +187,29 @@ class LatteScene(BaseScene):
             faces: list[list[int]] = MISSING
             mesh_collision_props: sim_utils.NewtonMeshCollisionPropertiesCfg | None = None
 
-        def cup_spawn(r_inner: float, height: float, kinematic: bool, color: tuple) -> CupMeshCfg:
-            vertices, faces = cup_mesh(r_inner, height, c.cup_wall, c.cup_bottom)
+        @configclass
+        class VisualUsdRefCfg(sim_utils.SpawnerCfg):
+            """Reference a USD asset as VISUAL-ONLY set dressing: wrapped under our own Xform so
+            `scale` reliably applies (UsdFileCfg's scale is silently skipped when the asset root
+            carries its own xform ops, as this mug does), with every collision/rigid-body API on
+            the referenced prims force-disabled."""
+
+            func: Callable | str = clone(_spawn_visual_usd_ref)
+            usd_path: str = MISSING
+            scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
+
+        def cup_spawn(
+            r_inner: float,
+            height: float,
+            kinematic: bool,
+            color: tuple | None,
+            wall: float | None = None,
+            bottom: float | None = None,
+            visible: bool = True,
+        ) -> CupMeshCfg:
+            vertices, faces = cup_mesh(r_inner, height, wall or c.cup_wall, bottom or c.cup_bottom)
             return CupMeshCfg(
+                visible=visible,
                 vertices=vertices.tolist(),
                 faces=faces.tolist(),
                 rigid_props=(
@@ -194,13 +227,14 @@ class LatteScene(BaseScene):
                     static_friction=c.cup_friction, dynamic_friction=c.cup_friction
                 ),
                 physics_material_path="physicsMaterial",
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color) if color is not None else None,
                 visual_material_path="visualMaterial",
             )
 
-        def liquid(cup_r: float, depth: float, color: tuple, cup_xy: tuple[float, float], seed: int) -> MPMObjectCfg:
+        def liquid(
+            cup_r: float, depth: float, color: tuple, cup_xy: tuple[float, float], seed: int, z_lo: float
+        ) -> MPMObjectCfg:
             fill_r = cup_r - 2.0 * c.voxel_size / c.particles_per_cell  # stay off the wall
-            z_lo = c.cup_bottom + 0.004
             points, p_radius, p_mass = cylinder_lattice(
                 fill_r, z_lo, z_lo + depth, c.voxel_size, c.particles_per_cell, c.liquid_density, seed
             )
@@ -247,18 +281,42 @@ class LatteScene(BaseScene):
                     visual_material_path="visualMaterial",
                 ),
             ),
+            # Textured mug asset, VISUAL-ONLY (origin at the mug center, half-depth 0.0414 m at
+            # scale 1, handle on -y). Its baked convex-decomposition collision is authored for
+            # grasping, not containment — the wall-box junctions leak MPM particles and the floor
+            # piece protrudes beyond the walls (measured: 37% of the coffee ends up pooled on the
+            # protruding slab). Collision and rigid-body APIs are disabled by the spawner; the
+            # invisible procedural cup below is the actual collider.
             "coffee_cup": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/CoffeeCup",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, TABLE_TOP_Z + 0.0704 * c.mug_scale)),
+                spawn=VisualUsdRefCfg(usd_path=c.mug_usd, scale=(c.mug_scale, c.mug_scale, c.mug_scale)),
+            ),
+            # Watertight collider matched to the mug cavity: inner radius = coffee_cup_r, rim =
+            # coffee_cup_h, floor top = coffee_floor_z (liquid rests at the mug's visual floor),
+            # outer wall 0.045 m < the mug's 0.050 m outer wall, so it stays hidden inside.
+            "coffee_cup_collider": AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/CoffeeCupCollider",
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, TABLE_TOP_Z)),
-                spawn=cup_spawn(c.coffee_cup_r, c.coffee_cup_h, kinematic=False, color=(0.90, 0.90, 0.92)),
+                spawn=cup_spawn(
+                    c.coffee_cup_r,
+                    c.coffee_cup_h,
+                    kinematic=False,
+                    color=None,
+                    wall=0.005,
+                    bottom=c.coffee_floor_z,
+                    visible=False,
+                ),
             ),
             "milk_cup": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/MilkCup",
                 init_state=RigidObjectCfg.InitialStateCfg(pos=(mx, my, TABLE_TOP_Z)),
                 spawn=cup_spawn(c.milk_cup_r, c.milk_cup_h, kinematic=True, color=(0.72, 0.72, 0.75)),
             ),
-            "coffee": liquid(c.coffee_cup_r, c.coffee_depth, c.coffee_color, (0.0, 0.0), seed=0),
-            "milk": liquid(c.milk_cup_r, c.milk_depth, c.milk_color, (mx, my), seed=1),
+            "coffee": liquid(
+                c.coffee_cup_r, c.coffee_depth, c.coffee_color, (0.0, 0.0), seed=0, z_lo=c.coffee_floor_z + 0.004
+            ),
+            "milk": liquid(c.milk_cup_r, c.milk_depth, c.milk_color, (mx, my), seed=1, z_lo=c.cup_bottom + 0.004),
         }
 
     def sim_cfg(self) -> MpmSimCfg:
@@ -409,7 +467,7 @@ class LatteScene(BaseScene):
     def describe(self) -> str:
         c = self.cfg
         return (
-            f"A white ceramic cup (inner radius {c.coffee_cup_r:.3f} m, {c.coffee_cup_h:.3f} m tall) stands at"
+            f"A ceramic mug (cavity radius {c.coffee_cup_r:.3f} m, rim {c.coffee_cup_h:.3f} m above the table) stands at"
             f" (0, 0) on a table (top at z={TABLE_TOP_Z}) holding brown coffee (liquid particles,"
             f" ~{c.coffee_depth * 1e3:.0f} mm deep). A smaller steel milk cup at"
             f" ({c.milk_cup_pos[0]}, {c.milk_cup_pos[1]}) holds white milk. The milk cup is kinematic: write its"
@@ -417,6 +475,39 @@ class LatteScene(BaseScene):
             " the coffee cup, and tip it so the milk streams in, without spilling on the table. Success: >= 70%"
             " of milk particles inside the coffee cup, >= 90% of coffee retained, <= 5% of milk spilled."
         )
+
+
+# ----- suite-local spawners (module level so configclass `func` can reference them) ---------------
+def _spawn_visual_usd_ref(
+    prim_path: str,
+    cfg: Any,
+    translation: tuple[float, float, float] | None = None,
+    orientation: tuple[float, float, float, float] | None = None,
+    **kwargs: Any,
+):
+    """Reference `cfg.usd_path` under a fresh Xform we own (translate/orient via create_prim, an
+    explicit scale op appended), then disable every rigid-body/collision API inside the reference
+    so the asset is pure set dressing."""
+    from isaaclab.sim.utils import create_prim, get_current_stage
+    from pxr import Usd, UsdPhysics
+
+    stage = get_current_stage()
+    root = create_prim(
+        prim_path,
+        prim_type="Xform",
+        translation=translation,
+        orientation=orientation,
+        scale=tuple(float(s) for s in cfg.scale),
+        stage=stage,
+    )
+    asset_prim = stage.DefinePrim(f"{prim_path}/asset")
+    asset_prim.GetReferences().AddReference(cfg.usd_path)
+    for prim in Usd.PrimRange(asset_prim):
+        if prim.HasAPI(UsdPhysics.CollisionAPI):
+            UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(False)
+        if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            UsdPhysics.RigidBodyAPI(prim).CreateRigidBodyEnabledAttr(False)
+    return root
 
 
 # ----- suite-local mesh spawner (module level so configclass `func` can reference it) -------------
@@ -439,6 +530,10 @@ def _spawn_cup_mesh(
     faces = np.asarray(cfg.faces, dtype=np.int32)
 
     create_prim(prim_path, prim_type="Xform", translation=translation, orientation=orientation, stage=stage)
+    if not getattr(cfg, "visible", True):
+        from pxr import UsdGeom
+
+        UsdGeom.Imageable(stage.GetPrimAtPath(prim_path)).MakeInvisible()
     geom_prim_path = f"{prim_path}/geometry"
     mesh_prim_path = f"{geom_prim_path}/mesh"
     create_prim(geom_prim_path, prim_type="Xform", stage=stage)
