@@ -1,9 +1,8 @@
 """folding suite — deformable-object folding tasks on IsaacLab's **Newton** physics backend.
 
 The second robobench suite, and the first that runs on the Newton backend (IsaacLab develop) —
-the only backend with cloth (surface deformables): a T-shirt lying on a box table, folded by a
-Franka following the key-pose script ported from the Newton engine's `cloth_folding` example.
-Holds its `scenes/` (a scene *is* a task — it carries its own goal), the vendored shirt
+the only backend with cloth (surface deformables): a T-shirt lying on a box table, to be folded
+flat by a Franka. Holds its `scenes/` (a scene *is* a task — it carries its own goal), the shirt
 `assets/`, concrete `configs/`, and `scripts/` (the fold smoke); it reuses
 `robobench.core` + `robobench.robots`.
 

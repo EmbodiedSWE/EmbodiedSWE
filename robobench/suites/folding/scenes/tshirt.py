@@ -1,20 +1,17 @@
 """TshirtFoldingScene — a T-shirt lying on a box table, to be folded flat (Newton VBD cloth).
 
-Port of the Newton engine example `cloth_folding` (newton/examples/cloth/example_cloth_folding.py,
-iter_05 trajectory) into robobench, converted from centimeter to meter scale and from the raw
-newton API onto IsaacLab develop's **Newton backend**: the shirt is a *surface deformable*
+Runs on IsaacLab develop's **Newton backend**: the shirt is a *surface deformable*
 (`DeformableObjectCfg` + Newton surface material -> VBD cloth particles), the table a static
 collidable box (no rigid body, no DOFs — stays out of the Newton joint state), and the substrate
 a coupled MJWarp(rigid) + VBD(cloth) solver declared by `sim_cfg()` (`NewtonSimCfg`).
 
-The shirt USD is a vendored bake of the example's `unisex_shirt.usd` with the original world pose
-baked into the vertices (cm->m, Rz(pi), then a (0, 0.70, 0.30) m offset), so `init_state` stays at the origin and
-the original layout numbers carry over: table top at z=0.20, sleeve tips settle near (±0.34, -0.58),
-bottom hem near y=-0.18, collar near y=-0.83 (env-local meters).
+The shirt USD (`assets/tshirt/tshirt.usd`, meters) has its spawn pose baked into the vertices, so
+`init_state` stays at the origin. Layout (env-local meters): table top at z=0.20, sleeve tips
+settle near (±0.34, -0.58), bottom hem near y=-0.18, collar near y=-0.83.
 
-Success proxy (same as the example): the cloth footprint = x-extent · y-extent. Settled unfolded
-≈ 0.50 m²; a completed 3-fold run lands ≈ 0.25 m² (the example's extra-tuned final: ≈ 0.142);
-below 0.30 m² counts as folded (all observed failure modes stay ≥ 0.41).
+Success proxy: the cloth footprint = x-extent · y-extent. Settled unfolded ≈ 0.50 m²; a completed
+3-fold run lands ≈ 0.17-0.25 m²; below 0.30 m² counts as folded (all observed failure modes stay
+≥ 0.41).
 
 Requires the Newton venv (`env_newton`, see the README) to build; the assembly
 suite's isaaclab 2.3.2 venv has no Newton backend. Heavy imports are deferred so importing this
@@ -39,36 +36,36 @@ if TYPE_CHECKING:
 @dataclass
 class TshirtFoldingSceneCfg(BaseCfg):
     """Cloth/contact dials start from IsaacLab's proven meter-scale cloth task
-    (isaaclab_tasks core/lift/franka_soft/franka_cloth_env_cfg.py); the original cm-scale demo
-    values are noted inline (stiffnesses do NOT transfer 1:1 across the unit change)."""
+    (isaaclab_tasks core/lift/franka_soft/franka_cloth_env_cfg.py), then hand-tuned for a
+    soft-fabric look that drapes flat and holds folds (see the [TUNE] notes)."""
 
     # --- cloth material (meter scale) ---
     cloth_density: float = tunable(15.0)  # [TUNE] surface density; 5 springs back after folds, 50 too heavy to lift
-    particle_radius: float = tunable(0.008)  # [TUNE] cloth-body contact radius = original 0.8 cm; at 0.005 the
+    particle_radius: float = tunable(0.008)  # [TUNE] cloth-body contact radius; at 0.005 the
     # resting layer is too thin for a fingertip pinch to gather flat fabric (hem grasp fails)
-    tri_ke: float = tunable(5e2)  # [TUNE] triangle stretch stiffness; original(cm) 1e4
-    tri_ka: float = tunable(5e2)  # [TUNE] triangle area stiffness; original(cm) 1e4
-    tri_kd: float = tunable(1e-1)  # [TUNE] triangle stretch damping; high value damps out cloth wobble; original(cm) 1.5e-6
-    edge_ke: float = tunable(0.3)  # [TUNE] bending stiffness; low = soft drape that lies flat and holds folds; original(cm) 5
-    edge_kd: float = tunable(1e-1)  # [TUNE] bending damping; original(cm) 1e-2
+    tri_ke: float = tunable(5e2)  # [TUNE] triangle stretch stiffness
+    tri_ka: float = tunable(5e2)  # [TUNE] triangle area stiffness
+    tri_kd: float = tunable(1e-1)  # [TUNE] triangle stretch damping; high value damps out cloth wobble
+    edge_ke: float = tunable(0.3)  # [TUNE] bending stiffness; low = soft drape that lies flat and holds folds
+    edge_kd: float = tunable(1e-1)  # [TUNE] bending damping
     # --- contacts (Newton model-level) ---
-    soft_contact_ke: float = tunable(1e3)  # [TUNE] particle-body contact stiffness; original(cm) 1e4
-    soft_contact_kd: float = tunable(1e-5)  # [TUNE] particle-body contact damping; original(cm) 1e-2
-    soft_contact_mu: float = tunable(0.5)  # [TUNE] particle-side friction; original self-contact mu 0.25
-    shape_ke: float = tunable(1e3)  # [TUNE] per-shape contact stiffness override; original(cm) 5e4
-    shape_kd: float = tunable(1e-5)  # [TUNE] per-shape contact damping override; original(cm) 1e-3
-    shape_mu: float = tunable(1.5)  # [TUNE] per-shape friction (table + robot), as the original
-    robot_friction_boost: float | None = tunable(None)  # [TUNE] extra mu on ROBOT shapes only (v6 task: 100;
-    # tried for grasp slip — net regression: the whole arm becomes sticky and drags the cloth)
+    soft_contact_ke: float = tunable(1e3)  # [TUNE] particle-body contact stiffness
+    soft_contact_kd: float = tunable(1e-5)  # [TUNE] particle-body contact damping
+    soft_contact_mu: float = tunable(0.5)  # [TUNE] particle-side friction
+    shape_ke: float = tunable(1e3)  # [TUNE] per-shape contact stiffness override
+    shape_kd: float = tunable(1e-5)  # [TUNE] per-shape contact damping override
+    shape_mu: float = tunable(1.5)  # [TUNE] per-shape friction (table + robot)
+    robot_friction_boost: float | None = tunable(None)  # [TUNE] extra mu on ROBOT shapes only
+    # (tried for grasp slip — net regression: the whole arm becomes sticky and drags the cloth)
     cloth_contact_margin: float = tunable(0.012)  # [TUNE] cloth-body collision margin (>= particle_radius)
     # --- VBD solver ---
-    vbd_iterations: int = tunable(20)  # [TUNE] VBD iterations/substep; more = crisper (less rubbery) cloth; v6 task 10, original 5
+    vbd_iterations: int = tunable(20)  # [TUNE] VBD iterations/substep; more = crisper (less rubbery) cloth
     self_contact: bool = tunable(True)  # folding lays cloth on cloth — keep self-contact ON
-    self_contact_radius: float = tunable(0.002)  # original 0.2 cm
-    self_contact_margin: float = tunable(0.002)  # original 0.2 cm
-    num_substeps: int = tunable(10)  # solver substeps per 1/60 s physics tick (as the original)
+    self_contact_radius: float = tunable(0.002)
+    self_contact_margin: float = tunable(0.002)
+    num_substeps: int = tunable(10)  # solver substeps per 1/60 s physics tick
     use_cuda_graph: bool = tunable(True)  # False -> slow but debuggable stepping
-    # --- layout (original demo numbers, in meters; the shirt pose is baked into the USD) ---
+    # --- layout (meters; the shirt pose is baked into the USD) ---
     light_intensity: float = tunable(3000.0)
     table_size: tuple[float, float, float] = info((0.8, 0.8, 0.2), doc="box table full extents [m]; top at z=0.2")
     table_pos: tuple[float, float, float] = info((0.0, -0.5, 0.1), doc="box table center [m]")
@@ -158,8 +155,8 @@ class TshirtFoldingScene(BaseScene):
                 "particle_enable_self_contact": c.self_contact,
                 "particle_self_contact_radius": c.self_contact_radius,
                 "particle_self_contact_margin": c.self_contact_margin,
-                "particle_topological_contact_filter_threshold": 1,  # original setting
-                "particle_rest_shape_contact_exclusion_radius": 0.005,  # original 0.5 cm
+                "particle_topological_contact_filter_threshold": 1,
+                "particle_rest_shape_contact_exclusion_radius": 0.005,
                 "particle_collision_detection_interval": -1,
             },
             model={
@@ -218,8 +215,8 @@ class TshirtFoldingScene(BaseScene):
 
     # ----- metrics --------------------------------------------------------------------------------
     def footprint(self) -> torch.Tensor:
-        """Per-env cloth footprint proxy [m²] = x-extent · y-extent of the particle cloud (the
-        example's success metric: settled unfolded ≈ 0.50, folded ≈ 0.25, example final ≈ 0.142)."""
+        """Per-env cloth footprint proxy [m²] = x-extent · y-extent of the particle cloud
+        (settled unfolded ≈ 0.50, a completed fold ≈ 0.17-0.25)."""
         p = self.cloth.data.nodal_pos_w.torch  # (num_envs, P, 3); extents are env-origin invariant
         return (p[..., 0].amax(dim=1) - p[..., 0].amin(dim=1)) * (p[..., 1].amax(dim=1) - p[..., 1].amin(dim=1))
 

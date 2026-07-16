@@ -45,8 +45,8 @@ class NewtonSimCfg(SimCfg):
     num_substeps: int = 10  # solver substeps per physics tick (solver dt = dt / num_substeps)
     use_cuda_graph: bool = True  # capture the substep loop in a CUDA graph (False = slow, easier to debug)
     coupled: bool = True  # False -> pure VBD manager; use for robot-less bindings (MJWarp needs >= 1 joint)
-    rigid_solver: str = "mjwarp"  # "mjwarp" | "featherstone" (the original demo used Featherstone)
-    coupling_mode: str = "one_way"  # rigid->cloth only (the original demo's semantics); "two_way" adds cloth->rigid reactions
+    rigid_solver: str = "mjwarp"  # "mjwarp" | "featherstone"
+    coupling_mode: str = "one_way"  # rigid->cloth only; "two_way" adds cloth->rigid reactions
     mjwarp: dict[str, Any] = field(default_factory=dict)  # MJWarpSolverCfg overrides (merged over defaults)
     vbd: dict[str, Any] = field(default_factory=dict)  # VBDSolverCfg kwargs (iterations, self-contact, ...)
     model: dict[str, Any] = field(default_factory=dict)  # NewtonModelCfg kwargs (soft/shape contact params)
