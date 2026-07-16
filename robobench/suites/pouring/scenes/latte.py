@@ -139,7 +139,7 @@ class LatteSceneCfg(BaseCfg):
     coffee_cup_h: float = tunable(0.0832)  # rim height above the table (trajectory anchor)
     coffee_floor_z: float = tunable(0.016)  # interior floor height above the table
     # --- milk cup (procedural open cylinder; local origin at outside bottom center) ---
-    milk_cup_r: float = tunable(0.030)
+    milk_cup_r: float = tunable(0.026)  # [TUNE] outer diameter 2*(r+wall)=0.062 fits the 0.08 Franka stroke
     milk_cup_h: float = tunable(0.075)
     cup_wall: float = tunable(0.006)  # [TUNE] >= ~2 voxels or particles tunnel the wall
     cup_bottom: float = tunable(0.007)
@@ -194,23 +194,19 @@ class LatteScene(BaseScene):
 
         @configclass
         class CupMeshCfg(sim_utils.MeshCfg):
-            """Suite-local arbitrary-trimesh spawner (exact collider, optional rigid body)."""
+            """Suite-local arbitrary-trimesh spawner: exact collider, optional rigid body, and an
+            optional VISUAL-ONLY referenced USD child (its physics APIs force-disabled) — so a
+            kinematic rigid cup can carry a pretty asset that rides its pose in the renderer."""
 
             func: Callable | str = clone(_spawn_cup_mesh)
             vertices: list[list[float]] = MISSING
             faces: list[list[int]] = MISSING
             mesh_collision_props: sim_utils.NewtonMeshCollisionPropertiesCfg | None = None
-
-        @configclass
-        class VisualUsdRefCfg(sim_utils.SpawnerCfg):
-            """Reference a USD asset as VISUAL-ONLY set dressing: wrapped under our own Xform so
-            `scale` reliably applies (UsdFileCfg's scale is silently skipped when the asset root
-            carries its own xform ops, as this mug does), with every collision/rigid-body API on
-            the referenced prims force-disabled."""
-
-            func: Callable | str = clone(_spawn_visual_usd_ref)
-            usd_path: str = MISSING
-            scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
+            visual_usd_ref: str | None = None
+            # Hide the collider mesh while keeping the ROOT visible (SpawnerCfg.visible=False
+            # would hide the whole subtree, including visual_usd_ref — the framework applies it
+            # to the spawned root).
+            hide_collider_geometry: bool = False
 
         def cup_spawn(
             r_inner: float,
@@ -221,13 +217,15 @@ class LatteScene(BaseScene):
             bottom: float | None = None,
             visible: bool = True,
             r_inner_top: float | None = None,
+            visual_usd_ref: str | None = None,
         ) -> CupMeshCfg:
             vertices, faces = cup_mesh(
                 r_inner, r_inner_top if r_inner_top is not None else r_inner, height, wall or c.cup_wall,
                 bottom or c.cup_bottom,
             )
             return CupMeshCfg(
-                visible=visible,
+                hide_collider_geometry=not visible,
+                visual_usd_ref=visual_usd_ref,
                 vertices=vertices.tolist(),
                 faces=faces.tolist(),
                 rigid_props=(
@@ -312,32 +310,24 @@ class LatteScene(BaseScene):
                     visual_material_path="visualMaterial",
                 ),
             ),
-            # Textured mug asset, VISUAL-ONLY (origin at the mug center, half-depth 0.0414 m at
-            # scale 1, handle on -y). Its baked convex-decomposition collision is authored for
-            # grasping, not containment — the wall-box junctions leak MPM particles and the floor
-            # piece protrudes beyond the walls (measured: 37% of the coffee ends up pooled on the
-            # protruding slab). Collision and rigid-body APIs are disabled by the spawner; the
-            # invisible procedural cup below is the actual collider.
-            "coffee_cup": AssetBaseCfg(
+            # The coffee mug: ONE kinematic rigid object carrying (a) the invisible watertight
+            # tapered collider matched to the visual mug's cavity (its baked convex-decomposition
+            # collision leaks MPM particles, so it is never used), and (b) the textured mug USD
+            # referenced as a visual-only child (physics APIs disabled) that rides the body's pose
+            # in the renderer. Kinematic so a robot hand can carry it: write its root pose.
+            "coffee_cup": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/CoffeeCup",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, TABLE_TOP_Z)),  # baked origin = base center
-                spawn=VisualUsdRefCfg(usd_path=c.mug_usd, scale=(c.mug_scale, c.mug_scale, c.mug_scale)),
-            ),
-            # Watertight tapered collider matched to the mug cavity (r_floor -> r_rim), floor top
-            # at coffee_floor_z (liquid rests at the mug's visual floor); it stays hidden inside
-            # the mug's 6 mm visual wall.
-            "coffee_cup_collider": AssetBaseCfg(
-                prim_path="{ENV_REGEX_NS}/CoffeeCupCollider",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, TABLE_TOP_Z)),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, TABLE_TOP_Z)),
                 spawn=cup_spawn(
                     c.coffee_cup_r_floor,
                     c.coffee_cup_h,
-                    kinematic=False,
+                    kinematic=True,
                     color=None,
                     wall=0.005,
                     bottom=c.coffee_floor_z,
                     visible=False,
                     r_inner_top=c.coffee_cup_r,
+                    visual_usd_ref=c.mug_usd,
                 ),
             ),
             "milk_cup": RigidObjectCfg(
@@ -372,6 +362,7 @@ class LatteScene(BaseScene):
         self.coffee = env.iscene["coffee"]
         self.milk = env.iscene["milk"]
         self.milk_cup = env.iscene["milk_cup"]
+        self.mug = env.iscene["coffee_cup"]
         # Snapshot the spawn state as the reset target (liquids seeded in their cups, at rest).
         self._default_state = {
             name: (obj.data.nodal_pos_w.torch.clone(), obj.data.nodal_vel_w.torch.clone().zero_())
@@ -383,7 +374,19 @@ class LatteScene(BaseScene):
         local = torch.tensor([*self.cfg.milk_cup_pos, TABLE_TOP_Z], device=origins.device)
         quat = torch.tensor([0.0, 0.0, 0.0, 1.0], device=origins.device).expand(origins.shape[0], 4)
         self._default_cup_pose = torch.cat([origins + local, quat], dim=-1)
+        mug_local = torch.tensor([0.0, 0.0, TABLE_TOP_Z], device=origins.device)
+        self._default_mug_pose = torch.cat([origins + mug_local, quat], dim=-1)
+        # Latest commanded mug pose (world) — metrics are computed relative to it, so a lifted /
+        # carried mug keeps honest transfer/retention numbers. Kinematic: the script owns it.
+        self.mug_pose_w = self._default_mug_pose.clone()
         self._fabric_particle_attrs: list[tuple[Any, Any]] = []
+
+    def write_mug_pose(self, pose: torch.Tensor, twist: torch.Tensor) -> None:
+        """Kinematically place the mug (collider + visual child ride the same rigid body) and
+        remember the pose for the mug-relative metrics."""
+        self.mug.write_root_link_pose_to_sim_index(root_pose=pose)
+        self.mug.write_root_link_velocity_to_sim_index(root_velocity=twist)
+        self.mug_pose_w = pose.clone()
 
     # ----- Kit particle visuals ---------------------------------------------------------------
     # The Newton backend creates a UsdGeom.Points prim per MPM object for Kit rendering, but its
@@ -457,6 +460,11 @@ class LatteScene(BaseScene):
         )
         zero_twist = torch.zeros((len(env_ids), 6), device=self._default_cup_pose.device)
         self.milk_cup.write_root_link_velocity_to_sim_index(root_velocity=zero_twist, env_ids=env_ids)
+        self.mug.write_root_link_pose_to_sim_index(
+            root_pose=self._default_mug_pose[env_ids].contiguous(), env_ids=env_ids
+        )
+        self.mug.write_root_link_velocity_to_sim_index(root_velocity=zero_twist, env_ids=env_ids)
+        self.mug_pose_w = self._default_mug_pose.clone()
 
     # ----- state ----------------------------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -480,10 +488,14 @@ class LatteScene(BaseScene):
         return obj.data.nodal_pos_w.torch - self.env.iscene.env_origins[:, None, :]
 
     def _in_coffee_cup(self, p: torch.Tensor) -> torch.Tensor:
-        """Boolean mask: particles inside the coffee cup's inner cylinder (env-local positions)."""
+        """Boolean mask: particles inside the mug's inner cylinder, relative to the mug's CURRENT
+        pose (upright carry assumed — the pour never tilts the mug)."""
         c = self.cfg
-        r2 = p[..., 0] ** 2 + p[..., 1] ** 2
-        return (r2 < c.coffee_cup_r**2) & (p[..., 2] > TABLE_TOP_Z) & (p[..., 2] < TABLE_TOP_Z + c.coffee_cup_h + 0.02)
+        origins = self.env.iscene.env_origins
+        mug = self.mug_pose_w[:, :3] - origins  # env-local mug base center
+        d = p - mug[:, None, :]
+        r2 = d[..., 0] ** 2 + d[..., 1] ** 2
+        return (r2 < c.coffee_cup_r**2) & (d[..., 2] > 0.0) & (d[..., 2] < c.coffee_cup_h + 0.02)
 
     def transfer_fraction(self) -> torch.Tensor:
         """Per-env fraction of MILK particles inside the coffee cup — the success proxy."""
@@ -503,7 +515,11 @@ class LatteScene(BaseScene):
         low = p[..., 2] < TABLE_TOP_Z + 0.01
         home_r = c.milk_cup_r + c.cup_wall + 0.01
         home_d2 = (p[..., 0] - c.milk_cup_pos[0]) ** 2 + (p[..., 1] - c.milk_cup_pos[1]) ** 2
-        return (low & ~self._in_coffee_cup(p) & (home_d2 > home_r**2)).float().mean(dim=1)
+        # A lifted mug can't shelter table-level particles, so also excluding the mug's home
+        # footprint keeps the metric honest whether or not the mug was carried.
+        mug_d2 = p[..., 0] ** 2 + p[..., 1] ** 2
+        mug_r = c.coffee_cup_r + 0.02
+        return (low & ~self._in_coffee_cup(p) & (home_d2 > home_r**2) & (mug_d2 > mug_r**2)).float().mean(dim=1)
 
     # ----- description ----------------------------------------------------------------------------
     def describe(self) -> str:
@@ -517,39 +533,6 @@ class LatteScene(BaseScene):
             " the coffee cup, and tip it so the milk streams in, without spilling on the table. Success: >= 70%"
             " of milk particles inside the coffee cup, >= 90% of coffee retained, <= 5% of milk spilled."
         )
-
-
-# ----- suite-local spawners (module level so configclass `func` can reference them) ---------------
-def _spawn_visual_usd_ref(
-    prim_path: str,
-    cfg: Any,
-    translation: tuple[float, float, float] | None = None,
-    orientation: tuple[float, float, float, float] | None = None,
-    **kwargs: Any,
-):
-    """Reference `cfg.usd_path` under a fresh Xform we own (translate/orient via create_prim, an
-    explicit scale op appended), then disable every rigid-body/collision API inside the reference
-    so the asset is pure set dressing."""
-    from isaaclab.sim.utils import create_prim, get_current_stage
-    from pxr import Usd, UsdPhysics
-
-    stage = get_current_stage()
-    root = create_prim(
-        prim_path,
-        prim_type="Xform",
-        translation=translation,
-        orientation=orientation,
-        scale=tuple(float(s) for s in cfg.scale),
-        stage=stage,
-    )
-    asset_prim = stage.DefinePrim(f"{prim_path}/asset")
-    asset_prim.GetReferences().AddReference(cfg.usd_path)
-    for prim in Usd.PrimRange(asset_prim):
-        if prim.HasAPI(UsdPhysics.CollisionAPI):
-            UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(False)
-        if prim.HasAPI(UsdPhysics.RigidBodyAPI):
-            UsdPhysics.RigidBodyAPI(prim).CreateRigidBodyEnabledAttr(False)
-    return root
 
 
 # ----- suite-local mesh spawner (module level so configclass `func` can reference it) -------------
@@ -572,10 +555,6 @@ def _spawn_cup_mesh(
     faces = np.asarray(cfg.faces, dtype=np.int32)
 
     create_prim(prim_path, prim_type="Xform", translation=translation, orientation=orientation, stage=stage)
-    if not getattr(cfg, "visible", True):
-        from pxr import UsdGeom
-
-        UsdGeom.Imageable(stage.GetPrimAtPath(prim_path)).MakeInvisible()
     geom_prim_path = f"{prim_path}/geometry"
     mesh_prim_path = f"{geom_prim_path}/mesh"
     create_prim(geom_prim_path, prim_type="Xform", stage=stage)
@@ -590,6 +569,25 @@ def _spawn_cup_mesh(
         },
         stage=stage,
     )
+
+    if getattr(cfg, "hide_collider_geometry", False):
+        # Hide the collider GEOMETRY only (not the root — a visual_usd_ref child must stay shown).
+        from pxr import UsdGeom
+
+        UsdGeom.Imageable(stage.GetPrimAtPath(geom_prim_path)).MakeInvisible()
+    if getattr(cfg, "visual_usd_ref", None):
+        # Visual-only referenced asset riding this body's pose. REMOVE its physics API schemas
+        # outright (a local delete-op over the reference): merely disabling them leaves the
+        # applied schemas visible to prim-resolution queries, which then see two rigid bodies
+        # under this prim and refuse to bind the RigidObject.
+        from pxr import Usd, UsdPhysics
+
+        asset_prim = stage.DefinePrim(f"{prim_path}/visual")
+        asset_prim.GetReferences().AddReference(cfg.visual_usd_ref)
+        for prim in Usd.PrimRange(asset_prim):
+            for api in (UsdPhysics.CollisionAPI, UsdPhysics.MeshCollisionAPI, UsdPhysics.RigidBodyAPI):
+                if prim.HasAPI(api):
+                    prim.RemoveAPI(api)
 
     if cfg.rigid_props is not None:
         schemas.define_rigid_body_properties(prim_path, cfg.rigid_props, stage=stage)
