@@ -7,9 +7,15 @@ into the unchanged robobench core the same way the folding suite's `NewtonSimCfg
 `to_isaaclab()` (polymorphic).
 
 Solver shape mirrors the in-tree MPM pour demo (IsaacLab `scripts/demos/mpm/particle_pour.py`):
-implicit MPM with a fixed grid so the whole solve is captured in one CUDA graph. The MPM manager
-treats rigid geometry as *colliders only* — kinematic rigid objects can stir/pour the liquid, but
-there is no dynamic rigid solver in this substrate (a coupled MJWarp+MPM manager is future work).
+implicit MPM with a fixed grid so the whole solve is captured in one CUDA graph. Two substrates
+share this cfg, selected by `coupled`:
+
+- `coupled=False` (default): the MPM-only manager — rigid geometry is *colliders only*, robots
+  are kinematic ghosts (Phase 1 / 2a).
+- `coupled=True` (Phase 2b): the suite-local coupled MJWarp+MPM manager
+  (`robobench.suites.pouring.coupled_manager`) — SolverMuJoCo advances articulations with real
+  gravity/actuators/contacts at `dt/num_substeps`, then the implicit MPM step advances the
+  liquids once per tick reading the post-rigid body poses (one-way rigid -> fluid).
 
 Requires the Newton venv (`env_newton`, see the README). Heavy imports are deferred to
 `to_isaaclab()` so importing this module stays app-free (and survives the assembly suite's
@@ -22,6 +28,19 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from robobench.core import SimCfg
+
+# MJWarp defaults for the coupled substrate — folding's proven values, contact buffers doubled:
+# that suite sized njmax=300/nconmax=150 for ONE arm + table; the latte scene runs TWO Frankas.
+# Undersizing fails at runtime with "nefc overflow, increase njmax to N".
+_MJWARP_DEFAULTS: dict[str, Any] = {
+    "njmax": 600,
+    "nconmax": 300,
+    "ls_iterations": 20,
+    "cone": "pyramidal",
+    "impratio": 1,
+    "integrator": "implicitfast",
+    "ccd_iterations": 100,
+}
 
 
 @dataclass
@@ -39,6 +58,11 @@ class MpmSimCfg(SimCfg):
     air_drag: float = 0.2
     use_cuda_graph: bool = True  # False -> slow but debuggable stepping
     mpm: dict[str, Any] = field(default_factory=dict)  # extra MPMSolverCfg overrides
+    # --- coupled MJWarp+MPM substrate (Phase 2b) ---
+    coupled: bool = False  # True -> MJWarp rigid dynamics + MPM liquids (dynamic robots)
+    num_substeps: int = 3  # MuJoCo substeps per MPM tick (rigid dt = dt/num_substeps = 1/600)
+    mjwarp: dict[str, Any] = field(default_factory=dict)  # MJWarpSolverCfg overrides (merged over
+    # _MJWARP_DEFAULTS inside to_isaaclab — sim_overrides replaces this dict wholesale)
 
     def to_isaaclab(self, device: str) -> Any:
         """Build the isaaclab `SimulationCfg` with the Newton implicit-MPM backend."""
@@ -54,7 +78,7 @@ class MpmSimCfg(SimCfg):
         class PouringNewtonCfg(NewtonCfg):
             model_cfg: Any = None
 
-        solver_cfg = MPMSolverCfg(
+        mpm_solver_cfg = MPMSolverCfg(
             **{
                 "voxel_size": self.voxel_size,
                 "grid_type": self.grid_type,
@@ -67,8 +91,23 @@ class MpmSimCfg(SimCfg):
                 **self.mpm,
             }
         )
+        if self.coupled:
+            # Phase 2b: the suite-local coupled manager — MJWarp rigids + the SAME MPM recipe.
+            from isaaclab_newton.physics import MJWarpSolverCfg
+
+            from robobench.suites.pouring.coupled_manager import MJWarpMPMSolverCfg
+
+            solver_cfg: Any = MJWarpMPMSolverCfg(
+                rigid_solver_cfg=MJWarpSolverCfg(**{**_MJWARP_DEFAULTS, **self.mjwarp}),
+                mpm_solver_cfg=mpm_solver_cfg,
+            )
+            num_substeps = self.num_substeps
+        else:
+            solver_cfg = mpm_solver_cfg
+            num_substeps = 1  # the MPM-only manager steps once per tick at dt
         physics = PouringNewtonCfg(
             solver_cfg=solver_cfg,
+            num_substeps=num_substeps,
             use_cuda_graph=self.use_cuda_graph,
             simplify_meshes=False,  # keep the exact cup geometry (thin walls) as colliders
         )

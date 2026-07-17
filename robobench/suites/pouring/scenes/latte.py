@@ -299,7 +299,32 @@ class LatteScene(BaseScene):
 
         px, py = c.pitcher_pos
         return {
-            "ground": AssetBaseCfg(prim_path="/World/ground", spawn=sim_utils.GroundPlaneCfg()),
+            # The visual ground plane is SUNK to z=-1.05 (folding-suite landmine: a ground-plane
+            # collider at exactly z=0 goes haywire in the Newton->MuJoCo conversion under the
+            # coupled substrate — phantom kN*m contact forces on the arm joints). The invisible
+            # static Floor box below carries the actual z=0 surface for spilled MPM particles, so
+            # the MPM-only substrate sees identical physics.
+            "ground": AssetBaseCfg(
+                prim_path="/World/ground",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
+                spawn=sim_utils.GroundPlaneCfg(),
+            ),
+            "floor": AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/Floor",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.01)),
+                spawn=sim_utils.CuboidCfg(
+                    size=(2.0, 2.0, 0.02),
+                    collision_props=sim_utils.NewtonCollisionPropertiesCfg(
+                        collision_enabled=True, contact_margin=0.0003
+                    ),
+                    physics_material=sim_utils.NewtonMaterialPropertiesCfg(
+                        static_friction=c.table_friction, dynamic_friction=c.table_friction
+                    ),
+                    physics_material_path="physicsMaterial",
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.35, 0.35, 0.35)),
+                    visual_material_path="visualMaterial",
+                ),
+            ),
             "light": AssetBaseCfg(
                 prim_path="/World/light",
                 spawn=sim_utils.DomeLightCfg(intensity=c.light_intensity, color=(0.85, 0.85, 0.85)),
@@ -612,6 +637,17 @@ class LatteScene(BaseScene):
             " the coffee cup, and tip it so the milk streams in, without spilling on the table. Success: >= 70%"
             " of milk particles inside the coffee cup, >= 90% of coffee retained, <= 5% of milk spilled."
         )
+
+
+@SCENES.register("latte_dyn")
+class LatteDynScene(LatteScene):
+    """The latte scene on the COUPLED MJWarp+MPM substrate (Phase 2b): robots get real dynamics
+    (gravity, actuator PD, MuJoCo rigid contacts) while the liquids run the same implicit-MPM
+    recipe one-way-coupled to the post-rigid body poses. The vessels stay kinematic scripted
+    ghosts (MPM colliders, invisible to MuJoCo). Scene content is identical to `latte`."""
+
+    def sim_cfg(self) -> MpmSimCfg:
+        return MpmSimCfg(voxel_size=self.cfg.voxel_size, coupled=True)
 
 
 # ----- suite-local mesh spawner (module level so configclass `func` can reference it) -------------

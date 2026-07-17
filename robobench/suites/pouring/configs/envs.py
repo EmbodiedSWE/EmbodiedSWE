@@ -42,3 +42,37 @@ register_env(
         ),
     ),
 )
+
+# Phase 2b: the same bimanual latte on the COUPLED MJWarp+MPM substrate (scene "latte_dyn") —
+# the arms are DYNAMIC: actuator PD tracks joint-position actions under real gravity, with
+# MuJoCo-internal rigid contacts (arm-table, arm-arm, arm-floor). The dynamic-Franka knobs are
+# the folding suite's proven set: gravcomp=1.0 (a kp=400 servo sags ~0.1 rad at reach without
+# it — PhysX disable_gravity is IGNORED by the Newton pipeline), arm effort 300 N*m so scripted
+# tracking never crawls at the real Panda limits, gripper effort 500 N for firm pinches.
+# -> "pouring.latte_dyn.bimanual_franka.joint"
+def _dyn_franka(base_pos: tuple[float, float, float]) -> FrankaRobotCfg:
+    return FrankaRobotCfg(
+        base_pos=base_pos,
+        base_rot=_RZ90_XYZW,
+        default_dof_pos=_HOME,
+        gravity_compensation=1.0,
+        arm_effort_limit=300.0,
+        gripper_effort_limit=500.0,
+    )
+
+
+register_env(
+    SUITE,
+    lambda: EnvCfg(
+        scene="latte_dyn",
+        robot="bimanual_franka",
+        control_mode="joint",
+        env_spacing=3,
+        robot_cfg=BimanualFrankaCfg(
+            robots={
+                "left": ("franka", _dyn_franka((-0.25, -0.42, 0.0))),
+                "right": ("franka", _dyn_franka((0.25, -0.42, 0.0))),
+            }
+        ),
+    ),
+)
