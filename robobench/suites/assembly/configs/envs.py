@@ -115,10 +115,12 @@ for _mode in ("osc", "impedance", "joint"):
 # The small pairs face off ACROSS the bench (x = 0, yaw -/+90 deg), separation tracking reach
 # (WXAI ~0.5 m -> y = +/-0.30, PiPER ~0.6 m -> +/-0.35); the Frankas face off ALONG the bench
 # (y = 0) instead — the top is only +/-0.38 in y, too narrow for their bases. The Franka pair is
-# asymmetric on purpose: the slab (x in [-0.75, -0.15]) is a keep-out, so the -x base sits behind
-# it at -0.95 (slab side) and the +x base at +0.55 (leg-row side), workspaces overlapping around
-# the slab edge.
-# CAUTION: base poses / reachability are NOT fully verified yet — treat them as a starting guess.
+# asymmetric on purpose: the slab (x in [-0.75, -0.15]) is a keep-out, so the "pin/left-drag" arm
+# sits behind it at (-0.95, 0.0) (slab side, faces +x) and the "threader/leg-cycle" arm at
+# (0.25, -0.25) (leg-row side, yaw 180 deg), workspaces overlapping around the slab edge.
+# The Franka bases + leg spawn below are VERIFIED by the four-leg solve (all tuned constants in
+# experiments/ikea_bimanual_franka_fable/solve_four.py are calibrated to them — do not move them).
+# CAUTION: the small pairs' base poses / reachability are NOT fully verified yet — starting guesses.
 # -> "assembly.ikea_table.aloha.{joint,osc,impedance}"           (bimanual WXAI, as ALOHA)
 # -> "assembly.ikea_table.bimanual_piper.{joint,osc,impedance}"  (bimanual AgileX PiPER)
 # -> "assembly.ikea_table.bimanual_franka.{joint,osc,impedance}" (bimanual Franka)
@@ -158,12 +160,18 @@ for _mode in ("joint", "osc", "impedance"):
         (
             lambda mode=_mode: EnvCfg(
                 scene="ikea_table",
+                # Leg spawn baked to the solve-verified layout: no reset jitter (deterministic) and the
+                # explicit row that keeps every grip in the right arm's 0.31-0.43 m pick band.
+                scene_cfg=IkeaTableAssemblySceneCfg(
+                    reset_pos_jitter=0.0,
+                    leg_init_xy=((-0.05, -0.03), (0.01, 0.18), (0.13, 0.18), (0.25, 0.18)),
+                ),
                 robot="bimanual_franka",
                 control_mode=mode,
                 robot_cfg=BimanualFrankaCfg(robots={
                     "left": ("franka", FrankaRobotCfg(base_pos=(-0.95, 0.0, 0.994))),  # slab side, faces +x
-                    "right": ("franka", FrankaRobotCfg(  # leg-row side, faces -x (yaw 180 deg)
-                        base_pos=(0.55, 0.0, 0.994), base_rot=(0.0, 0.0, 0.0, 1.0))),
+                    "right": ("franka", FrankaRobotCfg(  # leg-row/threading corner, yaw 180 deg (faces -x)
+                        base_pos=(0.25, -0.25, 0.994), base_rot=(0.0, 0.0, 0.0, 1.0))),
                 }),
                 env_spacing=3,
             )
