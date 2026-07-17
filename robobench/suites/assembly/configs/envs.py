@@ -24,7 +24,7 @@ from robobench.robots import (
     PiperRobotCfg,
     WxaiRobotCfg,
 )
-from robobench.suites.assembly.scenes import IkeaTableAssemblySceneCfg
+from robobench.suites.assembly.scenes import BulbAssemblySceneCfg, IkeaTableAssemblySceneCfg
 
 SUITE = "assembly"
 
@@ -71,15 +71,28 @@ for _mode in ("osc", "impedance", "joint"):
         lambda mode=_mode: EnvCfg(scene="nut_thread", robot="franka", control_mode=mode, env_spacing=2),
     )
 
-# Franka arm at the bulb scene (same setup as nut_thread.franka — base at the origin, reaching the socket
-# on the table at +x). Three control modes, switchable by env name:
+# Franka arm at the bulb scene (base at the origin). The socket + loose bulb are pulled off the stock
+# nut_thread "+x row" layout into the arm's solve-verified reach band: the default row put the bulb at
+# 0.63 m (out of reach -> REORIENT_STUCK) on the centreline (parks wrist q7 near its stop). Baked in:
+# socket 9 cm closer, bulb at the ~0.43 m pick radius on the +y side (q7 margin). Evidence:
+# experiments/bulb_franka_osc_fable/SCENE_IMPROVEMENTS.md. (Per-shape bulb friction is already the
+# scene default — no override needed.) Three control modes, switchable by env name:
 #   - "assembly.bulb.franka.osc"       — operational-space control (default)
 #   - "assembly.bulb.franka.impedance" — Jacobian-transpose task-space impedance
 #   - "assembly.bulb.franka.joint"     — direct joint position targets
 for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
-        lambda mode=_mode: EnvCfg(scene="bulb", robot="franka", control_mode=mode, env_spacing=2),
+        lambda mode=_mode: EnvCfg(
+            scene="bulb",
+            scene_cfg=BulbAssemblySceneCfg(
+                socket_slots=((-0.09, 0.0),),
+                bulb_init_xy=((-0.24, 0.25),),
+            ),
+            robot="franka",
+            control_mode=mode,
+            env_spacing=2,
+        ),
     )
 
 # Two Frankas at the SO101 workbench as ONE robot (`BimanualFranka`: action = [left | right];
