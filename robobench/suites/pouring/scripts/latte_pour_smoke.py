@@ -101,9 +101,9 @@ def main() -> None:
     from robobench.suites.pouring.scenes.latte import TABLE_TOP_Z
 
     # -- trajectory geometry (env-local; num_envs=1) --
-    mx, my = c.milk_cup_pos
-    r_outer = c.milk_cup_r + c.cup_wall
-    lip_local = torch.tensor([-r_outer, 0.0, c.milk_cup_h], device=device)  # pouring edge, cup-local
+    mx, my = c.pitcher_pos
+    r_outer = c.pitcher_r + c.pitcher_wall
+    lip_local = torch.tensor([-r_outer, 0.0, c.pitcher_h], device=device)  # pouring edge, pitcher-local
     rim_z = TABLE_TOP_Z + c.coffee_cup_h
     lip_target = torch.tensor([args.lip_x, my, rim_z + args.lip_height], device=device)
     theta_max = math.radians(args.tilt_deg)
@@ -172,8 +172,7 @@ def main() -> None:
         lin_vel = (pos - prev_pos) * FPS
         ang_vel = torch.tensor([0.0, -(theta - prev_theta) * FPS, 0.0], device=device)
         twist = torch.cat([lin_vel, ang_vel]).unsqueeze(0)  # Newton spatial vectors: (linear, angular)
-        scene.milk_cup.write_root_link_pose_to_sim_index(root_pose=pose)
-        scene.milk_cup.write_root_link_velocity_to_sim_index(root_velocity=twist)
+        scene.write_pitcher_pose(pose, twist)
         prev_pos, prev_theta = pos, theta
 
         env.step(action, render=render)

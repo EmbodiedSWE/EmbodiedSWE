@@ -7,7 +7,7 @@ milk cup is a *kinematic* rigid object so a script (or later a robot hand) can l
 the MPM solver treats rigid geometry as colliders and follows their motion.
 
 Layout (env-local meters): table top at z=0.04; the coffee cup stands at (0, 0), pre-filled with
-brown "coffee" particles; the milk cup stands at `milk_cup_pos` (default (0.14, 0)), pre-filled
+brown "coffee" particles; the milk pitcher stands at `pitcher_pos` (default (0.16, 0)), pre-filled
 with white "milk" particles. Goal: pour the milk into the coffee cup — `transfer_fraction()`
 (milk inside the coffee cup) is the success proxy, with `retention_fraction()` (coffee still in
 its cup) and `spilled_fraction()` (milk on the table) as guards.
@@ -117,14 +117,17 @@ class LatteSceneCfg(BaseCfg):
 
     # --- MPM solver / seeding ---
     voxel_size: float = tunable(0.003)  # [TUNE] MPM grid voxel [m]; finer = crisper liquid, slower
-    particles_per_cell: float = tunable(2.0)  # [TUNE] lattice density vs grid (2.0 = demo value)
+    particles_per_cell: float = tunable(2.0)  # [TUNE] lattice density vs grid (2.0 = demo value; LOWER
+    # under-resolves the constitutive model — at 1.6 a deep narrow fill collapsed into a sticky blob)
     # --- liquid material (shared by coffee + milk) ---
     liquid_density: float = tunable(1000.0)
-    liquid_viscosity: float = tunable(0.1)  # [TUNE] 0.1 = watery (demo); raise toward 5-50 for syrupy
+    liquid_viscosity: float = tunable(3.0)  # [TUNE] creamy (steamed-milk-ish): the compacted MPM liquid
+    # avalanches out of deep vessels at ~90 deg when watery (0.1) — viscosity 3 makes the outflow a
+    # controllable ooze so a partial pour can actually stop
     liquid_damping: float = tunable(0.02)
     liquid_friction: float = tunable(0.0)
     yield_pressure: float = tunable(1.0e15)  # huge -> never yields as a granular (stays liquid)
-    tensile_yield_ratio: float = tunable(5.0)
+    tensile_yield_ratio: float = tunable(1.0)  # [TUNE] cohesion; 5.0 clings to deep vessel walls and exits late
     # --- coffee mug (textured USD asset, VISUAL-ONLY; the invisible tapered collider below is
     # the physics). The vendored BlackCeramicMug/mug_black_zup.usd is the original model with the
     # fix-up BAKED INTO THE GEOMETRY (this render stack's Fabric delegate drops USD xform
@@ -138,18 +141,25 @@ class LatteSceneCfg(BaseCfg):
     coffee_cup_r_floor: float = tunable(0.034)  # [TUNE] collider radius at the FLOOR (tapered interior)
     coffee_cup_h: float = tunable(0.0832)  # rim height above the table (trajectory anchor)
     coffee_floor_z: float = tunable(0.016)  # interior floor height above the table
-    # --- milk cup (procedural open cylinder; local origin at outside bottom center) ---
-    milk_cup_r: float = tunable(0.026)  # [TUNE] outer diameter 2*(r+wall)=0.062 fits the 0.08 Franka stroke
-    milk_cup_h: float = tunable(0.075)
-    cup_wall: float = tunable(0.006)  # [TUNE] >= ~2 voxels or particles tunnel the wall
-    cup_bottom: float = tunable(0.007)
+    # --- milk pitcher (textured USD asset, VISUAL-ONLY; the invisible straight collider below is
+    # the physics). assets/Pitcher/pitcher_zup.usd is the original model with the composed
+    # transform baked into the geometry: base at z=0, body axis centered, HANDLE toward +x (the
+    # grasp side — the plain rim pours toward -x / the mug). Measured: body outer 0.040 -> 0.036,
+    # interior ~straight r 0.030 above a thick base (usable floor at z ~0.030), rim at 0.0927,
+    # wall ~5 mm, handle bar out to x=0.068 spanning z 0.027..0.081. ---
+    pitcher_usd: str = info("", doc="'' -> the vendored assets/Pitcher/pitcher_zup.usd (base origin)")
+    pitcher_r: float = tunable(0.030)  # [TUNE] collider/fill/metric radius (interior cavity - margin)
+    pitcher_h: float = tunable(0.0927)  # rim height above the base (trajectory lip anchor)
+    pitcher_floor_z: float = tunable(0.030)  # interior floor height above the base (thick bottom)
+    pitcher_wall: float = tunable(0.005)  # collider wall; outer 0.035 hides inside the visual body
     cup_friction: float = tunable(0.05)  # low, like the demo bowl — liquid slides off ceramic
     cup_contact_margin: float = tunable(0.001)
     # --- fills ---
-    coffee_depth: float = tunable(0.025)  # [TUNE] ~118 ml at r=0.04 -> ~35k particles at defaults
-    milk_depth: float = tunable(0.020)  # [TUNE] ~57 ml at r=0.03 -> ~17k particles at defaults
+    coffee_depth: float = tunable(0.048)  # [TUNE] SEEDED depth; implicit MPM settles ~x0.53 of seeded,
+    # leaving the mug roughly half full (surface ~0.044 of the 0.083 rim; ~66k particles)
+    milk_depth: float = tunable(0.042)  # [TUNE] SEEDED depth; settles to ~60% of the pitcher (~28k particles)
     # --- layout ---
-    milk_cup_pos: tuple[float, float] = info((0.14, 0.0), doc="milk cup center xy [m]; coffee cup is at (0,0)")
+    pitcher_pos: tuple[float, float] = info((0.16, 0.0), doc="pitcher center xy [m]; coffee mug is at (0,0)")
     table_size: tuple[float, float, float] = info((0.7, 0.7, TABLE_TOP_Z), doc="table box extents [m]; top at z=0.04")
     table_friction: float = tunable(0.5)
     light_intensity: float = tunable(2500.0)
@@ -162,15 +172,16 @@ class LatteSceneCfg(BaseCfg):
     # reads as liquid. Keep scaled width < cup_wall or particles bulge through the cup exterior.
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parents[1] / "assets" / "BlackCeramicMug"
-        self.mug_usd = self.mug_usd or str(assets / "mug_black_zup.usd")
+        assets = Path(__file__).resolve().parents[1] / "assets"
+        self.mug_usd = self.mug_usd or str(assets / "BlackCeramicMug" / "mug_black_zup.usd")
+        self.pitcher_usd = self.pitcher_usd or str(assets / "Pitcher" / "pitcher_zup.usd")
 
 
 @SCENES.register("latte")
 class LatteScene(BaseScene):
     """Coffee cup (brown MPM liquid) + kinematic milk cup (white MPM liquid) on a table. Goal:
     pour the milk into the coffee cup. Handles after bind: `self.coffee` / `self.milk`
-    (MPMObjects) and `self.milk_cup` (kinematic RigidObject); `transfer_fraction()` is the
+    (MPMObjects) and `self.pitcher` / `self.mug` (kinematic RigidObjects); `transfer_fraction()` is the
     success proxy."""
 
     cfg: LatteSceneCfg
@@ -213,15 +224,14 @@ class LatteScene(BaseScene):
             height: float,
             kinematic: bool,
             color: tuple | None,
-            wall: float | None = None,
-            bottom: float | None = None,
+            wall: float,
+            bottom: float,
             visible: bool = True,
             r_inner_top: float | None = None,
             visual_usd_ref: str | None = None,
         ) -> CupMeshCfg:
             vertices, faces = cup_mesh(
-                r_inner, r_inner_top if r_inner_top is not None else r_inner, height, wall or c.cup_wall,
-                bottom or c.cup_bottom,
+                r_inner, r_inner_top if r_inner_top is not None else r_inner, height, wall, bottom
             )
             return CupMeshCfg(
                 hide_collider_geometry=not visible,
@@ -287,7 +297,7 @@ class LatteScene(BaseScene):
                 init_state=MPMObjectCfg.InitialStateCfg(pos=(cup_xy[0], cup_xy[1], TABLE_TOP_Z)),
             )
 
-        mx, my = c.milk_cup_pos
+        px, py = c.pitcher_pos
         return {
             "ground": AssetBaseCfg(prim_path="/World/ground", spawn=sim_utils.GroundPlaneCfg()),
             "light": AssetBaseCfg(
@@ -330,10 +340,22 @@ class LatteScene(BaseScene):
                     visual_usd_ref=c.mug_usd,
                 ),
             ),
-            "milk_cup": RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/MilkCup",
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(mx, my, TABLE_TOP_Z)),
-                spawn=cup_spawn(c.milk_cup_r, c.milk_cup_h, kinematic=True, color=(0.72, 0.72, 0.75)),
+            # The milk pitcher: same pattern as the mug — kinematic rigid carrying the invisible
+            # straight collider matched to the interior plus the textured pitcher USD as a
+            # visual-only child (handle toward +x, the grasp side).
+            "pitcher": RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Pitcher",
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(px, py, TABLE_TOP_Z)),
+                spawn=cup_spawn(
+                    c.pitcher_r,
+                    c.pitcher_h,
+                    kinematic=True,
+                    color=None,
+                    wall=c.pitcher_wall,
+                    bottom=c.pitcher_floor_z,
+                    visible=False,
+                    visual_usd_ref=c.pitcher_usd,
+                ),
             ),
             "coffee": liquid(
                 c.coffee_cup_r_floor,
@@ -348,7 +370,7 @@ class LatteScene(BaseScene):
                 * (0.004 + c.coffee_depth)
                 / (c.coffee_cup_h - c.coffee_floor_z),
             ),
-            "milk": liquid(c.milk_cup_r, c.milk_depth, c.milk_color, (mx, my), seed=1, z_lo=c.cup_bottom + 0.004),
+            "milk": liquid(c.pitcher_r, c.milk_depth, c.milk_color, (px, py), seed=1, z_lo=c.pitcher_floor_z + 0.004),
         }
 
     def sim_cfg(self) -> MpmSimCfg:
@@ -361,7 +383,7 @@ class LatteScene(BaseScene):
         super().bind(env)
         self.coffee = env.iscene["coffee"]
         self.milk = env.iscene["milk"]
-        self.milk_cup = env.iscene["milk_cup"]
+        self.pitcher = env.iscene["pitcher"]
         self.mug = env.iscene["coffee_cup"]
         # Snapshot the spawn state as the reset target (liquids seeded in their cups, at rest).
         self._default_state = {
@@ -371,14 +393,15 @@ class LatteScene(BaseScene):
         # Constructed (not read back) so we only depend on the proven write API: cfg spawn pose,
         # world frame = env origin + local, identity quat in xyzw (develop convention).
         origins = env.iscene.env_origins
-        local = torch.tensor([*self.cfg.milk_cup_pos, TABLE_TOP_Z], device=origins.device)
+        local = torch.tensor([*self.cfg.pitcher_pos, TABLE_TOP_Z], device=origins.device)
         quat = torch.tensor([0.0, 0.0, 0.0, 1.0], device=origins.device).expand(origins.shape[0], 4)
-        self._default_cup_pose = torch.cat([origins + local, quat], dim=-1)
+        self._default_pitcher_pose = torch.cat([origins + local, quat], dim=-1)
         mug_local = torch.tensor([0.0, 0.0, TABLE_TOP_Z], device=origins.device)
         self._default_mug_pose = torch.cat([origins + mug_local, quat], dim=-1)
-        # Latest commanded mug pose (world) — metrics are computed relative to it, so a lifted /
-        # carried mug keeps honest transfer/retention numbers. Kinematic: the script owns it.
+        # Latest commanded vessel poses (world) — metrics are computed relative to them, so
+        # lifted / tilted carries keep honest numbers. Kinematic: the scripts own them.
         self.mug_pose_w = self._default_mug_pose.clone()
+        self.pitcher_pose_w = self._default_pitcher_pose.clone()
         self._fabric_particle_attrs: list[tuple[Any, Any]] = []
 
     def write_mug_pose(self, pose: torch.Tensor, twist: torch.Tensor) -> None:
@@ -387,6 +410,12 @@ class LatteScene(BaseScene):
         self.mug.write_root_link_pose_to_sim_index(root_pose=pose)
         self.mug.write_root_link_velocity_to_sim_index(root_velocity=twist)
         self.mug_pose_w = pose.clone()
+
+    def write_pitcher_pose(self, pose: torch.Tensor, twist: torch.Tensor) -> None:
+        """Kinematically place the pitcher and remember the pose for pitcher-relative metrics."""
+        self.pitcher.write_root_link_pose_to_sim_index(root_pose=pose)
+        self.pitcher.write_root_link_velocity_to_sim_index(root_velocity=twist)
+        self.pitcher_pose_w = pose.clone()
 
     # ----- Kit particle visuals ---------------------------------------------------------------
     # The Newton backend creates a UsdGeom.Points prim per MPM object for Kit rendering, but its
@@ -455,16 +484,17 @@ class LatteScene(BaseScene):
         for obj, (pos, vel) in ((self.coffee, self._default_state["coffee"]), (self.milk, self._default_state["milk"])):
             obj.write_nodal_pos_to_sim_index(pos[env_ids].contiguous(), env_ids=env_ids)
             obj.write_nodal_velocity_to_sim_index(vel[env_ids].contiguous(), env_ids=env_ids)
-        self.milk_cup.write_root_link_pose_to_sim_index(
-            root_pose=self._default_cup_pose[env_ids].contiguous(), env_ids=env_ids
+        self.pitcher.write_root_link_pose_to_sim_index(
+            root_pose=self._default_pitcher_pose[env_ids].contiguous(), env_ids=env_ids
         )
-        zero_twist = torch.zeros((len(env_ids), 6), device=self._default_cup_pose.device)
-        self.milk_cup.write_root_link_velocity_to_sim_index(root_velocity=zero_twist, env_ids=env_ids)
+        zero_twist = torch.zeros((len(env_ids), 6), device=self._default_pitcher_pose.device)
+        self.pitcher.write_root_link_velocity_to_sim_index(root_velocity=zero_twist, env_ids=env_ids)
         self.mug.write_root_link_pose_to_sim_index(
             root_pose=self._default_mug_pose[env_ids].contiguous(), env_ids=env_ids
         )
         self.mug.write_root_link_velocity_to_sim_index(root_velocity=zero_twist, env_ids=env_ids)
         self.mug_pose_w = self._default_mug_pose.clone()
+        self.pitcher_pose_w = self._default_pitcher_pose.clone()
 
     # ----- state ----------------------------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -517,13 +547,58 @@ class LatteScene(BaseScene):
         c = self.cfg
         p = self._local(self.milk)
         low = p[..., 2] < TABLE_TOP_Z + 0.01
-        home_r = c.milk_cup_r + c.cup_wall + 0.01
-        home_d2 = (p[..., 0] - c.milk_cup_pos[0]) ** 2 + (p[..., 1] - c.milk_cup_pos[1]) ** 2
+        home_r = c.pitcher_r + c.pitcher_wall + 0.01
+        home_d2 = (p[..., 0] - c.pitcher_pos[0]) ** 2 + (p[..., 1] - c.pitcher_pos[1]) ** 2
         # A lifted mug can't shelter table-level particles, so also excluding the mug's home
         # footprint keeps the metric honest whether or not the mug was carried.
         mug_d2 = p[..., 0] ** 2 + p[..., 1] ** 2
         mug_r = c.coffee_cup_r + 0.02
         return (low & ~self._in_coffee_cup(p) & (home_d2 > home_r**2) & (mug_d2 > mug_r**2)).float().mean(dim=1)
+
+    def milk_in_pitcher_fraction(self) -> torch.Tensor:
+        """Per-env fraction of MILK still inside the pitcher (pitcher-frame cylinder) — the
+        'did not empty the pitcher' gate for the fill-to-target pour."""
+        import isaaclab.utils.math as math_utils
+
+        c = self.cfg
+        origins = self.env.iscene.env_origins
+        p = self._local(self.milk)
+        d = p - (self.pitcher_pose_w[:, :3] - origins)[:, None, :]
+        quat = self.pitcher_pose_w[:, 3:].unsqueeze(1).expand(-1, d.shape[1], 4)
+        d = math_utils.quat_apply_inverse(quat.reshape(-1, 4), d.reshape(-1, 3)).reshape(d.shape)
+        r2 = d[..., 0] ** 2 + d[..., 1] ** 2
+        inside = (r2 < c.pitcher_r**2) & (d[..., 2] > 0.0) & (d[..., 2] < c.pitcher_h + 0.02)
+        return inside.float().mean(dim=1)
+
+    def mug_surface_z(self) -> float:
+        """SETTLED liquid surface height inside the mug, in the MUG frame [m above the mug base]:
+        the 0.9-quantile z of in-mug particles (coffee + milk) that are near rest (|v| < 0.25 m/s
+        — a falling pour stream inside the mug cylinder would otherwise inflate the estimate).
+        -inf when the mug is empty. Env 0 only (the pour scripts are single-env)."""
+        import isaaclab.utils.math as math_utils
+
+        origins = self.env.iscene.env_origins
+        zs = []
+        for obj in (self.coffee, self.milk):
+            p = obj.data.nodal_pos_w.torch - origins[:, None, :]
+            d = p - (self.mug_pose_w[:, :3] - origins)[:, None, :]
+            quat = self.mug_pose_w[:, 3:].unsqueeze(1).expand(-1, d.shape[1], 4)
+            d = math_utils.quat_apply_inverse(quat.reshape(-1, 4), d.reshape(-1, 3)).reshape(d.shape)
+            r2 = d[..., 0] ** 2 + d[..., 1] ** 2
+            settled = obj.data.nodal_vel_w.torch.norm(dim=-1) < 0.25
+            m = (
+                (r2 < self.cfg.coffee_cup_r**2)
+                & (d[..., 2] > 0.0)
+                & (d[..., 2] < self.cfg.coffee_cup_h + 0.02)
+                & settled
+            )
+            if bool(m[0].any()):
+                zs.append(d[0, m[0], 2])
+        if not zs:
+            return float("-inf")
+        import torch
+
+        return float(torch.quantile(torch.cat(zs), 0.9))
 
     # ----- description ----------------------------------------------------------------------------
     def describe(self) -> str:
@@ -532,7 +607,7 @@ class LatteScene(BaseScene):
             f"A black ceramic mug (cavity radius {c.coffee_cup_r:.3f} m at the rim, {c.coffee_cup_h:.3f} m tall) stands at"
             f" (0, 0) on a table (top at z={TABLE_TOP_Z}) holding brown coffee (liquid particles,"
             f" ~{c.coffee_depth * 1e3:.0f} mm deep). A smaller steel milk cup at"
-            f" ({c.milk_cup_pos[0]}, {c.milk_cup_pos[1]}) holds white milk. The milk cup is kinematic: write its"
+            f" ({c.pitcher_pos[0]}, {c.pitcher_pos[1]}) holds white milk. Both vessels are kinematic: write their"
             " root pose to move it. Goal: pour the milk into the coffee cup — lift the milk cup, carry it over"
             " the coffee cup, and tip it so the milk streams in, without spilling on the table. Success: >= 70%"
             " of milk particles inside the coffee cup, >= 90% of coffee retained, <= 5% of milk spilled."
