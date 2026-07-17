@@ -35,9 +35,10 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--time_scale", type=float, default=1.0, help="multiply every phase duration")
-parser.add_argument("--tilt_deg", type=float, default=118.0, help="full pour tilt of the milk cup [deg]")
-parser.add_argument("--mug_tilt_deg", type=float, default=25.0, help="the mug tilts this far TOWARD the cup during the pour [deg]")
-parser.add_argument("--lip_clear", type=float, default=0.032, help="cup-lip clearance above the mug's low rim [m]")
+parser.add_argument("--tilt_deg", type=float, default=118.0, help="MAX pour tilt of the pitcher [deg]; the fill trigger usually stops it earlier")
+parser.add_argument("--mug_tilt_deg", type=float, default=15.0, help="the mug tilts this far TOWARD the pitcher during the pour [deg]")
+parser.add_argument("--lip_clear", type=float, default=0.032, help="pitcher-lip clearance above the mug's low rim [m]")
+parser.add_argument("--pour_fraction", type=float, default=0.18, help="STOP pouring once this fraction of the milk has DEPARTED the pitcher (polled every step — the compacted MPM liquid avalanches out in ~1 s, and departure leads arrival by the flight time). In-flight milk keeps landing, so the transferred total overshoots this a bit; the rest stays in the pitcher.")
 parser.add_argument("--hold", type=float, default=2.0, help="extra settle time after the trajectory [s]")
 parser.add_argument("--print_every", type=int, default=200, help="progress print period [steps]")
 parser.add_argument("--max_steps", type=int, default=None, help="cap total steps (debugging)")
@@ -194,20 +195,21 @@ def main() -> None:
     Q_LEFT = q_ry(90.0 + args.grasp_pitch)  # from -x, pointing +x-down at the mug handle
     Q_RIGHT = q_ry(-(90.0 + args.grasp_pitch))  # from +x, pointing -x-down at the milk cup
 
-    # --- grasp geometry (world; see the scene cfg for the measured mug numbers) ---
-    mx, my = c.milk_cup_pos
+    # --- grasp geometry (world; see the scene cfg for the measured asset numbers) ---
+    px, py = c.pitcher_pos
     z_hat = torch.tensor([[0.0, 0.0, 1.0]], device=device)
 
     def hand_from_tip(tip_xyz: tuple, quat: torch.Tensor) -> torch.Tensor:
         return t3(*tip_xyz) - 0.113 * math_utils.quat_apply(quat, z_hat)
 
-    # Left: pinch the handle loop's outer vertical bar (x ~ -0.085, loop z ~0.02..0.08)
+    # Left: pinch the mug handle loop's outer vertical bar (x ~ -0.085, loop z ~0.02..0.08)
     lh_grasp = hand_from_tip((-0.080, 0.0, 0.093), Q_LEFT)
-    # Right: diametric side grasp around the upper cup body (outer dia 0.062 < the 0.08 stroke)
-    rh_grasp = hand_from_tip((mx, my, 0.085), Q_RIGHT)
+    # Right: pinch the PITCHER handle's outer vertical bar (handle toward +x, bar out to
+    # x ~ +0.068 spanning z 0.027..0.081; ~1 cm bite into the bar)
+    rh_grasp = hand_from_tip((px + 0.060, py, 0.095), Q_RIGHT)
     lh_hover = lh_grasp + torch.tensor([-0.06, 0.0, 0.05], device=device)
     rh_hover = rh_grasp + torch.tensor([0.07, 0.0, 0.05], device=device)
-    GRIP_MUG_BAR, GRIP_CUP_BODY = 0.006, c.milk_cup_r + c.cup_wall + 0.001
+    GRIP_MUG_BAR = GRIP_PITCHER_BAR = 0.006
 
     # --- phases ---
     phases: list[tuple[str, float]] = [
@@ -217,9 +219,9 @@ def main() -> None:
         ("mug_lift", 1.5),
         ("lift", 1.2),
         ("traverse", 1.8),
-        ("pour", 3.5),
+        ("pour", 6.0),
         ("drain", 1.8),
-        ("recover", 1.2),
+        ("recover", 0.6),
         ("return", 1.8),
         ("set_down", 1.5),
         ("mug_down", 1.5),
@@ -244,13 +246,21 @@ def main() -> None:
     rh_final = None
     theta_max = math.radians(args.tilt_deg)
     phi_max = math.radians(args.mug_tilt_deg)
-    lip_local = torch.tensor([-(c.milk_cup_r + c.cup_wall), 0.0, c.milk_cup_h], device=device)
+    lip_local = torch.tensor([-(c.pitcher_r + c.pitcher_wall), 0.0, c.pitcher_h], device=device)
     rim_local = torch.tensor([[c.coffee_cup_r - 0.002, 0.0, c.coffee_cup_h]], device=device)  # low-rim pt
     mug_base = t3(0.0, 0.0, TABLE_TOP_Z)
     mug_carry = mug_base + torch.tensor([0.0, 0.0, 0.06], device=device)
-    cup_start = t3(mx, my, TABLE_TOP_Z)
+    cup_start = t3(px, py, TABLE_TOP_Z)
     last_phase = ""
     err_l = err_r = 0.0
+    # Pour-to-fraction: when --pour_fraction of the milk has transferred into the mug, the
+    # tilt is frozen
+    # and the clock jumps to `recover`, which untilts from the FROZEN angles — the pitcher is
+    # never emptied and the deep-tilt poses are never reached.
+    time_shift = 0.0
+    tilt_frozen: tuple[float, float] | None = None
+    fill_surface = float("-inf")
+    transfer_now = 0.0
 
     def fd_twist(pose: torch.Tensor, prev: torch.Tensor | None) -> torch.Tensor:
         if prev is None:
@@ -262,13 +272,17 @@ def main() -> None:
         return a + (b - a) * s
 
     def tilt_of(name: str, s: float) -> tuple[float, float]:
-        """(cup theta, mug phi) for phase-synced counter-rotation."""
+        """(pitcher theta, mug phi) for phase-synced counter-rotation. Once the fill trigger
+        freezes the tilt, pour/drain hold the frozen angles and recover untilts from them."""
+        if tilt_frozen is not None and name in ("pour", "drain"):
+            return tilt_frozen
         if name == "pour":
             return theta_max * s, phi_max * s
         if name == "drain":
             return theta_max, phi_max
         if name == "recover":
-            return theta_max * (1.0 - s), phi_max * (1.0 - s)
+            th0, ph0 = tilt_frozen if tilt_frozen is not None else (theta_max, phi_max)
+            return th0 * (1.0 - s), ph0 * (1.0 - s)
         return 0.0, 0.0
 
     def mug_target(name: str, s: float) -> tuple[torch.Tensor, torch.Tensor]:
@@ -284,15 +298,17 @@ def main() -> None:
         return mug_carry, q4((0.0, math.sin(half), 0.0, math.cos(half)))
 
     def cup_target(name: str, s: float) -> tuple[torch.Tensor, torch.Tensor]:
-        """Scripted cup pose: the lip rides just above the (tilting) mug's LOW rim. The lip
-        anchor starts OUTBOARD of the rim and slides inboard as theta grows — by the time the
-        cup body has rotated up clear of the rim plane, the lip overhangs the mouth."""
+        """Scripted pitcher pose, barista-style: the lip stays slightly INSIDE the (tilting)
+        mug's LOW rim the whole time, starting HIGH and descending as theta grows — the lip
+        height tracks the pitcher's own swept extent (0.005 + sin(theta)*lx + cos(theta)*lz),
+        so the body always clears the rim plane and the stream always falls inside the mouth.
+        (A full pitcher streams from ~13 deg, so the lip must be inboard from the start.)"""
         theta, _ = tilt_of(name, s)
         mp, mq = mug_target(name, s)
         low_rim = mp + math_utils.quat_apply(mq, rim_local)
-        frac = theta / theta_max if theta_max > 0 else 0.0
-        lip_dx = 0.015 - 0.023 * frac
-        lip_target = low_rim[0] + torch.tensor([lip_dx, 0.0, args.lip_clear], device=device)
+        lx, lz = float(lip_local[0]), float(lip_local[2])
+        lip_up = max(args.lip_clear, 0.005 + math.sin(theta) * lx + math.cos(theta) * lz)
+        lip_target = low_rim[0] + torch.tensor([-0.020, 0.0, lip_up], device=device)
         st, ct = math.sin(-theta), math.cos(-theta)
         lx, lz = lip_local[0], lip_local[2]
         lip_rot = torch.tensor([ct * lx + st * lz, 0.0, -st * lx + ct * lz], device=device)
@@ -321,28 +337,45 @@ def main() -> None:
 
     def status() -> str:
         return (
-            f"transfer {float(scene.transfer_fraction().mean()):.3f}"
+            f"transfer {transfer_now:.3f} (target {args.pour_fraction:.2f}) | fill {fill_surface * 100:4.1f} cm"
+            f" | milk-in-pitcher {float(scene.milk_in_pitcher_fraction().mean()):.3f}"
             f" | retention {float(scene.retention_fraction().mean()):.3f}"
             f" | spilled {float(scene.spilled_fraction().mean()):.3f}"
             f" | err L {err_l * 100:4.1f} R {err_r * 100:4.1f} cm"
-            f" | rot L {left.rot_err:4.2f} R {right.rot_err:4.2f} rad"
         )
 
     for step in range(total_steps):
-        t = step / FPS
+        t = step / FPS + time_shift
         idx = next((i for i, edge in enumerate(t_edges) if t < edge), len(phases) - 1)
         name, _ = phases[idx]
         s = _smoothstep(1.0 - (t_edges[idx] - t) / max(durs[idx], 1e-9)) if t < t_edges[-1] else 1.0
+
+        # pour trigger: freeze the tilt and jump the clock to `recover` once enough milk has
+        # DEPARTED the pitcher (every-step poll — the avalanche lasts ~1 s)
+        if step % 10 == 0:
+            fill_surface = scene.mug_surface_z()
+            transfer_now = float(scene.transfer_fraction().mean())
+        departed = 1.0 - float(scene.milk_in_pitcher_fraction().mean()) if name in ("pour", "drain") else 0.0
+        if name in ("pour", "drain") and tilt_frozen is None and departed >= args.pour_fraction:
+            tilt_frozen = tilt_of(name, s)
+            drain_end = t_edges[[n for n, _ in phases].index("drain")]
+            time_shift += drain_end - t
+            t = step / FPS + time_shift
+            name, s = "recover", 0.0
+            print(
+                f"  [fill] target reached at tilt {math.degrees(tilt_frozen[0]):.1f} deg -> recovering",
+                flush=True,
+            )
 
         # fingers
         if name in ("reach", "descend"):
             left.grip = right.grip = 0.04
         elif name == "grasp":
             left.grip = max(GRIP_MUG_BAR, 0.04 - (0.04 - GRIP_MUG_BAR) * s)
-            right.grip = max(GRIP_CUP_BODY, 0.04 - (0.04 - GRIP_CUP_BODY) * s)
+            right.grip = max(GRIP_PITCHER_BAR, 0.04 - (0.04 - GRIP_PITCHER_BAR) * s)
         elif name == "release":
             left.grip = min(0.04, GRIP_MUG_BAR + (0.04 - GRIP_MUG_BAR) * s)
-            right.grip = min(0.04, GRIP_CUP_BODY + (0.04 - GRIP_CUP_BODY) * s)
+            right.grip = min(0.04, GRIP_PITCHER_BAR + (0.04 - GRIP_PITCHER_BAR) * s)
 
         # --- left arm: direct targets pre-attach, then derived from the scripted mug pose ---
         if name == "reach":
@@ -376,15 +409,14 @@ def main() -> None:
             if off_cup is None:
                 hp, hq = right.hand_pose_w()
                 off_cup = math_utils.subtract_frame_transforms(hp, hq, cup_start, q4((0.0, 0.0, 0.0, 1.0)))
-                print("  [attach] cup offset recorded", flush=True)
+                print("  [attach] pitcher offset recorded", flush=True)
             cp_t, cq_t = cup_target(name, s)
             rh_t, rh_q = hand_target_from(cp_t, cq_t, off_cup)
             err_r = right.track(rh_t, rh_q, args.max_dq)
             hp, hq = right.hand_pose_w()
             cpp, cqq = math_utils.combine_frame_transforms(hp, hq, off_cup[0], off_cup[1])
             pose = torch.cat([cpp, cqq], dim=-1)
-            scene.milk_cup.write_root_link_pose_to_sim_index(root_pose=pose)
-            scene.milk_cup.write_root_link_velocity_to_sim_index(root_velocity=fd_twist(pose, prev_cup_pose))
+            scene.write_pitcher_pose(pose, fd_twist(pose, prev_cup_pose))
             prev_cup_pose = pose.clone()
         else:  # mug_down / release: hold where the cup was set down
             if rh_final is None:
@@ -402,11 +434,13 @@ def main() -> None:
             print(f"  step {step:5d} t={t:5.1f}s {name:9s} | {status()}", flush=True)
 
     transfer = float(scene.transfer_fraction().mean())
+    keep = float(scene.milk_in_pitcher_fraction().mean())
     retention = float(scene.retention_fraction().mean())
     spilled = float(scene.spilled_fraction().mean())
-    ok = transfer >= 0.70 and retention >= 0.90 and spilled <= 0.05
+    ok = transfer >= 0.15 and keep >= 0.15 and retention >= 0.90 and spilled <= 0.05
     print(
-        f"LATTE-BIMANUAL {'PASS' if ok else 'FAIL'} | transfer {transfer:.3f} (gate >= 0.70)"
+        f"LATTE-BIMANUAL {'PASS' if ok else 'FAIL'} | milk transferred {transfer:.3f}"
+        f" (>= 0.15) | milk kept in pitcher {keep:.3f} (>= 0.15)"
         f" | retention {retention:.3f} (>= 0.90) | spilled {spilled:.3f} (<= 0.05)",
         flush=True,
     )
