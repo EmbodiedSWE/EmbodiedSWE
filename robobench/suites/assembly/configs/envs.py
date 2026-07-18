@@ -24,7 +24,11 @@ from robobench.robots import (
     PiperRobotCfg,
     WxaiRobotCfg,
 )
-from robobench.suites.assembly.scenes import BulbAssemblySceneCfg, IkeaTableAssemblySceneCfg
+from robobench.suites.assembly.scenes import (
+    BulbAssemblySceneCfg,
+    IkeaTableAssemblySceneCfg,
+    NutThreadAssemblySceneCfg,
+)
 
 SUITE = "assembly"
 
@@ -58,8 +62,15 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_gpu", robot="null", env_spacing=2))
 # -> "assembly.so101"
 register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
 
-# Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x). Three
-# control modes, switchable by env name:
+# Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x).
+# Baked in (solve-verified at the natural flat layout — base at the table plane, no sink; evidence:
+# experiments/nut_thread_franka_osc_fable/BUILD_LOG.md "FLAT-layout campaign"):
+#   - nut spawn pulled to (-0.12, 0) — the stock "+x row" default puts it at 0.62 m, out of the
+#     origin-mounted arm's reach (the bolt's default slot at 0.50 m is in-band and stays);
+#   - nut_friction 0.4 — at the 0.01 default the jaws cannot transmit wrench torque to the nut;
+#   - sim dt 1/480 — a pressed M16 TUNNELS through the SDF threads at the scene's 1/120, so nothing
+#     can genuinely thread there (probe evidence in the BUILD_LOG; 1/240 narrows the window, 1/480 clean).
+# Three control modes, switchable by env name:
 #   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
 #                                              smooth on this arm)
 #   - "assembly.nut_thread.franka.impedance" — arm by Jacobian-transpose task-space impedance (Isaac's form)
@@ -68,7 +79,17 @@ register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
 for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
-        lambda mode=_mode: EnvCfg(scene="nut_thread", robot="franka", control_mode=mode, env_spacing=2),
+        lambda mode=_mode: EnvCfg(
+            scene="nut_thread",
+            scene_cfg=NutThreadAssemblySceneCfg(
+                nut_init_xy=((-0.12, 0.0),),
+                nut_friction=0.4,
+            ),
+            robot="franka",
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 480.0},
+        ),
     )
 
 # Franka arm at the bulb scene (base at the origin). The socket + loose bulb are pulled off the stock
