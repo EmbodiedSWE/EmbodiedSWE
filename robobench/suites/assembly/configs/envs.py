@@ -24,7 +24,11 @@ from robobench.robots import (
     PiperRobotCfg,
     WxaiRobotCfg,
 )
-from robobench.suites.assembly.scenes import IkeaTableAssemblySceneCfg
+from robobench.suites.assembly.scenes import (
+    BulbAssemblySceneCfg,
+    IkeaTableAssemblySceneCfg,
+    NutThreadAssemblySceneCfg,
+)
 
 SUITE = "assembly"
 
@@ -58,8 +62,15 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_gpu", robot="null", env_spacing=2))
 # -> "assembly.so101"
 register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
 
-# Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x). Three
-# control modes, switchable by env name:
+# Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x).
+# Baked in (solve-verified at the natural flat layout — base at the table plane, no sink; evidence:
+# experiments/nut_thread_franka_osc_fable/BUILD_LOG.md "FLAT-layout campaign"):
+#   - nut spawn pulled to (-0.12, 0) — the stock "+x row" default puts it at 0.62 m, out of the
+#     origin-mounted arm's reach (the bolt's default slot at 0.50 m is in-band and stays);
+#   - nut_friction 0.4 — at the 0.01 default the jaws cannot transmit wrench torque to the nut;
+#   - sim dt 1/480 — a pressed M16 TUNNELS through the SDF threads at the scene's 1/120, so nothing
+#     can genuinely thread there (probe evidence in the BUILD_LOG; 1/240 narrows the window, 1/480 clean).
+# Three control modes, switchable by env name:
 #   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
 #                                              smooth on this arm)
 #   - "assembly.nut_thread.franka.impedance" — arm by Jacobian-transpose task-space impedance (Isaac's form)
@@ -68,18 +79,41 @@ register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
 for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
-        lambda mode=_mode: EnvCfg(scene="nut_thread", robot="franka", control_mode=mode, env_spacing=2),
+        lambda mode=_mode: EnvCfg(
+            scene="nut_thread",
+            scene_cfg=NutThreadAssemblySceneCfg(
+                nut_init_xy=((-0.12, 0.0),),
+                nut_friction=0.4,
+            ),
+            robot="franka",
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 480.0},
+        ),
     )
 
-# Franka arm at the bulb scene (same setup as nut_thread.franka — base at the origin, reaching the socket
-# on the table at +x). Three control modes, switchable by env name:
+# Franka arm at the bulb scene (base at the origin). The socket + loose bulb are pulled off the stock
+# nut_thread "+x row" layout into the arm's solve-verified reach band: the default row put the bulb at
+# 0.63 m (out of reach -> REORIENT_STUCK) on the centreline (parks wrist q7 near its stop). Baked in:
+# socket 9 cm closer, bulb at the ~0.43 m pick radius on the +y side (q7 margin). Evidence:
+# experiments/bulb_franka_osc_fable/SCENE_IMPROVEMENTS.md. (Per-shape bulb friction is already the
+# scene default — no override needed.) Three control modes, switchable by env name:
 #   - "assembly.bulb.franka.osc"       — operational-space control (default)
 #   - "assembly.bulb.franka.impedance" — Jacobian-transpose task-space impedance
 #   - "assembly.bulb.franka.joint"     — direct joint position targets
 for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
-        lambda mode=_mode: EnvCfg(scene="bulb", robot="franka", control_mode=mode, env_spacing=2),
+        lambda mode=_mode: EnvCfg(
+            scene="bulb",
+            scene_cfg=BulbAssemblySceneCfg(
+                socket_slots=((-0.09, 0.0),),
+                bulb_init_xy=((-0.24, 0.25),),
+            ),
+            robot="franka",
+            control_mode=mode,
+            env_spacing=2,
+        ),
     )
 
 # Two Frankas at the SO101 workbench as ONE robot (`BimanualFranka`: action = [left | right];
@@ -115,10 +149,12 @@ for _mode in ("osc", "impedance", "joint"):
 # The small pairs face off ACROSS the bench (x = 0, yaw -/+90 deg), separation tracking reach
 # (WXAI ~0.5 m -> y = +/-0.30, PiPER ~0.6 m -> +/-0.35); the Frankas face off ALONG the bench
 # (y = 0) instead — the top is only +/-0.38 in y, too narrow for their bases. The Franka pair is
-# asymmetric on purpose: the slab (x in [-0.75, -0.15]) is a keep-out, so the -x base sits behind
-# it at -0.95 (slab side) and the +x base at +0.55 (leg-row side), workspaces overlapping around
-# the slab edge.
-# CAUTION: base poses / reachability are NOT fully verified yet — treat them as a starting guess.
+# asymmetric on purpose: the slab (x in [-0.75, -0.15]) is a keep-out, so the "pin/left-drag" arm
+# sits behind it at (-0.95, 0.0) (slab side, faces +x) and the "threader/leg-cycle" arm at
+# (0.25, -0.25) (leg-row side, yaw 180 deg), workspaces overlapping around the slab edge.
+# The Franka bases + leg spawn below are VERIFIED by the four-leg solve (all tuned constants in
+# experiments/ikea_bimanual_franka_fable/solve_four.py are calibrated to them — do not move them).
+# CAUTION: the small pairs' base poses / reachability are NOT fully verified yet — starting guesses.
 # -> "assembly.ikea_table.aloha.{joint,osc,impedance}"           (bimanual WXAI, as ALOHA)
 # -> "assembly.ikea_table.bimanual_piper.{joint,osc,impedance}"  (bimanual AgileX PiPER)
 # -> "assembly.ikea_table.bimanual_franka.{joint,osc,impedance}" (bimanual Franka)
@@ -158,12 +194,18 @@ for _mode in ("joint", "osc", "impedance"):
         (
             lambda mode=_mode: EnvCfg(
                 scene="ikea_table",
+                # Leg spawn baked to the solve-verified layout: no reset jitter (deterministic) and the
+                # explicit row that keeps every grip in the right arm's 0.31-0.43 m pick band.
+                scene_cfg=IkeaTableAssemblySceneCfg(
+                    reset_pos_jitter=0.0,
+                    leg_init_xy=((-0.05, -0.03), (0.01, 0.18), (0.13, 0.18), (0.25, 0.18)),
+                ),
                 robot="bimanual_franka",
                 control_mode=mode,
                 robot_cfg=BimanualFrankaCfg(robots={
                     "left": ("franka", FrankaRobotCfg(base_pos=(-0.95, 0.0, 0.994))),  # slab side, faces +x
-                    "right": ("franka", FrankaRobotCfg(  # leg-row side, faces -x (yaw 180 deg)
-                        base_pos=(0.55, 0.0, 0.994), base_rot=(0.0, 0.0, 0.0, 1.0))),
+                    "right": ("franka", FrankaRobotCfg(  # leg-row/threading corner, yaw 180 deg (faces -x)
+                        base_pos=(0.25, -0.25, 0.994), base_rot=(0.0, 0.0, 0.0, 1.0))),
                 }),
                 env_spacing=3,
             )

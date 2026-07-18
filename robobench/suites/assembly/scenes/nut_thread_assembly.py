@@ -39,9 +39,10 @@ class NutThreadAssemblySceneCfg(BaseCfg):
     # A nut is "seated on a bolt" when — all measured in that bolt's own frame — it is threaded down to
     # at/below `seat_z` above the bolt origin, within `align_xy` of the bolt axis, and tilted
     # <= `align_axis_deg` off it (order-independent: any nut may seat on any bolt).
-    seat_z: float = tunable(0.02)  # max nut-origin height above the bolt origin (m) to count as seated.
-    # Calibrated to the asset: a nut threaded down the M16 bolt bottoms out against the bolt's base
-    # flange with its origin ~17 mm up, vs ~26 mm+ when merely resting on top — 20 mm separates them.
+    seat_z: float = tunable(0.012)  # max nut-origin height above the bolt origin (m) to count as seated.
+    # Calibrated to the asset (the nut USD's origin sits 10 mm below its bottom face): 12 mm puts the
+    # nut's top face at/below the bolt's thread top — fully threaded on. Resting on the bolt top is
+    # ~25 mm, true bottom-out ~1 mm; gripper pads graze the bolt head below ~4 mm.
     align_xy: float = tunable(0.015)  # max lateral distance (m) of the nut from the nearest bolt axis
     align_axis_deg: float = tunable(10.0)  # max tilt of the nut's screw axis off the bolt axis (deg)
     reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter per nut at reset (m); 0 = none
