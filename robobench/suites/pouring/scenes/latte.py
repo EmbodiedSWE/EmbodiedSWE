@@ -50,14 +50,17 @@ MUG_PROXY = {
     "ring_z": (0.012, 0.0832),
     "slab_r": 0.041,
     "slab_h": 0.010,
-    "handle": {"x": -0.0877, "z": 0.0515, "r": 0.008, "half_height": 0.0103},
+    # grip_w: the bar box's y/x width — WIDER than the visual bar (2r) so the finger pads engage
+    # it at ~7 mm joint opening with PD headroom (force closure force = gripper kp x block depth;
+    # at 2r=16 mm the pads bottomed out on their 0-limit at a soft-contact-capped ~19 N).
+    "handle": {"x": -0.0877, "z": 0.0515, "r": 0.008, "half_height": 0.0103, "grip_w": 0.022},
 }
 PITCHER_PROXY = {
     "ring_r_out": 0.0425,
     "ring_z": (0.008, 0.0927),
     "slab_r": 0.041,
     "slab_h": 0.008,
-    "handle": {"x": 0.0643, "z": 0.0634, "r": 0.006, "half_height": 0.0161},
+    "handle": {"x": 0.0643, "z": 0.0634, "r": 0.006, "half_height": 0.0161, "grip_w": 0.018},
 }
 
 
@@ -793,6 +796,30 @@ class LatteWeldScene(LatteDynScene):
         )
 
 
+@SCENES.register("latte_grip")
+class LatteGripScene(LatteWeldScene):
+    """Phase 2c-b: the SAME dynamic-vessel substrate as `latte_weld` (proxies, masses) under a
+    new registry name so the FORCE-CLOSURE env can carry its own gripper knobs (the registry has
+    no variant slot). Scripts on this scene carry the vessels by a real friction pinch on the
+    handle-bar boxes; slip, re-grasp, and drops are physically possible and score honestly
+    through the actual-pose metrics. NO weld rows are built — force closure needs none (and
+    `weld_vessel` is invalid here)."""
+
+    def sim_cfg(self) -> MpmSimCfg:
+        return MpmSimCfg(voxel_size=self.cfg.voxel_size, coupled=True, finger_pads=True)
+
+    def reset(self, env_ids: torch.Tensor) -> None:
+        LatteScene.reset(self, env_ids)  # no welds to deactivate
+
+    def describe(self) -> str:
+        base = super().describe()
+        return base.replace(
+            "a hand-vessel weld engages at grasp (weld_vessel) and the arm carries the real mass.",
+            "the arms carry them by REAL force closure — pinching the handle bars with friction;"
+            " squeeze too little and the vessel slips, too eccentric and it pivots.",
+        )
+
+
 # ----- suite-local mesh spawner (module level so configclass `func` can reference it) -------------
 def _spawn_cup_mesh(
     prim_path: str,
@@ -894,15 +921,33 @@ def _spawn_cup_mesh(
         )
         proxy_paths.append(slab_path)
         proxy_friction_paths.append(slab_path)
+        # Handle bar: a BOX, deliberately NOT a capsule — the Franka finger pads are MESH geoms,
+        # and mjwarp's mesh-vs-capsule pair silently generated no pinch contacts (grip force,
+        # friction cone, and impratio all changed nothing; the pads closed through the bar).
+        # Same lesson as the slab: curved primitives misbehave in this contact pipeline, boxes
+        # are first-class. Square cross-section 2r x 2r, full capsule-equivalent length.
         h = pr["handle"]
         handle_path = f"{base_path}/handle"
+        bar_w = float(h.get("grip_w", 2.0 * h["r"]))
+        bar_len = 2.0 * (float(h["half_height"]) + float(h["r"]))
         create_prim(
             handle_path,
-            prim_type="Capsule",
-            attributes={"radius": float(h["r"]), "height": 2.0 * float(h["half_height"]), "axis": "Z"},
+            prim_type="Cube",
+            attributes={"size": 1.0},
             translation=(float(h["x"]), 0.0, float(h["z"])),
+            scale=(bar_w, bar_w, bar_len),
             stage=stage,
         )
+        # Stiff contact on the grip bar (mjc:solref, read by the newton importer): the default
+        # solref lets the finger pads sink mm-deep at ~10 N/mm, capping the achievable pinch
+        # force regardless of gripper kp (force closure died at ~19 N). Timeconst 4 ms ~= 25x
+        # stiffer: pinch force ~= kp x block depth again.
+        from pxr import Gf as _Gf
+        from pxr import Sdf as _Sdf
+
+        stage.GetPrimAtPath(handle_path).CreateAttribute(
+            "mjc:solref", _Sdf.ValueTypeNames.Float2, custom=True
+        ).Set(_Gf.Vec2f(0.004, 1.0))
         proxy_paths.append(handle_path)
         from pxr import UsdGeom
 
