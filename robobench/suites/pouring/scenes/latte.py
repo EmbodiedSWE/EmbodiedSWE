@@ -197,6 +197,10 @@ class LatteSceneCfg(BaseCfg):
     pitcher_mass: float = tunable(0.25)  # [TUNE] small steel frothing pitcher ~0.25 kg empty
     proxy_segments: int = info(10, doc="boxes per rigid-proxy ring (8-12 traces the wall within ~2 mm)")
     proxy_thickness: float = tunable(0.005)  # ring box radial thickness [m]; inner face stays outside the cavity
+    # --- agent auto-grasp (latte_auto): weld engages on proximity + closure ---
+    auto_weld_dist: float = tunable(0.03)  # pinch-point-to-bar-center engage radius [m]
+    auto_weld_close_margin: float = tunable(0.003)  # engage when aperture < bar half-width + this [m]
+    auto_weld_release: float = tunable(0.02)  # release when aperture opens past this [m] (hysteresis)
     proxy_friction: float = tunable(0.5)  # ring + slab (MuJoCo-facing) friction — tabletop-like,
     # NOT the liquid-facing 0.05 ceramic (matters for 2c-b finger/vessel contacts; note MuJoCo
     # combines pair friction as the element-wise MAX, so vs the 0.5 table this dial only bites
@@ -793,6 +797,151 @@ class LatteWeldScene(LatteDynScene):
             "Both vessels are kinematic: write their root pose to move it.",
             "Both vessels are DYNAMIC rigid bodies resting on the table; a hand-vessel weld"
             " engages at grasp (weld_vessel) and the arm carries the real mass.",
+        )
+
+
+@SCENES.register("latte_auto")
+class LatteAutoScene(LatteWeldScene):
+    """The AGENT-BENCHMARK grasp mechanic: welds engage AUTOMATICALLY from gripper state — no
+    scripted weld calls. Every physics tick (`post_step`), for each (gripper, handle) pair: if
+    the pinch point is within `auto_weld_dist` of that handle's bar AND the fingers are closed
+    to the bar's width (+ `auto_weld_close_margin`), the weld engages at the measured pose;
+    opening the gripper past `auto_weld_release` releases it (hysteresis prevents chatter).
+    Either gripper can grab either handle (all four weld rows are built); one hand holds at
+    most one vessel and vice versa. The agent's contract is exactly a real gripper's: reach the
+    handle, squeeze to grab, open to release — WHEN it grabs is physics-of-state, not script."""
+
+    # (hand prim, vessel) -> weld label; all four combinations exist in the model.
+    AUTO_PAIRS = {
+        ("Left", "mug"): "weld_mug",
+        ("Right", "pitcher"): "weld_pitcher",
+        ("Right", "mug"): "weld_mug_r",
+        ("Left", "pitcher"): "weld_pitcher_l",
+    }
+
+    def sim_cfg(self) -> MpmSimCfg:
+        return MpmSimCfg(
+            voxel_size=self.cfg.voxel_size,
+            coupled=True,
+            welds=[
+                ("weld_mug", "Left/panda_hand", "CoffeeCup"),
+                ("weld_pitcher", "Right/panda_hand", "Pitcher"),
+                ("weld_mug_r", "Right/panda_hand", "CoffeeCup"),
+                ("weld_pitcher_l", "Left/panda_hand", "Pitcher"),
+            ],
+        )
+
+    def bind(self, env: BaseEnv) -> None:
+        super().bind(env)
+        self._auto_state: dict[str, bool] = {}
+        self._auto_ready = False
+        self._auto_dead = False
+
+    def _auto_setup(self) -> None:
+        """Resolve body indices, handle-bar local centers (mean of the bar segments'
+        shape_transforms — composed with body_q per tick, so frame conventions cancel), finger
+        joints, and per-vessel bar half-widths. Runs once, lazily (the model exists post-build)."""
+        import numpy as np
+        import torch
+
+        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
+
+        model = Mgr._model
+        device = self.env.device
+        body_labels = [str(b or "") for b in model.body_label]
+
+        def body_idx(suffix: str) -> int:
+            matches = [i for i, b in enumerate(body_labels) if b.endswith(suffix)]
+            assert len(matches) == 1, (suffix, matches)
+            return matches[0]
+
+        shape_labels = [str(s or "") for s in model.shape_label]
+        shape_tf = model.shape_transform.numpy()
+        shape_body = model.shape_body.numpy()
+        self._auto_vessels: dict[str, tuple] = {}
+        for vessel, suffix, proxy in (("mug", "CoffeeCup", MUG_PROXY), ("pitcher", "Pitcher", PITCHER_PROXY)):
+            b = body_idx(suffix)
+            segs = [i for i, s in enumerate(shape_labels) if "/rigidproxy/handle" in s and int(shape_body[i]) == b]
+            assert segs, f"no handle segments found for {vessel}"
+            bar_local = torch.tensor(np.stack([shape_tf[i][:3] for i in segs]).mean(axis=0), device=device, dtype=torch.float32)
+            half_width = float(proxy["handle"].get("grip_w", 2.0 * proxy["handle"]["r"])) / 2.0
+            self._auto_vessels[vessel] = (b, bar_local, half_width)
+        self._auto_hands: dict[str, tuple] = {}
+        for name, robot in self.env.robot.robots.items():
+            prim = name[:1].upper() + name[1:]
+            art = robot.articulation
+            self._auto_hands[prim] = (body_idx(f"{prim}/panda_hand"), art, art.find_joints(["panda_finger.*"])[0])
+        self._auto_ready = True
+
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        super().post_step(env_ids)
+        if self._auto_dead:
+            return
+        try:
+            if not self._auto_ready:
+                self._auto_setup()
+            self._auto_tick()
+        except Exception as e:  # noqa: BLE001 — a broken grasp mechanic must be loud, not fatal
+            print(f"[auto-weld] DISABLED after error: {e!r}", flush=True)
+            self._auto_dead = True
+
+    def _auto_tick(self) -> None:
+        import warp as wp
+        import torch
+
+        import isaaclab.utils.math as math_utils
+
+        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
+
+        body_q = wp.to_torch(Mgr._state_0.body_q)
+        held_vessels = {v for (h, v), lbl in self.AUTO_PAIRS.items() if self._auto_state.get(lbl)}
+        busy_hands = {h for (h, v), lbl in self.AUTO_PAIRS.items() if self._auto_state.get(lbl)}
+        tip_local = torch.tensor([[0.0, 0.0, 0.113]], device=body_q.device)
+        for (hand, vessel), label in self.AUTO_PAIRS.items():
+            hb, art, fids = self._auto_hands[hand]
+            aperture = float(art.data.joint_pos.torch[0, fids].mean())
+            if self._auto_state.get(label, False):
+                if aperture > self.cfg.auto_weld_release:
+                    Mgr.set_weld(label, False)
+                    self._auto_state[label] = False
+                    print(f"  [auto-weld] {hand} RELEASED the {vessel} (aperture {aperture * 1000:.1f} mm)", flush=True)
+                continue
+            if hand in busy_hands or vessel in held_vessels:
+                continue
+            vb, bar_local, half_width = self._auto_vessels[vessel]
+            if aperture >= half_width + self.cfg.auto_weld_close_margin:
+                continue  # fingers not squeezing — cheap early-out before any pose math
+            pinch = body_q[hb, :3] + math_utils.quat_apply(body_q[hb, 3:][None], tip_local)[0]
+            bar_w = body_q[vb, :3] + math_utils.quat_apply(body_q[vb, 3:][None], bar_local[None])[0]
+            dist = float((pinch - bar_w).norm())
+            if dist < self.cfg.auto_weld_dist:
+                Mgr.set_weld(label, True)
+                self._auto_state[label] = True
+                busy_hands.add(hand)
+                held_vessels.add(vessel)
+                print(
+                    f"  [auto-weld] {hand} GRIPPED the {vessel} (dist {dist * 100:.1f} cm,"
+                    f" aperture {aperture * 1000:.1f} mm)",
+                    flush=True,
+                )
+
+    def reset(self, env_ids: torch.Tensor) -> None:
+        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
+
+        for label in self.AUTO_PAIRS.values():
+            Mgr.set_weld(label, False)
+        self._auto_state = {}
+        LatteScene.reset(self, env_ids)  # skip LatteWeldScene's two-label loop
+
+    def describe(self) -> str:
+        base = LatteDynScene.describe(self)
+        return base.replace(
+            "Both vessels are kinematic: write their root pose to move it.",
+            "Both vessels are DYNAMIC rigid bodies resting on the table. GRASPING: move a"
+            f" gripper's pinch point within {self.cfg.auto_weld_dist * 100:.0f} cm of a handle"
+            " bar and CLOSE the fingers onto it — the vessel then attaches rigidly and the arm"
+            " carries its real mass; OPEN the gripper to release it. Either gripper can grab"
+            " either handle.",
         )
 
 
