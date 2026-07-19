@@ -225,13 +225,15 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
     def _build_solver(cls, model: Model, solver_cfg: MJWarpMPMSolverCfg) -> None:
         """Build SolverMuJoCo (canonical ``_solver``) + SolverImplicitMPM over the same model."""
         rigid_cfg = solver_cfg.rigid_solver_cfg
-        if not rigid_cfg.use_mujoco_contacts:
-            raise ValueError(
-                "MJWarpMPMSolverCfg: use_mujoco_contacts=False (Newton CollisionPipeline contacts)"
-                " is not supported by the coupled manager — MPM rasterizes its own colliders and"
-                " the pipeline would double-drive rigid contacts."
-            )
-        if PhysicsManager._cfg is not None and PhysicsManager._cfg.collision_cfg is not None:
+        # Two rigid-contact modes:
+        #   use_mujoco_contacts=True  -> MuJoCo-internal GPU collision (Phase 2b/2c-a default);
+        #   use_mujoco_contacts=False -> Newton's CollisionPipeline generates multi-point contact
+        #     manifolds and SolverMuJoCo consumes them in step() (the 2c-b force-closure path —
+        #     mjwarp's internal CCD emits single wandering contact points whose friction creeps).
+        # The old "double-drive" fear was over-broad: the MPM half rasterizes SDF colliders from
+        # body_q and never consumes pipeline contacts — the two are orthogonal.
+        newton_contacts = not rigid_cfg.use_mujoco_contacts
+        if not newton_contacts and PhysicsManager._cfg is not None and PhysicsManager._cfg.collision_cfg is not None:
             # Same cross-validation as NewtonMJWarpManager._build_solver (which this overrides):
             # without it a user-supplied collision pipeline cfg would be silently dead config.
             raise ValueError("MJWarpMPMSolverCfg: NewtonCfg.collision_cfg cannot be set — MuJoCo collides internally.")
@@ -254,7 +256,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
         )
 
         NewtonManager._use_single_state = True  # both sub-solvers step in place on state_0
-        NewtonManager._needs_collision_pipeline = False  # MuJoCo-internal contacts + MPM colliders
+        NewtonManager._needs_collision_pipeline = newton_contacts  # pipeline only in 2c-b mode
         # Nothing else refreshes body_q for the MPM collider read after resets / kinematic vessel
         # writes, so the pre-step masked eval_fk must run (same rationale as NewtonMPMManager).
         NewtonManager._needs_fk_before_step = True
@@ -283,11 +285,19 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
     def _run_solver_substeps(cls, contacts) -> None:
         """``num_substeps`` MuJoCo substeps at ``_solver_dt``, then ONE implicit-MPM step at the
         full tick dt reading the post-rigid ``state_0.body_q`` (the anymal-example cadence: the
-        implicit MPM solve is unconditionally stable and much more expensive than MJWarp)."""
-        del contacts  # MuJoCo collides internally; SolverImplicitMPM ignores the contacts arg
-        for _ in range(cls._num_substeps):
-            cls._solver.step(cls._state_0, cls._state_0, cls._control, None, cls._solver_dt)
+        implicit MPM solve is unconditionally stable and much more expensive than MJWarp).
+
+        ``contacts`` is passed through to the MuJoCo substeps: None under MuJoCo-internal
+        collision (the solver ignores it), the CollisionPipeline's buffer in 2c-b mode —
+        including the base manager's mid-loop re-collide cadence. SolverImplicitMPM never
+        consumes it."""
+        collide_every = cls._collision_decimation
+        collide_mid_loop = collide_every > 0 and cls._needs_collision_pipeline and contacts is not None
+        for i in range(cls._num_substeps):
+            cls._solver.step(cls._state_0, cls._state_0, cls._control, contacts, cls._solver_dt)
             cls._state_0.clear_forces()
+            if collide_mid_loop and (i + 1) % collide_every == 0 and i + 1 < cls._num_substeps:
+                cls._collision_pipeline.collide(cls._state_0, contacts)
         mpm_dt = cls._solver_dt * cls._num_substeps
         cls._mpm_solver.step(cls._state_0, cls._state_0, None, None, mpm_dt)
         if cls._project_outside_colliders:
