@@ -258,7 +258,11 @@ penetration.
   (slab-on-table) is fine — the defect bites actuated pinches. Probes that settle it fast next
   time: the grip smoke's `--contact_probe` (finger joint block, `qfrc_actuator`, live contact
   pairs + depths). Related: the slab-cylinder ratchet (above) is the same contact family
-  misbehaving at rest.
+  misbehaving at rest. SHARPENING MEASUREMENT: segmenting each handle bar into 4 stacked boxes
+  (one CCD contact point PER SEGMENT → a genuine 4-point planar manifold per pad, now the scene
+  default) slowed the creep ~3× but did not stop it — the creep is PER-CONTACT and its rate
+  scales ~1/contact-count, i.e. a friction-constraint defect, not a manifold-shape problem.
+  Brute-forcing more segments trades perf for a slower loss; the fix is upstream.
 - **LIVE video recording corrupts the coupled physics on `latte_weld`** (isaacsim 6.0.0.1): 5/5
   `record_video.py` attempts failed while identical headless runs passed — with graph ON the
   fill trigger shifted +3.5° off a 0.1°-tight headless baseline (a scheduling-sensitive race:

@@ -186,7 +186,9 @@ def main() -> None:
     # bars capsules — pair friction 1.0 was never the problem). Merged over any --sim overrides
     # (mjwarp merges over _MJWARP_DEFAULTS inside to_isaaclab).
     overrides = build_kw.setdefault("sim_overrides", {})
-    overrides["mjwarp"] = {"impratio": 10.0, "cone": "elliptic", **overrides.get("mjwarp", {})}
+    # njmax/nconmax raised over the suite defaults (600/300): the segmented handle bars
+    # multiply pinch contacts ~4x (that is the point — an N-point planar manifold per pad).
+    overrides["mjwarp"] = {"impratio": 10.0, "cone": "elliptic", "njmax": 900, "nconmax": 450, **overrides.get("mjwarp", {})}
     env = cfg.build(num_envs=1, device=device, **build_kw)
     from isaaclab_newton.physics.newton_manager import NewtonManager as _NM
 
