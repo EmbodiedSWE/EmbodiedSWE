@@ -52,6 +52,56 @@ from isaaclab_newton.physics.newton_manager import NewtonManager
 from isaaclab_newton.physics.newton_manager_cfg import NewtonSolverCfg
 
 
+@wp.kernel
+def _apply_fluid_forces(
+    dt: float,
+    clamp: float,
+    collider_ids: wp.array(dtype=int),
+    collider_impulses: wp.array(dtype=wp.vec3),
+    collider_impulse_pos: wp.array(dtype=wp.vec3),
+    body_ids: wp.array(dtype=int),
+    body_q: wp.array(dtype=wp.transform),
+    body_com: wp.array(dtype=wp.vec3),
+    body_f: wp.array(dtype=wp.spatial_vector),
+):
+    """Convert last tick's MPM collider impulses into forces + torques at each body's COM
+    (newton's example_mpm_twoway_coupling recipe, plus a per-node force clamp for stability
+    with light vessels)."""
+    i = wp.tid()
+    cid = collider_ids[i]
+    if cid >= 0 and cid < body_ids.shape[0]:
+        body_index = body_ids[cid]
+        if body_index == -1:
+            return
+        f_world = collider_impulses[i] / dt
+        mag = wp.length(f_world)
+        if mag > clamp:
+            f_world = f_world * (clamp / mag)
+        X_wb = body_q[body_index]
+        r = collider_impulse_pos[i] - wp.transform_point(X_wb, body_com[body_index])
+        wp.atomic_add(body_f, body_index, wp.spatial_vector(f_world, wp.cross(r, f_world)))
+
+
+@wp.kernel
+def _subtract_fluid_velocity(
+    dt: float,
+    body_q: wp.array(dtype=wp.transform),
+    body_qd: wp.array(dtype=wp.spatial_vector),
+    body_f: wp.array(dtype=wp.spatial_vector),
+    body_inv_inertia: wp.array(dtype=wp.mat33),
+    body_inv_mass: wp.array(dtype=float),
+    body_qd_res: wp.array(dtype=wp.spatial_vector),
+):
+    """Remove the velocity contribution of the previously-applied fluid force before the MPM
+    step, so the complementarity contact impulses are not double-counted (upstream recipe)."""
+    body_id = wp.tid()
+    f = body_f[body_id]
+    delta_v = dt * body_inv_mass[body_id] * wp.spatial_top(f)
+    r = wp.transform_get_rotation(body_q[body_id])
+    delta_w = dt * wp.quat_rotate(r, body_inv_inertia[body_id] * wp.quat_rotate_inv(r, wp.spatial_bottom(f)))
+    body_qd_res[body_id] = body_qd[body_id] - wp.spatial_vector(delta_v, delta_w)
+
+
 class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
     """MJWarp + implicit-MPM coupled manager (one-way rigid -> fluid).
 
@@ -63,6 +113,15 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
 
     _mpm_solver: SolverImplicitMPM | None = None
     _project_outside_colliders: bool = False
+    # 1.5-way liquid->rigid feedback buffers (allocated in _build_solver when enabled)
+    _fb_enabled: bool = False
+    _fb_clamp: float = 10.0
+    _fb_ids = None
+    _fb_impulses = None
+    _fb_pos = None
+    _fluid_forces = None
+    _qd_backup = None
+    _fb_collider_body = None
 
     # ----- builder hooks --------------------------------------------------------------------------
     @classmethod
@@ -243,6 +302,22 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
             body_q=NewtonManager._state_0.body_q,
         )
 
+        # 1.5-way liquid->rigid feedback: the MPM solve itself stays one-way (infinite-mass
+        # colliders, above); the collected collider impulses are applied as external body
+        # forces on the rigid side instead (newton's example_mpm_twoway_coupling recipe).
+        cls._fb_enabled = bool(getattr(solver_cfg, "liquid_feedback", False))
+        if cls._fb_enabled:
+            device = model.device
+            max_nodes = 1 << 18
+            cls._fb_ids = wp.full(max_nodes, value=-1, dtype=int, device=device)
+            cls._fb_impulses = wp.zeros(max_nodes, dtype=wp.vec3, device=device)
+            cls._fb_pos = wp.zeros(max_nodes, dtype=wp.vec3, device=device)
+            cls._fluid_forces = wp.zeros_like(NewtonManager._state_0.body_f)
+            cls._qd_backup = wp.zeros_like(NewtonManager._state_0.body_qd)
+            cls._fb_collider_body = cls._mpm_solver.collider_body_index
+            cls._fb_clamp = float(getattr(solver_cfg, "liquid_force_clamp", 10.0))
+            print(f"[coupled] liquid->rigid feedback ON (per-node clamp {cls._fb_clamp} N)", flush=True)
+
         NewtonManager._use_single_state = True  # both sub-solvers step in place on state_0
         NewtonManager._needs_collision_pipeline = newton_contacts  # pipeline only in 2c-b mode
         # Nothing else refreshes body_q for the MPM collider read after resets / kinematic vessel
@@ -281,15 +356,60 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
         consumes it."""
         collide_every = cls._collision_decimation
         collide_mid_loop = collide_every > 0 and cls._needs_collision_pipeline and contacts is not None
+        mpm_dt = cls._solver_dt * cls._num_substeps
         for i in range(cls._num_substeps):
+            if cls._fb_enabled:
+                # re-apply last tick's fluid forces each substep (clear_forces wipes body_f)
+                wp.launch(
+                    _apply_fluid_forces,
+                    dim=cls._fb_ids.shape[0],
+                    inputs=[
+                        mpm_dt,
+                        cls._fb_clamp,
+                        cls._fb_ids,
+                        cls._fb_impulses,
+                        cls._fb_pos,
+                        cls._fb_collider_body,
+                        cls._state_0.body_q,
+                        cls._model.body_com,
+                        cls._state_0.body_f,
+                    ],
+                    device=cls._state_0.body_f.device,
+                )
+                if i == 0:
+                    cls._fluid_forces.assign(cls._state_0.body_f)  # pure fluid wrench, for the MPM correction
             cls._solver.step(cls._state_0, cls._state_0, cls._control, contacts, cls._solver_dt)
             cls._state_0.clear_forces()
             if collide_mid_loop and (i + 1) % collide_every == 0 and i + 1 < cls._num_substeps:
                 cls._collision_pipeline.collide(cls._state_0, contacts)
-        mpm_dt = cls._solver_dt * cls._num_substeps
+        if cls._fb_enabled:
+            # MPM sees collider velocities MINUS the fluid-force contribution (no double count)
+            cls._qd_backup.assign(cls._state_0.body_qd)
+            wp.launch(
+                _subtract_fluid_velocity,
+                dim=cls._state_0.body_qd.shape[0],
+                inputs=[
+                    mpm_dt,
+                    cls._state_0.body_q,
+                    cls._state_0.body_qd,
+                    cls._fluid_forces,
+                    cls._model.body_inv_inertia,
+                    cls._model.body_inv_mass,
+                    cls._state_0.body_qd,
+                ],
+                device=cls._state_0.body_qd.device,
+            )
         cls._mpm_solver.step(cls._state_0, cls._state_0, None, None, mpm_dt)
         if cls._project_outside_colliders:
             cls._mpm_solver.project_outside(cls._state_0, cls._state_0, mpm_dt)
+        if cls._fb_enabled:
+            cls._state_0.body_qd.assign(cls._qd_backup)
+            imp, pos, ids = cls._mpm_solver.collect_collider_impulses(cls._state_0)
+            cls._fb_ids.fill_(-1)
+            n = min(imp.shape[0], cls._fb_impulses.shape[0])
+            cls._fb_impulses[:n].assign(imp[:n])
+            cls._fb_pos[:n].assign(pos[:n])
+            cls._fb_ids[:n].assign(ids[:n])
 
     @classmethod
     def step(cls) -> None:
@@ -361,6 +481,9 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
     def _solver_specific_clear(cls) -> None:
         cls._mpm_solver = None
         cls._project_outside_colliders = False
+        cls._fb_enabled = False
+        cls._fb_ids = cls._fb_impulses = cls._fb_pos = None
+        cls._fluid_forces = cls._qd_backup = cls._fb_collider_body = None
 
 
 @configclass
@@ -379,6 +502,14 @@ class MJWarpMPMSolverCfg(NewtonSolverCfg):
 
     mpm_solver_cfg: MPMSolverCfg = MPMSolverCfg()
     """Implicit-MPM sub-solver configuration (particle liquids)."""
+
+    liquid_feedback: bool = False
+    """Apply MPM collider impulses back onto the rigid bodies as external forces (1.5-way
+    coupling): vessels weigh what they hold, slosh loads the wrist. The MPM solve itself stays
+    one-way (infinite-mass colliders)."""
+
+    liquid_force_clamp: float = 10.0
+    """Per-grid-node fluid force magnitude clamp [N] (stability guard for light vessels)."""
 
     finger_pad_boxes: bool = False
     """Replace Franka fingertip mesh rigid contacts with analytic box pads (force closure)."""

@@ -42,6 +42,7 @@ parser.add_argument("--max_steps", type=int, default=None, help="cap total steps
 parser.add_argument("--max_dq", type=float, default=0.04, help="per-tick joint REFERENCE step clamp [rad]")
 parser.add_argument("--lead_max", type=float, default=0.30, help="max lead of the commanded reference over the ACTUAL joints [rad]")
 parser.add_argument("--grasp_pitch", type=float, default=30.0, help="downward tilt of the horizontal side grasps [deg]")
+parser.add_argument("--feed", action="store_true", help="run on scene latte_feed: latte_auto plus 1.5-way liquid feedback (vessels weigh what they hold; adds a fluid-force readout to the status line)")
 parser.add_argument("--auto", action="store_true", help="run on scene latte_auto (agent-benchmark grasping): welds engage/release AUTOMATICALLY from gripper proximity + closure — this smoke then makes NO scripted weld calls, validating the mechanic end-to-end")
 parser.add_argument("--dump_states", type=str, default=None, help="record body_q + particle positions every --dump_every steps into this .npz for scripts/replay_render.py (videos render from replayed states; see README)")
 parser.add_argument("--dump_every", type=int, default=7, help="state-dump cadence [steps]; 7 ~= 30 fps at 200 Hz")
@@ -71,6 +72,7 @@ def _no_cubric(cls) -> None:
 _nm.NewtonManager._setup_cubric_bindings = classmethod(_no_cubric)
 
 import torch  # noqa: E402
+import warp as wp  # noqa: E402
 
 import isaaclab.utils.math as math_utils  # noqa: E402
 from isaaclab.controllers.differential_ik import DifferentialIKController  # noqa: E402
@@ -165,7 +167,13 @@ class Arm:
 def main() -> None:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     robobench.discover()
-    cfg = ENVS.get("pouring.latte_auto.bimanual_franka.joint" if args.auto else "pouring.latte_weld.bimanual_franka.joint")()
+    env_name = "pouring.latte_weld.bimanual_franka.joint"
+    if args.auto:
+        env_name = "pouring.latte_auto.bimanual_franka.joint"
+    if args.feed:
+        env_name = "pouring.latte_feed.bimanual_franka.joint"
+        args.auto = True  # latte_feed inherits the auto-grasp mechanic; make the weld calls hands-off
+    cfg = ENVS.get(env_name)()
 
     def kvparse(pairs) -> dict:
         out: dict = {}
@@ -266,6 +274,13 @@ def main() -> None:
     from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager
 
     NewtonCoupledMJWarpMPMManager.resync_collider_history()
+
+    # --feed: net vertical fluid force per vessel (should read ~ -liquid weight at rest)
+    fb_bodies = {}
+    if args.feed:
+        labels = [str(b or "") for b in NewtonCoupledMJWarpMPMManager._model.body_label]
+        for vessel, suffix in (("M", "CoffeeCup"), ("P", "Pitcher")):
+            fb_bodies[vessel] = next(i for i, b in enumerate(labels) if b.endswith(suffix))
 
     lh_p0, lh_q0 = (x.clone() for x in left.hand_pose_w())
     rh_p0, rh_q0 = (x.clone() for x in right.hand_pose_w())
@@ -373,6 +388,16 @@ def main() -> None:
             f" | err L {err_l * 100:4.1f} R {err_r * 100:4.1f} cm | rot L {rot_l:.2f} R {rot_r:.2f} rad"
             # REAL vessel tilts (weld-sag / contact-fight observable — scripted tilt is not truth)
             f" | real tilt M {vessel_tilt_deg(scene.mug_pose_w):5.1f} P {vessel_tilt_deg(scene.pitcher_pose_w):5.1f} deg"
+            + (
+                " | Ffluid M {:5.2f} P {:5.2f} N".format(
+                    *(
+                        float(wp.to_torch(NewtonCoupledMJWarpMPMManager._fluid_forces)[fb_bodies[v], 2])
+                        for v in ("M", "P")
+                    )
+                )
+                if fb_bodies
+                else ""
+            )
         )
 
     action = torch.zeros((1, env.robot.action_dim), device=device)

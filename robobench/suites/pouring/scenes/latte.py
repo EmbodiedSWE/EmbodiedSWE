@@ -928,6 +928,22 @@ class LatteAutoScene(LatteWeldScene):
         )
 
 
+@SCENES.register("latte_feed")
+class LatteFeedScene(LatteAutoScene):
+    """Phase 2c-c: `latte_auto` plus 1.5-WAY LIQUID FEEDBACK — the MPM collider impulses are
+    applied back onto the rigid bodies each tick, so the vessels weigh what they hold, lighten
+    as they pour, and slosh loads the wrist through the grasp. The MPM solve itself stays
+    one-way (infinite-mass colliders); see the coupled manager."""
+
+    def sim_cfg(self) -> MpmSimCfg:
+        cfg = super().sim_cfg()
+        cfg.liquid_feedback = True
+        return cfg
+
+    def describe(self) -> str:
+        return super().describe() + " The liquids have real weight: a full vessel is heavier."
+
+
 @SCENES.register("latte_grip")
 class LatteGripScene(LatteWeldScene):
     """Phase 2c-b: the SAME dynamic-vessel substrate as `latte_weld` (proxies, masses) under a
