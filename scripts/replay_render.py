@@ -1,9 +1,7 @@
 """Render a recorded pouring-suite run to mp4 WITHOUT live physics (replay-capture).
 
 Why this exists: on the pinned isaacsim 6.0.0.1 stack, the LIVE render path perturbs the MPM
-coupling — 5/5 live-recording attempts of the Phase 2c-a weld smoke failed in 5 distinct ways
-while the same code passed headless (see the pouring suite README's landmine digest). So videos
-are produced in two stages:
+coupling (see the pouring suite README's landmine digest). Videos are produced in two stages:
 
   1. a HEADLESS (verified-PASS) run dumps states:
        HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \

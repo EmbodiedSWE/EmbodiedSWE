@@ -63,11 +63,10 @@ class MpmSimCfg(SimCfg):
     num_substeps: int = 3  # MuJoCo substeps per MPM tick (rigid dt = dt/num_substeps = 1/600)
     mjwarp: dict[str, Any] = field(default_factory=dict)  # MJWarpSolverCfg overrides (merged over
     # _MJWARP_DEFAULTS inside to_isaaclab — sim_overrides replaces this dict wholesale)
-    finger_pads: bool = False  # Phase 2c-b: analytic box pads on the Franka fingertips (see
-    # coupled_manager._add_finger_pad_boxes — mesh-geom friction creeps; box-box holds a pinch)
-    welds: list = field(default_factory=list)  # Phase 2c-a: builder-time MuJoCo equality welds,
-    # [(label, body1 label suffix, body2 label suffix)] — created DISABLED; toggled at runtime via
-    # NewtonCoupledMJWarpMPMManager.set_weld(label, active). Coupled substrate only.
+    finger_pads: bool = False  # analytic box pads on the Franka fingertips (force closure)
+    welds: list = field(default_factory=list)  # builder-time MuJoCo equality welds
+    # [(label, body1 suffix, body2 suffix)], created DISABLED; toggled via
+    # NewtonCoupledMJWarpMPMManager.set_weld. Coupled substrate only.
 
     def to_isaaclab(self, device: str) -> Any:
         """Build the isaaclab `SimulationCfg` with the Newton implicit-MPM backend."""

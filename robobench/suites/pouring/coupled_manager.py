@@ -24,11 +24,10 @@ auto-added free joints and MuJoCo requires positive inertia on jointed bodies; i
 from the KINEMATIC flag's 1e10 armature, and scripted `write_root_link_pose` writes reach MuJoCo
 through the per-step ``joint_q -> qpos`` push.
 
-Phase 2c-a extends this with DYNAMIC vessels: bodies carrying ``/rigidproxy/`` shapes collide in
-MuJoCo through those concave proxies ONLY (the interior trimesh turns MPM-only instead of being
-convexified into a mouth-filling hull), and hand<->vessel MuJoCo equality WELDS — created
-disabled at build from ``MJWarpMPMSolverCfg.weld_specs`` — engage at the measured grasp pose via
-:meth:`NewtonCoupledMJWarpMPMManager.set_weld`, so the arm carries the real vessel mass.
+DYNAMIC vessels: bodies carrying ``/rigidproxy/`` shapes collide in MuJoCo through those
+concave proxies ONLY (the interior trimesh turns MPM-only), and hand<->vessel MuJoCo equality
+WELDS — created disabled at build from ``MJWarpMPMSolverCfg.weld_specs`` — engage at the
+measured grasp pose via :meth:`NewtonCoupledMJWarpMPMManager.set_weld`.
 
 Runs ONLY under the Newton venv with the app up (imports isaaclab_newton at module level); import
 it lazily from `MpmSimCfg.to_isaaclab`.
@@ -82,14 +81,11 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
            unlike NewtonMPMManager: MuJoCo needs positive inertia on their auto-added free
            joints, and the MPM side is neutralized wholesale via the
            setup_collider(body_mass=zeros) override in _build_solver.
-        2. Rigid-proxy routing (Phase 2c-a), by `builder.shape_label` prim path: shapes under a
-           ``/rigidproxy/`` scope are RIGID-only (drop COLLIDE_PARTICLES) — except ``handle``
-           capsules, which keep BOTH flags (grasp target + the milk must not pass the visual
-           handle). Every OTHER shape on a body that carries proxies (the concave interior
-           trimesh MuJoCo would convexify into a mouth-filling hull) turns MPM-only.
-        3. Weld rows (Phase 2c-a): for each ``(label, body1_suffix, body2_suffix)`` in the solver
-           cfg's ``weld_specs``, add a DISABLED MuJoCo equality weld — activated at grasp time
-           via :meth:`set_weld`, which writes the measured relative pose first.
+        2. Rigid-proxy routing, by `builder.shape_label` prim path: ``/rigidproxy/`` shapes are
+           RIGID-only — except ``handle`` bars, which keep BOTH flags. Every OTHER shape on a
+           proxy-carrying body (the concave interior trimesh) turns MPM-only.
+        3. Weld rows: for each ``(label, body1_suffix, body2_suffix)`` in the solver cfg's
+           ``weld_specs``, add a DISABLED MuJoCo equality weld — activated via :meth:`set_weld`.
         """
         kinematic = int(BodyFlags.KINEMATIC)
         no_rigid_collision = ~int(ShapeFlags.COLLIDE_SHAPES)
@@ -146,15 +142,10 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
 
     @classmethod
     def _add_finger_pad_boxes(cls, builder: ModelBuilder) -> None:
-        """Replace the Franka fingertip MESH rigid contacts with analytic BOX pads (Phase 2c-b).
-
-        Mesh-geom tangential friction CREEPS in this mjwarp build — viscous, never static: a
-        pinched bar rotated out of the grasp at a constant rate regardless of grip force (19 ->
-        110 N), impratio, cone, bar shape, or grasp orientation. Box-box contacts hold static
-        friction (the slab-cylinder creep fix proved the same pattern). So: each finger mesh
-        keeps COLLIDE_PARTICLES (MPM collider) but drops COLLIDE_SHAPES; a box pad covering the
-        mesh's INNER-FACE slab (from its body-frame AABB) takes over rigid collision.
-        """
+        """Replace the Franka fingertip MESH rigid contacts with analytic BOX pads (force
+        closure): each finger mesh keeps COLLIDE_PARTICLES but drops COLLIDE_SHAPES; a box pad
+        covering the mesh's inner-face slab (from its body-frame AABB) takes over rigid
+        collision. Mesh-geom pinch friction creeps on this pin — see README landmines."""
         import copy
 
         import numpy as np
@@ -225,13 +216,10 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
     def _build_solver(cls, model: Model, solver_cfg: MJWarpMPMSolverCfg) -> None:
         """Build SolverMuJoCo (canonical ``_solver``) + SolverImplicitMPM over the same model."""
         rigid_cfg = solver_cfg.rigid_solver_cfg
-        # Two rigid-contact modes:
-        #   use_mujoco_contacts=True  -> MuJoCo-internal GPU collision (Phase 2b/2c-a default);
-        #   use_mujoco_contacts=False -> Newton's CollisionPipeline generates multi-point contact
-        #     manifolds and SolverMuJoCo consumes them in step() (the 2c-b force-closure path —
-        #     mjwarp's internal CCD emits single wandering contact points whose friction creeps).
-        # The old "double-drive" fear was over-broad: the MPM half rasterizes SDF colliders from
-        # body_q and never consumes pipeline contacts — the two are orthogonal.
+        # Two rigid-contact modes: use_mujoco_contacts=True -> MuJoCo-internal GPU collision
+        # (default); False -> Newton's CollisionPipeline generates multi-point manifolds and
+        # SolverMuJoCo consumes them in step(). The MPM half rasterizes its own SDF colliders
+        # from body_q either way — orthogonal to pipeline contacts.
         newton_contacts = not rigid_cfg.use_mujoco_contacts
         if not newton_contacts and PhysicsManager._cfg is not None and PhysicsManager._cfg.collision_cfg is not None:
             # Same cross-validation as NewtonMJWarpManager._build_solver (which this overrides):
@@ -393,12 +381,9 @@ class MJWarpMPMSolverCfg(NewtonSolverCfg):
     """Implicit-MPM sub-solver configuration (particle liquids)."""
 
     finger_pad_boxes: bool = False
-    """Replace Franka fingertip mesh rigid contacts with analytic box pads (Phase 2c-b force
-    closure) — mesh-geom friction creeps tangentially in this mjwarp build; box-box holds."""
+    """Replace Franka fingertip mesh rigid contacts with analytic box pads (force closure)."""
 
     weld_specs: list = []
-    """Builder-time MuJoCo equality welds ``[(label, body1 suffix, body2 suffix)]`` (Phase 2c-a).
-
-    Suffixes match against ``builder.body_label`` prim paths (must match exactly one body each).
-    Rows are created DISABLED; toggle at runtime with
-    :meth:`NewtonCoupledMJWarpMPMManager.set_weld`."""
+    """Builder-time MuJoCo equality welds ``[(label, body1 suffix, body2 suffix)]``. Suffixes
+    match ``builder.body_label`` prim paths (exactly one body each); rows are created DISABLED
+    and toggled at runtime with :meth:`NewtonCoupledMJWarpMPMManager.set_weld`."""
