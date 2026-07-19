@@ -53,6 +53,7 @@ parser.add_argument("--max_steps", type=int, default=None, help="cap total steps
 parser.add_argument("--max_dq", type=float, default=0.04, help="per-tick joint REFERENCE step clamp [rad] (8 rad/s slew at 200 Hz)")
 parser.add_argument("--lead_max", type=float, default=0.30, help="max lead of the commanded reference over the ACTUAL joints [rad] (bounded PD force, ~1.5 rad/s sustained)")
 parser.add_argument("--grasp_pitch", type=float, default=30.0, help="downward tilt of the horizontal side grasps [deg]")
+parser.add_argument("--auto", action="store_true", help="run on scene latte_auto (agent-benchmark grasping): welds engage/release AUTOMATICALLY from gripper proximity + closure — this smoke then makes NO scripted weld calls, validating the mechanic end-to-end")
 parser.add_argument("--dump_states", type=str, default=None, help="record body_q + particle positions every --dump_every steps into this .npz for scripts/replay_render.py — the LIVE render path corrupts MPM physics on this stack (README landmine), so videos are rendered from replayed headless-PASS states")
 parser.add_argument("--dump_every", type=int, default=7, help="state-dump cadence [steps]; 7 ~= 30 fps at 200 Hz")
 parser.add_argument("--scene", nargs="*", default=None, metavar="K=V", help="scene cfg overrides")
@@ -175,7 +176,7 @@ class Arm:
 def main() -> None:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     robobench.discover()
-    cfg = ENVS.get("pouring.latte_weld.bimanual_franka.joint")()
+    cfg = ENVS.get("pouring.latte_auto.bimanual_franka.joint" if args.auto else "pouring.latte_weld.bimanual_franka.joint")()
 
     def kvparse(pairs) -> dict:
         out: dict = {}
@@ -433,8 +434,9 @@ def main() -> None:
             right.grip = STANDOFF_PITCHER + (GRIP_PITCHER_BAR - STANDOFF_PITCHER) * min(1.0, s / 0.25)
         elif name == "release":
             if not welds_released:
-                scene.weld_vessel("mug", False)
-                scene.weld_vessel("pitcher", False)
+                if not args.auto:  # latte_auto: opening the fingers below releases automatically
+                    scene.weld_vessel("mug", False)
+                    scene.weld_vessel("pitcher", False)
                 welds_released = True
                 print(
                     f"  [weld] released | mug tilt {vessel_tilt_deg(scene.mug_pose_w):.1f} deg"
@@ -462,8 +464,9 @@ def main() -> None:
                 # readouts untouched. The vessel is verifiably AT home here (undisturbed since
                 # spawn), and set_weld measures its own relpose in one consistent frame.
                 off_mug = math_utils.subtract_frame_transforms(hp, hq, mug_base, q4((0.0, 0.0, 0.0, 1.0)))
-                scene.weld_vessel("mug", True)
-                print(f"  [weld] mug welded to left hand | hand err L {err_l * 100:.1f} cm", flush=True)
+                if not args.auto:  # latte_auto: the scene's proximity+closure mechanic already engaged it
+                    scene.weld_vessel("mug", True)
+                print(f"  [weld] mug carried | hand err L {err_l * 100:.1f} cm", flush=True)
             mp, mq = mug_target(name, s)
             lh_t, lh_q = hand_target_from(mp, mq, off_mug)
 
@@ -478,8 +481,9 @@ def main() -> None:
                 hp, hq = right.hand_pose_w()
                 # Scripted home anchor — same rationale as off_mug (and same as the 2b smoke).
                 off_cup = math_utils.subtract_frame_transforms(hp, hq, cup_start, q4((0.0, 0.0, 0.0, 1.0)))
-                scene.weld_vessel("pitcher", True)
-                print("  [weld] pitcher welded to right hand", flush=True)
+                if not args.auto:
+                    scene.weld_vessel("pitcher", True)
+                print("  [weld] pitcher carried", flush=True)
             cp_t, cq_t = cup_target(name, s)
             rh_t, rh_q = hand_target_from(cp_t, cq_t, off_cup)
         else:  # mug_down / release: hold where the pitcher was set down

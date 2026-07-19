@@ -98,6 +98,28 @@ register_env(
 )
 
 
+# AGENT BENCHMARK: scene "latte_auto" — the latte_weld substrate with AUTOMATIC weld grasping:
+# a gripper that closes within auto_weld_dist of a handle bar grabs the vessel; opening releases
+# it. No scripted weld calls anywhere — the mechanic lives in the scene's post_step, so any
+# agent policy (or script) gets real carried-mass dynamics through a real-gripper contract.
+# -> "pouring.latte_auto.bimanual_franka.joint"
+register_env(
+    SUITE,
+    lambda: EnvCfg(
+        scene="latte_auto",
+        robot="bimanual_franka",
+        control_mode="joint",
+        env_spacing=3,
+        robot_cfg=BimanualFrankaCfg(
+            robots={
+                "left": ("franka", _dyn_franka((-0.25, -0.42, 0.0))),
+                "right": ("franka", _dyn_franka((0.25, -0.42, 0.0))),
+            }
+        ),
+    ),
+)
+
+
 # Phase 2c-b: FORCE CLOSURE on scene "latte_grip" (same substrate as latte_weld; new name = the
 # variant slot). The vessels hang from real friction pinches on the handle-bar capsules, so the
 # gripper PD is pinch-grade: stiffness 20000 (a fully-closed command blocked at the mug's r=8 mm

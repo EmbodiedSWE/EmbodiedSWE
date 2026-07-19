@@ -74,6 +74,15 @@ Key files:
   `pouring.latte_dyn.bimanual_franka.joint` (2b) and
   `pouring.latte_weld.bimanual_franka.joint` (2c-a) — the dyn/weld rigs share the same knobs
   (gravcomp 1.0, arm effort 300, gripper 500).
+- **`latte_auto` — the AGENT-BENCHMARK grasp scene**: the `latte_weld` substrate with welds
+  engaged AUTOMATICALLY by gripper state (scene `post_step`): pinch point within
+  `auto_weld_dist` (3 cm) of a handle bar + fingers closed to bar-width + 3 mm -> GRIP;
+  aperture past `auto_weld_release` (2 cm) -> RELEASE (hysteresis). All four hand x vessel weld
+  rows exist (either gripper can grab either handle; one-hand-one-vessel exclusivity). No
+  scripted weld calls anywhere — an agent's contract is a real gripper's: reach, squeeze, open.
+  Env `pouring.latte_auto.bimanual_franka.joint`; validated by the weld smoke's `--auto` mode
+  (engage fired at dist 0.8/0.9 cm exactly at the closure thresholds; full-choreography PASS
+  0.303 / 0.697 / 1.000 / 0.000 with zero scripted weld calls).
 - `scripts/latte_bimanual_smoke.py` (2a) / `scripts/latte_bimanual_dyn_smoke.py` (2b) /
   `scripts/latte_bimanual_weld_smoke.py` (2c-a) / `scripts/latte_bimanual_grip_smoke.py`
   (2c-b — scene `latte_grip`, env `pouring.latte_grip.bimanual_franka.joint`; run with
@@ -90,6 +99,11 @@ develop checkout** (clone anywhere, tested @ d7d0042 — build recipe in the roo
 # Phase 2c-a smoke (dynamic vessels + welds), headless (~15–20 min wall)
 HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
     -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke
+
+# same choreography on the AGENT-BENCHMARK scene (latte_auto): grasps engage/release purely
+# from gripper proximity + closure — no scripted weld calls
+HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
+    -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke --auto
 
 # Phase 2b smoke, headless (~15–20 min wall; five consecutive PASSes on record)
 HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
@@ -166,6 +180,9 @@ independently verifiable:
   force before the MPM step or contact impulses double-count). Then the pitcher weighs what it
   holds, empties as it pours, and sloshing perturbs the wrist. Known risk: stability with light
   vessels (mobility ∝ cell_volume/body_mass) — tune or clamp.
+- [x] **Agent grasp contract (`latte_auto`)**: proximity+closure-triggered welds with
+  hysteresis release — the grasp idealization becomes an agent-facing mechanic instead of a
+  script call (see Key files). Validated full-choreography PASS with zero scripted weld calls.
 - [ ] **Benchmark plumbing:** expose contact reporting (the manager's `_contacts` buffer +
   contact-sensor path) as evaluation observables (vessel clangs, table scrapes); keep every
   metric on **particle counts, never fill height** (implicit MPM settles ~2× denser than seeded
