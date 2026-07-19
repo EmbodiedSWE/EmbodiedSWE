@@ -112,6 +112,8 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
                     builder.shape_flags[shape_idx] = int(builder.shape_flags[shape_idx]) & no_rigid_collision
 
         solver_cfg = PhysicsManager._cfg.solver_cfg if PhysicsManager._cfg is not None else None
+        if getattr(solver_cfg, "finger_pad_boxes", False):
+            cls._add_finger_pad_boxes(builder)
         weld_labels = []
         for label, suffix1, suffix2 in getattr(solver_cfg, "weld_specs", None) or []:
             builder.add_equality_constraint(
@@ -141,6 +143,82 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
         if len(matches) != 1:
             raise ValueError(f"weld body suffix {suffix!r} matched {len(matches)} bodies: {matches}")
         return matches[0]
+
+    @classmethod
+    def _add_finger_pad_boxes(cls, builder: ModelBuilder) -> None:
+        """Replace the Franka fingertip MESH rigid contacts with analytic BOX pads (Phase 2c-b).
+
+        Mesh-geom tangential friction CREEPS in this mjwarp build — viscous, never static: a
+        pinched bar rotated out of the grasp at a constant rate regardless of grip force (19 ->
+        110 N), impratio, cone, bar shape, or grasp orientation. Box-box contacts hold static
+        friction (the slab-cylinder creep fix proved the same pattern). So: each finger mesh
+        keeps COLLIDE_PARTICLES (MPM collider) but drops COLLIDE_SHAPES; a box pad covering the
+        mesh's INNER-FACE slab (from its body-frame AABB) takes over rigid collision.
+        """
+        import copy
+
+        import numpy as np
+
+        no_rigid = ~int(ShapeFlags.COLLIDE_SHAPES)
+        pads = 0
+        for body_idx, key in enumerate(builder.body_label):
+            key_s = str(key or "")
+            if not (key_s.endswith("panda_leftfinger") or key_s.endswith("panda_rightfinger")):
+                continue
+            for si in range(len(builder.shape_body)):
+                if int(builder.shape_body[si]) != body_idx:
+                    continue
+                if not (int(builder.shape_flags[si]) & int(ShapeFlags.COLLIDE_SHAPES)):
+                    continue
+                src = builder.shape_source[si]
+                verts = np.asarray(getattr(src, "vertices", None))
+                if verts is None or verts.ndim != 2:
+                    continue
+                # mesh -> body frame (compose the shape transform; scale is in shape_scale)
+                import warp as _wp
+
+                xf = builder.shape_transform[si]
+                scale = np.asarray(builder.shape_scale[si]) if hasattr(builder, "shape_scale") else 1.0
+                q = np.array([*xf.q])  # xyzw
+                p = np.array([*xf.p])
+                v = verts * scale
+                # quat rotate (xyzw)
+                x, y, z, w = q
+                R = np.array(
+                    [
+                        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+                    ]
+                )
+                vb = v @ R.T + p
+                lo, hi = vb.min(axis=0), vb.max(axis=0)
+                t = 0.006  # pad slab thickness [m]
+                if key_s.endswith("panda_leftfinger"):
+                    y0, y1 = lo[1], min(lo[1] + t, hi[1])  # inner face = -y side
+                else:
+                    y0, y1 = max(hi[1] - t, lo[1]), hi[1]  # inner face = +y side
+                center = np.array([(lo[0] + hi[0]) / 2.0, (y0 + y1) / 2.0, (lo[2] + hi[2]) / 2.0])
+                half = np.array([(hi[0] - lo[0]) / 2.0, (y1 - y0) / 2.0, (hi[2] - lo[2]) / 2.0])
+                cfg = copy.copy(builder.default_shape_cfg)
+                cfg.density = 0.0
+                if hasattr(cfg, "mu"):
+                    cfg.mu = 1.0
+                if hasattr(cfg, "collision_group"):
+                    cfg.collision_group = builder.shape_collision_group[si]
+                new_idx = builder.add_shape_box(
+                    body_idx,
+                    xform=_wp.transform(_wp.vec3(*center.tolist()), _wp.quat_identity()),
+                    hx=float(half[0]),
+                    hy=float(half[1]),
+                    hz=float(half[2]),
+                    cfg=cfg,
+                    label=f"{key_s}/padbox",
+                )
+                builder.shape_flags[new_idx] = int(ShapeFlags.COLLIDE_SHAPES)
+                builder.shape_flags[si] = int(builder.shape_flags[si]) & no_rigid
+                pads += 1
+        print(f"[coupled] analytic finger pad boxes: {pads} (finger meshes -> MPM-only)", flush=True)
 
     # ----- solver construction --------------------------------------------------------------------
     @classmethod
@@ -284,6 +362,10 @@ class MJWarpMPMSolverCfg(NewtonSolverCfg):
 
     mpm_solver_cfg: MPMSolverCfg = MPMSolverCfg()
     """Implicit-MPM sub-solver configuration (particle liquids)."""
+
+    finger_pad_boxes: bool = False
+    """Replace Franka fingertip mesh rigid contacts with analytic box pads (Phase 2c-b force
+    closure) — mesh-geom friction creeps tangentially in this mjwarp build; box-box holds."""
 
     weld_specs: list = []
     """Builder-time MuJoCo equality welds ``[(label, body1 suffix, body2 suffix)]`` (Phase 2c-a).

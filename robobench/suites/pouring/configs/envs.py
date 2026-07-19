@@ -96,3 +96,36 @@ register_env(
         ),
     ),
 )
+
+
+# Phase 2c-b: FORCE CLOSURE on scene "latte_grip" (same substrate as latte_weld; new name = the
+# variant slot). The vessels hang from real friction pinches on the handle-bar capsules, so the
+# gripper PD is pinch-grade: stiffness 20000 (a fully-closed command blocked at the mug's r=8 mm
+# bar yields ~130 N — at 8000/~50 N the vessels PIVOTED out of the pinch about the pad-normal
+# axis: the CoM torque, ~0.26 N*m for the mug, works against friction levers of only ~1 cm of
+# pad-bar contact spread), damping 200, the 500 N effort budget unchanged. Pair with
+# impratio >> 1 (the grip smoke sets 10): MuJoCo's soft friction cone at impratio 1 lets the
+# bar creep tangentially regardless of normal force.
+def _grip_franka(base_pos: tuple[float, float, float]) -> FrankaRobotCfg:
+    cfg = _dyn_franka(base_pos)
+    cfg.gripper_stiffness = 20000.0
+    cfg.gripper_damping = 200.0
+    return cfg
+
+
+# -> "pouring.latte_grip.bimanual_franka.joint"
+register_env(
+    SUITE,
+    lambda: EnvCfg(
+        scene="latte_grip",
+        robot="bimanual_franka",
+        control_mode="joint",
+        env_spacing=3,
+        robot_cfg=BimanualFrankaCfg(
+            robots={
+                "left": ("franka", _grip_franka((-0.25, -0.42, 0.0))),
+                "right": ("franka", _grip_franka((0.25, -0.42, 0.0))),
+            }
+        ),
+    ),
+)
