@@ -259,6 +259,25 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
         # writes, so the pre-step masked eval_fk must run (same rationale as NewtonMPMManager).
         NewtonManager._needs_fk_before_step = True
 
+    @classmethod
+    def _initialize_contacts(cls) -> None:
+        """Tolerate SolverMuJoCo's CLASSIC-CPU path (``use_mujoco_cpu=True``, the pinch-friction
+        A/B experiment): its ``get_max_contact_count()`` is unimplemented, so size the contact
+        buffer from the cfg's ``nconmax`` instead — the buffer only feeds contact-sensor
+        reporting."""
+        try:
+            super()._initialize_contacts()
+        except NotImplementedError:
+            from newton import Contacts
+
+            rigid_cfg = getattr(PhysicsManager._cfg.solver_cfg, "rigid_solver_cfg", None)
+            NewtonManager._contacts = Contacts(
+                rigid_contact_max=int(getattr(rigid_cfg, "nconmax", 300) or 300),
+                soft_contact_max=0,
+                device=PhysicsManager._device,
+                requested_attributes=cls._model.get_requested_contact_attributes(),
+            )
+
     # ----- stepping -------------------------------------------------------------------------------
     @classmethod
     def _run_solver_substeps(cls, contacts) -> None:

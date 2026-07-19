@@ -47,6 +47,7 @@ parser.add_argument("--max_steps", type=int, default=None, help="cap total steps
 parser.add_argument("--max_dq", type=float, default=0.04, help="per-tick joint REFERENCE step clamp [rad]")
 parser.add_argument("--lead_max", type=float, default=0.30, help="max lead of the commanded reference over the ACTUAL joints [rad]")
 parser.add_argument("--grasp_pitch", type=float, default=90.0, help="downward tilt of the grasps [deg]; 90 = TOP-DOWN pinch, pads aligned with the vertical bars for LINE contact (a 30 deg side grasp crosses the bar at 60 deg -> point contacts -> the vessels pivot out at any force)")
+parser.add_argument("--mujoco_cpu", action="store_true", help="run the rigid half on CLASSIC CPU MuJoCo (use_mujoco_cpu=True, forces use_cuda_graph=0): reference multi-point contact manifolds + friction — the A/B experiment against the mjwarp GPU pipeline's pinch-friction defect")
 parser.add_argument("--contact_probe", type=int, nargs="*", default=None, help="at these step numbers, dump finger joint positions and the live finger/handle contact list (grasp debugging)")
 parser.add_argument("--dump_states", type=str, default=None, help="record body_q + particle positions every --dump_every steps into this .npz for scripts/replay_render.py")
 parser.add_argument("--dump_every", type=int, default=7, help="state-dump cadence [steps]; 7 ~= 30 fps at 200 Hz")
@@ -189,6 +190,10 @@ def main() -> None:
     # njmax/nconmax raised over the suite defaults (600/300): the segmented handle bars
     # multiply pinch contacts ~4x (that is the point — an N-point planar manifold per pad).
     overrides["mjwarp"] = {"impratio": 10.0, "cone": "elliptic", "njmax": 900, "nconmax": 450, **overrides.get("mjwarp", {})}
+    if args.mujoco_cpu:
+        overrides["mjwarp"] = {**overrides["mjwarp"], "use_mujoco_cpu": True}
+        overrides["use_cuda_graph"] = False  # CPU stepping cannot be graph-captured
+        print("[latte2cb] rigid half on CLASSIC CPU MuJoCo (A/B vs mjwarp GPU contacts)", flush=True)
     env = cfg.build(num_envs=1, device=device, **build_kw)
     from isaaclab_newton.physics.newton_manager import NewtonManager as _NM
 
