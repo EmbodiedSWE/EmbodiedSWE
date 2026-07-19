@@ -120,6 +120,25 @@ register_env(
 )
 
 
+# Phase 2c-c: "latte_feed" — latte_auto + 1.5-way liquid feedback (vessels weigh what they
+# hold). -> "pouring.latte_feed.bimanual_franka.joint"
+register_env(
+    SUITE,
+    lambda: EnvCfg(
+        scene="latte_feed",
+        robot="bimanual_franka",
+        control_mode="joint",
+        env_spacing=3,
+        robot_cfg=BimanualFrankaCfg(
+            robots={
+                "left": ("franka", _dyn_franka((-0.25, -0.42, 0.0))),
+                "right": ("franka", _dyn_franka((0.25, -0.42, 0.0))),
+            }
+        ),
+    ),
+)
+
+
 # FORCE CLOSURE on scene "latte_grip" (same substrate as latte_weld; new name = the variant
 # slot): the vessels hang from real friction pinches on the handle bars, so the gripper PD is
 # pinch-grade (kp 20000 -> ~130 N at a blocked full-close command). See README for status.

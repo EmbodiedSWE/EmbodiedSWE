@@ -20,7 +20,7 @@ simulation artifacts.
 | 2b | **Coupled MJWarp+MPM substrate — dynamic arms** (real gravity, actuator PD, MuJoCo rigid contacts; one-way rigid→fluid) | DONE (`3d18828`) | `LATTE-BIMANUAL-DYN PASS` ×6 runs (incl. a post-2c-a no-regression rerun): 0.376–0.400 transferred / 0.597–0.624 kept / 1.000 retention / ≤0.002 spilled; pour trigger reproducibly at ~91.6°; hand tracking 0.0–0.8 cm; combined MuJoCo+MPM CUDA graph captures cleanly |
 | 2c-a | **Dynamic vessels + weld-at-grasp + concave rigid proxies** (free-joint vessels with authored mass, ring/slab/handle proxy shells as live MuJoCo geometry, MuJoCo equality welds engaged at the measured grasp pose) | DONE | `LATTE-BIMANUAL-WELD PASS` ×2 consecutive on the final (re-aimed) pour geometry: 0.473–0.500 transferred / 0.500–0.506 kept / 1.000 retention / ≤0.021 spilled; triggers 92.0–92.3°; weld tracks the script within ~0.3° through the whole 92° pour (real-tilt instrumented); welds engage at hand err 0.0 cm, vessels released upright (≤0.6°); njmax 600 holds. Before the re-aim, 2 of 4 full runs failed on CHAOTIC STREAM LANDINGS — see the landmine |
 | 2c-b | **Force closure (substrate RESOLVED via CollisionPipeline; open-loop capture still fails)**: scene `latte_grip` + pinch-grade gripper env + a fully instrumented grip smoke (slip observable, drop guard, contact probes; removed in cleanup — restore from `a852b0a`) all built and honest — but mjwarp @ newton `811968b` cannot hold a static pinch: its CCD single-point contacts creep tangentially under load (measured: a 107–150 N/finger, μ=1, 3.7 mm-deep two-pad pinch lets a 3 N vessel slide out at ~15 mm/s — a ~100× Coulomb violation, invariant to kp 8k→20k, impratio 1→10, cone, bar shape/width, grasp depth/orientation, mesh vs analytic-box pads). Full dossier in the landmine digest. | 18 instrumented bring-ups; substrate blocker RESOLVED via `--newton_contacts` (CollisionPipeline) — remaining gap is open-loop capture dynamics (agent territory) |
-| 2c-c | 1.5-way liquid→rigid feedback | after 2c-b unblocks — roadmap below | — |
+| 2c-c | **1.5-way liquid→rigid feedback** (scene `latte_feed` = `latte_auto` + MPM collider impulses applied into `body_f`; vessels weigh what they hold) | DONE | `LATTE-BIMANUAL-WELD PASS` ×2 consecutive (0.302–0.306 transferred / 1.000 retention / 0.000 spilled; triggers both at 87.6°). Force bookkeeping closes exactly: at rest Ffluid = −1.90 N (coffee) / −0.97 N (milk); through the pour the pitcher decays −0.97→−0.67 N while the mug grows −1.90→−2.20 N — a 0.30 N transfer matching the measured 30.6% milk fraction to the third decimal. Slosh visibly unloads the pitcher during its lift (−0.90 N transient). No feedback rattle at the 10 N/node clamp; CUDA graph captures with the in-graph impulse collect |
 
 ## Architecture (Phase 2b + 2c-a)
 
@@ -164,12 +164,14 @@ independently verifiable:
   vessel — three capture strategies documented in the landmine. Next real step: a
   contact-servoed grasp (close-until-touch via the `--contact_probe` machinery, balance, then
   squeeze) — or leave capture to agents; the environment is now HONEST about grasp difficulty.
-- [ ] **2c-c: 1.5-way liquid→rigid feedback.** Apply `collect_collider_impulses` into `body_f`
-  each tick — the exact recipe is Newton's `examples/mpm/example_mpm_twoway_coupling.py`
-  (force = impulse / MPM dt held across rigid substeps, and SUBTRACT the previously-applied
-  force before the MPM step or contact impulses double-count). Then the pitcher weighs what it
-  holds, empties as it pours, and sloshing perturbs the wrist. Known risk: stability with light
-  vessels (mobility ∝ cell_volume/body_mass) — tune or clamp.
+- [x] **2c-c: 1.5-way liquid→rigid feedback — DONE** (scene `latte_feed`, smoke `--feed`; see
+  Status). As built: newton's `example_mpm_twoway_coupling` recipe inside the coupled manager —
+  last tick's collider impulses → forces+torques at COM re-applied every rigid substep
+  (`clear_forces` wipes them), fluid-velocity contribution subtracted from `body_qd` before the
+  MPM step (no double count), impulses collected in-graph into fixed prefix buffers. The MPM
+  solve itself stays one-way (infinite-mass colliders) — hence "1.5-way". Stability guard:
+  per-grid-node force clamp (`liquid_force_clamp`, 10 N default; no rattle observed at 0.25 kg
+  vessels). Status line gains an `Ffluid M/P` readout when `--feed` is on.
 - [x] **Agent grasp contract (`latte_auto`)**: proximity+closure-triggered welds with
   hysteresis release — the grasp idealization becomes an agent-facing mechanic instead of a
   script call (see Key files). Validated full-choreography PASS with zero scripted weld calls.
@@ -211,7 +213,7 @@ Particle <-> rigid (MPM boundaries; ALL one-way — liquid pushes nothing back):
 | Liquids <-> table / floor | REAL (spills pool physically) |
 | Liquids <-> arm links/fingers | REAL (every link is an MPM collider) |
 | Liquids <-> ring/slab proxies | NOT MODELED (rigid-only; shadowed by the interior shells) |
-| Liquid -> rigid FORCES | NOT MODELED (one-way boundary; roadmap 2c-c) |
+| Liquid -> rigid FORCES | MODELED in `latte_feed` (1.5-way: impulses -> body_f, force-conservation verified); NOT modeled in the other scenes |
 | Coffee <-> milk | REAL (shared MPM continuum, one material) |
 
 Visual-only (zero contact, by design): the textured vessel USD meshes (physics stripped — their
