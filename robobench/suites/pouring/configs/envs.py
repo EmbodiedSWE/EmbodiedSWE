@@ -76,3 +76,23 @@ register_env(
         ),
     ),
 )
+
+# Phase 2c-a: same bimanual rig on scene "latte_weld" — DYNAMIC vessels (free joints, authored
+# mass, concave rigid proxies) carried via weld-at-grasp (scene.weld_vessel). The arms feel the
+# real vessel mass; vessel-table and vessel-vessel contacts are live MuJoCo contacts.
+# -> "pouring.latte_weld.bimanual_franka.joint"
+register_env(
+    SUITE,
+    lambda: EnvCfg(
+        scene="latte_weld",
+        robot="bimanual_franka",
+        control_mode="joint",
+        env_spacing=3,
+        robot_cfg=BimanualFrankaCfg(
+            robots={
+                "left": ("franka", _dyn_franka((-0.25, -0.42, 0.0))),
+                "right": ("franka", _dyn_franka((0.25, -0.42, 0.0))),
+            }
+        ),
+    ),
+)

@@ -36,6 +36,30 @@ if TYPE_CHECKING:
 
 TABLE_TOP_Z = 0.04  # table top height [m]; cups stand here, layout numbers assume it
 
+# Concave rigid-proxy geometry for the DYNAMIC vessels (Phase 2c-a), measured from the baked zup
+# USDs' VISUAL surfaces (point-cloud probe, 2026-07-17): a ring of boxes tracing the outer wall +
+# a cylinder floor slab + the handle's outer vertical bar as a capsule (the grasp target; the only
+# proxy that is ALSO an MPM collider, so poured milk stops passing through the visual handle).
+# All numbers are in the vessel's local frame (base origin, z up). Visual walls run fatter than
+# the interior physics shells (mug 0.0577 vs 0.051 outer; pitcher 0.0421 vs 0.035) — proxies trace
+# the VISUALS so rigid contacts happen where the eye expects them. The mug ring uses the RIM
+# radius over the full height (the visual tapers to 0.049 low — a single straight ring overstates
+# the lower body by <= 9 mm, irrelevant to rim-level pour contacts and table clearance).
+MUG_PROXY = {
+    "ring_r_out": 0.058,
+    "ring_z": (0.012, 0.0832),
+    "slab_r": 0.041,
+    "slab_h": 0.010,
+    "handle": {"x": -0.0877, "z": 0.0515, "r": 0.008, "half_height": 0.0103},
+}
+PITCHER_PROXY = {
+    "ring_r_out": 0.0425,
+    "ring_z": (0.008, 0.0927),
+    "slab_r": 0.041,
+    "slab_h": 0.008,
+    "handle": {"x": 0.0643, "z": 0.0634, "r": 0.006, "half_height": 0.0161},
+}
+
 
 # ----- procedural geometry (numpy only; app-free) -------------------------------------------------
 def cup_mesh(
@@ -163,6 +187,18 @@ class LatteSceneCfg(BaseCfg):
     table_size: tuple[float, float, float] = info((0.7, 0.7, TABLE_TOP_Z), doc="table box extents [m]; top at z=0.04")
     table_friction: float = tunable(0.5)
     light_intensity: float = tunable(2500.0)
+    # --- Phase 2c-a: dynamic vessels + rigid proxies (the latte_weld scene flips this on) ---
+    dynamic_vessels: bool = info(False, doc="vessels get free-joint dynamics, authored mass, and rigidproxy colliders")
+    mug_mass: float = tunable(0.30)  # [TUNE] authored total mass [kg]; inertia is computed from the
+    # collision geometry and scaled to this (ceramic diner mug ~0.3 kg)
+    pitcher_mass: float = tunable(0.25)  # [TUNE] small steel frothing pitcher ~0.25 kg empty
+    proxy_segments: int = info(10, doc="boxes per rigid-proxy ring (8-12 traces the wall within ~2 mm)")
+    proxy_thickness: float = tunable(0.005)  # ring box radial thickness [m]; inner face stays outside the cavity
+    proxy_friction: float = tunable(0.5)  # ring + slab (MuJoCo-facing) friction — tabletop-like,
+    # NOT the liquid-facing 0.05 ceramic (matters for 2c-b finger/vessel contacts; note MuJoCo
+    # combines pair friction as the element-wise MAX, so vs the 0.5 table this dial only bites
+    # when it exceeds the partner's). The handle capsule keeps cup_friction (MPM-facing; milk
+    # must slide off). The resting-creep bug was NOT friction — see the slab-box comment.
     # --- rendering ---
     coffee_color: tuple[float, float, float] = info((0.36, 0.22, 0.12), doc="coffee particle display color")
     milk_color: tuple[float, float, float] = info((0.93, 0.90, 0.85), doc="milk particle display color")
@@ -218,6 +254,15 @@ class LatteScene(BaseScene):
             # would hide the whole subtree, including visual_usd_ref — the framework applies it
             # to the spawned root).
             hide_collider_geometry: bool = False
+            # Phase 2c-a: authored total mass [kg] (UsdPhysics MassAPI on the root; the Newton
+            # importer keeps it and scales computed inertia to match) and the rigid-proxy
+            # geometry dict (MUG_PROXY/PITCHER_PROXY + segments/thickness) — spawned invisible
+            # under <root>/rigidproxy/, flag-routed by the coupled manager. Ring + slab bind
+            # proxy_physics_material (tabletop friction); the handle capsule keeps the main
+            # liquid-facing material.
+            mass: float | None = None
+            rigidproxy: dict | None = None
+            proxy_physics_material: sim_utils.NewtonMaterialPropertiesCfg | None = None
 
         def cup_spawn(
             r_inner: float,
@@ -229,22 +274,38 @@ class LatteScene(BaseScene):
             visible: bool = True,
             r_inner_top: float | None = None,
             visual_usd_ref: str | None = None,
+            dynamic: bool = False,
+            mass: float | None = None,
+            proxy: dict | None = None,
         ) -> CupMeshCfg:
             vertices, faces = cup_mesh(
                 r_inner, r_inner_top if r_inner_top is not None else r_inner, height, wall, bottom
             )
+            if dynamic:  # Phase 2c-a: free-joint vessel under real gravity, carried by welds
+                rigid_props = sim_utils.NewtonRigidBodyPropertiesCfg(
+                    rigid_body_enabled=True, kinematic_enabled=False, disable_gravity=False
+                )
+            elif kinematic:
+                rigid_props = sim_utils.NewtonRigidBodyPropertiesCfg(
+                    rigid_body_enabled=True, kinematic_enabled=True, disable_gravity=True
+                )
+            else:
+                rigid_props = None
             return CupMeshCfg(
                 hide_collider_geometry=not visible,
                 visual_usd_ref=visual_usd_ref,
-                vertices=vertices.tolist(),
-                faces=faces.tolist(),
-                rigid_props=(
-                    sim_utils.NewtonRigidBodyPropertiesCfg(
-                        rigid_body_enabled=True, kinematic_enabled=True, disable_gravity=True
+                mass=mass if dynamic else None,
+                rigidproxy=proxy if dynamic else None,
+                proxy_physics_material=(
+                    sim_utils.NewtonMaterialPropertiesCfg(
+                        static_friction=c.proxy_friction, dynamic_friction=c.proxy_friction
                     )
-                    if kinematic
+                    if dynamic
                     else None
                 ),
+                vertices=vertices.tolist(),
+                faces=faces.tolist(),
+                rigid_props=rigid_props,
                 collision_props=sim_utils.NewtonCollisionPropertiesCfg(
                     collision_enabled=True, contact_margin=c.cup_contact_margin
                 ),
@@ -356,13 +417,16 @@ class LatteScene(BaseScene):
                 spawn=cup_spawn(
                     c.coffee_cup_r_floor,
                     c.coffee_cup_h,
-                    kinematic=True,
+                    kinematic=not c.dynamic_vessels,
                     color=None,
                     wall=0.005,
                     bottom=c.coffee_floor_z,
                     visible=False,
                     r_inner_top=c.coffee_cup_r,
                     visual_usd_ref=c.mug_usd,
+                    dynamic=c.dynamic_vessels,
+                    mass=c.mug_mass,
+                    proxy={**MUG_PROXY, "segments": c.proxy_segments, "thickness": c.proxy_thickness},
                 ),
             ),
             # The milk pitcher: same pattern as the mug — kinematic rigid carrying the invisible
@@ -374,12 +438,15 @@ class LatteScene(BaseScene):
                 spawn=cup_spawn(
                     c.pitcher_r,
                     c.pitcher_h,
-                    kinematic=True,
+                    kinematic=not c.dynamic_vessels,
                     color=None,
                     wall=c.pitcher_wall,
                     bottom=c.pitcher_floor_z,
                     visible=False,
                     visual_usd_ref=c.pitcher_usd,
+                    dynamic=c.dynamic_vessels,
+                    mass=c.pitcher_mass,
+                    proxy={**PITCHER_PROXY, "segments": c.proxy_segments, "thickness": c.proxy_thickness},
                 ),
             ),
             "coffee": liquid(
@@ -650,6 +717,82 @@ class LatteDynScene(LatteScene):
         return MpmSimCfg(voxel_size=self.cfg.voxel_size, coupled=True)
 
 
+@SCENES.register("latte_weld")
+class LatteWeldScene(LatteDynScene):
+    """Phase 2c-a: the coupled substrate with DYNAMIC vessels. Both vessels are free rigid bodies
+    (authored mass, real gravity) resting on their rigid-proxy floor slabs; MuJoCo collides their
+    concave proxy shells (ring + slab + handle capsule) while the interior trimeshes stay
+    MPM-only. Carrying works by WELD-at-grasp: builder-time MuJoCo equality welds (hand <->
+    vessel, disabled at spawn) that a script activates at the measured grasp pose via
+    `weld_vessel(...)` — the arm then feels the real carried mass. Metrics track the vessels'
+    ACTUAL poses (refreshed every physics tick in `post_step`), so a dropped vessel scores
+    honestly."""
+
+    WELD_LABELS = {"mug": "weld_mug", "pitcher": "weld_pitcher"}
+
+    def __init__(self, cfg: LatteSceneCfg | None = None) -> None:
+        cfg = cfg or LatteSceneCfg()
+        cfg.dynamic_vessels = True  # this scene IS the dynamic-vessel substrate — not optional
+        super().__init__(cfg)
+
+    def sim_cfg(self) -> MpmSimCfg:
+        return MpmSimCfg(
+            voxel_size=self.cfg.voxel_size,
+            coupled=True,
+            # Builder-time weld rows (disabled until grasp): (label, body1 suffix, body2 suffix).
+            welds=[
+                ("weld_mug", "Left/panda_hand", "CoffeeCup"),
+                ("weld_pitcher", "Right/panda_hand", "Pitcher"),
+            ],
+        )
+
+    # ----- weld control ---------------------------------------------------------------------------
+    def weld_vessel(self, vessel: str, active: bool) -> None:
+        """Activate/deactivate the hand<->vessel weld. On activation the CURRENT relative pose is
+        measured and written as the weld target, so there is no snap — call it exactly when the
+        fingers visually close on the handle."""
+        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager
+
+        NewtonCoupledMJWarpMPMManager.set_weld(self.WELD_LABELS[vessel], active)
+
+    # ----- lifecycle ------------------------------------------------------------------------------
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        """Track the DYNAMIC vessels' actual poses for the pose-relative metrics (the kinematic
+        scenes update these on write instead).
+
+        LANDMINE: on this isaaclab/newton pin the root_link_quat_w of a free trimesh body carries
+        a constant per-body YAW offset vs the USD prim frame (the importer's inertial-principal
+        frame; measured 0.84 rad mug / 2.68 rad pitcher). The cylinder metrics and tilt readouts
+        are yaw-INVARIANT, so these poses are safe for everything this scene computes — but do
+        NOT mix them with prim-frame scripted targets (the weld smoke anchors its ride-along
+        offsets to scripted home poses for exactly this reason)."""
+        import torch
+
+        self.mug_pose_w = torch.cat(
+            [self.mug.data.root_link_pos_w.torch, self.mug.data.root_link_quat_w.torch], dim=-1
+        )
+        self.pitcher_pose_w = torch.cat(
+            [self.pitcher.data.root_link_pos_w.torch, self.pitcher.data.root_link_quat_w.torch], dim=-1
+        )
+
+    def reset(self, env_ids: torch.Tensor) -> None:
+        # Welds off FIRST: scene.reset teleports the vessels home while the arms still hold their
+        # last pose — an active weld would read that as a violent constraint violation. The caller
+        # still owns `resync_collider_history()` after the FULL env.reset (scene + robot), per the
+        # teleport-hygiene contract.
+        for vessel in self.WELD_LABELS:
+            self.weld_vessel(vessel, False)
+        super().reset(env_ids)
+
+    def describe(self) -> str:
+        base = super().describe()
+        return base.replace(
+            "Both vessels are kinematic: write their root pose to move it.",
+            "Both vessels are DYNAMIC rigid bodies resting on the table; a hand-vessel weld"
+            " engages at grasp (weld_vessel) and the arm carries the real mass.",
+        )
+
+
 # ----- suite-local mesh spawner (module level so configclass `func` can reference it) -------------
 def _spawn_cup_mesh(
     prim_path: str,
@@ -704,10 +847,79 @@ def _spawn_cup_mesh(
                 if prim.HasAPI(api):
                     prim.RemoveAPI(api)
 
+    proxy_paths: list[str] = []
+    proxy_friction_paths: list[str] = []  # ring + slab: tabletop-friction material (NOT the handle)
+    if getattr(cfg, "rigidproxy", None):
+        # Phase 2c-a: invisible CONCAVE rigid proxies under <root>/rigidproxy/ — extra collision
+        # shapes on the SAME rigid body (no RigidBodyAPI of their own). A ring of boxes traces the
+        # visual outer wall (leaving the mouth open for the pour), a cylinder slab carries the
+        # base-table contact, and the handle's outer bar is a capsule (also the grasp target).
+        # The coupled manager routes flags by the "/rigidproxy/" label: rigid-only, except the
+        # handle capsule which keeps particle collision too (milk must not pass the visual handle).
+        pr = cfg.rigidproxy
+        base_path = f"{prim_path}/rigidproxy"
+        create_prim(base_path, prim_type="Xform", stage=stage)
+        n, t = int(pr["segments"]), float(pr["thickness"])
+        r_out, (z_lo, z_hi) = float(pr["ring_r_out"]), pr["ring_z"]
+        r_mid = r_out - t / 2.0
+        chord = 2.0 * r_mid * math.tan(math.pi / n)  # tangential width closing the polygon
+        for i in range(n):
+            ang = 2.0 * math.pi * i / n
+            path = f"{base_path}/ring_{i:02d}"
+            create_prim(
+                path,
+                prim_type="Cube",
+                attributes={"size": 1.0},
+                translation=(r_mid * math.cos(ang), r_mid * math.sin(ang), (z_lo + z_hi) / 2.0),
+                orientation=(0.0, 0.0, math.sin(ang / 2.0), math.cos(ang / 2.0)),  # xyzw, Rz(ang)
+                scale=(t, chord, z_hi - z_lo),
+                stage=stage,
+            )
+            proxy_paths.append(path)
+            proxy_friction_paths.append(path)
+        # Floor slab: a BOX (inscribed square), deliberately NOT a cylinder — mjwarp routes
+        # cylinder-box contacts through CCD, whose contact points regenerate asymmetrically on a
+        # rotationally-symmetric penetrating face: the resting vessels crept across the table at
+        # a constant ~8 mm/s (pitcher wandered 5-8 cm before the grasp) and sank 2.5 mm. Box-box
+        # gets the analytic 4-corner manifold and stays put.
+        slab_path = f"{base_path}/slab"
+        slab_side = float(pr["slab_r"]) * math.sqrt(2.0)  # inscribed in the base circle
+        create_prim(
+            slab_path,
+            prim_type="Cube",
+            attributes={"size": 1.0},
+            translation=(0.0, 0.0, float(pr["slab_h"]) / 2.0),
+            scale=(slab_side, slab_side, float(pr["slab_h"])),
+            stage=stage,
+        )
+        proxy_paths.append(slab_path)
+        proxy_friction_paths.append(slab_path)
+        h = pr["handle"]
+        handle_path = f"{base_path}/handle"
+        create_prim(
+            handle_path,
+            prim_type="Capsule",
+            attributes={"radius": float(h["r"]), "height": 2.0 * float(h["half_height"]), "axis": "Z"},
+            translation=(float(h["x"]), 0.0, float(h["z"])),
+            stage=stage,
+        )
+        proxy_paths.append(handle_path)
+        from pxr import UsdGeom
+
+        UsdGeom.Imageable(stage.GetPrimAtPath(base_path)).MakeInvisible()
+
     if cfg.rigid_props is not None:
         schemas.define_rigid_body_properties(prim_path, cfg.rigid_props, stage=stage)
+    if getattr(cfg, "mass", None):
+        # Authored total mass on the body root: the Newton USD importer keeps the authored mass
+        # and falls back to ComputeMassProperties for CoM/inertia, scaled to match.
+        from pxr import UsdPhysics
+
+        UsdPhysics.MassAPI.Apply(stage.GetPrimAtPath(prim_path)).GetMassAttr().Set(float(cfg.mass))
     if cfg.collision_props is not None:
         schemas.define_collision_properties(mesh_prim_path, cfg.collision_props, stage=stage)
+        for path in proxy_paths:
+            schemas.define_collision_properties(path, cfg.collision_props, stage=stage)
     if cfg.mesh_collision_props is not None:
         schemas.define_mesh_collision_properties(mesh_prim_path, cfg.mesh_collision_props, stage=stage)
     if cfg.visual_material is not None:
@@ -722,5 +934,15 @@ def _spawn_cup_mesh(
             material_path = f"{geom_prim_path}/{material_path}"
         cfg.physics_material.func(material_path, cfg.physics_material)
         bind_physics_material(mesh_prim_path, material_path, stage=stage)
+        # The liquid-facing material also covers the handle capsule (an MPM collider); ring +
+        # slab get their own tabletop-friction material below.
+        for path in proxy_paths:
+            if path not in proxy_friction_paths:
+                bind_physics_material(path, material_path, stage=stage)
+    if getattr(cfg, "proxy_physics_material", None) is not None and proxy_friction_paths:
+        proxy_mat_path = f"{geom_prim_path}/proxyMaterial"
+        cfg.proxy_physics_material.func(proxy_mat_path, cfg.proxy_physics_material)
+        for path in proxy_friction_paths:
+            bind_physics_material(path, proxy_mat_path, stage=stage)
 
     return stage.GetPrimAtPath(prim_path)

@@ -24,6 +24,12 @@ auto-added free joints and MuJoCo requires positive inertia on jointed bodies; i
 from the KINEMATIC flag's 1e10 armature, and scripted `write_root_link_pose` writes reach MuJoCo
 through the per-step ``joint_q -> qpos`` push.
 
+Phase 2c-a extends this with DYNAMIC vessels: bodies carrying ``/rigidproxy/`` shapes collide in
+MuJoCo through those concave proxies ONLY (the interior trimesh turns MPM-only instead of being
+convexified into a mouth-filling hull), and hand<->vessel MuJoCo equality WELDS — created
+disabled at build from ``MJWarpMPMSolverCfg.weld_specs`` — engage at the measured grasp pose via
+:meth:`NewtonCoupledMJWarpMPMManager.set_weld`, so the arm carries the real vessel mass.
+
 Runs ONLY under the Newton venv with the app up (imports isaaclab_newton at module level); import
 it lazily from `MpmSimCfg.to_isaaclab`.
 """
@@ -33,8 +39,8 @@ from __future__ import annotations
 import inspect
 
 import warp as wp
-from newton import BodyFlags, Model, ModelBuilder, ShapeFlags, eval_fk
-from newton.solvers import SolverImplicitMPM, SolverMuJoCo
+from newton import BodyFlags, EqType, Model, ModelBuilder, ShapeFlags, eval_fk
+from newton.solvers import SolverImplicitMPM, SolverMuJoCo, SolverNotifyFlags
 from warp.fem import TemporaryStore
 
 from isaaclab.physics import PhysicsManager
@@ -69,16 +75,72 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
 
     @classmethod
     def _prepare_builder_for_finalize(cls, builder: ModelBuilder) -> None:
-        """Ghost KINEMATIC bodies from the rigid solver: clear COLLIDE_SHAPES on their shapes
-        (COLLIDE_PARTICLES stays — they remain MPM colliders). Masses are intentionally KEPT,
-        unlike NewtonMPMManager: MuJoCo needs positive inertia on their auto-added free joints,
-        and the MPM side is neutralized wholesale via the setup_collider(body_mass=zeros)
-        override in _build_solver."""
+        """Shape-flag routing + builder-time welds. Three rules, in order:
+
+        1. KINEMATIC-body ghosting (Phase 2b, unchanged): clear COLLIDE_SHAPES on their shapes
+           (COLLIDE_PARTICLES stays — they remain MPM colliders). Masses are intentionally KEPT,
+           unlike NewtonMPMManager: MuJoCo needs positive inertia on their auto-added free
+           joints, and the MPM side is neutralized wholesale via the
+           setup_collider(body_mass=zeros) override in _build_solver.
+        2. Rigid-proxy routing (Phase 2c-a), by `builder.shape_label` prim path: shapes under a
+           ``/rigidproxy/`` scope are RIGID-only (drop COLLIDE_PARTICLES) — except ``handle``
+           capsules, which keep BOTH flags (grasp target + the milk must not pass the visual
+           handle). Every OTHER shape on a body that carries proxies (the concave interior
+           trimesh MuJoCo would convexify into a mouth-filling hull) turns MPM-only.
+        3. Weld rows (Phase 2c-a): for each ``(label, body1_suffix, body2_suffix)`` in the solver
+           cfg's ``weld_specs``, add a DISABLED MuJoCo equality weld — activated at grasp time
+           via :meth:`set_weld`, which writes the measured relative pose first.
+        """
         kinematic = int(BodyFlags.KINEMATIC)
         no_rigid_collision = ~int(ShapeFlags.COLLIDE_SHAPES)
+        no_particle_collision = ~int(ShapeFlags.COLLIDE_PARTICLES)
         for shape_idx, body_idx in enumerate(builder.shape_body):
             if body_idx >= 0 and int(builder.body_flags[body_idx]) & kinematic:
                 builder.shape_flags[shape_idx] = int(builder.shape_flags[shape_idx]) & no_rigid_collision
+
+        proxy_bodies: set[int] = set()
+        for shape_idx, label in enumerate(builder.shape_label):
+            if label and "/rigidproxy/" in label:
+                body_idx = builder.shape_body[shape_idx]
+                if body_idx >= 0:
+                    proxy_bodies.add(int(body_idx))
+                if not label.rsplit("/", 1)[-1].startswith("handle"):
+                    builder.shape_flags[shape_idx] = int(builder.shape_flags[shape_idx]) & no_particle_collision
+        if proxy_bodies:
+            for shape_idx, label in enumerate(builder.shape_label):
+                if int(builder.shape_body[shape_idx]) in proxy_bodies and not (label and "/rigidproxy/" in label):
+                    builder.shape_flags[shape_idx] = int(builder.shape_flags[shape_idx]) & no_rigid_collision
+
+        solver_cfg = PhysicsManager._cfg.solver_cfg if PhysicsManager._cfg is not None else None
+        weld_labels = []
+        for label, suffix1, suffix2 in getattr(solver_cfg, "weld_specs", None) or []:
+            builder.add_equality_constraint(
+                EqType.WELD,
+                body1=cls._find_body(builder, suffix1),
+                body2=cls._find_body(builder, suffix2),
+                label=label,
+                enabled=False,
+            )
+            weld_labels.append(label)
+        if proxy_bodies or weld_labels:
+            n_proxy = sum(1 for lb in builder.shape_label if lb and "/rigidproxy/" in lb)
+            n_mpm_only = sum(
+                1
+                for i, lb in enumerate(builder.shape_label)
+                if int(builder.shape_body[i]) in proxy_bodies and not (lb and "/rigidproxy/" in lb)
+            )
+            print(
+                f"[coupled] rigid proxies: {n_proxy} shapes on {len(proxy_bodies)} dynamic bodies"
+                f" (interior shapes -> MPM-only: {n_mpm_only}) | welds (disabled): {weld_labels}",
+                flush=True,
+            )
+
+    @staticmethod
+    def _find_body(builder: ModelBuilder, suffix: str) -> int:
+        matches = [i for i, key in enumerate(builder.body_label) if key and str(key).endswith(suffix)]
+        if len(matches) != 1:
+            raise ValueError(f"weld body suffix {suffix!r} matched {len(matches)} bodies: {matches}")
+        return matches[0]
 
     # ----- solver construction --------------------------------------------------------------------
     @classmethod
@@ -146,6 +208,40 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
                     cls._mpm_solver.notify_model_changed(change)
         super().step()
 
+    # ----- welds (Phase 2c-a) ---------------------------------------------------------------------
+    @classmethod
+    def set_weld(cls, label: str, active: bool) -> None:
+        """Toggle a builder-time equality weld by label. On ACTIVATION the current relative pose
+        ``inv(X_body1) * X_body2`` is measured from ``state_0.body_q`` and written as the weld
+        target first, so engaging never snaps — call it with the hands at the grasp pose, between
+        steps (the writes land in Newton model arrays that the solver re-reads OUTSIDE the CUDA
+        graph on the queued CONSTRAINT_PROPERTIES notification)."""
+        import torch
+
+        import isaaclab.utils.math as math_utils
+
+        model = cls._model
+        labels = list(model.mujoco.equality_constraint_label)
+        if label not in labels:
+            raise ValueError(f"unknown weld label {label!r}; builder welds: {labels}")
+        eq_idx = labels.index(label)
+        device = model.device
+        if active:
+            body_q = wp.to_torch(cls._state_0.body_q)  # (nbody, 7) [pos, quat-xyzw], warp layout
+            b1 = int(model.mujoco.equality_constraint_body1.numpy()[eq_idx])
+            b2 = int(model.mujoco.equality_constraint_body2.numpy()[eq_idx])
+            p, q = math_utils.subtract_frame_transforms(
+                body_q[b1, :3][None], body_q[b1, 3:][None], body_q[b2, :3][None], body_q[b2, 3:][None]
+            )
+            rel = torch.cat([p, q], dim=-1)[0].tolist()
+            staged = wp.array(
+                [wp.transform(wp.vec3(*rel[:3]), wp.quat(*rel[3:]))], dtype=wp.transform, device=device
+            )
+            wp.copy(model.mujoco.equality_constraint_relpose, staged, dest_offset=eq_idx, count=1)
+        staged_en = wp.array([bool(active)], dtype=wp.bool, device=device)
+        wp.copy(model.mujoco.equality_constraint_enabled, staged_en, dest_offset=eq_idx, count=1)
+        cls.add_model_change(SolverNotifyFlags.CONSTRAINT_PROPERTIES)
+
     @classmethod
     def resync_collider_history(cls) -> None:
         """Re-seed the MPM collider pose history from the CURRENT state — call after any
@@ -188,3 +284,10 @@ class MJWarpMPMSolverCfg(NewtonSolverCfg):
 
     mpm_solver_cfg: MPMSolverCfg = MPMSolverCfg()
     """Implicit-MPM sub-solver configuration (particle liquids)."""
+
+    weld_specs: list = []
+    """Builder-time MuJoCo equality welds ``[(label, body1 suffix, body2 suffix)]`` (Phase 2c-a).
+
+    Suffixes match against ``builder.body_label`` prim paths (must match exactly one body each).
+    Rows are created DISABLED; toggle at runtime with
+    :meth:`NewtonCoupledMJWarpMPMManager.set_weld`."""
