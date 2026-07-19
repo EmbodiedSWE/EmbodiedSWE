@@ -36,23 +36,16 @@ if TYPE_CHECKING:
 
 TABLE_TOP_Z = 0.04  # table top height [m]; cups stand here, layout numbers assume it
 
-# Concave rigid-proxy geometry for the DYNAMIC vessels (Phase 2c-a), measured from the baked zup
-# USDs' VISUAL surfaces (point-cloud probe, 2026-07-17): a ring of boxes tracing the outer wall +
-# a cylinder floor slab + the handle's outer vertical bar as a capsule (the grasp target; the only
-# proxy that is ALSO an MPM collider, so poured milk stops passing through the visual handle).
-# All numbers are in the vessel's local frame (base origin, z up). Visual walls run fatter than
-# the interior physics shells (mug 0.0577 vs 0.051 outer; pitcher 0.0421 vs 0.035) — proxies trace
-# the VISUALS so rigid contacts happen where the eye expects them. The mug ring uses the RIM
-# radius over the full height (the visual tapers to 0.049 low — a single straight ring overstates
-# the lower body by <= 9 mm, irrelevant to rim-level pour contacts and table clearance).
+# Concave rigid-proxy geometry for the DYNAMIC vessels, in each vessel's local frame (base
+# origin, z up), traced from the assets' VISUAL surfaces: a ring of boxes on the outer wall, a
+# box floor slab (base-table contact), and the handle's outer bar (the grasp target; also an
+# MPM collider so milk cannot pass the visual handle).
 MUG_PROXY = {
     "ring_r_out": 0.058,
     "ring_z": (0.012, 0.0832),
     "slab_r": 0.041,
     "slab_h": 0.010,
-    # grip_w: the bar box's y/x width — WIDER than the visual bar (2r) so the finger pads engage
-    # it at ~7 mm joint opening with PD headroom (force closure force = gripper kp x block depth;
-    # at 2r=16 mm the pads bottomed out on their 0-limit at a soft-contact-capped ~19 N).
+    # grip_w: bar box width (wider than the visual 2r so finger pads engage with PD headroom)
     "handle": {"x": -0.0877, "z": 0.0515, "r": 0.008, "half_height": 0.0103, "grip_w": 0.022},
 }
 PITCHER_PROXY = {
@@ -190,22 +183,18 @@ class LatteSceneCfg(BaseCfg):
     table_size: tuple[float, float, float] = info((0.7, 0.7, TABLE_TOP_Z), doc="table box extents [m]; top at z=0.04")
     table_friction: float = tunable(0.5)
     light_intensity: float = tunable(2500.0)
-    # --- Phase 2c-a: dynamic vessels + rigid proxies (the latte_weld scene flips this on) ---
+    # --- dynamic vessels + rigid proxies (latte_weld/latte_auto flip this on) ---
     dynamic_vessels: bool = info(False, doc="vessels get free-joint dynamics, authored mass, and rigidproxy colliders")
-    mug_mass: float = tunable(0.30)  # [TUNE] authored total mass [kg]; inertia is computed from the
-    # collision geometry and scaled to this (ceramic diner mug ~0.3 kg)
-    pitcher_mass: float = tunable(0.25)  # [TUNE] small steel frothing pitcher ~0.25 kg empty
-    proxy_segments: int = info(10, doc="boxes per rigid-proxy ring (8-12 traces the wall within ~2 mm)")
-    proxy_thickness: float = tunable(0.005)  # ring box radial thickness [m]; inner face stays outside the cavity
+    mug_mass: float = tunable(0.30)  # authored total mass [kg]; inertia computed from geometry
+    pitcher_mass: float = tunable(0.25)
+    proxy_segments: int = info(10, doc="boxes per rigid-proxy ring")
+    proxy_thickness: float = tunable(0.005)  # ring box radial thickness [m]
     # --- agent auto-grasp (latte_auto): weld engages on proximity + closure ---
     auto_weld_dist: float = tunable(0.03)  # pinch-point-to-bar-center engage radius [m]
     auto_weld_close_margin: float = tunable(0.003)  # engage when aperture < bar half-width + this [m]
     auto_weld_release: float = tunable(0.02)  # release when aperture opens past this [m] (hysteresis)
-    proxy_friction: float = tunable(0.5)  # ring + slab (MuJoCo-facing) friction — tabletop-like,
-    # NOT the liquid-facing 0.05 ceramic (matters for 2c-b finger/vessel contacts; note MuJoCo
-    # combines pair friction as the element-wise MAX, so vs the 0.5 table this dial only bites
-    # when it exceeds the partner's). The handle capsule keeps cup_friction (MPM-facing; milk
-    # must slide off). The resting-creep bug was NOT friction — see the slab-box comment.
+    proxy_friction: float = tunable(0.5)  # ring + slab (MuJoCo-facing) tabletop friction; the
+    # handle bars keep cup_friction (MPM-facing)
     # --- rendering ---
     coffee_color: tuple[float, float, float] = info((0.36, 0.22, 0.12), doc="coffee particle display color")
     milk_color: tuple[float, float, float] = info((0.93, 0.90, 0.85), doc="milk particle display color")
@@ -261,12 +250,9 @@ class LatteScene(BaseScene):
             # would hide the whole subtree, including visual_usd_ref — the framework applies it
             # to the spawned root).
             hide_collider_geometry: bool = False
-            # Phase 2c-a: authored total mass [kg] (UsdPhysics MassAPI on the root; the Newton
-            # importer keeps it and scales computed inertia to match) and the rigid-proxy
-            # geometry dict (MUG_PROXY/PITCHER_PROXY + segments/thickness) — spawned invisible
-            # under <root>/rigidproxy/, flag-routed by the coupled manager. Ring + slab bind
-            # proxy_physics_material (tabletop friction); the handle capsule keeps the main
-            # liquid-facing material.
+            # Dynamic-vessel extras: authored total mass (UsdPhysics MassAPI on the root) and
+            # the rigid-proxy geometry dict, spawned invisible under <root>/rigidproxy/ and
+            # flag-routed by the coupled manager.
             mass: float | None = None
             rigidproxy: dict | None = None
             proxy_physics_material: sim_utils.NewtonMaterialPropertiesCfg | None = None
@@ -767,12 +753,9 @@ class LatteWeldScene(LatteDynScene):
         """Track the DYNAMIC vessels' actual poses for the pose-relative metrics (the kinematic
         scenes update these on write instead).
 
-        LANDMINE: on this isaaclab/newton pin the root_link_quat_w of a free trimesh body carries
-        a constant per-body YAW offset vs the USD prim frame (the importer's inertial-principal
-        frame; measured 0.84 rad mug / 2.68 rad pitcher). The cylinder metrics and tilt readouts
-        are yaw-INVARIANT, so these poses are safe for everything this scene computes — but do
-        NOT mix them with prim-frame scripted targets (the weld smoke anchors its ride-along
-        offsets to scripted home poses for exactly this reason)."""
+        NOTE: root_link_quat_w of a free trimesh body carries a per-body YAW offset vs the prim
+        frame (README landmine); the cylinder metrics and tilt readouts are yaw-invariant, but
+        never mix these poses with prim-frame scripted targets."""
         import torch
 
         self.mug_pose_w = torch.cat(
@@ -1026,12 +1009,9 @@ def _spawn_cup_mesh(
     proxy_paths: list[str] = []
     proxy_friction_paths: list[str] = []  # ring + slab: tabletop-friction material (NOT the handle)
     if getattr(cfg, "rigidproxy", None):
-        # Phase 2c-a: invisible CONCAVE rigid proxies under <root>/rigidproxy/ — extra collision
-        # shapes on the SAME rigid body (no RigidBodyAPI of their own). A ring of boxes traces the
-        # visual outer wall (leaving the mouth open for the pour), a cylinder slab carries the
-        # base-table contact, and the handle's outer bar is a capsule (also the grasp target).
-        # The coupled manager routes flags by the "/rigidproxy/" label: rigid-only, except the
-        # handle capsule which keeps particle collision too (milk must not pass the visual handle).
+        # Invisible CONCAVE rigid proxies under <root>/rigidproxy/: extra collision shapes on
+        # the SAME rigid body. The coupled manager routes flags by the "/rigidproxy/" label:
+        # rigid-only, except the handle bars which keep particle collision too.
         pr = cfg.rigidproxy
         base_path = f"{prim_path}/rigidproxy"
         create_prim(base_path, prim_type="Xform", stage=stage)
@@ -1053,11 +1033,8 @@ def _spawn_cup_mesh(
             )
             proxy_paths.append(path)
             proxy_friction_paths.append(path)
-        # Floor slab: a BOX (inscribed square), deliberately NOT a cylinder — mjwarp routes
-        # cylinder-box contacts through CCD, whose contact points regenerate asymmetrically on a
-        # rotationally-symmetric penetrating face: the resting vessels crept across the table at
-        # a constant ~8 mm/s (pitcher wandered 5-8 cm before the grasp) and sank 2.5 mm. Box-box
-        # gets the analytic 4-corner manifold and stays put.
+        # Floor slab: a BOX (inscribed square), NOT a cylinder — cylinder-box CCD contacts
+        # ratchet resting bodies across the table (see README landmine).
         slab_path = f"{base_path}/slab"
         slab_side = float(pr["slab_r"]) * math.sqrt(2.0)  # inscribed in the base circle
         create_prim(
@@ -1070,14 +1047,9 @@ def _spawn_cup_mesh(
         )
         proxy_paths.append(slab_path)
         proxy_friction_paths.append(slab_path)
-        # Handle bar: a SEGMENTED STACK of boxes, deliberately NOT one capsule/box — two stacked
-        # reasons. (1) The Franka pads are MESH geoms and mjwarp's mesh-vs-capsule pair silently
-        # generated no pinch contacts at all (boxes are first-class, same lesson as the slab).
-        # (2) mjwarp's CCD emits ONE contact point per geom PAIR — a single bar gives a
-        # point-contact pinch with near-zero pivot resistance (the 2c-b vessels rotated out of a
-        # 100 N grip). N stacked segments x pad = an N-point PLANAR manifold along the bar:
-        # real torque levers, and per-segment anchored contact points instead of one wandering
-        # CCD point. Square cross-section grip_w x grip_w; total length = capsule-equivalent.
+        # Handle bar: a SEGMENTED STACK of boxes — CCD emits one contact point per geom PAIR,
+        # so N segments give an N-point planar pinch manifold along the bar (see README
+        # landmines). Square cross-section grip_w x grip_w.
         h = pr["handle"]
         bar_w = float(h.get("grip_w", 2.0 * h["r"]))
         bar_len = 2.0 * (float(h["half_height"]) + float(h["r"]))
@@ -1097,9 +1069,7 @@ def _spawn_cup_mesh(
                 scale=(bar_w, bar_w, seg_len),
                 stage=stage,
             )
-            # Stiff contact on the grip bar (mjc:solref, read by the newton importer): default
-            # solref lets the pads sink mm-deep at ~10 N/mm, capping pinch force regardless of
-            # gripper kp (force closure died at ~19 N). Timeconst 4 ms ~= 25x stiffer.
+            # Stiff contact on the grip bar (mjc:solref, read by the newton importer).
             stage.GetPrimAtPath(seg_path).CreateAttribute(
                 "mjc:solref", _Sdf.ValueTypeNames.Float2, custom=True
             ).Set(_Gf.Vec2f(0.004, 1.0))
@@ -1111,8 +1081,7 @@ def _spawn_cup_mesh(
     if cfg.rigid_props is not None:
         schemas.define_rigid_body_properties(prim_path, cfg.rigid_props, stage=stage)
     if getattr(cfg, "mass", None):
-        # Authored total mass on the body root: the Newton USD importer keeps the authored mass
-        # and falls back to ComputeMassProperties for CoM/inertia, scaled to match.
+        # authored total mass on the body root (importer computes CoM/inertia scaled to match)
         from pxr import UsdPhysics
 
         UsdPhysics.MassAPI.Apply(stage.GetPrimAtPath(prim_path)).GetMassAttr().Set(float(cfg.mass))
@@ -1134,8 +1103,8 @@ def _spawn_cup_mesh(
             material_path = f"{geom_prim_path}/{material_path}"
         cfg.physics_material.func(material_path, cfg.physics_material)
         bind_physics_material(mesh_prim_path, material_path, stage=stage)
-        # The liquid-facing material also covers the handle capsule (an MPM collider); ring +
-        # slab get their own tabletop-friction material below.
+        # liquid-facing material also covers the handle bars (MPM colliders); ring + slab get
+        # the tabletop material below
         for path in proxy_paths:
             if path not in proxy_friction_paths:
                 bind_physics_material(path, material_path, stage=stage)

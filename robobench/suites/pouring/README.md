@@ -19,7 +19,7 @@ simulation artifacts.
 | 2a | Bimanual **kinematic** Frankas (DiffIK writes joint state; arms are MPM colliders only, no rigid solver) | DONE (`1adb9fd`…`9409de4`) | `LATTE-BIMANUAL PASS` 0.355 / 0.645 / 1.000 / 0.000 |
 | 2b | **Coupled MJWarp+MPM substrate — dynamic arms** (real gravity, actuator PD, MuJoCo rigid contacts; one-way rigid→fluid) | DONE (`3d18828`) | `LATTE-BIMANUAL-DYN PASS` ×6 runs (incl. a post-2c-a no-regression rerun): 0.376–0.400 transferred / 0.597–0.624 kept / 1.000 retention / ≤0.002 spilled; pour trigger reproducibly at ~91.6°; hand tracking 0.0–0.8 cm; combined MuJoCo+MPM CUDA graph captures cleanly |
 | 2c-a | **Dynamic vessels + weld-at-grasp + concave rigid proxies** (free-joint vessels with authored mass, ring/slab/handle proxy shells as live MuJoCo geometry, MuJoCo equality welds engaged at the measured grasp pose) | DONE | `LATTE-BIMANUAL-WELD PASS` ×2 consecutive on the final (re-aimed) pour geometry: 0.473–0.500 transferred / 0.500–0.506 kept / 1.000 retention / ≤0.021 spilled; triggers 92.0–92.3°; weld tracks the script within ~0.3° through the whole 92° pour (real-tilt instrumented); welds engage at hand err 0.0 cm, vessels released upright (≤0.6°); njmax 600 holds. Before the re-aim, 2 of 4 full runs failed on CHAOTIC STREAM LANDINGS — see the landmine |
-| 2c-b | **Force closure (substrate RESOLVED via CollisionPipeline; open-loop capture still fails)**: scene `latte_grip` + pinch-grade gripper env + `latte_bimanual_grip_smoke` (slip observable, drop guard, contact probes) all live and honest — but mjwarp @ newton `811968b` cannot hold a static pinch: its CCD single-point contacts creep tangentially under load (measured: a 107–150 N/finger, μ=1, 3.7 mm-deep two-pad pinch lets a 3 N vessel slide out at ~15 mm/s — a ~100× Coulomb violation, invariant to kp 8k→20k, impratio 1→10, cone, bar shape/width, grasp depth/orientation, mesh vs analytic-box pads). Full dossier in the landmine digest. | 18 instrumented bring-ups; substrate blocker RESOLVED via `--newton_contacts` (CollisionPipeline) — remaining gap is open-loop capture dynamics (agent territory) |
+| 2c-b | **Force closure (substrate RESOLVED via CollisionPipeline; open-loop capture still fails)**: scene `latte_grip` + pinch-grade gripper env + a fully instrumented grip smoke (slip observable, drop guard, contact probes; removed in cleanup — restore from `a852b0a`) all built and honest — but mjwarp @ newton `811968b` cannot hold a static pinch: its CCD single-point contacts creep tangentially under load (measured: a 107–150 N/finger, μ=1, 3.7 mm-deep two-pad pinch lets a 3 N vessel slide out at ~15 mm/s — a ~100× Coulomb violation, invariant to kp 8k→20k, impratio 1→10, cone, bar shape/width, grasp depth/orientation, mesh vs analytic-box pads). Full dossier in the landmine digest. | 18 instrumented bring-ups; substrate blocker RESOLVED via `--newton_contacts` (CollisionPipeline) — remaining gap is open-loop capture dynamics (agent territory) |
 | 2c-c | 1.5-way liquid→rigid feedback | after 2c-b unblocks — roadmap below | — |
 
 ## Architecture (Phase 2b + 2c-a)
@@ -83,10 +83,10 @@ Key files:
   Env `pouring.latte_auto.bimanual_franka.joint`; validated by the weld smoke's `--auto` mode
   (engage fired at dist 0.8/0.9 cm exactly at the closure thresholds; full-choreography PASS
   0.303 / 0.697 / 1.000 / 0.000 with zero scripted weld calls).
-- `scripts/latte_bimanual_smoke.py` (2a) / `scripts/latte_bimanual_dyn_smoke.py` (2b) /
-  `scripts/latte_bimanual_weld_smoke.py` (2c-a) / `scripts/latte_bimanual_grip_smoke.py`
-  (2c-b — scene `latte_grip`, env `pouring.latte_grip.bimanual_franka.joint`; run with
-  `--newton_contacts` for honest CollisionPipeline contacts).
+- `scripts/latte_bimanual_weld_smoke.py` — THE bimanual smoke (earlier 2a/2b/2c-b smokes were
+  removed in cleanup; restore from git history if needed — 2a/2b: `53885f2`, grip: `a852b0a`).
+  Default = scene `latte_weld` (scripted welds); `--auto` = scene `latte_auto` (the agent
+  benchmark, zero scripted weld calls).
 
 ## How to run
 
@@ -105,12 +105,8 @@ HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
 HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
     -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke --auto
 
-# Phase 2b smoke, headless (~15–20 min wall; five consecutive PASSes on record)
-HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
-    -m robobench.suites.pouring.scripts.latte_bimanual_dyn_smoke
-
 # quick bring-up / debugging (readable stack traces, capped steps)
-... latte_bimanual_dyn_smoke --sim use_cuda_graph=0 --max_steps 800
+... latte_bimanual_weld_smoke --sim use_cuda_graph=0 --max_steps 800
 
 # record a video of the 2c-a scene — TWO STAGES (videos/ is GITIGNORED — local artifacts only).
 # Live recording (scripts/record_video.py) CORRUPTS the coupled MPM physics on this stack: 5/5
@@ -124,12 +120,6 @@ OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/replay_render.py \
     --video robobench/suites/pouring/videos/latte_bimanual_weld.mp4 \
     --eye 0.35 0.85 0.75 --target-at 0.05 -0.02 0.12
 
-# live recording (2b-era recipe) — historically fine for latte / latte_dyn, DO NOT use for
-# latte_weld (see landmine):
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/record_video.py \
-    robobench.suites.pouring.scripts.latte_bimanual_dyn_smoke \
-    --video robobench/suites/pouring/videos/latte_bimanual_dyn.mp4 \
-    --eye 0.35 0.85 0.75 --target-at 0.05 -0.02 0.12
 ```
 
 Expected verdict lines: `LATTE-BIMANUAL-WELD PASS | milk transferred ≈0.47–0.50 | kept ≈0.50 |
@@ -317,7 +307,7 @@ njmax 600 / nconmax 300. Variants: `latte_dyn` ghosts vessels from MuJoCo entire
   resistance (vessels rotate to droop equilibrium in the pinch). Resting/leaning friction
   (slab-on-table) is fine — the defect bites actuated pinches. Probes that settle it fast next
   time: the grip smoke's `--contact_probe` (finger joint block, `qfrc_actuator`, live contact
-  pairs + depths). Related: the slab-cylinder ratchet (above) is the same contact family
+  pairs + depths — the smoke was removed in cleanup; restore from `a852b0a`). Related: the slab-cylinder ratchet (above) is the same contact family
   misbehaving at rest. SHARPENING MEASUREMENT: segmenting each handle bar into 4 stacked boxes
   (one CCD contact point PER SEGMENT → a genuine 4-point planar manifold per pad, now the scene
   default) slowed the creep ~3× but did not stop it — the creep is PER-CONTACT and its rate

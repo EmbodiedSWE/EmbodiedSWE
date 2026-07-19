@@ -1,28 +1,17 @@
-"""Bimanual latte smoke, Phase 2c-a — DYNAMIC VESSELS carried by weld-at-grasp.
+"""Bimanual latte smoke — dynamic vessels carried by weld-at-grasp (latte_weld / latte_auto).
 
-Everything Phase 2b had (dynamic Frankas, DiffIK -> actuator PD, MuJoCo rigid contacts, one-way
-MPM coupling) plus: the vessels are free rigid bodies with authored mass resting on the table
-through their concave rigid proxies (ring + floor slab + handle capsule — the interior trimesh is
-MPM-only; see `coupled_manager._prepare_builder_for_finalize`). Nothing scripts their poses.
-Carrying is a MuJoCo equality WELD (hand <-> vessel) engaged at the measured grasp pose
-(`scene.weld_vessel`) and released at set-down — the arms feel the real vessel mass, and
-vessel-table / vessel-vessel contacts are live physics.
+Dynamic Frankas (DiffIK -> actuator PD, MuJoCo rigid contacts) and DYNAMIC vessels (authored
+mass, concave rigid proxies, one-way MPM liquids). Carrying is a MuJoCo equality WELD between
+hand and vessel; metrics read the vessels' ACTUAL poses, so drops and topples score honestly.
 
-Choreography differences vs 2b:
-- each weld engages exactly where 2b recorded its ride-along offset (mug at mug_lift, pitcher at
-  lift), from the vessel's ACTUAL pose;
-- the early-pour clearance margin is `--pour_margin` (default 0.022, was 0.005): the 2b
-  trajectory grazed collider-collider clearance to ~0.1 mm at 13.7 deg tilt, which becomes a real
-  proxy-proxy contact now that vessels are MuJoCo geometry;
-- the pour targets the controlled-flow Goldilocks window (see the README landmine): two-stage
-  knee-crawl tilt ramp, sub-knee fill trigger, deep-center lip aim, low fall height;
-- set-down targets stop 4 mm ABOVE the table and the release drops the vessel onto its slab —
-  driving a welded vessel INTO the table would fight the contact solver;
-- fingers close to the real handle-capsule surface (light touch; the weld carries — force closure
-  is Phase 2c-b).
+Two modes:
+  default -> scene `latte_weld`: this script engages/releases the welds (scripted grasp);
+  --auto  -> scene `latte_auto`: the SCENE engages/releases welds from gripper proximity +
+             closure (the agent-benchmark contract) — this script makes no weld calls.
 
-Metrics read the vessels' actual poses (scene.post_step), so a dropped or toppled vessel scores
-honestly. Sequence and verdict gates are Phase 2b's: PASS = transferred >= 0.15, kept >= 0.15,
+Choreography: reach -> descend -> two-stage grasp close -> lifts -> traverse -> knee-crawl pour
+with a departed-fraction fill trigger -> recover -> return -> set-down (4 mm high; release drops
+the vessel onto its slab) -> release. PASS gates: transferred >= 0.15, kept >= 0.15,
 retention >= 0.90, spilled <= 0.05.
 
 Quats are **xyzw** (isaaclab develop / warp convention) throughout.
@@ -41,20 +30,20 @@ import sys
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--time_scale", type=float, default=4.0, help="multiply every phase duration (4.0 reproduces Phase 2a's validated physical cadence)")
+parser.add_argument("--time_scale", type=float, default=4.0, help="multiply every phase duration")
 parser.add_argument("--tilt_deg", type=float, default=118.0, help="MAX pour tilt of the pitcher [deg]; the fill trigger usually stops it earlier")
 parser.add_argument("--mug_tilt_deg", type=float, default=15.0, help="the mug tilts this far TOWARD the pitcher during the pour [deg]")
-parser.add_argument("--lip_clear", type=float, default=0.021, help="pitcher-lip clearance above the mug's low rim [m] (2b ran 0.032; lowered — free-fall converts stream speed into landing drift, and the mouth is only 9 cm wide)")
-parser.add_argument("--pour_margin", type=float, default=0.022, help="early-pour clearance margin [m] in the lip-descent law (2b ran 0.005; proxies need real clearance, and the deep lip aim needs extra descent room)")
-parser.add_argument("--pour_fraction", type=float, default=0.14, help="STOP pouring once this fraction of the milk has DEPARTED the pitcher (polled every step; 2b ran 0.18 — tuned so the freeze lands in the controlled-flow regime BELOW the ~92 deg avalanche knee but ABOVE the teapot-dribble crawl)")
+parser.add_argument("--lip_clear", type=float, default=0.021, help="pitcher-lip clearance above the mug's low rim [m]")
+parser.add_argument("--pour_margin", type=float, default=0.022, help="early-pour clearance margin [m] in the lip-descent law")
+parser.add_argument("--pour_fraction", type=float, default=0.14, help="STOP pouring once this fraction of the milk has DEPARTED the pitcher (polled every step)")
 parser.add_argument("--hold", type=float, default=2.0, help="extra settle time after the trajectory [s]")
 parser.add_argument("--print_every", type=int, default=400, help="progress print period [steps]")
 parser.add_argument("--max_steps", type=int, default=None, help="cap total steps (debugging)")
-parser.add_argument("--max_dq", type=float, default=0.04, help="per-tick joint REFERENCE step clamp [rad] (8 rad/s slew at 200 Hz)")
-parser.add_argument("--lead_max", type=float, default=0.30, help="max lead of the commanded reference over the ACTUAL joints [rad] (bounded PD force, ~1.5 rad/s sustained)")
+parser.add_argument("--max_dq", type=float, default=0.04, help="per-tick joint REFERENCE step clamp [rad]")
+parser.add_argument("--lead_max", type=float, default=0.30, help="max lead of the commanded reference over the ACTUAL joints [rad]")
 parser.add_argument("--grasp_pitch", type=float, default=30.0, help="downward tilt of the horizontal side grasps [deg]")
 parser.add_argument("--auto", action="store_true", help="run on scene latte_auto (agent-benchmark grasping): welds engage/release AUTOMATICALLY from gripper proximity + closure — this smoke then makes NO scripted weld calls, validating the mechanic end-to-end")
-parser.add_argument("--dump_states", type=str, default=None, help="record body_q + particle positions every --dump_every steps into this .npz for scripts/replay_render.py — the LIVE render path corrupts MPM physics on this stack (README landmine), so videos are rendered from replayed headless-PASS states")
+parser.add_argument("--dump_states", type=str, default=None, help="record body_q + particle positions every --dump_every steps into this .npz for scripts/replay_render.py (videos render from replayed states; see README)")
 parser.add_argument("--dump_every", type=int, default=7, help="state-dump cadence [steps]; 7 ~= 30 fps at 200 Hz")
 parser.add_argument("--scene", nargs="*", default=None, metavar="K=V", help="scene cfg overrides")
 parser.add_argument("--sim", nargs="*", default=None, metavar="K=V", help="sim cfg overrides (MpmSimCfg fields, e.g. use_cuda_graph=0 num_substeps=4)")
@@ -236,19 +225,13 @@ def main() -> None:
     def hand_from_tip(tip_xyz: tuple, quat: torch.Tensor) -> torch.Tensor:
         return t3(*tip_xyz) - 0.113 * math_utils.quat_apply(quat, z_hat)
 
-    # Same visual pinch points as 2b — but the outer handle bars are REAL capsules now, so the
-    # fingers stop AT the surface instead of closing through it (the weld carries the load).
+    # Pinch points at the handle bars; the pads stop just short of the bar surfaces.
     lh_grasp = hand_from_tip((-0.080, 0.0, 0.093), Q_LEFT)
     rh_grasp = hand_from_tip((px + 0.060, py, 0.095), Q_RIGHT)
     lh_hover = lh_grasp + torch.tensor([-0.06, 0.0, 0.05], device=device)
     rh_hover = rh_grasp + torch.tensor([0.07, 0.0, 0.05], device=device)
-    # TWO-STAGE close. While a vessel is FREE the pads stop at a standoff (bar + 3 mm): closing
-    # to +1 mm pressed the bar through the ±1 cm tracking error and yawed the free mug ~50 deg
-    # on its slab before the weld engaged (27 cm hand-target jump, 23% of the coffee sloshed
-    # out). Once the WELD is on, contact cannot displace the vessel relative to the hand, so the
-    # fingers finish closing onto the bar (surface + 0.5 mm) during the first quarter of the
-    # lift — the grasp reads real on video while the weld still carries the load. Real force
-    # closure is Phase 2c-b.
+    # Two-stage close: pads stand off while the vessel is free, then finish onto the bar
+    # surface (+0.5 mm) during the first quarter of the lift, once the weld carries the load.
     STANDOFF_MUG, GRIP_MUG_BAR = 0.011, 0.0085  # mug bar capsule r = 0.008
     STANDOFF_PITCHER, GRIP_PITCHER_BAR = 0.009, 0.0065  # pitcher bar capsule r = 0.006
 
@@ -308,16 +291,14 @@ def main() -> None:
     def lerp(a: torch.Tensor, b: torch.Tensor, s: float) -> torch.Tensor:
         return a + (b - a) * s
 
-    KNEE = math.radians(85.0)  # below the ~92 deg avalanche knee the outflow is a controlled ooze
+    KNEE = math.radians(85.0)  # sub-avalanche tilt: outflow is a controlled ooze
 
     def tilt_of(name: str, s: float) -> tuple[float, float]:
         if tilt_frozen is not None and name in ("pour", "drain"):
             return tilt_frozen
         if name == "pour":
-            # Two-stage ramp: sprint to the knee in the first 60% of the phase, then CRAWL
-            # (~2.5 deg/s) through it — crossing the knee fast turns the pour into a violent
-            # surge whose landing point is chaotic (see the landmine); crawling lets the fill
-            # trigger freeze during gentle ooze instead.
+            # Two-stage ramp: sprint to the knee, then crawl through it so the fill trigger
+            # freezes during controlled ooze (surge landings are chaotic; see README).
             if s <= 0.6:
                 theta = KNEE * (s / 0.6)
             else:
@@ -338,8 +319,7 @@ def main() -> None:
         if name == "mug_lift":
             return lerp(mug_base, mug_carry, s), q4((0.0, 0.0, 0.0, 1.0))
         if name == "mug_down":
-            # Stop 4 mm high: the release drops the mug onto its slab instead of pressing the
-            # welded body into the table against the contact solver.
+            # stop 4 mm high; the release drops the mug onto its slab
             return lerp(mug_carry, mug_base + drop, s), q4((0.0, 0.0, 0.0, 1.0))
         half = phi / 2.0
         return mug_carry, q4((0.0, math.sin(half), 0.0, math.cos(half)))
@@ -351,9 +331,8 @@ def main() -> None:
         low_rim = mp + math_utils.quat_apply(mq, rim_local)
         lx, lz = float(lip_local[0]), float(lip_local[2])
         lip_up = max(args.lip_clear, args.pour_margin + math.sin(theta) * lx + math.cos(theta) * lz)
-        # -0.038 (2b: -0.020): aim the lip DEEP past the rim, near the mouth center. The landing
-        # map straddles the mouth: teapot-cling dribble falls BEHIND the lip (near rim), a surge
-        # overshoots FAR — centering the touchdown tolerates both a stream-width of scatter.
+        # lip aims deep past the rim, near the mouth center: tolerates a stream-width of
+        # landing scatter on both sides
         lip_target = low_rim[0] + torch.tensor([-0.038, 0.0, lip_up], device=device)
         st, ct = math.sin(-theta), math.cos(-theta)
         lx, lz = lip_local[0], lip_local[2]
@@ -456,13 +435,8 @@ def main() -> None:
         else:
             if off_mug is None:
                 hp, hq = left.hand_pose_w()
-                # Anchor the ride-along offset to the SCRIPTED home pose, not the read-back body
-                # pose: on this isaaclab/newton pin, root_link_quat_w for free trimesh bodies
-                # carries a constant per-body YAW offset vs the prim frame (inertial-principal
-                # frame — measured 0.84 rad mug / 2.68 rad pitcher), which poisons prim-frame
-                # trajectory math while leaving the yaw-invariant cylinder metrics and tilt
-                # readouts untouched. The vessel is verifiably AT home here (undisturbed since
-                # spawn), and set_weld measures its own relpose in one consistent frame.
+                # ride-along offsets anchor to SCRIPTED home poses, not read-back body poses
+                # (README landmine: root_link_quat_w yaw offsets on free trimesh bodies)
                 off_mug = math_utils.subtract_frame_transforms(hp, hq, mug_base, q4((0.0, 0.0, 0.0, 1.0)))
                 if not args.auto:  # latte_auto: the scene's proximity+closure mechanic already engaged it
                     scene.weld_vessel("mug", True)
@@ -479,7 +453,7 @@ def main() -> None:
         elif name in CUP_PHASES:
             if off_cup is None:
                 hp, hq = right.hand_pose_w()
-                # Scripted home anchor — same rationale as off_mug (and same as the 2b smoke).
+                # scripted home anchor, same rationale as off_mug
                 off_cup = math_utils.subtract_frame_transforms(hp, hq, cup_start, q4((0.0, 0.0, 0.0, 1.0)))
                 if not args.auto:
                     scene.weld_vessel("pitcher", True)
