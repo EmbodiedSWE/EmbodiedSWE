@@ -192,6 +192,47 @@ Explicitly out of scope at this fidelity class (document in the benchmark card, 
 surface tension / wetting / adhesion, air phase, soft finger pads, solref-scale contact
 penetration.
 
+## Contact model card (latte_auto / latte_weld — the benchmark substrate)
+
+Every visible object pair, per the suite ethos (real, or explicitly documented as idealized).
+Two solvers share one Newton model, coupled one-way: SolverMuJoCo (rigid<->rigid, 3 substeps @
+1/600 s) then SolverImplicitMPM (particle<->rigid, 1/200 s, SDF + complementarity + Coulomb,
+backward-FD collider velocities).
+
+Rigid <-> rigid (MuJoCo contacts):
+
+| Pair | Model |
+|---|---|
+| Arm link <-> arm link (self + cross-arm) | REAL (mesh hulls; adjacent links filtered) |
+| Arm <-> table / floor | REAL (mesh x box) |
+| Vessel <-> table | REAL (box slab x box; slab is a box because cylinder-box CCD ratchets) |
+| Vessel <-> vessel | REAL (ring/slab/bar boxes; drives the --pour_margin clearance law) |
+| Arm <-> vessel body | REAL (mesh x ring/slab boxes) |
+| Fingers <-> handle bars | REAL GEOMETRY, defective friction (mjwarp pinch-creep landmine) — weld scenes keep pads 0.5 mm clear so the pair stays unloaded |
+| Hand <-> HELD vessel | IDEALIZED: equality weld (auto-engaged by proximity+closure in latte_auto), full-wrench 6-DOF soft constraint — replaces blocked force closure |
+| Vessel interior trimesh <-> any rigid | NOT MODELED, deliberately (MPM-only; convexification would seal the mouth — the concave proxies substitute) |
+
+Particle <-> rigid (MPM boundaries; ALL one-way — liquid pushes nothing back):
+
+| Pair | Model |
+|---|---|
+| Liquids <-> vessel interior shells | REAL (exact watertight trimesh SDF; walls >= 2 voxels) |
+| Liquids <-> handle bars | REAL (bars carry both flags) |
+| Liquids <-> table / floor | REAL (spills pool physically) |
+| Liquids <-> arm links/fingers | REAL (every link is an MPM collider) |
+| Liquids <-> ring/slab proxies | NOT MODELED (rigid-only; shadowed by the interior shells) |
+| Liquid -> rigid FORCES | NOT MODELED (one-way boundary; roadmap 2c-c) |
+| Coffee <-> milk | REAL (shared MPM continuum, one material) |
+
+Visual-only (zero contact, by design): the textured vessel USD meshes (physics stripped — their
+baked collision leaks particles), the handle LOOP arms beyond the bar segments, and the visible
+ground plane (sunk to -1.05; an invisible box carries z=0).
+
+Parameters: friction pair rule = element-wise max — pads 1.0, ring/slab 0.5, table 0.5, bars
+0.05 (liquid-facing); bars carry stiff per-prim mjc:solref 0.004; margins zeroed by CCD compat;
+njmax 600 / nconmax 300. Variants: `latte_dyn` ghosts vessels from MuJoCo entirely (2b);
+`latte_grip` replaces the weld with real pinches (physics-honest, capture unsolved).
+
 ## Landmine digest (hard-won; verify before "fixing")
 
 - **Quats are xyzw** everywhere on isaaclab develop (cfg `init_state.rot`, data layer, math
