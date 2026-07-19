@@ -47,6 +47,7 @@ parser.add_argument("--max_steps", type=int, default=None, help="cap total steps
 parser.add_argument("--max_dq", type=float, default=0.04, help="per-tick joint REFERENCE step clamp [rad]")
 parser.add_argument("--lead_max", type=float, default=0.30, help="max lead of the commanded reference over the ACTUAL joints [rad]")
 parser.add_argument("--grasp_pitch", type=float, default=90.0, help="downward tilt of the grasps [deg]; 90 = TOP-DOWN pinch, pads aligned with the vertical bars for LINE contact (a 30 deg side grasp crosses the bar at 60 deg -> point contacts -> the vessels pivot out at any force)")
+parser.add_argument("--newton_contacts", action="store_true", help="rigid contacts from Newton's CollisionPipeline (use_mujoco_contacts=False): multi-point manifolds fed into the MuJoCo solve — the 2c-b path around mjwarp's creeping single-point CCD contacts")
 parser.add_argument("--mujoco_cpu", action="store_true", help="run the rigid half on CLASSIC CPU MuJoCo (use_mujoco_cpu=True, forces use_cuda_graph=0): reference multi-point contact manifolds + friction — the A/B experiment against the mjwarp GPU pipeline's pinch-friction defect")
 parser.add_argument("--contact_probe", type=int, nargs="*", default=None, help="at these step numbers, dump finger joint positions and the live finger/handle contact list (grasp debugging)")
 parser.add_argument("--dump_states", type=str, default=None, help="record body_q + particle positions every --dump_every steps into this .npz for scripts/replay_render.py")
@@ -190,6 +191,9 @@ def main() -> None:
     # njmax/nconmax raised over the suite defaults (600/300): the segmented handle bars
     # multiply pinch contacts ~4x (that is the point — an N-point planar manifold per pad).
     overrides["mjwarp"] = {"impratio": 10.0, "cone": "elliptic", "njmax": 900, "nconmax": 450, **overrides.get("mjwarp", {})}
+    if args.newton_contacts:
+        overrides["mjwarp"] = {**overrides["mjwarp"], "use_mujoco_contacts": False}
+        print("[latte2cb] rigid contacts from Newton CollisionPipeline (multi-point manifolds)", flush=True)
     if args.mujoco_cpu:
         overrides["mjwarp"] = {**overrides["mjwarp"], "use_mujoco_cpu": True}
         overrides["use_cuda_graph"] = False  # CPU stepping cannot be graph-captured
@@ -256,10 +260,12 @@ def main() -> None:
     lh_hover = lh_grasp + torch.tensor([0.0, 0.0, 0.06], device=device)
     rh_hover = rh_grasp + torch.tensor([0.0, 0.0, 0.06], device=device)
 
+    STANDOFF_MUG = 0.014  # bar half-width 0.011 + 3 mm
+    STANDOFF_PITCHER = 0.012  # bar half-width 0.009 + 3 mm
     phases: list[tuple[str, float]] = [
         ("reach", 2.5),
         ("descend", 1.5),
-        ("grasp", 1.0),
+        ("grasp", 2.0),  # doubled for the two-stage close (crawl stage needs the time)
         ("mug_lift", 1.5),
         ("lift", 1.2),
         ("traverse", 1.8),
@@ -421,8 +427,18 @@ def main() -> None:
         if name in ("reach", "descend"):
             left.grip = right.grip = 0.04
         elif name == "grasp":
-            left.grip = max(args.grip_mug, 0.04 - (0.04 - args.grip_mug) * s)
-            right.grip = max(args.grip_pitcher, 0.04 - (0.04 - args.grip_pitcher) * s)
+            # TWO-STAGE close: glide to a standoff, then SNAP the last millimeters (~0.4 s).
+            # With honest pipeline contacts, contact TIME is the enemy: a slow final close lets
+            # the first-touching pad drag the free vessel (yawed it 105 deg at 10 mm/s; tipped
+            # it 16 deg at 5 mm/s). A fast symmetric snap captures the bar before the vessel
+            # can respond — which is why real grippers close fast.
+            if s <= 0.85:
+                left.grip = 0.04 + (STANDOFF_MUG - 0.04) * (s / 0.85)
+                right.grip = 0.04 + (STANDOFF_PITCHER - 0.04) * (s / 0.85)
+            else:
+                ss = min(1.0, (s - 0.85) / 0.05)
+                left.grip = STANDOFF_MUG + (args.grip_mug - STANDOFF_MUG) * ss
+                right.grip = STANDOFF_PITCHER + (args.grip_pitcher - STANDOFF_PITCHER) * ss
         elif name == "release":
             left.grip = min(0.04, args.grip_mug + (0.04 - args.grip_mug) * s)
             right.grip = min(0.04, args.grip_pitcher + (0.04 - args.grip_pitcher) * s)

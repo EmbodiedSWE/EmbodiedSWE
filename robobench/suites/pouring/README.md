@@ -19,7 +19,7 @@ simulation artifacts.
 | 2a | Bimanual **kinematic** Frankas (DiffIK writes joint state; arms are MPM colliders only, no rigid solver) | DONE (`1adb9fd`…`9409de4`) | `LATTE-BIMANUAL PASS` 0.355 / 0.645 / 1.000 / 0.000 |
 | 2b | **Coupled MJWarp+MPM substrate — dynamic arms** (real gravity, actuator PD, MuJoCo rigid contacts; one-way rigid→fluid) | DONE (`3d18828`) | `LATTE-BIMANUAL-DYN PASS` ×6 runs (incl. a post-2c-a no-regression rerun): 0.376–0.400 transferred / 0.597–0.624 kept / 1.000 retention / ≤0.002 spilled; pour trigger reproducibly at ~91.6°; hand tracking 0.0–0.8 cm; combined MuJoCo+MPM CUDA graph captures cleanly |
 | 2c-a | **Dynamic vessels + weld-at-grasp + concave rigid proxies** (free-joint vessels with authored mass, ring/slab/handle proxy shells as live MuJoCo geometry, MuJoCo equality welds engaged at the measured grasp pose) | DONE | `LATTE-BIMANUAL-WELD PASS` ×2 consecutive on the final (re-aimed) pour geometry: 0.473–0.500 transferred / 0.500–0.506 kept / 1.000 retention / ≤0.021 spilled; triggers 92.0–92.3°; weld tracks the script within ~0.3° through the whole 92° pour (real-tilt instrumented); welds engage at hand err 0.0 cm, vessels released upright (≤0.6°); njmax 600 holds. Before the re-aim, 2 of 4 full runs failed on CHAOTIC STREAM LANDINGS — see the landmine |
-| 2c-b | **Force closure (ATTEMPTED — blocked by the substrate)**: scene `latte_grip` + pinch-grade gripper env + `latte_bimanual_grip_smoke` (slip observable, drop guard, contact probes) all live and honest — but mjwarp @ newton `811968b` cannot hold a static pinch: its CCD single-point contacts creep tangentially under load (measured: a 107–150 N/finger, μ=1, 3.7 mm-deep two-pad pinch lets a 3 N vessel slide out at ~15 mm/s — a ~100× Coulomb violation, invariant to kp 8k→20k, impratio 1→10, cone, bar shape/width, grasp depth/orientation, mesh vs analytic-box pads). Full dossier in the landmine digest. | 12 instrumented bring-ups; every layer root-caused |
+| 2c-b | **Force closure (substrate RESOLVED via CollisionPipeline; open-loop capture still fails)**: scene `latte_grip` + pinch-grade gripper env + `latte_bimanual_grip_smoke` (slip observable, drop guard, contact probes) all live and honest — but mjwarp @ newton `811968b` cannot hold a static pinch: its CCD single-point contacts creep tangentially under load (measured: a 107–150 N/finger, μ=1, 3.7 mm-deep two-pad pinch lets a 3 N vessel slide out at ~15 mm/s — a ~100× Coulomb violation, invariant to kp 8k→20k, impratio 1→10, cone, bar shape/width, grasp depth/orientation, mesh vs analytic-box pads). Full dossier in the landmine digest. | 18 instrumented bring-ups; substrate blocker RESOLVED via `--newton_contacts` (CollisionPipeline) — remaining gap is open-loop capture dynamics (agent territory) |
 | 2c-c | 1.5-way liquid→rigid feedback | after 2c-b unblocks — roadmap below | — |
 
 ## Architecture (Phase 2b + 2c-a)
@@ -76,8 +76,8 @@ Key files:
   (gravcomp 1.0, arm effort 300, gripper 500).
 - `scripts/latte_bimanual_smoke.py` (2a) / `scripts/latte_bimanual_dyn_smoke.py` (2b) /
   `scripts/latte_bimanual_weld_smoke.py` (2c-a) / `scripts/latte_bimanual_grip_smoke.py`
-  (2c-b, blocked on the mjwarp pinch defect — scene `latte_grip`, env
-  `pouring.latte_grip.bimanual_franka.joint`).
+  (2c-b — scene `latte_grip`, env `pouring.latte_grip.bimanual_franka.joint`; run with
+  `--newton_contacts` for honest CollisionPipeline contacts).
 
 ## How to run
 
@@ -153,11 +153,13 @@ independently verifiable:
   (gripper kp 20000 / damping 200 / effort 500, elliptic cone + impratio 10 via the smoke),
   wide stiff grip bars (`grip_w` + `mjc:solref` per-prim), analytic fingertip pad boxes
   (`finger_pads` → `_add_finger_pad_boxes`, AABB-derived, meshes stay MPM-only), and the grip
-  smoke with slip/drop observability and `--contact_probe`. Two unblock paths, both substrate
-  surgery: (a) rebuild the coupled manager on `use_mujoco_contacts=False` + Newton's own
-  CollisionPipeline (proper contact manifolds; the manager currently forbids it — the MPM
-  double-drive concern needs a redesign, not a flag); (b) bump the newton/mjwarp pin once its
-  contact friction matures, then re-run `latte_bimanual_grip_smoke` as-is.
+  smoke with slip/drop observability and `--contact_probe`. UNBLOCKED: path (a) is
+  IMPLEMENTED — the coupled manager supports `use_mujoco_contacts=False` + CollisionPipeline
+  (`--newton_contacts`), under which friction sticks and all creep vanishes. What remains is
+  OPEN-LOOP CAPTURE: the scripted close either drags (slow) or swats (fast) the free-standing
+  vessel — three capture strategies documented in the landmine. Next real step: a
+  contact-servoed grasp (close-until-touch via the `--contact_probe` machinery, balance, then
+  squeeze) — or leave capture to agents; the environment is now HONEST about grasp difficulty.
 - [ ] **2c-c: 1.5-way liquid→rigid feedback.** Apply `collect_collider_impulses` into `body_f`
   each tick — the exact recipe is Newton's `examples/mpm/example_mpm_twoway_coupling.py`
   (force = impulse / MPM dt held across rigid substeps, and SUBTRACT the previously-applied
@@ -262,7 +264,17 @@ penetration.
   (one CCD contact point PER SEGMENT → a genuine 4-point planar manifold per pad, now the scene
   default) slowed the creep ~3× but did not stop it — the creep is PER-CONTACT and its rate
   scales ~1/contact-count, i.e. a friction-constraint defect, not a manifold-shape problem.
-  Brute-forcing more segments trades perf for a slower loss; the fix is upstream. ALSO RULED
+  RESOLUTION FOUND: `use_mujoco_contacts=False` + Newton's CollisionPipeline (grip smoke
+  `--newton_contacts`; the coupled manager now supports it — the MPM half is orthogonal, the old
+  double-drive guard was over-broad). Under pipeline contacts friction STICKS: vessels rest
+  bit-stable, a closing pad DRAGS the bar (real stiction!), and the creep disappears — the
+  defect is exclusively in mjwarp's INTERNAL collision path. The pinch then fails differently
+  and honestly: open-loop capture of a free-standing thin bar is genuinely hard (slow closes
+  drag the vessel into yaw/tip — 105 deg at 10 mm/s, 16 deg at 5 mm/s even with proxy_friction
+  1.5 anchoring; fast snap closes swat it — 38 deg tip). That is a GRASP CONTROL problem
+  (contact-servoed closing), not a physics defect — i.e., benchmark-appropriate difficulty.
+  Brute-forcing more segments trades perf for a slower loss; the mjwarp-internal fix is
+  upstream. ALSO RULED
   OUT on this pin: `use_mujoco_cpu=True` (classic MuJoCo-C stepping, tried via the grip smoke's
   `--mujoco_cpu`) is half-wired for this model class — contacts appear in the sensor-report
   buffer but are never resolved into forces (fingers close through the bars unblocked, zero
