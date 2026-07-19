@@ -99,13 +99,15 @@ From the CoSiGen repo root, with `SRC` pointing at *your* checkout's `source/` d
 SRC=~/IsaacLab/source                 # <-- adjust to your IsaacLab checkout
 PY=env_newton/bin/python
 # isaacsim deps span pypi.org + pypi.nvidia.com at different versions, and isaacsim pins some
-# pre-release deps, so its installs take these extra flags:
-NV="--extra-index-url https://pypi.nvidia.com --index-strategy unsafe-best-match --prerelease=allow"
+# pre-release deps, so its installs take these extra flags. Keep NV an ARRAY expanded as
+# "${NV[@]}" (works in bash and zsh) — a scalar NV="..." breaks in zsh, which does not
+# word-split unquoted $NV and passes the whole string as one argument.
+NV=(--extra-index-url https://pypi.nvidia.com --index-strategy unsafe-best-match --prerelease=allow)
 
 uv venv env_newton --python 3.12 --prompt env_newton
 uv pip install --python "$PY" torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu130
-uv pip install --python "$PY" $NV "isaacsim[all,extscache]==6.0.0.1"   # large first download
-uv pip install --python "$PY" $NV \
+uv pip install --python "$PY" "${NV[@]}" "isaacsim[all,extscache]==6.0.0.1"   # large first download
+uv pip install --python "$PY" "${NV[@]}" \
   -e "$SRC/isaaclab_newton[all]" -e "$SRC/isaaclab_physx[newton]" \
   -e "$SRC/isaaclab_ovphysx" -e "$SRC/isaaclab_visualizers[kit]" \
   -e "$SRC/isaaclab_contrib" -e "$SRC/isaaclab_assets" -e "$SRC/isaaclab"
@@ -122,7 +124,7 @@ Notes:
   default to the kit visualizer).
 - Optional — only to run IsaacLab's in-tree reference tasks (e.g. `Isaac-Lift-Cloth-Franka-v0`),
   not needed by the folding suite:
-  `uv pip install --python "$PY" $NV -e "$SRC/isaaclab_tasks" -e "$SRC/isaaclab_rl" -e "$SRC/isaaclab_ov"`
+  `uv pip install --python "$PY" "${NV[@]}" -e "$SRC/isaaclab_tasks" -e "$SRC/isaaclab_rl" -e "$SRC/isaaclab_ov"`
 
 ### 3. Run the folding suite
 
