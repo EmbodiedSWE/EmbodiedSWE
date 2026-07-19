@@ -921,34 +921,40 @@ def _spawn_cup_mesh(
         )
         proxy_paths.append(slab_path)
         proxy_friction_paths.append(slab_path)
-        # Handle bar: a BOX, deliberately NOT a capsule — the Franka finger pads are MESH geoms,
-        # and mjwarp's mesh-vs-capsule pair silently generated no pinch contacts (grip force,
-        # friction cone, and impratio all changed nothing; the pads closed through the bar).
-        # Same lesson as the slab: curved primitives misbehave in this contact pipeline, boxes
-        # are first-class. Square cross-section 2r x 2r, full capsule-equivalent length.
+        # Handle bar: a SEGMENTED STACK of boxes, deliberately NOT one capsule/box — two stacked
+        # reasons. (1) The Franka pads are MESH geoms and mjwarp's mesh-vs-capsule pair silently
+        # generated no pinch contacts at all (boxes are first-class, same lesson as the slab).
+        # (2) mjwarp's CCD emits ONE contact point per geom PAIR — a single bar gives a
+        # point-contact pinch with near-zero pivot resistance (the 2c-b vessels rotated out of a
+        # 100 N grip). N stacked segments x pad = an N-point PLANAR manifold along the bar:
+        # real torque levers, and per-segment anchored contact points instead of one wandering
+        # CCD point. Square cross-section grip_w x grip_w; total length = capsule-equivalent.
         h = pr["handle"]
-        handle_path = f"{base_path}/handle"
         bar_w = float(h.get("grip_w", 2.0 * h["r"]))
         bar_len = 2.0 * (float(h["half_height"]) + float(h["r"]))
-        create_prim(
-            handle_path,
-            prim_type="Cube",
-            attributes={"size": 1.0},
-            translation=(float(h["x"]), 0.0, float(h["z"])),
-            scale=(bar_w, bar_w, bar_len),
-            stage=stage,
-        )
-        # Stiff contact on the grip bar (mjc:solref, read by the newton importer): the default
-        # solref lets the finger pads sink mm-deep at ~10 N/mm, capping the achievable pinch
-        # force regardless of gripper kp (force closure died at ~19 N). Timeconst 4 ms ~= 25x
-        # stiffer: pinch force ~= kp x block depth again.
+        n_seg = int(h.get("segments", 4))
+        seg_len = bar_len / n_seg
+        z_lo_bar = float(h["z"]) - bar_len / 2.0
         from pxr import Gf as _Gf
         from pxr import Sdf as _Sdf
 
-        stage.GetPrimAtPath(handle_path).CreateAttribute(
-            "mjc:solref", _Sdf.ValueTypeNames.Float2, custom=True
-        ).Set(_Gf.Vec2f(0.004, 1.0))
-        proxy_paths.append(handle_path)
+        for k in range(n_seg):
+            seg_path = f"{base_path}/handle_{k:02d}"
+            create_prim(
+                seg_path,
+                prim_type="Cube",
+                attributes={"size": 1.0},
+                translation=(float(h["x"]), 0.0, z_lo_bar + (k + 0.5) * seg_len),
+                scale=(bar_w, bar_w, seg_len),
+                stage=stage,
+            )
+            # Stiff contact on the grip bar (mjc:solref, read by the newton importer): default
+            # solref lets the pads sink mm-deep at ~10 N/mm, capping pinch force regardless of
+            # gripper kp (force closure died at ~19 N). Timeconst 4 ms ~= 25x stiffer.
+            stage.GetPrimAtPath(seg_path).CreateAttribute(
+                "mjc:solref", _Sdf.ValueTypeNames.Float2, custom=True
+            ).Set(_Gf.Vec2f(0.004, 1.0))
+            proxy_paths.append(seg_path)
         from pxr import UsdGeom
 
         UsdGeom.Imageable(stage.GetPrimAtPath(base_path)).MakeInvisible()
