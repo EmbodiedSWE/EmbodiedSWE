@@ -157,13 +157,9 @@ coffee. One smoke drives every mode:
 # --feed = --auto + 1.5-way liquid feedback)
 HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
   -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke
-
-# videos are TWO-STAGE — live recording corrupts the coupled MPM physics on this stack:
-# stage 1 dumps states from a headless run, stage 2 replays them through the renderer
-HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
-  -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke \
-  --dump_states robobench/suites/pouring/videos/weld_run_states.npz
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/replay_render.py \
-  robobench/suites/pouring/videos/weld_run_states.npz \
-  --video robobench/suites/pouring/videos/latte_bimanual_weld.mp4
 ```
+
+Note: do **not** record pouring videos with `scripts/record_video.py` — live rendering corrupts
+the coupled MPM physics on this stack. The smoke's `--dump_states` records the trajectory
+(poses + particles) to an `.npz` for offline rendering instead (a replay renderer last exists
+at `f8c101d`: `scripts/replay_render.py`).
