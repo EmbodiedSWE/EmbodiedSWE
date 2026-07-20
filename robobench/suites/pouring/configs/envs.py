@@ -141,7 +141,7 @@ register_env(
 
 # FORCE CLOSURE on scene "latte_grip" (same substrate as latte_weld; new name = the variant
 # slot): the vessels hang from real friction pinches on the handle bars, so the gripper PD is
-# pinch-grade (kp 20000 -> ~130 N at a blocked full-close command). See README for status.
+# pinch-grade (kp 20000 -> ~130 N at a blocked full-close command).
 def _grip_franka(base_pos: tuple[float, float, float]) -> FrankaRobotCfg:
     cfg = _dyn_franka(base_pos)
     cfg.gripper_stiffness = 20000.0

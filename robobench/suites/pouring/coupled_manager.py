@@ -205,7 +205,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
         """Replace the Franka fingertip MESH rigid contacts with analytic BOX pads (force
         closure): each finger mesh keeps COLLIDE_PARTICLES but drops COLLIDE_SHAPES; a box pad
         covering the mesh's inner-face slab (from its body-frame AABB) takes over rigid
-        collision. Mesh-geom pinch friction creeps on this pin — see README landmines."""
+        collision. Mesh-geom pinch friction creeps on this pin (upstream mjwarp CCD defect)."""
         import copy
 
         import numpy as np
