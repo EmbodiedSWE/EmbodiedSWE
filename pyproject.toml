@@ -14,6 +14,7 @@ include = ["robobench*"]
 # Curated USD assets shipped with suites (editable installs work without this; wheels need it).
 [tool.setuptools.package-data]
 "robobench.suites.folding" = ["assets/**/*.usd"]
+"robobench.suites.pouring" = ["assets/**/*.usd", "assets/**/*.png", "assets/**/*.json"]
 
 [tool.pyright]
 reportPrivateUsage = "none"
