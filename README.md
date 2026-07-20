@@ -150,11 +150,10 @@ OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/record_video.py \
 
 The `pouring` suite (`robobench/suites/pouring/`) runs particle liquids (implicit **MPM**)
 coupled with MJWarp rigid dynamics: two dynamic Frankas grasp both vessels and pour milk into
-coffee. One smoke drives every mode:
+coffee. ONE registered env — `pouring.latte.bimanual_franka.joint` (dynamic arms + dynamic
+vessels + auto-weld grasp contract + 1.5-way liquid feedback) — and one smoke that drives it:
 
 ```bash
-# bimanual latte smoke, headless (default: scripted welds; --auto = agent grasp contract;
-# --feed = --auto + 1.5-way liquid feedback)
 HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
   -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke
 ```

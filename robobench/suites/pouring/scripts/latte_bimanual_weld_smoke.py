@@ -1,13 +1,10 @@
-"""Bimanual latte smoke — dynamic vessels carried by weld-at-grasp.
+"""Bimanual latte smoke on the benchmark env (`pouring.latte.bimanual_franka.joint`).
 
 Dynamic Frankas (DiffIK -> actuator PD, MuJoCo rigid contacts) and DYNAMIC vessels (authored
-mass, concave rigid proxies, one-way MPM liquids). Carrying is a MuJoCo equality WELD between
-hand and vessel; metrics read the vessels' ACTUAL poses, so drops and topples score honestly.
-
-Two modes:
-  default -> scene `latte_weld`: this script engages/releases the welds (scripted grasp);
-  --auto  -> scene `latte_auto`: the SCENE engages/releases welds from gripper proximity +
-             closure (the agent-benchmark contract) — this script makes no weld calls.
+mass, concave rigid proxies, MPM liquids with 1.5-way feedback: vessels weigh what they hold).
+Grasping is the scene's AUTO-WELD contract — a gripper that closes within reach of a handle bar
+welds the vessel on, opening releases it — so this script makes NO attach/detach calls; metrics
+read the vessels' ACTUAL poses, so drops and topples score honestly.
 
 Choreography: reach -> descend -> two-stage grasp close -> lifts -> traverse -> knee-crawl pour
 with a departed-fraction fill trigger -> recover -> return -> set-down (4 mm high; release drops
@@ -42,8 +39,6 @@ parser.add_argument("--max_steps", type=int, default=None, help="cap total steps
 parser.add_argument("--max_dq", type=float, default=0.04, help="per-tick joint REFERENCE step clamp [rad]")
 parser.add_argument("--lead_max", type=float, default=0.30, help="max lead of the commanded reference over the ACTUAL joints [rad]")
 parser.add_argument("--grasp_pitch", type=float, default=30.0, help="downward tilt of the horizontal side grasps [deg]")
-parser.add_argument("--feed", action="store_true", help="run on scene latte_feed: latte_auto plus 1.5-way liquid feedback (vessels weigh what they hold; adds a fluid-force readout to the status line)")
-parser.add_argument("--auto", action="store_true", help="run on scene latte_auto (agent-benchmark grasping): welds engage/release AUTOMATICALLY from gripper proximity + closure — this smoke then makes NO scripted weld calls, validating the mechanic end-to-end")
 parser.add_argument("--dump_states", type=str, default=None, help="record body_q + particle positions every --dump_every steps into this .npz for offline replay rendering (LIVE rendering corrupts the coupled physics)")
 parser.add_argument("--dump_every", type=int, default=7, help="state-dump cadence [steps]; 7 ~= 30 fps at 200 Hz")
 parser.add_argument("--scene", nargs="*", default=None, metavar="K=V", help="scene cfg overrides")
@@ -86,7 +81,7 @@ FPS = 200  # must match MpmSimCfg.dt
 RENDER_EVERY = 4  # render/particle-push cadence [ticks]
 SETDOWN_DROP = 0.004  # set-down targets stop this far above the table; release drops the vessel
 
-# One env.step == one physics tick (see the 2b smoke for the rationale).
+# One env.step == one physics tick.
 FrankaRobot.JOINT_CONTROL_DT = 1.0 / FPS
 
 
@@ -142,7 +137,7 @@ class Arm:
         J[:, 3:, :] = torch.bmm(R, J[:, 3:, :])
         q_arm = self.art.data.joint_pos.torch[:, self.arm_ids]
         q_des = self.ik.compute(ee_p, ee_q, J, q_arm)
-        # Bounded-lead reference (see the 2b smoke: anchoring to actual joints caps speed).
+        # Bounded-lead reference: anchoring to the ACTUAL joints caps the commanded speed.
         if self.q_ref is None:
             self.q_ref = q_arm.clone()
         q_ref = (self.q_ref + (q_des - self.q_ref).clamp(-max_dq, max_dq)).clamp(
@@ -167,13 +162,7 @@ class Arm:
 def main() -> None:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     robobench.discover()
-    env_name = "pouring.latte_weld.bimanual_franka.joint"
-    if args.auto:
-        env_name = "pouring.latte_auto.bimanual_franka.joint"
-    if args.feed:
-        env_name = "pouring.latte_feed.bimanual_franka.joint"
-        args.auto = True  # latte_feed inherits the auto-grasp mechanic; make the weld calls hands-off
-    cfg = ENVS.get(env_name)()
+    cfg = ENVS.get("pouring.latte.bimanual_franka.joint")()
 
     def kvparse(pairs) -> dict:
         out: dict = {}
@@ -200,8 +189,8 @@ def main() -> None:
     assert env.robot.control_period == 1, f"expected 1 tick per env.step, got {env.robot.control_period}"
     origin = env.iscene.env_origins[0]
     print(
-        f"[latte2c] particles: coffee {scene.coffee.particles_per_object}, milk {scene.milk.particles_per_object}"
-        f" | vessels dynamic (mug {c.mug_mass} kg, pitcher {c.pitcher_mass} kg), weld-at-grasp",
+        f"[latte] particles: coffee {scene.coffee.particles_per_object}, milk {scene.milk.particles_per_object}"
+        f" | vessels dynamic (mug {c.mug_mass} kg, pitcher {c.pitcher_mass} kg), auto-weld grasping",
         flush=True,
     )
 
@@ -251,10 +240,10 @@ def main() -> None:
         ("mug_lift", 1.5),
         ("lift", 1.2),
         ("traverse", 1.8),
-        ("pour", 8.0),  # 2b ran 6.0; lengthened for the two-stage knee-crawl ramp (see tilt_of)
+        ("pour", 8.0),  # long enough for the two-stage knee-crawl ramp (see tilt_of)
         ("drain", 1.8),
-        ("recover", 1.0),  # 2b ran 0.6 -> a 38 deg/s untilt whip that flings the lip dribble to
-        # the table; 23 deg/s keeps the tail over the mouth (in-flight milk is ~20% of the pour)
+        ("recover", 1.0),  # a fast untilt whips the lip dribble onto the table; ~23 deg/s keeps
+        # the tail over the mouth (in-flight milk is ~20% of the pour)
         ("return", 1.8),
         ("set_down", 1.5),
         ("mug_down", 1.5),
@@ -275,12 +264,11 @@ def main() -> None:
 
     NewtonCoupledMJWarpMPMManager.resync_collider_history()
 
-    # --feed: net vertical fluid force per vessel (should read ~ -liquid weight at rest)
+    # net vertical fluid force per vessel (should read ~ -liquid weight at rest)
     fb_bodies = {}
-    if args.feed:
-        labels = [str(b or "") for b in NewtonCoupledMJWarpMPMManager._model.body_label]
-        for vessel, suffix in (("M", "CoffeeCup"), ("P", "Pitcher")):
-            fb_bodies[vessel] = next(i for i, b in enumerate(labels) if b.endswith(suffix))
+    labels = [str(b or "") for b in NewtonCoupledMJWarpMPMManager._model.body_label]
+    for vessel, suffix in (("M", "CoffeeCup"), ("P", "Pitcher")):
+        fb_bodies[vessel] = next(i for i, b in enumerate(labels) if b.endswith(suffix))
 
     lh_p0, lh_q0 = (x.clone() for x in left.hand_pose_w())
     rh_p0, rh_q0 = (x.clone() for x in right.hand_pose_w())
@@ -340,7 +328,7 @@ def main() -> None:
         return mug_carry, q4((0.0, math.sin(half), 0.0, math.cos(half)))
 
     def cup_target(name: str, s: float) -> tuple[torch.Tensor, torch.Tensor]:
-        """Scripted pitcher pose, barista-style (2b geometry; margin is now args.pour_margin)."""
+        """Scripted pitcher pose, barista-style."""
         theta, _ = tilt_of(name, s)
         mp, mq = mug_target(name, s)
         low_rim = mp + math_utils.quat_apply(mq, rim_local)
@@ -438,9 +426,7 @@ def main() -> None:
             right.grip = STANDOFF_PITCHER + (GRIP_PITCHER_BAR - STANDOFF_PITCHER) * min(1.0, s / 0.25)
         elif name == "release":
             if not welds_released:
-                if not args.auto:  # latte_auto: opening the fingers below releases automatically
-                    scene.weld_vessel("mug", False)
-                    scene.weld_vessel("pitcher", False)
+                # opening the fingers below trips the scene's auto-release (aperture hysteresis)
                 welds_released = True
                 print(
                     f"  [weld] released | mug tilt {vessel_tilt_deg(scene.mug_pose_w):.1f} deg"
@@ -463,8 +449,7 @@ def main() -> None:
                 # ride-along offsets anchor to SCRIPTED home poses, not read-back body poses
                 # (root_link_quat_w carries per-body yaw offsets on free trimesh bodies)
                 off_mug = math_utils.subtract_frame_transforms(hp, hq, mug_base, q4((0.0, 0.0, 0.0, 1.0)))
-                if not args.auto:  # latte_auto: the scene's proximity+closure mechanic already engaged it
-                    scene.weld_vessel("mug", True)
+                # the scene's proximity+closure mechanic engaged the weld during `grasp`
                 print(f"  [weld] mug carried | hand err L {err_l * 100:.1f} cm", flush=True)
             mp, mq = mug_target(name, s)
             lh_t, lh_q = hand_target_from(mp, mq, off_mug)
@@ -480,8 +465,6 @@ def main() -> None:
                 hp, hq = right.hand_pose_w()
                 # scripted home anchor, same rationale as off_mug
                 off_cup = math_utils.subtract_frame_transforms(hp, hq, cup_start, q4((0.0, 0.0, 0.0, 1.0)))
-                if not args.auto:
-                    scene.weld_vessel("pitcher", True)
                 print("  [weld] pitcher carried", flush=True)
             cp_t, cq_t = cup_target(name, s)
             rh_t, rh_q = hand_target_from(cp_t, cq_t, off_cup)
