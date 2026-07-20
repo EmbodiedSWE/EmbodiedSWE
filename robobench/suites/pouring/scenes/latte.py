@@ -754,7 +754,7 @@ class LatteWeldScene(LatteDynScene):
         scenes update these on write instead).
 
         NOTE: root_link_quat_w of a free trimesh body carries a per-body YAW offset vs the prim
-        frame (README landmine); the cylinder metrics and tilt readouts are yaw-invariant, but
+        frame; the cylinder metrics and tilt readouts are yaw-invariant, but
         never mix these poses with prim-frame scripted targets."""
         import torch
 
@@ -1050,7 +1050,7 @@ def _spawn_cup_mesh(
             proxy_paths.append(path)
             proxy_friction_paths.append(path)
         # Floor slab: a BOX (inscribed square), NOT a cylinder — cylinder-box CCD contacts
-        # ratchet resting bodies across the table (see README landmine).
+        # ratchet resting bodies across the table.
         slab_path = f"{base_path}/slab"
         slab_side = float(pr["slab_r"]) * math.sqrt(2.0)  # inscribed in the base circle
         create_prim(
@@ -1064,8 +1064,8 @@ def _spawn_cup_mesh(
         proxy_paths.append(slab_path)
         proxy_friction_paths.append(slab_path)
         # Handle bar: a SEGMENTED STACK of boxes — CCD emits one contact point per geom PAIR,
-        # so N segments give an N-point planar pinch manifold along the bar (see README
-        # landmines). Square cross-section grip_w x grip_w.
+        # so N segments give an N-point planar pinch manifold along the bar.
+        # Square cross-section grip_w x grip_w.
         h = pr["handle"]
         bar_w = float(h.get("grip_w", 2.0 * h["r"]))
         bar_len = 2.0 * (float(h["half_height"]) + float(h["r"]))

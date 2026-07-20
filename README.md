@@ -150,8 +150,7 @@ OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/record_video.py \
 
 The `pouring` suite (`robobench/suites/pouring/`) runs particle liquids (implicit **MPM**)
 coupled with MJWarp rigid dynamics: two dynamic Frankas grasp both vessels and pour milk into
-coffee. One smoke drives every mode — see `robobench/suites/pouring/README.md` for the full
-recipe list, expected verdicts, and landmines:
+coffee. One smoke drives every mode:
 
 ```bash
 # bimanual latte smoke, headless (default: scripted welds; --auto = agent grasp contract;
@@ -159,7 +158,7 @@ recipe list, expected verdicts, and landmines:
 HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
   -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke
 
-# videos are TWO-STAGE — live recording corrupts the coupled MPM physics (see the suite README):
+# videos are TWO-STAGE — live recording corrupts the coupled MPM physics on this stack:
 # stage 1 dumps states from a headless run, stage 2 replays them through the renderer
 HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
   -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke \
