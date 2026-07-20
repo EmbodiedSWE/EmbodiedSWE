@@ -25,6 +25,7 @@ from robobench.robots import (
     WxaiRobotCfg,
 )
 from robobench.suites.assembly.scenes import (
+    AllenBoltAssemblySceneCfg,
     BulbAssemblySceneCfg,
     IkeaTableAssemblySceneCfg,
     NutThreadAssemblySceneCfg,
@@ -113,6 +114,35 @@ for _mode in ("osc", "impedance", "joint"):
             robot="franka",
             control_mode=mode,
             env_spacing=2,
+        ),
+    )
+
+# Franka arm at the allen-bolt scene (base at the origin; the platform's default slot at 0.50 m is
+# in the arm's reach band and stays). The loose key is pulled off the stock "+x row" (0.76 m, out of
+# reach) to the ~0.45 m pick radius on the +y side (wrist-q7 margin, same band the bulb layout uses);
+# the loose bolt is teleport-staged by the smoke, so its spawn row stays put. sim dt 1/240 — the
+# depth the force-driven allen_key smoke validated for the M16 SDF thread contact (the scene's 1/120
+# is for parts at rest; a pressed M16 needs finer, cf. the nut_thread note above).
+# Three control modes, switchable by env name:
+#   - "assembly.allen_bolt.franka.osc"       — operational-space control (default)
+#   - "assembly.allen_bolt.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.allen_bolt.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="allen_bolt",
+            scene_cfg=AllenBoltAssemblySceneCfg(
+                key_init_xy=((-0.24, 0.25),),
+                # 0.3 makes the M16 thread SELF-LOCKING (needs mu > tan(2.5 deg) ~ 0.044): at the
+                # scene's 0.01 the bolt unscrews itself whenever the ratcheting key lets go. The
+                # force-driven smoke never releases, so only the robot env needs this.
+                bolt_friction=0.3,
+            ),
+            robot="franka",
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
         ),
     )
 
