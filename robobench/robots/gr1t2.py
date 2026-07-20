@@ -55,6 +55,10 @@ class GR1T2RobotCfg(BaseRobotCfg):
     arm_damping: float = tunable(40.0)
     waist_stiffness: float = tunable(4400.0)
     waist_damping: float = tunable(40.0)
+    # Hand PD: the vendored USD's finger drives carry no usable stiffness, so explicit
+    # gains are set here (sized for the small Fourier hand links).
+    hand_stiffness: float = tunable(60.0)
+    hand_damping: float = tunable(2.0)
     gr1t2_usd: str = info("")  # "" -> the vendored robots/assets/gr1t2/GR1T2_fourier_hand_6dof.usd
     gr1t2_urdf: str = info("")  # "" -> the vendored kinematics URDF (used by the pink_ik control mode)
 
@@ -71,6 +75,10 @@ class GR1T2Robot(BaseRobot):
 
     control_modes: tuple[str, ...] = ("joint", "pink_ik")
     cfg: GR1T2RobotCfg
+
+    # End-effector bodies (left, right): the hand-pitch links the pink_ik frames track
+    # and generic tooling (robot_binding_smoke) reads.
+    EE_BODIES: tuple[str, str] = ("left_hand_pitch_link", "right_hand_pitch_link")
 
     # Upper-body control period (s): ~50 Hz (Isaac `Isaac-PickPlace-FixedBaseUpperBodyIK-G1`, decim 4 @
     # 200 Hz). `bind` rounds to the nearest sim-step multiple -> period 2 (60 Hz) at the 120 Hz table.
@@ -103,6 +111,19 @@ class GR1T2Robot(BaseRobot):
             robot.actuators[grp].damping = c.arm_damping
         robot.actuators["trunk"].stiffness = c.waist_stiffness
         robot.actuators["trunk"].damping = c.waist_damping
+        # Hands: the vendored USD's finger drives have neither usable stiffness nor an
+        # authored effort budget (no gains -> zero tracking; gains alone -> torque-
+        # starved convergence). Set explicit PD gains + an effort budget on every hand
+        # joint.
+        from isaaclab.actuators import ImplicitActuatorCfg
+
+        for side, pfx in (("right", "R"), ("left", "L")):
+            robot.actuators[f"{side}-hand"] = ImplicitActuatorCfg(
+                joint_names_expr=[f"{pfx}_.*"],
+                stiffness=c.hand_stiffness,
+                damping=c.hand_damping,
+                effort_limit_sim=10.0,
+            )
         return {self.name: robot}
 
     # ----- lifecycle (hooks; the base orchestrates bind -> on_bind -> build_controller) ---------
