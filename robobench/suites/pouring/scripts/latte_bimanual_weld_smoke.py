@@ -44,7 +44,7 @@ parser.add_argument("--lead_max", type=float, default=0.30, help="max lead of th
 parser.add_argument("--grasp_pitch", type=float, default=30.0, help="downward tilt of the horizontal side grasps [deg]")
 parser.add_argument("--feed", action="store_true", help="run on scene latte_feed: latte_auto plus 1.5-way liquid feedback (vessels weigh what they hold; adds a fluid-force readout to the status line)")
 parser.add_argument("--auto", action="store_true", help="run on scene latte_auto (agent-benchmark grasping): welds engage/release AUTOMATICALLY from gripper proximity + closure — this smoke then makes NO scripted weld calls, validating the mechanic end-to-end")
-parser.add_argument("--dump_states", type=str, default=None, help="record body_q + particle positions every --dump_every steps into this .npz for scripts/replay_render.py (videos render from replayed states — LIVE rendering corrupts the coupled physics)")
+parser.add_argument("--dump_states", type=str, default=None, help="record body_q + particle positions every --dump_every steps into this .npz for offline replay rendering (LIVE rendering corrupts the coupled physics)")
 parser.add_argument("--dump_every", type=int, default=7, help="state-dump cadence [steps]; 7 ~= 30 fps at 200 Hz")
 parser.add_argument("--scene", nargs="*", default=None, metavar="K=V", help="scene cfg overrides")
 parser.add_argument("--sim", nargs="*", default=None, metavar="K=V", help="sim cfg overrides (MpmSimCfg fields, e.g. use_cuda_graph=0 num_substeps=4)")
