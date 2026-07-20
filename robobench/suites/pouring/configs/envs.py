@@ -43,7 +43,7 @@ register_env(
     ),
 )
 
-# Phase 2b: the same bimanual latte on the COUPLED MJWarp+MPM substrate (scene "latte_dyn") —
+# The same bimanual latte on the COUPLED MJWarp+MPM substrate (scene "latte_dyn") —
 # the arms are DYNAMIC: actuator PD tracks joint-position actions under real gravity, with
 # MuJoCo-internal rigid contacts (arm-table, arm-arm, arm-floor). The dynamic-Franka knobs are
 # the folding suite's proven set: gravcomp=1.0 (a kp=400 servo sags ~0.1 rad at reach without
@@ -77,7 +77,7 @@ register_env(
     ),
 )
 
-# Phase 2c-a: same bimanual rig on scene "latte_weld" — DYNAMIC vessels (free joints, authored
+# Same bimanual rig on scene "latte_weld" — DYNAMIC vessels (free joints, authored
 # mass, concave rigid proxies) carried via weld-at-grasp (scene.weld_vessel). The arms feel the
 # real vessel mass; vessel-table and vessel-vessel contacts are live MuJoCo contacts.
 # -> "pouring.latte_weld.bimanual_franka.joint"
@@ -120,7 +120,7 @@ register_env(
 )
 
 
-# Phase 2c-c: "latte_feed" — latte_auto + 1.5-way liquid feedback (vessels weigh what they
+# "latte_feed" — latte_auto + 1.5-way liquid feedback (vessels weigh what they
 # hold). -> "pouring.latte_feed.bimanual_franka.joint"
 register_env(
     SUITE,
