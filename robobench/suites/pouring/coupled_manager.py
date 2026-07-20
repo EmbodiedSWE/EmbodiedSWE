@@ -1,6 +1,6 @@
 """NewtonCoupledMJWarpMPMManager — MJWarp rigid dynamics + implicit-MPM liquids on ONE Newton model.
 
-The Phase 2b substrate for the pouring suite: :class:`SolverMuJoCo` advances the articulations
+The coupled substrate for the pouring suite: :class:`SolverMuJoCo` advances the articulations
 (real gravity, actuator PD, MuJoCo-internal rigid contacts) at ``dt / num_substeps``, then
 :class:`SolverImplicitMPM` advances the liquids ONCE per physics tick at the full ``dt``, reading
 the post-rigid ``state.body_q`` — Newton's ``examples/mpm/example_mpm_anymal.py`` recipe hoisted
@@ -12,8 +12,9 @@ Coupling is ONE-WAY (rigid -> fluid): after construction the MPM collider set is
 with ``body_mass = zeros`` — the override Newton documents for treating all bodies as kinematic
 colliders — so every rigid body (dynamic Franka links included) is an infinite-mass collider for
 the liquid. This also keeps the per-step compliant-collider rigidity assembly off; without it the
-liquid would press against "recoiling" bodies whose recoil MuJoCo never receives. Fluid -> rigid
-impulses remain available via ``collect_collider_impulses`` for a future two-way phase.
+liquid would press against "recoiling" bodies whose recoil MuJoCo never receives. When
+``liquid_feedback`` is enabled, the collected fluid impulses are applied back onto the rigid
+bodies as external forces (1.5-way coupling).
 
 KINEMATIC-flagged rigid bodies (the scripted vessels) are GHOSTED from the rigid solver: their
 shapes drop ``COLLIDE_SHAPES`` before finalize while keeping ``COLLIDE_PARTICLES`` (still MPM
@@ -135,7 +136,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
     def _prepare_builder_for_finalize(cls, builder: ModelBuilder) -> None:
         """Shape-flag routing + builder-time welds. Three rules, in order:
 
-        1. KINEMATIC-body ghosting (Phase 2b, unchanged): clear COLLIDE_SHAPES on their shapes
+        1. KINEMATIC-body ghosting: clear COLLIDE_SHAPES on their shapes
            (COLLIDE_PARTICLES stays — they remain MPM colliders). Masses are intentionally KEPT,
            unlike NewtonMPMManager: MuJoCo needs positive inertia on their auto-added free
            joints, and the MPM side is neutralized wholesale via the
@@ -319,7 +320,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
             print(f"[coupled] liquid->rigid feedback ON (per-node clamp {cls._fb_clamp} N)", flush=True)
 
         NewtonManager._use_single_state = True  # both sub-solvers step in place on state_0
-        NewtonManager._needs_collision_pipeline = newton_contacts  # pipeline only in 2c-b mode
+        NewtonManager._needs_collision_pipeline = newton_contacts
         # Nothing else refreshes body_q for the MPM collider read after resets / kinematic vessel
         # writes, so the pre-step masked eval_fk must run (same rationale as NewtonMPMManager).
         NewtonManager._needs_fk_before_step = True
@@ -351,7 +352,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
         implicit MPM solve is unconditionally stable and much more expensive than MJWarp).
 
         ``contacts`` is passed through to the MuJoCo substeps: None under MuJoCo-internal
-        collision (the solver ignores it), the CollisionPipeline's buffer in 2c-b mode —
+        collision (the solver ignores it), the CollisionPipeline's buffer otherwise —
         including the base manager's mid-loop re-collide cadence. SolverImplicitMPM never
         consumes it."""
         collide_every = cls._collision_decimation
@@ -423,7 +424,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
                     cls._mpm_solver.notify_model_changed(change)
         super().step()
 
-    # ----- welds (Phase 2c-a) ---------------------------------------------------------------------
+    # ----- welds ----------------------------------------------------------------------------------
     @classmethod
     def set_weld(cls, label: str, active: bool) -> None:
         """Toggle a builder-time equality weld by label. On ACTIVATION the current relative pose

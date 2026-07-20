@@ -274,7 +274,7 @@ class LatteScene(BaseScene):
             vertices, faces = cup_mesh(
                 r_inner, r_inner_top if r_inner_top is not None else r_inner, height, wall, bottom
             )
-            if dynamic:  # Phase 2c-a: free-joint vessel under real gravity, carried by welds
+            if dynamic:  # free-joint vessel under real gravity, carried by welds
                 rigid_props = sim_utils.NewtonRigidBodyPropertiesCfg(
                     rigid_body_enabled=True, kinematic_enabled=False, disable_gravity=False
                 )
@@ -701,7 +701,7 @@ class LatteScene(BaseScene):
 
 @SCENES.register("latte_dyn")
 class LatteDynScene(LatteScene):
-    """The latte scene on the COUPLED MJWarp+MPM substrate (Phase 2b): robots get real dynamics
+    """The latte scene on the COUPLED MJWarp+MPM substrate: robots get real dynamics
     (gravity, actuator PD, MuJoCo rigid contacts) while the liquids run the same implicit-MPM
     recipe one-way-coupled to the post-rigid body poses. The vessels stay kinematic scripted
     ghosts (MPM colliders, invisible to MuJoCo). Scene content is identical to `latte`."""
@@ -712,7 +712,7 @@ class LatteDynScene(LatteScene):
 
 @SCENES.register("latte_weld")
 class LatteWeldScene(LatteDynScene):
-    """Phase 2c-a: the coupled substrate with DYNAMIC vessels. Both vessels are free rigid bodies
+    """The coupled substrate with DYNAMIC vessels. Both vessels are free rigid bodies
     (authored mass, real gravity) resting on their rigid-proxy floor slabs; MuJoCo collides their
     concave proxy shells (ring + slab + handle capsule) while the interior trimeshes stay
     MPM-only. Carrying works by WELD-at-grasp: builder-time MuJoCo equality welds (hand <->
@@ -930,7 +930,7 @@ class LatteAutoScene(LatteWeldScene):
 
 @SCENES.register("latte_feed")
 class LatteFeedScene(LatteAutoScene):
-    """Phase 2c-c: `latte_auto` plus 1.5-WAY LIQUID FEEDBACK — the MPM collider impulses are
+    """`latte_auto` plus 1.5-WAY LIQUID FEEDBACK — the MPM collider impulses are
     applied back onto the rigid bodies each tick, so the vessels weigh what they hold, lighten
     as they pour, and slosh loads the wrist through the grasp. The MPM solve itself stays
     one-way (infinite-mass colliders); see the coupled manager."""
@@ -946,7 +946,7 @@ class LatteFeedScene(LatteAutoScene):
 
 @SCENES.register("latte_grip")
 class LatteGripScene(LatteWeldScene):
-    """Phase 2c-b: the SAME dynamic-vessel substrate as `latte_weld` (proxies, masses) under a
+    """The SAME dynamic-vessel substrate as `latte_weld` (proxies, masses) under a
     new registry name so the FORCE-CLOSURE env can carry its own gripper knobs (the registry has
     no variant slot). Scripts on this scene carry the vessels by a real friction pinch on the
     handle-bar boxes; slip, re-grasp, and drops are physically possible and score honestly

@@ -1,4 +1,4 @@
-"""Bimanual latte smoke — dynamic vessels carried by weld-at-grasp (latte_weld / latte_auto).
+"""Bimanual latte smoke — dynamic vessels carried by weld-at-grasp.
 
 Dynamic Frankas (DiffIK -> actuator PD, MuJoCo rigid contacts) and DYNAMIC vessels (authored
 mass, concave rigid proxies, one-way MPM liquids). Carrying is a MuJoCo equality WELD between
@@ -96,7 +96,7 @@ def _smoothstep(s: float) -> float:
 
 
 class Arm:
-    """Per-arm DiffIK servo (Phase 2b pattern, unchanged): solves toward a world-frame hand
+    """Per-arm DiffIK servo: solves toward a world-frame hand
     target from the ACTUAL joint state and returns the 9-wide joint-position child action."""
 
     def __init__(self, robot, device: str, grip: float = 0.04) -> None:
@@ -243,7 +243,7 @@ def main() -> None:
     STANDOFF_MUG, GRIP_MUG_BAR = 0.011, 0.0085  # mug bar capsule r = 0.008
     STANDOFF_PITCHER, GRIP_PITCHER_BAR = 0.009, 0.0065  # pitcher bar capsule r = 0.006
 
-    # --- phases (2b list, unchanged) ---
+    # --- choreography phases ---
     phases: list[tuple[str, float]] = [
         ("reach", 2.5),
         ("descend", 1.5),

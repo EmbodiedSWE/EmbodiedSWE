@@ -11,8 +11,8 @@ implicit MPM with a fixed grid so the whole solve is captured in one CUDA graph.
 share this cfg, selected by `coupled`:
 
 - `coupled=False` (default): the MPM-only manager — rigid geometry is *colliders only*, robots
-  are kinematic ghosts (Phase 1 / 2a).
-- `coupled=True` (Phase 2b): the suite-local coupled MJWarp+MPM manager
+  are kinematic ghosts.
+- `coupled=True`: the suite-local coupled MJWarp+MPM manager
   (`robobench.suites.pouring.coupled_manager`) — SolverMuJoCo advances articulations with real
   gravity/actuators/contacts at `dt/num_substeps`, then the implicit MPM step advances the
   liquids once per tick reading the post-rigid body poses (one-way rigid -> fluid).
@@ -58,7 +58,7 @@ class MpmSimCfg(SimCfg):
     air_drag: float = 0.2
     use_cuda_graph: bool = True  # False -> slow but debuggable stepping
     mpm: dict[str, Any] = field(default_factory=dict)  # extra MPMSolverCfg overrides
-    # --- coupled MJWarp+MPM substrate (Phase 2b) ---
+    # --- coupled MJWarp+MPM substrate ---
     coupled: bool = False  # True -> MJWarp rigid dynamics + MPM liquids (dynamic robots)
     num_substeps: int = 3  # MuJoCo substeps per MPM tick (rigid dt = dt/num_substeps = 1/600)
     mjwarp: dict[str, Any] = field(default_factory=dict)  # MJWarpSolverCfg overrides (merged over
@@ -98,7 +98,7 @@ class MpmSimCfg(SimCfg):
             }
         )
         if self.coupled:
-            # Phase 2b: the suite-local coupled manager — MJWarp rigids + the SAME MPM recipe.
+            # the suite-local coupled manager — MJWarp rigids + the SAME MPM recipe
             from isaaclab_newton.physics import MJWarpSolverCfg
 
             from robobench.suites.pouring.coupled_manager import MJWarpMPMSolverCfg
