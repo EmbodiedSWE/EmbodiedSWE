@@ -148,17 +148,23 @@ OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/record_video.py \
 
 ### 4. Run the pouring suite (same venv)
 
-The `pouring` suite (`robobench/suites/pouring/`) runs particle liquids on the same Newton env
-via the implicit **MPM** solver — first scene: `latte`, a kinematic milk cup pouring white
-particles into a cup of brown coffee. Same GUI/headless semantics as above:
+The `pouring` suite (`robobench/suites/pouring/`) runs particle liquids (implicit **MPM**)
+coupled with MJWarp rigid dynamics: two dynamic Frankas grasp both vessels and pour milk into
+coffee. One smoke drives every mode — see `robobench/suites/pouring/README.md` for the full
+recipe list, expected verdicts, and landmines:
 
 ```bash
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.pouring.scripts.latte_pour_smoke            # headless
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.pouring.scripts.latte_pour_smoke --viz kit  # GUI
+# bimanual latte smoke, headless (default: scripted welds; --auto = agent grasp contract;
+# --feed = --auto + 1.5-way liquid feedback)
+HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
+  -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke
 
-# record a video (looking down into the cups)
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/record_video.py \
-  robobench.suites.pouring.scripts.latte_pour_smoke \
-  --video robobench/suites/pouring/videos/latte_pour.mp4 \
-  --eye 0.22 -0.28 0.65 --target-at 0.06 0.0 0.06
+# videos are TWO-STAGE — live recording corrupts the coupled MPM physics (see the suite README):
+# stage 1 dumps states from a headless run, stage 2 replays them through the renderer
+HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
+  -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke \
+  --dump_states robobench/suites/pouring/videos/weld_run_states.npz
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/replay_render.py \
+  robobench/suites/pouring/videos/weld_run_states.npz \
+  --video robobench/suites/pouring/videos/latte_bimanual_weld.mp4
 ```

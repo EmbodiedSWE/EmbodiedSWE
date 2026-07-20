@@ -83,8 +83,9 @@ Key files:
   Env `pouring.latte_auto.bimanual_franka.joint`; validated by the weld smoke's `--auto` mode
   (engage fired at dist 0.8/0.9 cm exactly at the closure thresholds; full-choreography PASS
   0.303 / 0.697 / 1.000 / 0.000 with zero scripted weld calls).
-- `scripts/latte_bimanual_weld_smoke.py` — THE bimanual smoke (earlier 2a/2b/2c-b smokes were
-  removed in cleanup; restore from git history if needed — 2a/2b: `53885f2`, grip: `a852b0a`).
+- `scripts/latte_bimanual_weld_smoke.py` — THE suite smoke, the only one kept (earlier smokes
+  removed in cleanup; restore from git history if needed — 2a/2b bimanual: `53885f2`, grip:
+  `a852b0a`, phase-1 scene-only pour: `811717a`).
   Default = scene `latte_weld` (scripted welds); `--auto` = scene `latte_auto` (the agent
   benchmark, zero scripted weld calls).
 
