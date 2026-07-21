@@ -77,6 +77,22 @@ class WxaiRobotCfg(BaseRobotCfg):
         self.wxai_usd = self.wxai_usd or str(assets / "wxai_follower.usd")
 
 
+class _MirroredGripperController(JointController):
+    """A 1-dof gripper action fanned out to BOTH carriage joints. The WXAI's parallel jaw pairs
+    one actuated carriage with a PhysX-mimic'd twin; the mimic freezes the gripper subtree's
+    constraint anchors on the 5.1 GPU pipeline, so the assembly asset variant drops it and this
+    controller supplies the pairing instead. With mimic-bearing assets the two mechanisms agree."""
+
+    @property
+    def action_dim(self) -> int:
+        return 1
+
+    def compute(self, action: torch.Tensor) -> torch.Tensor:
+        # .repeat (materialized), not .expand: a stride-0 broadcast view can be dropped by the
+        # downstream joint-target write for all but the first column
+        return (action * self.scale + self.offset).repeat(1, len(self.joint_ids))
+
+
 @ROBOTS.register("wxai")
 class WxaiRobot(BaseRobot):
     """Trossen WXAI follower arm + parallel gripper. `apply_action` delegates to the controller for
@@ -88,7 +104,13 @@ class WxaiRobot(BaseRobot):
     cfg: WxaiRobotCfg
 
     ARM_JOINTS: tuple[str, ...] = ("joint_[0-5]",)
-    GRIPPER_JOINTS: tuple[str, ...] = ("left_carriage_joint",)  # right carriage: PhysX mimic in-USD
+    # BOTH carriage joints are actuated and mirrored from the single gripper action (see
+    # `_MirroredGripperController`). The vendored USD also authors a PhysX mimic on the right
+    # carriage; with the mirror the two agree, and the `wxai_follower_nomimic.usd` variant
+    # (assembly suite) drops the mimic entirely — on the 5.1 GPU pipeline the mimic freezes the
+    # gripper subtree's constraint anchors (probed 2026-07-21), so anything welded to the
+    # carriages, e.g. the assembly suite's contact pads, only tracks without it.
+    GRIPPER_JOINTS: tuple[str, ...] = ("left_carriage_joint", "right_carriage_joint")
     # The gripper base link — the wrist-most REAL articulation link. The USD's `ee_gripper_link`
     # marker is a jointless orphan body (PhysX drops it from the articulation, so it has no
     # Jacobian; its rigid body is disabled in the vendored USD so it doesn't free-fall at spawn).
@@ -138,7 +160,7 @@ class WxaiRobot(BaseRobot):
                     rot=c.base_rot,
                     joint_pos={
                         **{f"joint_{i}": float(q) for i, q in enumerate(c.default_dof_pos)},
-                        "left_carriage_joint": c.default_gripper_pos,
+                        ".*carriage_joint": c.default_gripper_pos,
                     },
                 ),
                 actuators={
@@ -163,10 +185,11 @@ class WxaiRobot(BaseRobot):
 
     def build_controller(self) -> CompositeController:
         """`composite([<arm controller>, joint(gripper)])` for the active mode — same shape as
-        FrankaRobot, with a 1-dof gripper leaf."""
+        FrankaRobot, with a 1-dof gripper leaf (mirrored onto both carriage joints)."""
         torque_mode = self.control_mode in ("impedance", "osc")
         ctrl_dt = self.TORQUE_CONTROL_DT if torque_mode else self.JOINT_CONTROL_DT
-        gripper = JointController(JointControllerCfg(self.GRIPPER_JOINTS, dt=ctrl_dt), command_type="position")
+        gripper = _MirroredGripperController(
+            JointControllerCfg(self.GRIPPER_JOINTS, dt=ctrl_dt), command_type="position")
         if torque_mode:
             ts_cfg = TaskSpaceControllerCfg(
                 dt=ctrl_dt,

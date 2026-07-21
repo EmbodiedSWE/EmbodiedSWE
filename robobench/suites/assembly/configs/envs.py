@@ -13,6 +13,8 @@ derivations the harness or agent can make — nothing here is locked.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
     AlohaCfg,
@@ -32,6 +34,10 @@ from robobench.suites.assembly.scenes import (
 )
 
 SUITE = "assembly"
+
+# The mimic-free WXAI variant (see WxaiRobot.GRIPPER_JOINTS): required wherever things are
+# welded to the carriage links, i.e. the aloha allen-key env's contact pads.
+_NOMIMIC_USD = str(Path(__file__).resolve().parents[3] / "robots" / "assets" / "wxai" / "wxai_follower_nomimic.usd")
 
 register_env(SUITE, lambda: EnvCfg(scene="ikea_table", robot="null", env_spacing=3))  # scene physics only
 
@@ -146,12 +152,22 @@ for _mode in ("joint", "osc", "impedance"):
             ),
             robot="aloha",
             control_mode=mode,
+            # Both arms use the NO-MIMIC asset variant: the PhysX mimic freezes the gripper
+            # subtree's constraint anchors on the GPU pipeline, and the smoke's contact pads are
+            # WELDED to the carriages (real-contact grasping). Bases sit symmetric about the bore
+            # (0.30 m each — the tool-down reach-critical distance): the crank is bimanual
+            # hand-over-hand, each arm covering the handle headings on its own side.
             robot_cfg=AlohaCfg(robots={
-                "left": ("wxai", WxaiRobotCfg(  # parked wing, faces the work from the far side
-                    base_pos=(0.85, 0.0, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0))),
-                # the worker: base 0.30 m from the bore — the tool-down insert at the bolt is the
-                # reach-critical pose (at 0.35 m the wrist parks at joint limits 37+ mm short)
-                "right": ("wxai", WxaiRobotCfg(base_pos=(0.20, 0.0, 0.0))),
+                # explicit gripper gains (Trossen's USD drive values): the vendored asset's
+                # right-carriage drive attrs lack the DriveAPI schema listing, so "keep USD"
+                # (None) leaves that joint driveless on some parse paths — write them always
+                "left": ("wxai", WxaiRobotCfg(
+                    base_pos=(0.80, 0.0, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+                    wxai_usd=_NOMIMIC_USD,
+                    gripper_stiffness=217687.0, gripper_damping=10884.0)),
+                "right": ("wxai", WxaiRobotCfg(
+                    base_pos=(0.20, 0.0, 0.0), wxai_usd=_NOMIMIC_USD,
+                    gripper_stiffness=217687.0, gripper_damping=10884.0)),
             }),
             env_spacing=2,
             sim_overrides={"dt": 1.0 / 240.0},

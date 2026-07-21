@@ -81,23 +81,26 @@ PITCH_MM = 2.0           # M16 coarse pitch, the expected descent per revolution
 DT = 1.0 / 240.0         # sim timestep (matches the registered env's dt override)
 
 # WXAI joint-mode action semantics per arm: [6 arm joint position targets | 1 gripper carriage
-# target] at ~50 Hz; ALOHA concatenates [left | right]. The right carriage mimics in-USD.
-# The WXAI fingers are crossing CLAWS (each hook tip reaches 23 mm past the centerline), and the
-# claw inner walls sit at |y| ~ 18 mm in the carriage frame, so a carriage of 12 mm puts the
-# walls right at the 12.6 mm-across-flats handle: a snug geometric cage.
+# target] at ~50 Hz; ALOHA concatenates [left | right]. Both carriage joints are driven from the
+# one gripper action (mirrored in the robot class; the assembly env uses the MIMIC-FREE asset
+# variant — the PhysX mimic freezes the gripper subtree's constraint anchors on this GPU build).
 #
-# GRASP VERIFICATION IS GEOMETRIC (contract-gate), NOT force-stall: on THIS IsaacLab build the
-# GPU pipeline never updates collision-shape poses for the prismatic carriage links or their
-# fixed-joint finger children (probed exhaustively: shape occupancy is frozen at the spawn pose
-# while bodies/joints/visuals all move; the CPU pipeline tracks correctly but breaks the M16
-# SDF thread contact the task depends on, ejecting the staged bolt). The claws therefore cannot
-# physically stall on the handle here — the weld IS the hold, per the benchmark grasp contract,
-# and the gate checks the jaws are verifiably closed AROUND the handle: centered on the modeled
-# handle line, closed past the hex width, with the key undisturbed by the close.
-OPEN_C, CLOSE_C = 0.044, 0.012
-CLOSED_GAP = 0.030       # accept threshold on the carriage pair-mid: covers both the geometric
-# close (~12 mm) and a genuine stall (~24-26 mm) if a fixed pipeline ever restores claw contact
+# GRASPING IS REAL CONTACT via welded PAD PROXIES: the claws' own collision shapes freeze at
+# their spawn pose on this pipeline (asset-specific parser bug, still present on IsaacSim 6.0),
+# so each claw carries a free rigid PAD — a box matching the claw's tip block — welded to its
+# carriage at reset. Pads are ordinary rigid bodies: their shapes track, the drive's squeeze
+# force flows carriage -> weld -> pad -> handle, and a real grasp STALLS the carriage pair at
+# the hex width. The weld-on-verified-closure contract then holds the key (benchmark standard),
+# with the verification physical again:
+#   pad inner faces sit at |y| = carriage - 18 mm  =>  empty close -> pair-mid = 18 mm target;
+#   12.6 mm-across-flats handle -> stall at pair-mid ~ 24.3 mm (+ contact offsets).
+OPEN_C, CLOSE_C = 0.044, 0.018
+CLOSED_MIN, CLOSED_MAX = 0.020, 0.032  # accept window on the carriage PAIR-MID at close end
 GRASP_DRIFT = 0.008      # the close must not shove the key (m) — a swept-aside key is a miss
+# Pad geometry (carriage frame; from the claw collision-mesh tip block): x 50..69.6 mm along the
+# finger, walls at |y| 18..23 mm, +-8.6 mm along-handle.
+PAD_SIZE = (0.0196, 0.005, 0.0172)
+PAD_OFFSET = (0.0598, 0.0205, -0.0002)  # center; y sign flips per side
 # gripper_left finger-body origin -> claw hook pocket, along the tool (+x of link_6): the finger
 # is 70 mm long; the concave hook pocket spans x ~ 52-64 mm (measured from the collision mesh).
 # The finger-base offset itself is measured live at reset.
@@ -202,6 +205,40 @@ def main() -> None:
             j.CreateExcludeFromArticulationAttr(True)  # a maximal-coordinate weld, not a new arm DOF
             row.append(f"{base}/grip_key_weld_{k}")
         weld_paths.append(row)
+
+    # ----- contact pads: the REAL grasp surfaces (see the constants note) -------------------------
+    # One free rigid pad per claw, spawned parked in the air, then welded onto its carriage at the
+    # measured claw-tip offset right after reset. Ordinary rigid bodies: their collision tracks.
+    from isaaclab.assets import RigidObject, RigidObjectCfg
+
+    pads: dict[tuple[str, str], RigidObject] = {}
+    pad_weld_paths: dict[tuple[str, str], list[str]] = {}
+    for ai, arm_name in enumerate(("Left", "Right")):
+        for si, side in enumerate(("left", "right")):
+            pads[(arm_name, side)] = RigidObject(RigidObjectCfg(
+                prim_path=f"/World/envs/env_.*/Pad_{arm_name}_{side}",
+                spawn=sim_utils.CuboidCfg(
+                    size=PAD_SIZE,
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(max_depenetration_velocity=5.0, disable_gravity=True),
+                    mass_props=sim_utils.MassPropertiesCfg(mass=0.03),
+                    collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=0.0005, rest_offset=0.0),
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.15, 0.15, 0.18)),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.5 + 0.1 * ai, 0.5 + 0.1 * si, 0.6)),
+            ))
+            row = []
+            for e in range(n):
+                base = f"/World/envs/env_{e}"
+                jp = UsdPhysics.FixedJoint.Define(stage, f"{base}/pad_weld_{arm_name}_{side}")
+                jp.CreateBody0Rel().SetTargets([f"{base}/{arm_name}/carriage_{side}"])
+                jp.CreateBody1Rel().SetTargets([f"{base}/Pad_{arm_name}_{side}"])
+                # latch-style: enabled AFTER the pad is placed at its exact claw-tip pose (PhysX
+                # captures the relative frames at first enable). The pads are gravity-free, so
+                # the placed pose holds exactly through the latch window — no sag bias.
+                jp.CreateJointEnabledAttr(False)
+                jp.CreateExcludeFromArticulationAttr(True)
+                row.append(f"{base}/pad_weld_{arm_name}_{side}")
+            pad_weld_paths[(arm_name, side)] = row
 
     cam = writer = None
     if args.video:
@@ -439,9 +476,15 @@ def main() -> None:
     # ----- step + capture -------------------------------------------------------------------------
     step_i = 0
 
+    grip_id_Lr = artL.find_joints(["right_carriage_joint"])[0][0]
+
     def step(action: torch.Tensor) -> None:
         nonlocal step_i
         step_i += 1
+        # mirror each arm's 1-dof gripper action onto its RIGHT carriage target explicitly
+        # (position targets persist across steps; harmless if the controller already served it)
+        artL.set_joint_position_target(action[:, l_s.start + 6].unsqueeze(-1), joint_ids=[grip_id_Lr])
+        artR.set_joint_position_target(action[:, r_s.start + 6].unsqueeze(-1), joint_ids=[grip_id_r])
         capture = writer is not None and step_i % args.cap == 0
         env.step(action, render=capture or render)
         if capture:
@@ -471,6 +514,27 @@ def main() -> None:
     grip_c: float | torch.Tensor = CLOSE_C
     wp_p = torch.zeros(n, 3, device=dev)
     wp_q = torch.zeros(n, 4, device=dev)
+
+    # ----- place the pads at the claw tips and latch their welds ---------------------------------
+    for arm_name, art in (("Left", artL), ("Right", artR)):
+        for side in ("left", "right"):
+            ci = art.body_names.index(f"carriage_{side}")
+            cquat = art.data.body_quat_w[:, ci]
+            off = torch.tensor(
+                [[PAD_OFFSET[0], -PAD_OFFSET[1] if side == "left" else PAD_OFFSET[1], PAD_OFFSET[2]]],
+                device=dev).expand(n, 3)
+            st = torch.zeros(n, 13, device=dev)
+            st[:, 0:3] = art.data.body_pos_w[:, ci] + quat_apply(cquat, off)
+            st[:, 3:7] = cquat
+            pads[(arm_name, side)].write_root_state_to_sim(st, ids)
+    for _ in range(2):
+        step(hold_act(OPEN_C))
+    for k2 in pad_weld_paths:
+        for e in range(n):
+            UsdPhysics.FixedJoint.Get(stage, pad_weld_paths[k2][e]).GetJointEnabledAttr().Set(True)
+    for _ in range(5):
+        step(hold_act(OPEN_C))
+    print("[pads] 4 gravity-free contact pads latched onto the claws", flush=True)
 
     phase, marker = "show", 0
     i = 0
@@ -555,6 +619,10 @@ def main() -> None:
                 print(f"    [grasp] jaw mid ({float(mid[0, 0]):+.3f},{float(mid[0, 1]):+.3f},{float(mid[0, 2]):+.3f})"
                       f" | grip_pt ({float(grip_pt[0, 0]):+.3f},{float(grip_pt[0, 1]):+.3f},{float(grip_pt[0, 2]):+.3f})"
                       f" | key ({float(kp0[0, 0]):+.3f},{float(kp0[0, 1]):+.3f},{float(kp0[0, 2]):+.3f})", flush=True)
+                for _side in ("left", "right"):
+                    pads[("Right", _side)].update(0.0)
+                    pp = pads[("Right", _side)].data.root_pos_w[0]
+                    print(f"    [grasp] pad R/{_side} ({float(pp[0]):+.3f},{float(pp[1]):+.3f},{float(pp[2]):+.4f})", flush=True)
             # ramp the close target — no slam, the visual cage forms gently
             ramp = OPEN_C + (CLOSE_C - OPEN_C) * min(1.0, t_in / 50.0)
             if contact_debug:
@@ -569,13 +637,12 @@ def main() -> None:
                       f" R {float(artR.data.joint_pos[0, grip_id_r]) * 1e3:5.1f}mm"
                       f" | key ({float(kp0[0, 0]):+.3f},{float(kp0[0, 1]):+.3f},{float(kp0[0, 2]):+.4f})", flush=True)
             if t_in >= CLOSE_STEPS:
-                # contract-gate (see the OPEN_C/CLOSE_C note): jaws centered on the modeled handle
-                # line, closed past the hex width (pair-mid <= the geometric cage OR a real stall),
-                # and the key undisturbed by the close
+                # STALL gate (real contact through the welded pads): a grasped handle stops the
+                # carriage pair at the hex width; an empty close reaches the 18 mm target
                 gap = 0.5 * (artR.data.joint_pos[:, grip_id] + artR.data.joint_pos[:, grip_id_r])
                 near = (tp_now[:, :2] - grip_pt[:, :2]).norm(dim=-1) < 0.03
                 drift = (key.data.root_pos_w[:, :2] - close_key0).norm(dim=-1)
-                ok = (gap < CLOSED_GAP) & near & (drift < GRASP_DRIFT)
+                ok = (gap > CLOSED_MIN) & (gap < CLOSED_MAX) & near & (drift < GRASP_DRIFT)
                 if bool(ok.all()):
                     weld_on()
                     grip_c = torch.clamp(gap + 0.0005, min=CLOSE_C)
@@ -860,12 +927,12 @@ def main() -> None:
             ramp = OPEN_C + (CLOSE_C - OPEN_C) * min(1.0, t_in / 50.0)
             act = act_of(wp_p, wp_q, ramp)
             if t_in >= CLOSE_STEPS:
-                # same contract-gate as pick_close, with a pose-agnostic 3-D jaw-mid check (the
+                # same STALL gate as pick_close, with a pose-agnostic 3-D jaw-mid check (the
                 # tilted approach displaces the TOOL laterally by tool_to_tip * the tilt)
                 gap = 0.5 * (artR.data.joint_pos[:, grip_id] + artR.data.joint_pos[:, grip_id_r])
                 jaw_mid = tp_now + quat_apply(tq_now, ex1) * tool_to_grip
                 near = (jaw_mid - grip_pt).norm(dim=-1) < 0.035
-                ok = (gap < CLOSED_GAP) & near
+                ok = (gap > CLOSED_MIN) & (gap < CLOSED_MAX) & near
                 if bool(ok.all()):
                     weld_on()
                     grip_c = torch.clamp(gap + 0.0005, min=CLOSE_C)
