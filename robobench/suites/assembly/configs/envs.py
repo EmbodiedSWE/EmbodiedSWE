@@ -117,30 +117,42 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
-# Franka arm at the allen-bolt scene (base at the origin; the platform's default slot at 0.50 m is
-# in the arm's reach band and stays). The loose key is pulled off the stock "+x row" (0.76 m, out of
-# reach) to the ~0.45 m pick radius on the +y side (wrist-q7 margin, same band the bulb layout uses);
-# the loose bolt is teleport-staged by the smoke, so its spawn row stays put. sim dt 1/240 — the
-# depth the force-driven allen_key smoke validated for the M16 SDF thread contact (the scene's 1/120
-# is for parts at rest; a pressed M16 needs finer, cf. the nut_thread note above).
-# Three control modes, switchable by env name:
-#   - "assembly.allen_bolt.franka.osc"       — operational-space control (default)
-#   - "assembly.allen_bolt.franka.impedance" — Jacobian-transpose task-space impedance
-#   - "assembly.allen_bolt.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+# ALOHA (two Trossen WXAI arms) at the allen-bolt scene. The RIGHT arm is the worker: base at
+# (0.15, 0) facing +x puts the platform's 0.50 m slot at 0.35 m and the key's pick grip at ~0.23 m —
+# inside the WXAI's ~0.5 m reach band. The LEFT arm parks folded across the table at (0.85, 0),
+# yaw 180 (facing the work from the far side, clear of it). The loose key is pulled off the stock
+# "+x row" into that band on the +y side; the loose bolt is teleport-staged by the smoke, so its
+# spawn row stays put. sim dt 1/240 — the depth the force-driven allen_key smoke validated for the
+# M16 SDF thread contact (the scene's 1/120 is for parts at rest; a pressed M16 needs finer, cf.
+# the nut_thread note above). Three control modes, switchable by env name ("joint" is the WXAI
+# default — the torque modes are wired but untuned on this arm):
+#   - "assembly.allen_bolt.aloha.joint"     — arms by direct joint position targets
+#   - "assembly.allen_bolt.aloha.osc"       — operational-space control (experimental on WXAI)
+#   - "assembly.allen_bolt.aloha.impedance" — task-space impedance (experimental on WXAI)
+for _mode in ("joint", "osc", "impedance"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
             scene="allen_bolt",
             scene_cfg=AllenBoltAssemblySceneCfg(
-                key_init_xy=((-0.24, 0.25),),
+                # World (0.36, 0.10): 0.19 m from the right arm's base. The settle drop scatters
+                # the key up to ~60 mm, and the WXAI's top-down pick envelope tops out ~0.28 m —
+                # spawns beyond that give tilted, joint-limited approaches.
+                key_init_xy=((-0.14, 0.10),),
                 # 0.3 makes the M16 thread SELF-LOCKING (needs mu > tan(2.5 deg) ~ 0.044): at the
                 # scene's 0.01 the bolt unscrews itself whenever the ratcheting key lets go. The
                 # force-driven smoke never releases, so only the robot env needs this.
                 bolt_friction=0.3,
             ),
-            robot="franka",
+            robot="aloha",
             control_mode=mode,
+            robot_cfg=AlohaCfg(robots={
+                "left": ("wxai", WxaiRobotCfg(  # parked wing, faces the work from the far side
+                    base_pos=(0.85, 0.0, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0))),
+                # the worker: base 0.30 m from the bore — the tool-down insert at the bolt is the
+                # reach-critical pose (at 0.35 m the wrist parks at joint limits 37+ mm short)
+                "right": ("wxai", WxaiRobotCfg(base_pos=(0.20, 0.0, 0.0))),
+            }),
             env_spacing=2,
             sim_overrides={"dt": 1.0 / 240.0},
         ),

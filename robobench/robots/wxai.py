@@ -123,7 +123,11 @@ class WxaiRobot(BaseRobot):
                         max_depenetration_velocity=5.0,
                     ),
                     articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                        enabled_self_collisions=True,
+                        # The gripper fingers are CROSSING claws (each hook tip reaches ~23 mm past
+                        # the centerline), so with self-collision on they jam against each other at
+                        # exactly the carriage range where a real grasp stalls. Off, like the
+                        # parallel-jaw presets (franka & co).
+                        enabled_self_collisions=False,
                         solver_position_iteration_count=8,
                         solver_velocity_iteration_count=0,
                         fix_root_link=c.fixed_base,
