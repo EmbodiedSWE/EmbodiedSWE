@@ -1,0 +1,61 @@
+# L0 — Isaac Sim + Isaac Lab via the clone-free pip recipe (verified locally 2026-06-25).
+#   docker build -f Dockerfile.l0-isaaclab -t rb-l0-isaaclab:5.1.0 .
+# First build 30–60 min (wheel downloads dominate), ~25 GB. Layer-cached afterwards.
+# Tag confirmed on Docker Hub 2026-07-21. 12.8 required for RTX 5090 (Blackwell);
+# ubuntu24.04 = newest distro with 12.8.x coverage (Isaac supports 22.04/24.04 —
+# fall back to the 22.04 tag if Kit misbehaves on 24.04).
+FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04
+
+# Vulkan/GL runtime for headless RTX rendering + build tools + basics
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libglvnd0 libgl1 libglx0 libegl1 libgles2 libvulkan1 vulkan-tools \
+      libx11-6 libxt6 libxrandr2 libgomp1 libglu1-mesa \
+      build-essential ca-certificates curl git jq tini \
+    && rm -rf /var/lib/apt/lists/*
+# libgomp1 + libglu1-mesa: USD/OpenSubdiv and the iray renderer dlopen
+# libgomp.so.1 / libGLU.so.1 — both absent from cuda images (measured: first
+# in-container boots 2026-07-21 failed on exactly these).
+
+# uv-managed Python 3.11 (matches the local .venv)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+ENV UV_PYTHON_INSTALL_DIR=/opt/python
+RUN uv python install 3.11
+
+ENV VENV=/opt/venv
+RUN uv venv --python 3.11 $VENV
+# NOTE: uv venvs ship WITHOUT pip — always `uv pip install --python $VENV/bin/python`.
+
+# Pin torch explicitly so the resolver can't hand us a non-cu128 build (Blackwell).
+# VERIFY: matches what isaaclab[all] wants; drop this line if resolution is clean.
+RUN uv pip install --python $VENV/bin/python \
+      torch==2.7.0 --index-url https://download.pytorch.org/whl/cu128
+
+# Isaac Sim (own layer: the single biggest download, cache it separately)
+RUN uv pip install --python $VENV/bin/python \
+      "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com
+
+# Isaac Lab — flatdict is sdist-only and imports pkg_resources without declaring
+# setuptools, so: setuptools in venv + --no-build-isolation-package flatdict.
+RUN uv pip install --python $VENV/bin/python setuptools wheel && \
+    uv pip install --python $VENV/bin/python \
+      "isaaclab[all]==2.3.2" --extra-index-url https://pypi.nvidia.com \
+      --no-build-isolation-package flatdict
+
+# EULA/privacy acceptance baked in — headless first run otherwise hangs on a prompt.
+ENV OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y PRIVACY_CONSENT=Y
+
+# Shared shader/JIT cache location for ALL users; a named volume is mounted here
+# and warmed once (make warm). VERIFY: Kit honors XDG_CACHE_HOME.
+ENV XDG_CACHE_HOME=/ovcache
+RUN mkdir -p /ovcache && chmod 777 /ovcache
+
+ENV PATH=$VENV/bin:$PATH
+# graphics capability injects libGLX_nvidia but not its ICD manifest — bake it
+# (see Dockerfile.test for the measured failure)
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+RUN mkdir -p /etc/vulkan/icd.d && printf '%s\n' \
+  '{ "file_format_version": "1.0.1",' \
+  '  "ICD": { "library_path": "libGLX_nvidia.so.0", "api_version": "1.4.312" } }' \
+  > /etc/vulkan/icd.d/nvidia_icd.json
+ENTRYPOINT ["tini", "--"]
+CMD ["bash"]
