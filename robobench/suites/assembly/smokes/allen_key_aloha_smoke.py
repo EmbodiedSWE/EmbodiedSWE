@@ -59,6 +59,7 @@ from isaaclab.utils.math import (  # noqa: E402
     quat_apply_inverse,
     quat_conjugate,
     quat_from_angle_axis,
+    quat_from_matrix,
     quat_mul,
 )
 from robobench.core import ENVS  # noqa: E402
@@ -384,6 +385,18 @@ def main() -> None:
         pitch = quat_from_angle_axis(torch.full((n,), math.pi / 2, device=dev), ey)  # x^ -> -z^
         return quat_mul(quat_from_angle_axis(yaw, ez), pitch)
 
+    def grasp_frame(h: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """(quat, approach) for gripping a possibly TILTED handle direction `h`: the handle lies
+        along the tool z (as in q_down), the jaws close across it, and the tool axis points along
+        the most-vertical direction perpendicular to the handle — for a horizontal handle this
+        degenerates exactly to q_down. `approach` is that (unit, upward) offset direction."""
+        h = h / h.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        nv = ez - (ez * h).sum(-1, keepdim=True) * h
+        nv = nv / nv.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        x = -nv
+        y = torch.linalg.cross(h, x)
+        return quat_from_matrix(torch.stack((x, y, h), dim=-1)), nv
+
     def joint_cost(tq_a: torch.Tensor, tp: torch.Tensor) -> torch.Tensor:
         """|dq| of one virtual DLS step toward (tp, tq_a) — a cheap reachability/comfort score."""
         return (ik_arm(tp, tq_a) - artR.data.joint_pos[:, arm_ids]).norm(dim=-1)
@@ -414,8 +427,14 @@ def main() -> None:
         return ok
 
     def arm_near_limit() -> torch.Tensor:
+        """True where any arm joint is near a limit AND still moving INTO it. The insert leaves
+        several joints parked near (but not crossing) limits; ending every stroke on mere
+        proximity cut sweeps to ~10-40 deg of the commanded 120."""
         q = artR.data.joint_pos[:, arm_ids]
-        return ((q - lo_lim < JOINT_MARGIN) | (hi_lim - q < JOINT_MARGIN)).any(dim=-1)
+        qd = artR.data.joint_vel[:, arm_ids]
+        lo_hit = (q - lo_lim < JOINT_MARGIN) & (qd < -0.02)
+        hi_hit = (hi_lim - q < JOINT_MARGIN) & (qd > 0.02)
+        return (lo_hit | hi_hit).any(dim=-1)
 
     # ----- step + capture -------------------------------------------------------------------------
     step_i = 0
@@ -737,6 +756,17 @@ def main() -> None:
             if bool(done.all()):
                 phase, marker = "retreat", i
             elif bool((swept | arm_near_limit() | slipping).all()) or t_in >= STROKE_TIMEOUT:
+                phase, marker = "plumb", i
+        elif phase == "plumb":  # the wound-up stroke ends with the welded key tilted by the IK's
+            # rotation lag (up_z ~0.93); releasing it like that leaves it LEANING in the socket
+            # where the top-down regrip can't center. Static target, easy IK: straighten it plumb
+            # at its current yaw (tip on the floor) before letting go.
+            kq = quat_from_angle_axis(yaw_of(key.data.root_quat_w), ez)
+            ub = up_axis_of(bolt.data.root_quat_w)
+            kp = bolt.data.root_pos_w + ub * (SOCKET_FLOOR_Z - PRESS_DZ)
+            tp, tq = tool_for_key(kp, kq)
+            act = act_of(tp, tq, grip_c)
+            if bool((up_axis_of(key.data.root_quat_w)[:, 2] > 0.998).all()) or t_in >= 60:
                 phase, marker = "rewind", i
         elif phase == "rewind":  # let go cleanly, lift the open jaws clear, then re-grip the handle
             # at its new heading. Release discipline (all lessons carried over): freeze the arm at
@@ -780,14 +810,20 @@ def main() -> None:
             hd[:, 2] = 0.0
             hd = hd / hd.norm(dim=-1, keepdim=True).clamp_min(1e-6)
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
-            grip_pt[:] = elbow + hd * HANDLE_GRIP_D
-            psi = torch.atan2(hd[:, 1], hd[:, 0])
-            qa, qb = q_down(psi), q_down(_wrap(psi - math.pi))
-            hover = grip_pt.clone()
-            hover[:, 2] = grip_pt[:, 2] + tool_to_tip + REWIND_LIFT
+            # retry diversity: a miss usually means THIS grip spot is reach-awkward — slide the
+            # grip along the handle on each retry instead of re-attempting the identical pose
+            grip_d = HANDLE_GRIP_D + (0.0, 0.0, -0.015, -0.015, 0.015, -0.03)[min(regrip_tries, 5)]
+            grip_pt[:] = elbow + hd * grip_d
+            # tilt-matched grasp: the released key rests LEANING in the socket (its 120 mm handle
+            # tips it into the hex clearance, up_z ~0.86-0.93), so grip along the TRUE handle
+            # direction with the approach tilted to match — a top-down regrip near-misses forever
+            qa, nva = grasp_frame(hd)
+            qb, _ = grasp_frame(-hd)
+            hover = grip_pt + nva * (tool_to_tip + REWIND_LIFT)
             # crank-aware parity: the stroke is a tool-axis roll carried almost entirely by
             # joint_5 (the franka's j7 lesson) — pick the grip parity that leaves joint_5 the
             # most stroke-direction margin, predicted via the live yaw<->j5 jacobian sign
+            psi = torch.atan2(hd[:, 1], hd[:, 0])
             jyaw = artR.root_physx_view.get_jacobians()[:, ee_idx - 1, 5, :][:, arm_ids]
             s5 = torch.where(jyaw[:, 5] >= 0, torch.ones(n, device=dev), -torch.ones(n, device=dev))
             j5 = artR.data.joint_pos[:, arm_ids[5]]
@@ -798,23 +834,37 @@ def main() -> None:
                 j5_pred = j5 + s5 * _wrap(cand_yaw - yaw_now)
                 margins.append(torch.where(s5 > 0, j5_pred - lo5, hi5 - j5_pred))
             use_a = margins[0] >= margins[1]
+            if regrip_tries % 2 == 1:  # a miss often means the CHOSEN parity is the unreachable
+                use_a = ~use_a         # one — alternate it across retries instead of re-deriving
             wp_q[:] = torch.where(use_a.unsqueeze(-1), qa, qb)
             wp_p[:] = hover
             act = act_of(wp_p, wp_q, OPEN_C)
             if bool(at(wp_p, wp_q).all()) or t_in >= WP_TIMEOUT:
                 phase, marker = "regrip_down", i
-        elif phase == "regrip_down":  # descend so the pads straddle the handle
-            wp_p[:, 2] = grip_pt[:, 2] - 0.004 + tool_to_tip
+        elif phase == "regrip_down":  # descend so the pads straddle the handle. The tilted grasp
+            # pose sits at the wrist's envelope edge and the DLS leaves an ORIENTATION residual —
+            # a 20 deg tool-axis error swings the jaw mid 0.15 m * sin(20) ~ 50 mm off the handle.
+            # So servo the JAW MID directly: place the tool where the ACHIEVED orientation puts
+            # the jaws on the handle; as the orientation converges the target migrates to ideal.
+            hd = handle_dir()
+            elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
+            grip_d = HANDLE_GRIP_D + (0.0, 0.0, -0.015, -0.015, 0.015, -0.03)[min(regrip_tries, 5)]
+            grip_pt[:] = elbow + hd / hd.norm(dim=-1, keepdim=True).clamp_min(1e-6) * grip_d
+            x_now = quat_apply(tq_now, ex1)
+            wp_p[:] = grip_pt - x_now * (tool_to_tip - 0.004)
             act = act_of(wp_p, wp_q, OPEN_C)
-            if bool(at(wp_p, wp_q).all()) or t_in >= WP_TIMEOUT:
+            jaw_err = ((tp_now + x_now * tool_to_grip) - grip_pt).norm(dim=-1)
+            if bool((jaw_err < 0.008).all()) or t_in >= WP_TIMEOUT:
                 phase, marker = "regrip_close", i
         elif phase == "regrip_close":
             ramp = OPEN_C + (CLOSE_C - OPEN_C) * min(1.0, t_in / 50.0)
             act = act_of(wp_p, wp_q, ramp)
             if t_in >= CLOSE_STEPS:
-                # same contract-gate as pick_close (the standing key's handle is the target here)
+                # same contract-gate as pick_close, with a pose-agnostic 3-D jaw-mid check (the
+                # tilted approach displaces the TOOL laterally by tool_to_tip * the tilt)
                 gap = 0.5 * (artR.data.joint_pos[:, grip_id] + artR.data.joint_pos[:, grip_id_r])
-                near = (tp_now[:, :2] - grip_pt[:, :2]).norm(dim=-1) < 0.03
+                jaw_mid = tp_now + quat_apply(tq_now, ex1) * tool_to_grip
+                near = (jaw_mid - grip_pt).norm(dim=-1) < 0.035
                 ok = (gap < CLOSED_GAP) & near
                 if bool(ok.all()):
                     weld_on()
@@ -830,7 +880,7 @@ def main() -> None:
                         phase, marker = "stroke", i
                 else:
                     regrip_tries += 1
-                    if regrip_tries >= 4 or not bool(((key_tip_axial() < SOCKET_MOUTH_Z - 0.002)
+                    if regrip_tries >= 6 or not bool(((key_tip_axial() < SOCKET_MOUTH_Z - 0.002)
                                                       & (up_axis_of(key.data.root_quat_w)[:, 2] > 0.9)).all()):
                         drops += 1
                         print(f"  DROP: regrip failed (carriage {gap.tolist()}, key up "
