@@ -6,6 +6,7 @@ Three scenes, scene-physics-only first (NullRobot smoke/oracle), embodiments aft
                 curriculum; franka / piper / wxai / bimanual_franka as arm bindings.
   - whiteboard: marker + eraser work on the ink grid. Defining embodiment GR1-T2
                 (pinch grasp on the chunky marker); per-embodiment board/tray layouts.
+  - spatula:    non-prehensile tool payload control (port).
 """
 
 from __future__ import annotations
@@ -21,7 +22,11 @@ from robobench.robots import (
     PiperRobotCfg,
     WxaiRobotCfg,
 )
-from robobench.suites.tool_use.scenes import SyringeDosingSceneCfg, WhiteboardWordSceneCfg
+from robobench.suites.tool_use.scenes import (
+    SpatulaFlipServeSceneCfg,
+    SyringeDosingSceneCfg,
+    WhiteboardWordSceneCfg,
+)
 
 SUITE = "tool_use"
 
@@ -238,6 +243,97 @@ for _mode in ("osc", "joint"):
                 robot="franka_ped",
                 control_mode=mode,
                 robot_cfg=FrankaRobotCfg(base_pos=(-0.12, -0.16, 0.20), base_rot=_FRANKA_ROT),
+                env_spacing=3,
+            )
+        ),
+    )
+
+
+# ================================ spatula ========================================
+# port: spatula flip & serve (non-prehensile tool payload control). The defining
+# embodiment is GR1-T2 (dexterous handle grip, matching the source's dex-hand lineage);
+# G1 binds for curriculum; franka trivially holds the handle (the brief's ablation).
+# No `multi` binding: one hand works the spatula, the other has nothing load-bearing
+# to do. -> "tool_use.spatula"
+register_env(SUITE, lambda: EnvCfg(scene="spatula", robot="null", env_spacing=3))
+
+
+# Placements are STARTING guesses copied from the pen-holder / whiteboard measured
+# reach values for the same embodiments at the same bench — re-verify with the
+# per-binding stress smoke before any agent run (only the null smoke validates the
+# scene). Board to the robot's left, plate to the right, spatula handle-first at the
+# bench front.
+def _spatula_gr1t2_cfg() -> SpatulaFlipServeSceneCfg:
+    """GR1-T2 (longer arms, comfortable band farther out)."""
+    return SpatulaFlipServeSceneCfg(
+        surface_z=0.7,
+        board_pos=(-0.18, 0.16),
+        plate_pos=(0.18, 0.18),
+        spatula_pos=(0.02, -0.02),
+    )
+
+
+def _spatula_g1_cfg() -> SpatulaFlipServeSceneCfg:
+    """G1 (short ~0.55 m arms): everything pulled toward the bench front."""
+    return SpatulaFlipServeSceneCfg(
+        surface_z=0.7,
+        board_pos=(-0.15, 0.10),
+        plate_pos=(0.15, 0.12),
+        spatula_pos=(0.02, -0.04),
+    )
+
+
+def _spatula_franka_cfg() -> SpatulaFlipServeSceneCfg:
+    """Franka: ground-level work in front of the base; the 24 mm handle pinches under
+    the 8 cm jaw."""
+    return SpatulaFlipServeSceneCfg(
+        board_pos=(-0.14, 0.08),
+        plate_pos=(0.14, 0.10),
+        spatula_pos=(0.02, -0.08),
+    )
+
+
+# -> "tool_use.spatula.{gr1t2,g1}.{joint,pink_ik}"
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="spatula",
+                scene_cfg=_spatula_gr1t2_cfg(),
+                robot="gr1t2",
+                control_mode=mode,
+                robot_cfg=GR1T2RobotCfg(base_pos=(0.0, -0.50, 0.95),
+                                        base_rot=(0.7071, 0.0, 0.0, 0.7071)),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="spatula",
+                scene_cfg=_spatula_g1_cfg(),
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.48, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# -> "tool_use.spatula.franka.{osc,joint}"
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="spatula",
+                scene_cfg=_spatula_franka_cfg(),
+                robot="franka",
+                control_mode=mode,
+                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.40, 0.0), base_rot=_FRANKA_ROT),
                 env_spacing=3,
             )
         ),
