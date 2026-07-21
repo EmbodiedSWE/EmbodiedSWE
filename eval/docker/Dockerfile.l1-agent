@@ -1,0 +1,28 @@
+# L1 — agent CLIs on the Isaac base. Contains NO benchmark code: the experiment
+# mounts its minimal extracted tree at /bench (eval/extract_bench.py), so what
+# the agent sees is decided per-experiment, not baked here.
+#   make l1 CC_VERSION=<pin> [CODEX_VERSION=<pin>] [L0_IMAGE=rb-l0-newton:<tag>]
+ARG L0_IMAGE=rb-l0-isaaclab:5.1.0
+FROM ${L0_IMAGE}
+
+# Node 22 + pinned agent CLIs. Pin: npm view @anthropic-ai/claude-code version
+ARG CLAUDE_CODE_VERSION
+ARG CODEX_VERSION=
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/* && \
+    npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?pin the agent version}" && \
+    if [ -n "$CODEX_VERSION" ]; then npm install -g "@openai/codex@${CODEX_VERSION}"; fi
+
+# Non-root agent; only /workspace is writable (ubuntu24.04 base ships a default
+# 'ubuntu' user on uid 1000 — remove it so agent takes uid 1000 = host user)
+RUN userdel -r ubuntu 2>/dev/null || true; \
+    useradd -m -u 1000 agent && \
+    mkdir -p /workspace && chown agent:agent /workspace
+
+# The experiment's extracted benchmark mounts here (read-only)
+ENV PYTHONPATH=/bench
+
+COPY entrypoints/ /opt/entrypoints/
+RUN chmod 755 /opt/entrypoints/*.sh
+
+ENTRYPOINT ["tini", "--"]
