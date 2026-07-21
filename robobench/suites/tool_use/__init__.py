@@ -9,6 +9,8 @@ Tasks:
     into each of three wells.
   - `whiteboard` (WhiteboardWordScene) — write the episode's word with a marker, then
     erase and redo the worst letter.
+  - `spatula` (SpatulaFlipServeScene) — flip a patty with a spatula and serve it onto a
+    plate (non-prehensile payload control).
 Structure mirrors the assembly suite: `scenes/`, `configs/`, `smokes/`.
 """
 

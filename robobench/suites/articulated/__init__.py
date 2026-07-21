@@ -11,6 +11,16 @@ Tasks:
     hitches in its commanded-vs-actual dial rotation.
   - `scale` (BalanceScaleScene) — sort five identical-looking boxes by hidden mass
     using a two-tray beam balance (arrest/release discipline; centred placement).
+  - `microwave` (MicrowaveMealScene, robocasa port) — operate a counter-top
+    microwave's state machine (door-closed precondition, start/stop toggle,
+    abort-on-early-open, keypad program, cycle timer, spinning turntable): heat two
+    bowls in two full cycles and serve them on a mat.
+
+  - `pouring` (PouringScene, dexmimicgen port; placed in this suite by design
+    decision) — metered granular pouring: the cup's TILT is the mechanism the robot
+    operates (a flow valve with hysteresis), splitting a sampled pellet load between
+    two bowls to a sampled per-episode target. No joints — the "articulation" is the
+    continuous, irreversible pour-angle plant.
 Structure mirrors the assembly suite: `scenes/`, `configs/`, `smokes/`.
 """
 

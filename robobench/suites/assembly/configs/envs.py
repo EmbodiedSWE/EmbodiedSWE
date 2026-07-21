@@ -24,10 +24,13 @@ from robobench.robots import (
     PiperRobotCfg,
     WxaiRobotCfg,
 )
+from robobench.robots import MultiRobotCfg
 from robobench.suites.assembly.scenes import (
     BulbAssemblySceneCfg,
+    ChairAssemblySceneCfg,
     IkeaTableAssemblySceneCfg,
     NutThreadAssemblySceneCfg,
+    StackingToySceneCfg,
 )
 
 SUITE = "assembly"
@@ -120,7 +123,7 @@ for _mode in ("osc", "impedance", "joint"):
 # address one arm via `env.robot["left"]`). Bases stand on the bench top (z = 0.994, the default
 # packing table), 0.94 m apart — each arm works best 0.3-0.55 m from its own base, so the shared
 # zone sits around (0.4, 0).
-# Reach-verified (P2/P2b probes, experiments/so101_bimanual_franka_osc_20260715): in-zone tracking
+# Reach-verified (reach probes): in-zone tracking
 # <= 0.6 mm, both arms simultaneously at the shared zone OK. Known gotcha: the default home pose
 # parks each hand over the other arm's zone — tuck the idle arm.
 # TO VERIFY: arm-arm collision limits when one arm stretches cross-body (> 0.55 m); per-task base
@@ -253,3 +256,216 @@ for _mode in ("joint", "pink_ik"):
             )
         ),
     )
+
+
+# ---- RoboDojo stacking toy (the benchmark's difficulty FLOOR) --------------------------------
+# Scene physics only (NullRobot oracle/smoke). -> "assembly.stacking_toy"
+register_env(SUITE, lambda: EnvCfg(scene="stacking_toy", robot="null", env_spacing=3))
+
+
+# Robot bindings: bench-height (humanoids) / ground-level (Franka) placements. Spawn radii/arcs are
+# copied from the packing suite's MEASURED reach values for the same embodiments at the same bench —
+# re-verify with the per-binding stress smoke before any agent run (only the null smoke is validated
+# with the scene itself).
+def _stacking_g1_cfg() -> StackingToySceneCfg:
+    """G1 (short ~0.55 m arms): toy base pushed +y on a 0.7 m bench; ten pieces on two staggered
+    front arcs so they don't collide on a 110-deg arc."""
+    return StackingToySceneCfg(
+        surface_z=0.7,
+        base_pos=(0.0, 0.16),
+        spawn_radii=(0.26, 0.36),
+        spawn_arc=(215.0, 325.0),
+    )
+
+
+def _stacking_gr1t2_cfg() -> StackingToySceneCfg:
+    """GR1-T2 (longer arms): same bench, slightly wider rings."""
+    return StackingToySceneCfg(
+        surface_z=0.7,
+        base_pos=(0.0, 0.18),
+        spawn_radii=(0.30, 0.42),
+        spawn_arc=(205.0, 335.0),
+    )
+
+
+def _stacking_franka_cfg() -> StackingToySceneCfg:
+    """Franka: ground-level toy just in front of the base, compact rings inside ~0.75 m reach.
+    Pieces are grasped by the rim (0.03 m thick x >= 21 mm rim depth, well under the 8 cm jaw);
+    outer sizes bound reach, not grasp."""
+    return StackingToySceneCfg(
+        base_pos=(0.0, 0.14),
+        spawn_radii=(0.22, 0.32),
+        spawn_arc=(215.0, 325.0),
+    )
+
+
+# -> "assembly.stacking_toy.g1.{joint,pink_ik}" / ".gr1t2.{joint,pink_ik}"
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="stacking_toy",
+                scene_cfg=_stacking_g1_cfg(),
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="stacking_toy",
+                scene_cfg=_stacking_gr1t2_cfg(),
+                robot="gr1t2",
+                control_mode=mode,
+                robot_cfg=GR1T2RobotCfg(base_pos=(0.0, -0.48, 0.95),
+                                        base_rot=(0.7071, 0.0, 0.0, 0.7071)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# -> "assembly.stacking_toy.franka.{osc,joint}"
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="stacking_toy",
+                scene_cfg=_stacking_franka_cfg(),
+                robot="franka",
+                control_mode=mode,
+                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.40, 0.0),
+                                         base_rot=(0.7071068, 0.0, 0.0, 0.7071068)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+
+# ---- FurnitureBench chair (heterogeneous parts + ordering; the Franka long-horizon anchor) -----
+# Scene physics only (NullRobot oracle/smoke). -> "assembly.chair"
+register_env(SUITE, lambda: EnvCfg(scene="chair", robot="null", env_spacing=3))
+
+
+# Robot bindings. Placements are STARTING guesses copied from the stacking-toy / pen-holder
+# measured reach values for the same embodiments at the same bench — re-verify with the
+# per-binding stress smoke before any agent run (only the null smoke validates the scene
+# itself). The seat sits slightly forward of the robot; the five loose parts scatter on a
+# front arc.
+def _chair_g1_cfg() -> ChairAssemblySceneCfg:
+    """G1 (short ~0.55 m arms): work on a 0.7 m bench, seat pushed +y, parts on a compact
+    front arc."""
+    return ChairAssemblySceneCfg(
+        surface_z=0.7,
+        seat_pos=(0.0, 0.18),
+        spawn_radii=(0.26, 0.36),
+        spawn_arc=(215.0, 325.0),
+    )
+
+
+def _chair_gr1t2_cfg() -> ChairAssemblySceneCfg:
+    """GR1-T2 (longer arms): same bench, slightly wider arc."""
+    return ChairAssemblySceneCfg(
+        surface_z=0.7,
+        seat_pos=(0.0, 0.20),
+        spawn_radii=(0.30, 0.42),
+        spawn_arc=(205.0, 335.0),
+    )
+
+
+def _chair_franka_cfg() -> ChairAssemblySceneCfg:
+    """Franka (PRIMARY — the source platform): ground-level kit just in front of the base,
+    compact arc inside ~0.75 m reach. Every part passes the 8 cm-jaw audit: leg shaft
+    30 mm dia, backrest panel 20 mm thick, nut ring 60 mm across (pinch the 15 mm rim),
+    seat slab 30 mm edge."""
+    return ChairAssemblySceneCfg(
+        seat_pos=(0.0, 0.16),
+        spawn_radii=(0.24, 0.34),
+        spawn_arc=(215.0, 325.0),
+    )
+
+
+def _chair_multi_cfg() -> ChairAssemblySceneCfg:
+    """Dual Franka flanking the work: seat centred between the bases; parts scatter on a
+    ring both arms can partition. The two-post backrest insertion is the genuinely
+    bimanual-friendly stage (steady the seat with one arm, insert with the other)."""
+    return ChairAssemblySceneCfg(
+        seat_pos=(0.0, 0.0),
+        spawn_radii=(0.30,),
+        spawn_arc=(0.0, 360.0),
+    )
+
+
+# -> "assembly.chair.g1.{joint,pink_ik}" / ".gr1t2.{joint,pink_ik}"
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="chair",
+                scene_cfg=_chair_g1_cfg(),
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="chair",
+                scene_cfg=_chair_gr1t2_cfg(),
+                robot="gr1t2",
+                control_mode=mode,
+                robot_cfg=GR1T2RobotCfg(base_pos=(0.0, -0.48, 0.95),
+                                        base_rot=(0.7071, 0.0, 0.0, 0.7071)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# -> "assembly.chair.franka.{osc,joint}"
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="chair",
+                scene_cfg=_chair_franka_cfg(),
+                robot="franka",
+                control_mode=mode,
+                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.40, 0.0),
+                                         base_rot=(0.7071068, 0.0, 0.0, 0.7071068)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# -> "assembly.chair.multi.{osc,joint}" — two Frankas facing each other across the work
+# (the pen_holder dual-arm pattern; EnvCfg.control_mode propagates to both children).
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="chair",
+                scene_cfg=_chair_multi_cfg(),
+                robot="multi",
+                control_mode=mode,
+                robot_cfg=MultiRobotCfg(robots={
+                    "left": ("franka", FrankaRobotCfg(base_pos=(-0.55, 0.0, 0.0))),
+                    "right": ("franka", FrankaRobotCfg(base_pos=(0.55, 0.0, 0.0),
+                                                       base_rot=(0.0, 0.0, 0.0, 1.0))),
+                }),
+                env_spacing=3,
+            )
+        ),
+    )
+
