@@ -168,6 +168,11 @@ class WxaiRobot(BaseRobot):
                         joint_names_expr=list(self.ARM_JOINTS),
                         stiffness=0.0 if torque_mode else c.arm_stiffness,
                         damping=0.0 if torque_mode else c.arm_damping,
+                        # The Trossen drives cap the wrist at 7 Nm — cranking the self-locking
+                        # M16 saturates it and the key creeps ~6 deg per 120 deg orbit command
+                        # (the entire campaign's slow-advance root cause). The benchmark needs
+                        # crank torque; give the arm headroom.
+                        effort_limit_sim={"joint_[0-2]": 27.0, "joint_[3-5]": 20.0},
                     ),
                     "wxai_gripper": ImplicitActuatorCfg(
                         joint_names_expr=list(self.GRIPPER_JOINTS),
