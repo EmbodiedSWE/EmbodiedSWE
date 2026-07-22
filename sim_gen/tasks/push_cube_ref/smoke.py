@@ -13,7 +13,7 @@ from sim_gen.core import Checks, Recorder
 from sim_gen.tasks.push_cube_ref.scene import CUBE_HALF, PushCubeScene
 
 
-def null_solution(scene: PushCubeScene, offset: float = 0.0) -> None:
+def oracle_solution(scene: PushCubeScene, offset: float = 0.0) -> None:
     """Carry the cube to (goal + offset along x), release, settle."""
     target = np.array([*scene._goal_xy, CUBE_HALF + 0.03]) + np.array([offset, 0, 0])
     lift = scene.body_pos("cube") + np.array([0, 0, 0.08])
@@ -77,7 +77,7 @@ def main() -> None:
 
     # --- negative controls ---------------------------------------------------------
     scene.reset(seed=3)
-    null_solution(scene, offset=scene.cfg.goal_radius * 1.5)  # near-miss outside radius
+    oracle_solution(scene, offset=scene.cfg.goal_radius * 1.5)  # near-miss outside radius
     c.check("near-miss outside radius must FAIL", not scene.success(),
             f"dist {scene._cube_goal_dist():.3f} vs r={scene.cfg.goal_radius}")
     c.check("near-miss score pinned below 1", scene.score() < 1.0)
@@ -90,7 +90,7 @@ def main() -> None:
     knee = []
     for off_frac in (0.0, 0.5, 0.9, 1.3):
         scene.reset(seed=5)
-        null_solution(scene, offset=scene.cfg.goal_radius * off_frac)
+        oracle_solution(scene, offset=scene.cfg.goal_radius * off_frac)
         knee.append((off_frac, scene.success()))
     c.check("sweep: inside-radius offsets pass", all(ok for f, ok in knee if f < 1.0),
             str(knee))

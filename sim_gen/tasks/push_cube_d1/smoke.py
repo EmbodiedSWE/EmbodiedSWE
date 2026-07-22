@@ -35,7 +35,7 @@ def reorient_solution(scene: FlipCubeScene, q_target=IDENTITY) -> None:
 
 # Standard oracle export (pipeline convention): the validator re-runs this under its
 # own instrumentation for the measured difficulty label + persistence gates.
-null_solution = reorient_solution
+oracle_solution = reorient_solution
 
 
 def seed_strategy_push(scene: FlipCubeScene, dist: float = 0.25) -> None:

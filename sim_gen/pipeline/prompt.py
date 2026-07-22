@@ -41,18 +41,19 @@ count fractions, combinations...) is your call. Hard invariants only:
   down; remember latches in reset and state save/restore).
 Also declare in TASK.md the rough number of stages of the task (used only as a
 difficulty label).
-2. smoke.py — the null-robot solution plus the test-case battery, using
+2. smoke.py — the teleport-oracle solution (no robot) plus the test-case battery, using
    sim_gen.core.Checks and sim_gen.core.Recorder. Mirror the reference smoke's
    structure. The oracle MUST be exported as a module-level callable
-   `null_solution(scene)` (the validator re-runs it under its own instrumentation).
+   `oracle_solution(scene)` (the validator re-runs it under its own instrumentation).
    Required checks: settle/no-drift, no-NaN, determinism, randomization-is-real,
    null-policy-fails (success False AND score ~0), oracle-succeeds on >= 3 seeds,
    rubric monotonicity, and NEGATIVE CONTROLS (deliberately wrong executions that MUST
    fail), of which two are mandatory:
    - the SEED'S OWN STRATEGY executed in your scene must fail (if it is not even
      expressible in your scene, document the N/A in TASK.md);
-   - a WRONG-ORDER execution must fail, if your TASK.md declares the stage chain as
-     ordered (skip for unordered/breadth tasks — say which in TASK.md);
+   - your task may or may not require a specific execution order — both are fine
+     designs; state which in TASK.md. Only if it does require an order: add a
+     wrong-order execution as a negative control (it must fail);
    plus at least one more task-specific control, and a tolerance calibration probe.
    The smoke must print the Checks verdict (ALL PASS) and save a video (H.264, via
    Recorder.save). Success must be stable: once it triggers it must keep holding
@@ -74,10 +75,10 @@ It is the seed's own port — your task must NOT be that.
   objects, the mechanism, add constraints, or combine — but same-strategy-different-
   numbers is REJECTED.
 - Physics must be honest: objects interact through contacts; no teleporting in the
-  scene logic (the null solution may use scene.carry(), which is the sanctioned
+  scene logic (the oracle solution may use scene.carry(), which is the sanctioned
   kinematic-carry primitive). If your task depends on a physical property (mass,
   friction), VERIFY it applied by reading it back in the smoke.
-- Null-robot only: no robot embodiment. The null solution manipulates objects with
+- No robot embodiment at this stage. The oracle solution manipulates objects with
   scene.carry() / scene.set_body_pose() and settles with scene.settle().
 - Self-contained: only mujoco + numpy + sim_gen.core. No new dependencies, no assets
   from disk (procedural geometry only).
@@ -86,6 +87,10 @@ It is the seed's own port — your task must NOT be that.
       --video sim_gen/artifacts/{task_name}_smoke.mp4
   Watch out: if a check fails, fix the ROOT CAUSE (scene or check), never delete or
   weaken a check to pass.
+- After the smoke passes, ALSO run the validator and fix root causes until it PASSes:
+  cd {cosigen_root} && MUJOCO_GL=osmesa {python} sim_gen/pipeline/validate.py \
+      --task {task_name}
+  You own this problem until it is accepted — do not stop at the first green smoke.
 
 ## Working style
 

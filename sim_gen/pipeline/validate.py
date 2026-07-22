@@ -96,7 +96,7 @@ def generic_gates(task_name: str) -> list[dict]:
 
 
 def post_smoke_gates(task_name: str) -> dict:
-    """Re-run the smoke's exported null_solution under the validator's own
+    """Re-run the smoke's exported oracle_solution under the validator's own
     instrumentation (don't trust the smoke's self-reported results alone)."""
     import importlib
 
@@ -107,16 +107,16 @@ def post_smoke_gates(task_name: str) -> dict:
         print(f"[gate] {'PASS' if ok else 'FAIL':4s} {name} {detail}", flush=True)
 
     smoke_mod = importlib.import_module(f"sim_gen.tasks.{task_name}.smoke")
-    null_solution = getattr(smoke_mod, "null_solution", None)
-    if null_solution is None:
-        gate("null_solution exported by smoke.py", False,
+    oracle_solution = getattr(smoke_mod, "oracle_solution", None)
+    if oracle_solution is None:
+        gate("oracle_solution exported by smoke.py", False,
              "cannot run validator-side persistence gate")
         return result
 
     scene = load_scene(task_name)
     scene.reset(seed=0)
-    null_solution(scene)
-    gate("null solution reaches success under validator", bool(scene.success()))
+    oracle_solution(scene)
+    gate("oracle solution reaches success under validator", bool(scene.success()))
 
     # success persistence: no single-frame flicker success (also rejects success
     # triggered by transient fly-through states, so no separate quiescence gate)
@@ -129,7 +129,7 @@ def post_smoke_gates(task_name: str) -> dict:
 
 
 def run_smoke(task_name: str) -> dict:
-    """Run the task's own smoke (its null solution + test battery), require ALL PASS."""
+    """Run the task's own smoke (its oracle solution + test battery), require ALL PASS."""
     video = SIM_GEN_ROOT / "artifacts" / f"{task_name}_smoke.mp4"
     cmd = [PYTHON, "-m", f"sim_gen.tasks.{task_name}.smoke", "--video", str(video)]
     env = dict(os.environ, MUJOCO_GL="osmesa")

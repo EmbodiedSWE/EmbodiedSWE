@@ -3,7 +3,7 @@
 Pipeline for constructing new simulation problems from seed problems, for building a
 post-training mix for coding agents. Seeds come from the vendored
 [RoboVerse](RoboVerse/) corpus; new problems are standalone **MuJoCo** tasks implemented
-in the CoSiGen house style (scene-is-task, config dataclass, null-robot solution, smoke
+in the CoSiGen house style (scene-is-task, config dataclass, teleport-oracle solution (no robot), smoke
 test with named checks, rendered video).
 
 ```
@@ -18,7 +18,7 @@ seed (RoboVerse task file)
    │                            must be strategically different from the seed)
    ▼
 [3] new task package ────────── tasks/<task_name>/{scene.py, smoke.py, TASK.md}
-   │                            + null-robot solution inside smoke.py
+   │                            + teleport-oracle solution (no robot) inside smoke.py
    ▼
 [4] validation ──────────────── pipeline/validate.py (generic physical gates)
    │                            + the task's own smoke battery (ALL PASS required)
@@ -36,7 +36,7 @@ admitted task + artifacts (video, checks report, agent trajectory)
 | `RoboVerse/` | Vendored seed corpus (declarative task files under `roboverse_pack/tasks/`). Read-only; never imported, only read as source text. |
 | `super_relay/` | Vendored logging relay: CC agents point `ANTHROPIC_BASE_URL` at it; it forwards to the real API and logs every request/response for trajectory export. |
 | `core/` | The small MuJoCo task framework generated tasks are written against: `scene.py` (BaseScene + SceneCfg + registry), `recorder.py` (H.264 video), `checks.py` (named-check harness). |
-| `tasks/` | One package per task: `scene.py` (the environment), `smoke.py` (null solution + test cases), `TASK.md` (task card: seed, what changed, why strategically different). `tasks/push_cube_ref/` is the hand-written reference port of the ManiSkill PushCube seed — the format exemplar. |
+| `tasks/` | One package per task: `scene.py` (the environment), `smoke.py` (oracle solution + test cases), `TASK.md` (task card: seed, what changed, why strategically different). `tasks/push_cube_ref/` is the hand-written reference port of the ManiSkill PushCube seed — the format exemplar. |
 | `pipeline/` | `seeds.py` (deduplicated seed pool + sampling) · `prompt.py` (construction-agent prompt) · `spawn_agent.py` (spawn CC agent with relay logging) · `validate.py` (generic gates + smoke runner) · `novelty.py` (LLM judge). |
 | `artifacts/` | Videos, check reports, relay logs, exported agent trajectories. Gitignored. |
 
@@ -93,8 +93,8 @@ A generated task is a package `tasks/<name>/` with three files:
     used only as a difficulty label;
   - `describe()` → the natural-language task statement a solving agent would receive;
   - a `SceneCfg` dataclass holding every tunable init parameter.
-- **`smoke.py`** — the null-robot solution and the test-case battery (see stage 4).
-  The null solution manipulates objects directly (teleport + settle via the BaseScene
+- **`smoke.py`** — the teleport-oracle solution (no robot) and the test-case battery (see stage 4).
+  The oracle solution manipulates objects directly (teleport + settle via the BaseScene
   helpers) — no robot embodiment at this stage, mirroring how robobench tasks are
   validated scene-first.
 - **`TASK.md`** — task card: seed provenance, what was changed, why it is strategically
@@ -110,23 +110,23 @@ Two layers, both must pass:
 3. determinism — same seed → identical trajectory hash; state snapshot/restore round-trips;
 4. randomization-is-real — different seeds → different instances (and applied values
    verified by readback, not trust);
-5. null policy — doing nothing: `success()` False, `score()` ≈ 0 on every instance;
-6. horizon — the null solution finishes within the episode budget with margin.
+5. null policy (do-nothing): `success()` False, `score()` ≈ 0 on every instance;
+6. horizon — the oracle solution finishes within the episode budget with margin.
 
 **Task-specific battery** (the task's own `smoke.py`, written by the construction agent):
-- the null solution reaches `success()` end-to-end on multiple sampled instances
-  ("achievable"); it is exported as a callable `null_solution(scene)` so the validator
+- the oracle solution reaches `success()` end-to-end on multiple sampled instances
+  ("achievable"); it is exported as a callable `oracle_solution(scene)` so the validator
   can re-run it;
 - negative controls — deliberately wrong executions that MUST fail ("refusable").
   Two are REQUIRED, not just examples:
   - **the seed's strategy, executed in the new scene, must fail** (this is the
     executable half of "strategically different"; if the seed strategy is not even
     expressible in the new scene, document the N/A in TASK.md);
-  - **wrong-order execution must fail** for any task whose TASK.md declares its stage
-    chain as ordered (this is the certificate that the stages are actually sequential,
-    not N independent goals sharing a scene);
+  - tasks may require a specific execution order or not — **both are legitimate
+    designs**; TASK.md states which. For order-requiring tasks only: **wrong-order
+    execution must fail** (the certificate that the order requirement is real);
   plus task-specific ones (wrong object, near-miss outside tolerance, ...);
-- rubric monotonicity — score is non-decreasing as the null solution progresses through
+- rubric monotonicity — score is non-decreasing as the oracle solution progresses through
   stages, spread over [0,1], max exactly at success;
 - a calibration probe where tolerances matter (offset sweep → the pass/fail knee is
   where the task intends it).
@@ -134,7 +134,7 @@ Two layers, both must pass:
   (`ALL PASS n/n`), and **every run records a video** (H.264, artifacts dir).
 
 **Post-smoke gate** (`pipeline/validate.py` again, re-running the exported
-`null_solution` under the validator's own instrumentation):
+`oracle_solution` under the validator's own instrumentation):
 - **success persistence** — after success first triggers, keep simulating: it must not
   flicker off (no single-frame "success"; this also rejects success triggered by
   transient fly-through states).
@@ -142,12 +142,12 @@ Two layers, both must pass:
 ## Stage 5 — novelty ("strategically different")
 
 `pipeline/novelty.py` runs an LLM judge (through the same relay) over: the seed's source
-+ the new task's `TASK.md`, `describe()`, and null-solution strategy. Verdict JSON:
++ the new task's `TASK.md`, `describe()`, and oracle-solution strategy. Verdict JSON:
 `{strategically_different: bool, shared_strategy: str, reasoning: str}`. Judged
 **within the seed family only** (checking against the global pool is out of scope;
 cross-family duplication is handled as mix bookkeeping, not a per-task gate). Where two
 variants of the same seed both exist in `tasks/`, the executable cross-check also
-applies: variant A's null solution must not pass variant B.
+applies: variant A's oracle solution must not pass variant B.
 
 ## Difficulty distribution (guide only)
 
@@ -187,7 +187,7 @@ distribution can be reweighted at rollout-sampling time without rebuilding tasks
 
 ## Stage 6 — robot embodiment bindings (required; the trainable surface)
 
-The null-robot solution validates the *scene*; the training data is a solving agent
+The teleport-oracle solution (no robot) validates the *scene*; the training data is a solving agent
 writing code against the CoSiGen-loop-style API (`move_to`, `set_gripper`,
 `get_state`, ...) that drives a **robot arm** in the scene. So every admitted task gets
 embodiment bindings before it enters the mix:
@@ -229,36 +229,51 @@ embodiment bindings before it enters the mix:
   agent prompted to make `success()` return True *without* doing the described task —
   per-batch, not per-task, which is where it's cheap.
 
-## Running the pipeline
+## Running: one agent, one problem, worked until accepted
+
+The operating model is **per-problem, not per-stage**: each construction agent owns
+exactly ONE problem and drives it through the whole lifecycle below, iterating until
+the problem is ACCEPTED. Do NOT run one stage across all problems before the next
+stage. Scaling up = running many single-problem lifecycles concurrently (agents share
+one relay; concurrent sessions are separated automatically).
+
+**Setup, once per machine** (not per problem):
 
 ```bash
 cd <CoSiGen checkout>   # requires: mujoco, numpy, imageio-ffmpeg, claude CLI + OAuth
                         # env overrides: SIM_GEN_PYTHON / SIM_GEN_RELAY_DIR /
                         #                SIM_GEN_RELAY_PORT / SIM_GEN_OAUTH_ENV
-
-# inspect / sample the deduplicated seed pool (~194 tasks)
-python -m sim_gen.pipeline.seeds --list
-python -m sim_gen.pipeline.seeds --sample 10 --rng-seed 0
-
-# one-time: start the logging relay (idempotent; artifacts/relay_logs/)
-python sim_gen/pipeline/spawn_agent.py --start-relay-only
-
-# construct ONE task from a chosen seed (task name auto-derived: <seed>_dK)
-python sim_gen/pipeline/spawn_agent.py --seed rlbench/light_bulb_in --tier middle
-
-# construct a BATCH from uniformly sampled pool seeds
-python sim_gen/pipeline/spawn_agent.py --batch 10 --rng-seed 0 --tier easy
-
-# validate (generic gates + the task's own smoke, with video)
-python sim_gen/pipeline/validate.py --task <new_task_name>
-
-# novelty judgment vs. the seed
-python sim_gen/pipeline/novelty.py --task <new_task_name>
-
-# robot binding smoke (Franka; per-task bindings)
-MUJOCO_GL=osmesa python -m sim_gen.tasks.<new_task_name>.binding_smoke \
-    --video sim_gen/artifacts/<new_task_name>_franka.mp4
-
-# export the agent trajectory
-python sim_gen/pipeline/spawn_agent.py --export-trajs
+python sim_gen/pipeline/spawn_agent.py --start-relay-only   # idempotent
 ```
+
+**Lifecycle of ONE problem** (`<task>` is auto-derived as `<seed>_dK`):
+
+```bash
+# 1. spawn the construction agent on a seed (samples: python -m sim_gen.pipeline.seeds --sample 1)
+python sim_gen/pipeline/spawn_agent.py --seed <family/stem> --tier <easy|middle|hard>
+#    the agent designs the task, implements scene.py / smoke.py / TASK.md, and
+#    iterates until its own smoke prints "SIM_GEN_SMOKE: ALL PASS"
+
+# 2. validate — generic gates + the task's smoke re-run + persistence gate
+python sim_gen/pipeline/validate.py --task <task>          # must end "PASS"
+
+# 3. novelty judgment vs. the seed (seed read from the task's run.json)
+python sim_gen/pipeline/novelty.py --task <task>           # must end "PASS"
+
+# 4. Franka binding with a scripted robot solution (the mix-admission bar)
+MUJOCO_GL=osmesa python -m sim_gen.tasks.<task>.binding_smoke \
+    --video sim_gen/artifacts/<task>_franka.mp4            # must end "ALL PASS"
+```
+
+Any failing step = fix the root cause (scene, smoke, bindings — never weaken a check)
+and re-run that step. **Accepted** = steps 2, 3, 4 all pass. Only accepted problems
+count toward the mix and the tier quotas; everything else stays in `tasks/` as staging.
+
+**Anytime** (covers all sessions logged so far):
+
+```bash
+python sim_gen/pipeline/spawn_agent.py --export-trajs   # -> artifacts/trajectories/
+```
+
+`spawn_agent.py --batch N --rng-seed S --tier T` is a convenience that runs N of these
+constructions sequentially; for real scale, launch N concurrent single-problem runs.

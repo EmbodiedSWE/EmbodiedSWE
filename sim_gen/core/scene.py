@@ -5,9 +5,9 @@ instance distribution (``reset_instance()``), and the task semantics (``success(
 ``score()`` / ``describe()``).  Mirrors the robobench scene-is-task convention, on plain
 MuJoCo instead of Isaac.
 
-No robot embodiment lives here: tasks are validated scene-first with a *null-robot*
+No robot embodiment lives here: tasks are validated scene-first with a *teleport-oracle*
 solution that moves objects kinematically (``carry()``) and lets physics settle the
-rest, exactly like the robobench null-robot smokes.
+rest, exactly like the robobench teleport-oracle smokes.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class SceneCfg:
 
 
 class BaseScene:
-    """Owns MjModel/MjData plus the helpers null solutions and checks are built from."""
+    """Owns MjModel/MjData plus the helpers oracle solutions and checks are built from."""
 
     scene_name = "base"
 
@@ -130,7 +130,7 @@ class BaseScene:
         return self.data.body(name).xquat.copy()
 
     def _free_joint_adr(self, body: str) -> int:
-        """qpos address of the body's free joint (bodies moved by the null robot must
+        """qpos address of the body's free joint (bodies moved by the teleport oracle must
         have a <freejoint/>)."""
         b = self.model.body(body)
         j = self.model.joint(b.jntadr[0])
@@ -148,10 +148,10 @@ class BaseScene:
         self.data.qvel[dadr : dadr + 6] = 0.0
         mujoco.mj_forward(self.model, self.data)
 
-    # ---- null-robot primitive ---------------------------------------------------------
+    # ---- teleport-oracle primitive ---------------------------------------------------------
     def carry(self, body: str, to_pos, to_quat=None, steps: int = 150) -> None:
         """Kinematically carry a free body along a straight line while physics runs
-        (the null-robot move: the carried body is pose-driven with zero velocity each
+        (the teleport-oracle move: the carried body is pose-driven with zero velocity each
         step so the rest of the world reacts normally), then release."""
         adr = self._free_joint_adr(body)
         p0 = self.data.qpos[adr : adr + 3].copy()
