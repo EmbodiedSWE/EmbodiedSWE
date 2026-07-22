@@ -141,10 +141,11 @@ for _mode in ("joint", "osc", "impedance"):
         lambda mode=_mode: EnvCfg(
             scene="allen_bolt",
             scene_cfg=AllenBoltAssemblySceneCfg(
-                # World (0.36, 0.10): 0.19 m from the right arm's base. The settle drop scatters
-                # the key up to ~60 mm, and the WXAI's top-down pick envelope tops out ~0.28 m —
-                # spawns beyond that give tilted, joint-limited approaches.
-                key_init_xy=((-0.14, 0.10),),
+                # World (0.50, 0.10): equidistant (~0.32 m) from BOTH arm bases — the bimanual
+                # pinch needs mid-annulus range for each arm. (The old (0.36, 0.10) was the
+                # single-Franka-era spawn 0.19 m from the right base: close-range pinches fold
+                # the right elbow into its j3/j4 limits, runs 55-56.)
+                key_init_xy=((0.0, 0.10),),
                 # 0.3 makes the M16 thread SELF-LOCKING (needs mu > tan(2.5 deg) ~ 0.044): at the
                 # scene's 0.01 the bolt unscrews itself whenever the ratcheting key lets go. The
                 # force-driven smoke never releases, so only the robot env needs this.
