@@ -1,0 +1,347 @@
+import argparse
+import json
+import logging
+import os
+import shutil
+
+import imageio.v2 as iio
+import numpy as np
+import torch
+import zarr
+from tqdm import tqdm
+
+try:
+    from pytorch3d import transforms
+except ImportError:
+    pass
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Process Meta Data To ZARR For Diffusion Policy.")
+    parser.add_argument(
+        "--task_name",
+        type=str,
+        default="StackCube_franka",
+        help="The name of the task (e.g., StackCube_franka)",
+    )
+    parser.add_argument(
+        "--expert_data_num",
+        type=int,
+        default=200,
+        help="Number of episodes to process (e.g., 200)",
+    )
+    parser.add_argument(
+        "--metadata_dir",
+        type=str,
+        default="~/RoboVerse/data_isaaclab/demo/StackCube/robot-franka",
+        help="The path of metadata",
+    )
+    parser.add_argument(
+        "--downsample_ratio",
+        type=int,
+        default=1,
+        help="The downsample ratio of metadata",
+    )
+
+    parser.add_argument(
+        "--observation_space",
+        type=str,
+        default="joint_pos",
+        choices=["joint_pos", "ee"],
+        help="The observation space to use (e.g., joint_pos, ee)",
+    )
+    parser.add_argument(
+        "--action_space",
+        type=str,
+        default="joint_pos",
+        choices=["joint_pos", "ee"],
+        help="The action space to use (e.g., joint_pos, ee)",
+    )
+
+    parser.add_argument("--delta_ee", type=int, choices=[0, 1], default=0)
+
+    parser.add_argument(
+        "--joint_pos_padding",
+        type=int,
+        default=0,
+        help="If > 0, pad joint positions to this length when using joint_pos observation/action space",
+    )
+    parser.add_argument(
+        "--cameras",
+        nargs="+",
+        default=["head_camera"],
+        help="Camera arrays to write (default just head_camera = unchanged single-view zarr). Each <cam> reads "
+        "demo_<id>/<cam>.mp4 (head_camera falls back to rgb.mp4 for back-compat); multi-view enables wrist-cam DP.",
+    )
+
+    args = parser.parse_args()
+
+    task_name = args.task_name
+    num = args.expert_data_num
+    load_dir = args.metadata_dir
+    downsample_ratio = args.downsample_ratio
+
+    print("Metadata load dir:", load_dir)
+
+    # Scan success folder to find all existing demo indices
+    success_dir = os.path.join(load_dir)
+    demo_indices = []
+
+    if os.path.exists(success_dir) and os.path.isdir(success_dir):
+        for item in os.listdir(success_dir):
+            if item.startswith("demo_") and os.path.isdir(os.path.join(success_dir, item)):
+                try:
+                    demo_idx = int(item.split("_")[1])
+                    demo_dir = os.path.join(success_dir, item)
+                    # Check if metadata.json exists
+                    if os.path.isfile(os.path.join(demo_dir, "metadata.json")):
+                        demo_indices.append(demo_idx)
+                except (ValueError, IndexError):
+                    continue
+
+        demo_indices.sort()
+        print(f"Found {len(demo_indices)} demos in success folder: {demo_indices[:10]}{'...' if len(demo_indices) > 10 else ''}")
+
+        # Use actual number of demos if requested number is not enough
+        if len(demo_indices) < num:
+            print(f"Requested {num} demos but only {len(demo_indices)} available. Using all available demos.")
+            num = len(demo_indices)
+        else:
+            # Use first num demos
+            demo_indices = demo_indices[:num]
+    else:
+        # Fallback to old behavior if success folder doesn't exist
+        print(f"Success folder not found at {success_dir}, falling back to sequential processing")
+        demo_indices = list(range(num))
+
+    save_dir = f"data_policy/{task_name}_{len(demo_indices)}.zarr"
+    print("ZARR save dir:", save_dir)
+
+    if os.path.exists(save_dir):
+        shutil.rmtree(save_dir)
+
+    zarr_root = zarr.group(save_dir)
+    zarr_data = zarr_root.create_group("data")
+    zarr_meta = zarr_root.create_group("meta")
+
+    # ZARR datasets will be created dynamically during the first batch write
+    compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=1)
+
+    # Batch processing settings
+    batch_size = 100
+    # One image buffer per requested camera (default just "head_camera" = original behaviour).
+    cam_arrays = {cam: [] for cam in args.cameras}
+    action_arrays = []
+    state_arrays = []
+    episode_ends_arrays = []
+    total_count = 0
+    current_batch = 0
+
+    if args.joint_pos_padding > 0 and args.observation_space == "ee" and args.action_space == "ee":
+        logging.warning("Padding is not supported for ee observation and action spaces.")
+
+    for current_ep, demo_idx in enumerate(tqdm(demo_indices, desc=f"Processing {len(demo_indices)} MetaData")):
+        demo_id = str(demo_idx).zfill(4)
+        # Try success folder first, then fallback to root load_dir
+        demo_dir = os.path.join(success_dir, f"demo_{demo_id}")
+        if not os.path.isdir(demo_dir):
+            demo_dir = os.path.join(load_dir, f"demo_{demo_id}")
+
+        if not os.path.isdir(demo_dir):
+            print(f"Skipping episode {demo_idx} as directory {demo_dir} does not exist.")
+            continue
+
+         # Check metadata.json
+        metadata_path = os.path.join(demo_dir, "metadata.json")
+        if not os.path.isfile(metadata_path):
+          print(f"Skipping episode {demo_idx} as metadata.json does not exist.")
+          continue
+        else:
+            with open(os.path.join(demo_dir, "metadata.json"), encoding="utf-8") as f:
+                # print("metadata load dir:", demo_dir)
+                metadata = json.load(f)
+
+        data_length = len(metadata["joint_qpos"])
+        # Read each requested camera's frames. head_camera falls back to the legacy
+        # rgb.mp4 filename (single-view demos) if a head_camera.mp4 isn't present.
+        cam_rgbs = {}
+        for cam in args.cameras:
+            cam_mp4 = os.path.join(demo_dir, f"{cam}.mp4")
+            if not os.path.isfile(cam_mp4) and cam == "head_camera":
+                cam_mp4 = os.path.join(demo_dir, "rgb.mp4")
+            cam_rgbs[cam] = iio.mimread(cam_mp4)
+        rgbs = cam_rgbs[args.cameras[0]]
+        for i, rgb in enumerate(rgbs):
+            if i % downsample_ratio != 0:
+                continue
+
+            # you can change state and action here
+            if args.observation_space == "joint_pos":
+                state = metadata["joint_qpos"][i]
+                # Apply padding if specified and using joint_pos
+                if args.joint_pos_padding > 0 and len(state) < args.joint_pos_padding:
+                    padding = np.zeros(args.joint_pos_padding - len(state))
+                    state = np.concatenate([state, padding])
+            elif args.observation_space == "ee":
+                robot_pos, robot_quat = (
+                    torch.tensor(metadata["robot_root_state"][i][0:3]),
+                    torch.tensor(metadata["robot_root_state"][i][3:7]),
+                )
+
+                # Convert both current and next EE state into local coordinates
+                local_ee_pos = transforms.quaternion_apply(
+                    transforms.quaternion_invert(robot_quat),
+                    torch.tensor(metadata["robot_ee_state"][i][0:3]) - robot_pos,
+                )
+                local_ee_quat = transforms.quaternion_multiply(
+                    transforms.quaternion_invert(robot_quat), torch.tensor(metadata["robot_ee_state"][i][3:7])
+                )
+
+                gripper_state = metadata["joint_qpos"][i][-2:]
+                state = np.concatenate([local_ee_pos, local_ee_quat, gripper_state])
+                assert state.shape == (9,)
+            else:
+                raise ValueError(f"Unknown observation space: {args.observation_space}")
+
+            if args.action_space == "joint_pos":
+                action = metadata["joint_qpos_target"][i]
+                # Apply padding if specified and using joint_pos
+                if args.joint_pos_padding > 0 and len(action) < args.joint_pos_padding:
+                    padding = np.zeros(args.joint_pos_padding - len(action))
+                    action = np.concatenate([action, padding])
+            elif args.action_space == "ee":
+                robot_pos, robot_quat = (
+                    torch.tensor(metadata["robot_root_state"][i][0:3]),
+                    torch.tensor(metadata["robot_root_state"][i][3:7]),
+                )
+
+                # Convert both current and next EE state into local coordinates
+                local_ee_pos = transforms.quaternion_apply(
+                    transforms.quaternion_invert(robot_quat),
+                    torch.tensor(metadata["robot_ee_state"][i][0:3]) - robot_pos,
+                )
+                local_next_ee_pos = transforms.quaternion_apply(
+                    transforms.quaternion_invert(robot_quat),
+                    torch.tensor(metadata["robot_ee_state_target"][i][0:3]) - robot_pos,
+                )
+
+                local_ee_quat = transforms.quaternion_multiply(
+                    transforms.quaternion_invert(robot_quat), torch.tensor(metadata["robot_ee_state"][i][3:7])
+                )
+                local_next_ee_quat = transforms.quaternion_multiply(
+                    transforms.quaternion_invert(robot_quat), torch.tensor(metadata["robot_ee_state_target"][i][3:7])
+                )
+                gripper_action = metadata["joint_qpos_target"][i][-2:]
+
+                if not args.delta_ee:
+                    action = np.concatenate([local_next_ee_pos, local_next_ee_quat, gripper_action])
+                else:
+                    # Compute the delta in local coordinates
+                    local_ee_delta_pos = local_next_ee_pos - local_ee_pos
+                    local_ee_delta_quat = transforms.quaternion_multiply(
+                        transforms.quaternion_invert(local_ee_quat), local_next_ee_quat
+                    )
+                    action = np.concatenate([local_ee_delta_pos, local_ee_delta_quat, gripper_action])
+
+                assert action.shape == (9,), f"Action shape is {action.shape}, expected (9,)"
+            else:
+                raise ValueError(f"Unknown action space: {args.action_space}")
+
+            action = list(action)
+            # Append data to batch arrays (one image per requested camera)
+            for cam in args.cameras:
+                cam_arrays[cam].append(cam_rgbs[cam][i])
+            state_arrays.append(state)
+            action_arrays.append(action)
+            total_count += 1
+
+        episode_ends_arrays.append(total_count)
+
+        # Write to ZARR if batch is full or if this is the last episode
+        if (current_ep + 1) % batch_size == 0 or (current_ep + 1) == len(demo_indices):
+            # Convert each camera's buffer to NCHW NumPy.
+            cam_np = {}
+            for cam in args.cameras:
+                arr = np.array(cam_arrays[cam])
+                cam_np[cam] = np.moveaxis(arr, -1, 1)  # NHWC -> NCHW
+            action_arrays = np.array(action_arrays)
+            state_arrays = np.array(state_arrays)
+            episode_ends_arrays = np.array(episode_ends_arrays)
+
+            # Create datasets dynamically during the first write
+            if current_batch == 0:
+                for cam in args.cameras:
+                    zarr_data.create_dataset(
+                        cam,
+                        shape=(0, *cam_np[cam].shape[1:]),
+                        chunks=(batch_size, *cam_np[cam].shape[1:]),
+                        dtype=cam_np[cam].dtype,
+                        compressor=compressor,
+                        overwrite=True,
+                    )
+                zarr_data.create_dataset(
+                    "state",
+                    shape=(0, state_arrays.shape[1]),
+                    chunks=(batch_size, state_arrays.shape[1]),
+                    dtype="float32",
+                    compressor=compressor,
+                    overwrite=True,
+                )
+                zarr_data.create_dataset(
+                    "action",
+                    shape=(0, action_arrays.shape[1]),
+                    chunks=(batch_size, action_arrays.shape[1]),
+                    dtype="float32",
+                    compressor=compressor,
+                    overwrite=True,
+                )
+                zarr_meta.create_dataset(
+                    "episode_ends",
+                    shape=(0,),
+                    chunks=(batch_size,),
+                    dtype="int64",
+                    compressor=compressor,
+                    overwrite=True,
+                )
+
+            # Append data to ZARR datasets
+            for cam in args.cameras:
+                zarr_data[cam].append(cam_np[cam])
+            zarr_data["state"].append(state_arrays)
+            zarr_data["action"].append(action_arrays)
+            zarr_meta["episode_ends"].append(episode_ends_arrays)
+
+            print(f"Batch {current_batch + 1} written with {len(cam_np[args.cameras[0]])} samples.")
+
+            # Clear arrays for next batch
+            cam_arrays = {cam: [] for cam in args.cameras}
+            action_arrays = []
+            state_arrays = []
+            episode_ends_arrays = []
+            current_batch += 1
+
+    # Save metadata to a JSON file
+    metadata = {
+        "observation_space": args.observation_space,
+        "action_space": args.action_space,
+        "delta_ee": args.delta_ee,
+        "joint_pos_padding": args.joint_pos_padding,
+        "task_name": args.task_name,
+        "num_episodes": len(demo_indices),
+        "downsample_ratio": args.downsample_ratio,
+    }
+
+    # Save metadata to zarr group
+    for key, value in metadata.items():
+        zarr_meta.attrs[key] = value
+
+    # Also save as a separate JSON file for easier access
+    metadata_path = os.path.join(save_dir, "metadata.json")
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=4)
+
+    print(f"Metadata saved to: {metadata_path}")
+
+
+if __name__ == "__main__":
+    main()

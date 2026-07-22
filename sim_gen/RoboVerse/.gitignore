@@ -1,0 +1,145 @@
+*.DS_Store
+.idea/
+*__pycache__/
+**/.vscode/
+# Don't ignore the top-level .vscode directory as it is
+# used to configure VS Code settings
+*.rrd
+# rerun recording files
+!.vscode/
+.vscode/.history
+.hydra/
+node_modules/
+.next/
+wandb/
+logs/
+*.ckpt
+GSNet
+
+deploy
+runs
+debug/
+test_output/
+test_output
+roboverse_demo/
+roboverse_demo
+roboverse_data/
+roboverse_data
+roboverse_data_dev/
+roboverse_data_dev
+roboverse_data_release/
+roboverse_data_release
+*.pth
+checkpoints
+slurm.sh
+data_policy/
+outputs/
+il_outputs/
+eval_outputs/
+tmp/
+results/
+RoboVersePage
+unused/
+Open6DOR
+_isaac_sim
+ppo_logs/
+legacy/
+
+third_party/curobo/
+
+# Data
+/assets
+/data
+/data/
+/data_old
+/data_old/
+/data_isaaclab
+/data_isaaclab/
+/data_metasim
+/data_metasim/
+data_policy
+info
+MJMODEL.TXT
+view_mjcf.py
+/tools_libero
+/tools_libero/
+logdir/
+
+# Old Repos
+UniRobo
+RoboVerseOld
+RoboVersePage
+RoboVerseLearn
+
+# Third Party Repos
+orbit
+IsaacLab
+
+*.log
+_data
+*.ipynb
+
+*.avi
+*.mp4
+*.png
+*.jpg
+
+*.zip
+*.tar
+*.gz
+
+
+imgui.ini
+MUJOCO_LOG.TXT
+*.egg-info
+build
+metasim/cfg/tasks/arnold/Arnold
+dist
+
+id_ed25519*
+id_rsa*
+
+# for docker
+.env
+
+# for sapien
+*.convex.stl
+
+# for test cache
+.pytest_cache/
+
+docs/superpowers/
+
+*.pkl
+*.pt
+output
+public/
+
+.cursor/
+artifacts/
+nohup/
+.omx/
+
+# local-only: exp52 scratch (scripts + rollout outputs) and replay scratch
+.tmp_replay_render/
+get_started/exp52_*.py
+get_started/exp52_*/
+
+# local-only: kujiale interior scene USDs (not part of upstream assets)
+roboverse_pack/asset/*.usda
+training_logs/
+
+# local-only: report-hub publish wrappers (reports live in the external report repo)
+tools/publish_report*.sh
+
+# local-only: personal agent rules (commit identity, push habits, private infra) and env override
+CLAUDE.local.md
+ENVIRONMENTS.local.md
+datasets/
+.robosuite_bundle/
+
+# --- LIBERO / LIBERO-plus 1:1 isolated integration ---
+third_party/
+INTEGRATION_LOG.md
+*.hdf5
+libero_datasets/

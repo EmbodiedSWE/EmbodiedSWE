@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>RoboVerse Dashboard</title>
+  <style>
+    /* Layout Styles */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      display: flex;
+      min-height: 100vh;
+    }
+    .sidebar {
+      width: 220px;
+      background-color: #2c3e50;
+      color: #ecf0f1;
+      padding: 20px;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      overflow-y: auto;
+    }
+    .sidebar h2 {
+      margin-top: 0;
+      font-size: 20px;
+      text-align: center;
+      border-bottom: 1px solid #34495e;
+      padding-bottom: 10px;
+    }
+    .sidebar ul {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+    }
+    .sidebar ul li {
+      margin: 10px 0;
+    }
+    .sidebar ul li a {
+      color: #ecf0f1;
+      text-decoration: none;
+      padding: 10px;
+      display: block;
+      border-radius: 4px;
+    }
+    .sidebar ul li a.active,
+    .sidebar ul li a:hover {
+      background-color: #34495e;
+    }
+
+    .content {
+      flex: 1;
+      padding: 10px;
+      background-color: #ecf0f1;
+      /* Add left margin to avoid being overlapped by the fixed sidebar */
+      margin-left: 260px; /* 220px width + 20px padding + extra margin if needed */
+    }
+
+    /* Table Styles */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px 0px 8px 0px;  /* top, right, bottom, left */
+      vertical-align: top;
+    }
+    th {
+      background-color: #3498db;
+      color: #fff;
+    }
+    thead tr th:first-child,
+    tbody tr td:first-child {
+      padding: 8px;
+      background: #fff;
+        font-weight: normal;
+    }
+    .task-name {
+      width: 170px;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .task-stats {
+      margin-top: 4px;
+      font-size: 0.9em;
+      color: #666;
+    }
+    .task-stats span {
+      margin-right: 10px;
+      white-space: nowrap;
+    }
+    .task-stats span:last-child {
+      margin-right: 0;
+    }
+
+    .test-case {
+      padding: 5px;
+    }
+    .log-controls {
+      margin-bottom: 10px;
+    }
+    .log-button {
+      margin: 0px;
+      padding: 4px;
+      cursor: pointer;
+      border: none;
+      background-color: #2980b9;
+      color: #fff;
+      border-radius: 3px;
+      font-size: 14px;
+    }
+
+    .image-gallery {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .image-container {
+      width: 105px;
+      border: 1px solid #eee;
+      padding: 0px;
+      background: #f9f9f9;
+    }
+    .image-container img {
+      width: 100%;
+      height: auto;
+    }
+    .data_stat {
+      width: 105px;
+      border: 1px solid #eee;
+      padding: 0px;
+      background: #f9f9f9;
+    }
+    .data_stat img {
+      width: 100%;
+      height: auto;
+    }
+    .image-caption {
+      font-size: 14px;
+    }
+    .video-container {
+      width: 215px;
+      height: auto;
+    }
+    .video-container video {
+      width: 100%;
+      height: 100%;
+    }
+    /* Responsive Styles */
+    @media screen and (max-width: 768px) {
+      body {
+        flex-direction: column;
+      }
+      .sidebar {
+        position: relative;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+      }
+      .content {
+        margin-left: 0;
+      }
+    }
+
+    /* Statistics Styles */
+    .stats-container {
+      background: white;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stats-container h2 {
+      margin-top: 0;
+      color: #2c3e50;
+      font-size: 1.5em;
+      margin-bottom: 15px;
+    }
+    .stats-overview {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .stat-box {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 6px;
+      min-width: 200px;
+      text-align: center;
+    }
+    .stat-box h3 {
+      margin: 0;
+      color: #34495e;
+      font-size: 1.1em;
+      margin-bottom: 10px;
+    }
+    .stat-box p {
+      margin: 0;
+      font-size: 1.8em;
+      color: #2980b9;
+      font-weight: bold;
+    }
+    .stats-container-small {
+      background: white;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .stats-container-small h2 {
+      margin-top: 0;
+      color: #2c3e50;
+      font-size: 1.5em;
+      margin-bottom: 15px;
+    }
+    .stat-box-small {
+      background: #f8f9fa;
+      padding: 4px;
+      border-radius: 2px;
+      min-width: 120px;
+      text-align: center;
+    }
+    .stat-box-small h3 {
+      margin: 0;
+      color: #34495e;
+      font-size: 0.8em;
+      margin-bottom: 5px;
+    }
+    .stat-box-small p {
+      margin: 0;
+      font-size: 1.2em;
+      color: #2980b9;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <!-- Sidebar Navigation -->
+  <div class="sidebar">
+    <h2>Task Groups</h2>
+    <ul>
+      {% for group, goal, current_cnt in zip(task_groups.keys(), task_group_goals, task_group_current_cnts) %}
+      <li>
+        <a href="/?group={{ group }}" class="{% if group == selected_group %}active{% endif %}">
+          {{ group|capitalize }} ({{current_cnt}} / {{goal}})
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <!-- Main Content -->
+  <div class="content">
+    <h1>RoboVerse Dashboard - {{ selected_group|capitalize }}</h1>
+
+    <!-- Dataset Statistics -->
+    <div class="stats-container">
+      <h2>RoboVerse Dataset Statistics</h2>
+      <div class="stats-overview">
+        <div class="stat-box">
+          <h3>Total Trajectories</h3>
+          <p>{{ "{:,}".format(dataset_stats.total.trajectories) }}</p>
+        </div>
+        <div class="stat-box">
+          <h3>Total Frames</h3>
+          <p>{{ "{:,}".format(dataset_stats.total.frames) }}</p>
+        </div>
+      </div>
+    </div>
+
+    <table>
+      <tr>
+        <th>Task / Robot</th>
+        {% for simulator in simulators %}
+        <th>{{ simulator }}</th>
+        {% endfor %}
+      </tr>
+      {% for task in tasks %}
+      {% for robot in robots %}
+      <tr>
+        <td>
+          <div class="task-name">
+            {{ task.split(":")[-1] }} / {{ robot }}
+            <div class="stats-container-small">
+              <div class="stats-overview">
+                <div class="stat-box-small">
+                  <h3>Total Trajectories</h3>
+                  <p>{{ print(dataset_stats.keys()) }}</p>
+                </div>
+                <div class="stat-box-small">
+                  <h3>Total Frames</h3>
+                  <p>{{ "{:,}".format(dataset_stats.total.frames) }}</p>
+                </div>
+              </div>
+            </div>
+            {% if dataset_stats.by_task[task.split(":")[-1] + "-Level-all"] %}
+            {% set task_stat = dataset_stats.by_task[task.split(":")[-1] + "-Level-all"] %}
+
+            <div class="task-stats">
+              <span title="Trajectories">{{ "{:,}".format(task_stat.trajectories) }}</span>
+              <span title="Frames">{{ "{:,}".format(task_stat.frames) }}</span>
+            </div>
+            {% endif %}
+          </div>
+        </td>
+        {% for simulator in simulators %}
+        <td>
+          {% set case_group = grouped_cases[(task, robot, simulator)] %}
+          {% for command_name, case in case_group.items() %}
+          <div class="test-case">
+            {% if command_name in ["minimal", "replay_demo"] %}
+            <div class="log-controls">
+                {% if case.status == "0" %}
+                <span title="Success">✅</span>
+                {% elif case.status == "unfinished" %}
+                <span title="Unfinished">❓</span>
+                {% else %}
+                <span title="Failure">❌</span>
+                {% endif %}
+                {% if case.has_command %}
+                <button class="log-button" onclick="window.open('/{{ case.command }}', '_blank')">Command</button>
+                {% endif %}
+                {% if case.has_stdout %}
+                <button class="log-button" onclick="window.open('/{{ case.stdout_log }}', '_blank')">Stdout</button>
+                {% endif %}
+                {% if case.has_stderr %}
+                <button class="log-button" onclick="window.open('/{{ case.stderr_log }}', '_blank')">Stderr</button>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if command_name == "minimal" %}
+            <div class="image-gallery">
+              {% for img in case.images %}
+              {% if case.has_image(loop.index0) %}
+              <div class="image-container">
+                <img src="/{{ img.path }}" alt="{{ img.caption }}">
+                <figcaption class="image-caption">{{ img.caption }}</figcaption>
+              </div>
+              {% endif %}
+              {% endfor %}
+            </div>
+            {% elif command_name == "replay_demo" %}
+            {% if case.has_video %}
+            <div class="video-container">
+              <video src="/{{ case.video_path }}" controls></video>
+            </div>
+            {% endif %}
+            {% endif %}
+          </div>
+          {% endfor %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </table>
+  </div>
+</body>
+</html>

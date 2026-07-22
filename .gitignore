@@ -233,3 +233,6 @@ robobench/suites/*/videos/
 # of git). Committed specs + machinery live elsewhere (robobench/, and later agent/ + configs/).
 /experiments/*
 !/experiments/README.md
+
+# sim_gen run artifacts (videos, relay logs, trajectories, reports)
+/sim_gen/artifacts/

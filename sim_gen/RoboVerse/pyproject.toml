@@ -1,0 +1,214 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roboverse-py"
+version = "1.0.0b0"
+description = "RoboVerse content, learning, and examples built on MetaSim"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+dependencies = [
+    "metasim @ git+https://github.com/RoboVerseOrg/MetaSim.git@main",
+    "gymnasium",
+    "loguru",
+    "numpy",
+    "pyyaml",
+    "scipy",
+    "torch",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "metasim[dev] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main",
+]
+assets = ["huggingface-hub", "rootutils", "tyro"]
+examples = [
+    "imageio[ffmpeg]",
+    "opencv-python",
+    "pygame",
+    "rich",
+    "rootutils",
+    "stable-baselines3",
+    "torchvision",
+    "tqdm",
+    "tyro",
+]
+learn = [
+    "diffusers",
+    "einops",
+    "h5py",
+    "hydra-core",
+    "imageio[ffmpeg]",
+    "matplotlib",
+    "numcodecs",
+    "numpy-quaternion",
+    "omegaconf",
+    "opencv-python",
+    "pandas",
+    "pillow",
+    "pymunk",
+    "robomimic",
+    "rsl-rl-lib",
+    "seaborn",
+    "stable-baselines3",
+    "tensordict",
+    "torchcfm",
+    "torchvision",
+    "tqdm",
+    "wandb",
+    "zarr",
+]
+sensors = ["trimesh"]
+vla = [
+    "lerobot",
+    "tensorflow",
+    "tensorflow-datasets",
+    "tensorflow-hub",
+    "transformers",
+]
+genesis = ["metasim[genesis] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+isaacgym = ["metasim[isaacgym] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+isaacsim = ["metasim[isaacsim] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+isaacsim211 = ["metasim[isaacsim211] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+mjx = ["metasim[mjx] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+mujoco = ["metasim[mujoco] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+newton = ["metasim[newton] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+pybullet = ["metasim[pybullet] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+robosplatter = ["metasim[robosplatter] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+sapien2 = ["metasim[sapien2] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+sapien3 = ["metasim[sapien3] @ git+https://github.com/RoboVerseOrg/MetaSim.git@main"]
+
+[project.entry-points."metasim.packages"]
+roboverse_pack = "roboverse_pack"
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
+[tool.uv.pip]
+index-url = "https://download.pytorch.org/whl/cu128"
+extra-index-url = [
+    "https://pypi.org/simple",
+    "https://pypi.nvidia.com",
+]
+
+[tool.ruff]
+line-length = 120
+format.preview = true
+lint.preview = false
+target-version = "py38"
+lint.select = [
+    "B",    # flake8: bugbear
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "FA",   # flake8: future annotations
+    "I",    # isort
+    "PLC",  # pylint
+    "PLE",  # pylint
+    "PLW",  # pylint
+    "UP",   # pyupgrade
+    "NPY",  # numpy-specific rules
+    "RUF",  # ruff-defined rules
+    "T20",  # flake8: check prints
+    "D",    # pydocstyle
+]
+lint.ignore = [
+    "B007",  # allow used loop control variable without leading underscore
+    "D100",  # allow no docstrings in public module
+    "D105",  # allow magic methods without docstring
+    "D107",  # allow __init__ without docstring
+    "E266",  # allow multiple leading # in comments
+    "E402",  # allow imports not at the top of the file
+    "E501",  # allow long lines
+    "E722",  # allow bare except
+    "F403",  # allow `from module import *`
+    "F841",  # allow unused variable
+    "PLC0206",  # allow directly iterating over a dict
+    "PLC0415",  # allow imports not at the top of the file
+    "PLC1901",  # allow `if some_string == ""`
+    "PLW1514",  # allow open without encoding argument
+    "PLW2901",  # allow for loop variable overwriting
+    "PLW0602", "PLW0603", "PLW0604",  # allow global variables, TODO: add docstring and remove this
+    "UP031",  # allow `%` to be used to format strings
+    "NPY002",  # allow legacy `numpy.random` functions
+    "RUF003",  # allow ambiguous characters in comments
+    "RUF005",  # allow using `+` to concatenate collections
+    "RUF009",  # allow function calls in dataclass default values
+    "RUF012",  # allow mutable class attributes
+    "RUF059",  # allow unused variable
+    "PLE0604", # allow __all__ to be nested but still all elements are strings
+]
+extend-exclude = [
+    "roboverse_learn",
+    "wandb",
+    "third_party",
+    "tmp",
+    "roboverse_data",
+    "assets",
+    "docker",
+    # Vendored SimplerEnv (ManiSkill2-real2sim) controller stack — kept byte-identical to
+    # upstream for verified bitwise parity; exclude from lint + format.
+    "roboverse_pack/tasks/simpler_env/_native/control",
+]
+
+[tool.setuptools.packages.find]
+include = ["roboverse_pack", "roboverse_pack.*", "roboverse_learn", "roboverse_learn.*", "scripts", "scripts.*"]
+exclude = ["metasim", "metasim.*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+roboverse_pack = ["**/*.md", "**/*.mdl", "**/*.urdf", "**/*.usd", "**/*.xml", "**/*.yaml", "**/*.hdr"]
+
+[tool.ruff.lint.per-file-ignores]
+## For normal scripts, allow print statements, allow no docstrings
+"scripts/**.py" = ["T20", "D"]
+"tools/**.py" = ["T20", "D"]  # research / diagnostic harnesses
+"roboverse_pack/tasks/open6dor/utils/**.py" = ["T20", "D"]
+"roboverse_pack/tasks/maniskill/utils/**.py" = ["T20", "D"]
+## For get_started scripts, allow no docstrings
+"get_started/**.py" = ["D"]
+## For special tasks, allow no docstrings
+"roboverse_pack/tasks/maniskill/{pick_single_egad,pick_single_ycb,peg_insertion_side}.py" = ["D"]
+"roboverse_pack/tasks/open6dor/task/**.py" = ["D"]
+## For python files in docs and dashboard folder, allow no docstrings
+"docs/**.py" = ["D"]
+"dashboard/**.py" = ["D"]
+## Test names should carry behavior; requiring docstrings makes tests noisy
+"tests/**.py" = ["D"]
+## For tasks, allow no docstrings in public modules
+"roboverse_pack/tasks/**/*.py" = ["D100"]
+## For roboverse_learn, allow no docstrings, allow print
+"roboverse_learn/**.py" = ["D", "T20"]
+## Temporary disable linting for quick testing
+"roboverse_pack/robots/**.py" = ["D"]  # FIXME: whoever in charge of the robot add docstring and remove this
+"roboverse_pack/scenes/**.py" = ["D"]  # FIXME: Charlie add docstring and remove this
+"roboverse_pack/tasks/arnold/**.py" = ["D"]  # FIXME: Steven add docstring and remove this
+"roboverse_pack/tasks/calvin/**.py" = ["D"]  # FIXME: Feishi add docstring and remove this
+"roboverse_pack/tasks/debug/**.py" = ["D"]  # FIXME: Feishi add docstring and remove this
+"roboverse_pack/tasks/dmcontrol/**.py" = ["D"]  # FIXME: Charlie add docstring and remove this
+"roboverse_pack/tasks/fetch/**.py" = ["D"]  # FIXME: Haoran add docstring and remove this
+"roboverse_pack/tasks/gapartnet/**.py" = ["D"]  # FIXME: Haoran add docstring and remove this
+"roboverse_pack/tasks/isaacgym_envs/**.py" = ["D"]  # FIXME: Charlie add docstring and remove this
+"roboverse_pack/tasks/libero/**.py" = ["D"]  # FIXME: Peihao add docstring and remove this
+"roboverse_pack/tasks/open6dor/**.py" = ["D"]  # FIXME: Haoran and Yufei add docstring and remove this
+"roboverse_pack/tasks/rlbench/**.py" = ["D"]  # FIXME: Feishi add docstring and remove this
+"roboverse_pack/tasks/robosuite/**.py" = ["D"]  # FIXME: Jiangran add docstring and remove this
+"roboverse_pack/tasks/simpler_env/**.py" = ["D"]  # FIXME: Boshi add docstring and remove this
+"roboverse_pack/tasks/skillblender/**.py" = ["D"]  # FIXME: Haoran add docstring and remove this
+"roboverse_pack/tasks/metaworld/**.py" = ["D"]  # FIXME: Siheng add docstring and remove this
+
+[tool.ruff.lint.isort]
+known-first-party = ["metasim", "roboverse_learn", "roboverse_pack", "scripts"]
+known-third-party = ["wandb", "isaacsim"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "general: lightweight test that needs no simulator backend",
+]

@@ -1,0 +1,15 @@
+sphinx==8.1.3
+pydata_sphinx_theme==0.16.1
+pillow
+# Copy button for code snippets
+sphinx_copybutton
+# Markdown parser
+myst-parser
+sphinx-subfigure
+sphinxcontrib-video
+sphinx-togglebutton
+sphinx_design
+# Mermaid parser
+sphinxcontrib-mermaid
+# Open external link in new tab
+sphinx-new-tab-link
