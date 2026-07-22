@@ -108,7 +108,9 @@ COMFORT_R = 0.26         # wrist parks this far (horizontal) from its own base: 
 # uses a LONG lever at 30deg — reach extension it converges with at 0.1mm (runs 49/50). The old
 # 150mm blade-reach estimate was wrong (jaws sit 57-70mm below link_6): both levers CLEAR or
 # BETWEEN the jaws, and the run-45 jam was the identity-frame snap, not blade contact.
-TIPLEN = {"Right": 0.160, "Left": 0.190}
+TIPLEN = {"Right": 0.175, "Left": 0.190}  # both levers must LEAD the claw: the URDF asset's
+# jaw colliders are LIVE (blade tips ~156mm down the tool axis) — a sphere behind them
+# props the claw on the table/scene before it can press (run 76: stalled 86mm up)
 TILT = {"Right": math.radians(20.0), "Left": math.radians(30.0)}  # mutated by the attempt ladder
 # Per-attempt tilt ladders: each missed pinch advances the arm to its next candidate — the
 # sim is the reachability oracle (runs 48-51: the wrist's reachable depth depends strongly
@@ -141,7 +143,7 @@ L_GRIP_D = 0.095         # the LEFT presses HERE (along the handle) during the p
                          # other; every 'unreachable' station was arm-vs-arm collision
 CARRY_Z = 0.20           # table-frame height the key rides at while carried / erected off-axis
 INSERT_HOVER = 0.030     # tip hover above the socket mouth while clocking
-PRESS_DZ = 0.0010        # crank press: command the tip this far below the live socket floor
+PRESS_DZ = 0.0018        # crank press: command the tip this far below the live socket floor (firm feed: stops the stroke ride-up saw-tooth)
 # (the stiff joint-PD press is FAR harder than the franka's compliant OSC — 1.5 mm of
 # commanded interpenetration hammered the staged bolt off its helix capture: it then spun
 # crest-nested, +76 deg with zero descent, and the key cammed out on the next stroke)
@@ -281,8 +283,6 @@ def main() -> None:
             jp.CreateExcludeFromArticulationAttr(True)
             fp = UsdPhysics.FilteredPairsAPI.Apply(stage.GetPrimAtPath(f"{base}/Tip_{arm_name}"))
             fp.CreateFilteredPairsRel().AddTarget(f"{base}/{arm_name}")
-            fp.GetFilteredPairsRel().AddTarget(f"{base}/Platform_0")
-            fp.GetFilteredPairsRel().AddTarget(f"{base}/Bolt_0")
             row.append(f"{base}/tip_weld_{arm_name}")
         tip_weld_paths[arm_name] = row
 
@@ -351,7 +351,10 @@ def main() -> None:
     print(env.describe(), flush=True)
 
     # Measure tool-frame (link_6) -> finger-pad offsets once from the live articulation.
-    gl = artR.body_names.index("gripper_left")
+    # URDF-imported asset: the finger meshes are merged INTO the carriage links (the old
+    # asset's gripper_left hung off carriage_left with an IDENTITY fixed joint, so the
+    # carriage origin is the same frame).
+    gl = artR.body_names.index("carriage_left")
     _q6 = artR.data.body_quat_w[:, ee_idx]
     _rel = quat_apply_inverse(_q6, artR.data.body_pos_w[:, gl] - artR.data.body_pos_w[:, ee_idx])
     tool_to_grip = float(_rel[0, 0]) + FINGER_TO_GRIP  # along the tool (+x of link_6)
@@ -736,7 +739,7 @@ def main() -> None:
     prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
     prev_key_yaw = yaw_of(key.data.root_quat_w)
     insert_depth0 = None
-    cycles, drops, picks, regrip_tries, aim_tries, repress_tries = 0, 0, 0, 0, 0, 0
+    cycles, drops, picks, regrip_tries, aim_tries, repress_tries, hold_tries = 0, 0, 0, 0, 0, 0, 0
     grip_freeze = torch.zeros(n, device=dev)   # carriage target latched at release (bleed the squeeze)
     seat_ok = torch.zeros(n, device=dev)       # consecutive ticks the inserted key has read settled
     psi_star = torch.zeros(n, device=dev)      # latched hex-aligned key yaw for clock/insert
@@ -750,6 +753,8 @@ def main() -> None:
     vice_sL = torch.full((n, 1), 0.05, device=dev)  # where along the handle each vice press lands
     vice_sR = torch.full((n, 1), 0.05, device=dev)
     vice_sgnL = torch.ones(n, 1, device=dev)  # the side the vice hand held from
+    hold_perp_ref, repress_perp_ref = 1.0, 1.0  # perp at the extension checkpoint
+    right_hold_s = torch.full((n, 1), HANDLE_GRIP_D, device=dev)  # where the RIGHT's weld grips the handle
     vspin_R, vspin_L = 1.0, -1.0  # ditto for the vice-hand presses
     # Carriage command while HOLDING the welded key. Pressing the full CLOSE_C past the stall
     # turns the hook undersides into a downward wedge that pins the key to the table (the lift
@@ -1004,6 +1009,23 @@ def main() -> None:
             elif t_in >= 4 * WP_TIMEOUT:
                 print(f"  ABORT: erection stalled (key up_z {float(up_now.min()):+.2f})", flush=True)
                 phase, marker = "retreat", i
+        elif phase == "re_home":  # config reset: lift the welded key clear, then drive the
+            # RIGHT arm home in joint space (the key swings along on the weld) — plateau
+            # families only change the TARGET yaw; a tangled global config needs a restart
+            # (run 87: lat walked 65->163mm through four families)
+            if t_in < 50:
+                kp = key.data.root_pos_w.clone()
+                kp[:, 2] = kp[:, 2] + 0.10
+                tp, tq = tool_for_key(kp, key.data.root_quat_w)
+                act = act_of(tp, tq, grip_c)
+            else:
+                a = torch.zeros(n, act_dim, device=dev)
+                a[:, l_s] = left_cmd
+                a[:, r_s.start : r_s.start + 6] = artR.data.default_joint_pos[:, arm_ids]
+                a[:, r_s.start + 6] = grip_c
+                act = a
+            if t_in >= 170:
+                phase, marker = "carry", i  # re-approach from clear air: carry -> erect -> clock
         elif phase == "clock":  # translate to the hover over the BORE axis, hex-clocked to the bolt
             # (nearest mod-60 representative to the key's current yaw — minimal rotation)
             if t_in == 1:
@@ -1011,19 +1033,51 @@ def main() -> None:
                 dpsi = _wrap((yaw_of(bolt.data.root_quat_w) - ky) % (math.pi / 3.0))
                 dpsi = torch.where(dpsi > math.pi / 6.0, dpsi - math.pi / 3.0, dpsi)
                 psi_star[:] = ky + dpsi
+                clock_lat_prev = 9.9
             kq = quat_from_angle_axis(psi_star, ez)
             kp = torch.zeros(n, 3, device=dev)
+            if t_in < 50:
+                # UN-WEDGE: lift straight up from wherever the key actually is before any
+                # lateral approach — with the whole train colliding, erect/travel can wedge
+                # the key tip against the table or plate edge (runs 80/82: frozen at the
+                # same geometry, tip at table level 67mm off-axis, servo unable to back out)
+                kp[:] = key.data.root_pos_w
+                kp[:, 2] = kp[:, 2] + 0.08
+                tp, tq = tool_for_key(kp, kq)
+                act = act_of(tp, tq, grip_c)
+                continue_clock = False
+            else:
+                continue_clock = True
             kp[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
             kp[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + INSERT_HOVER
-            tp, tq = tool_for_key(kp, kq)
-            act = act_of(tp, tq, grip_c)
+            # HIGH APPROACH: with the full assembly colliding (key + fingertip + live claw),
+            # a lateral translate at hover height drags the low-hanging train across the
+            # platform edge and it snags (run 80: frozen 67mm off-axis, tip 33mm below the
+            # mouth). Stay 60mm up until laterally centered, then descend on-axis.
+            lat_now = (key.data.root_pos_w[:, 0:2] - bolt.data.root_pos_w[:, 0:2]).norm(dim=-1)
+            kp[:, 2] = kp[:, 2] + torch.where(lat_now > 0.020,
+                                              torch.full_like(lat_now, 0.06), torch.zeros_like(lat_now))
+            if continue_clock:
+                tp, tq = tool_for_key(kp, kq)
+                act = act_of(tp, tq, grip_c)
+                # PLATEAU-SWITCH the hex azimuth: every mod-60 representative is physically
+                # equivalent (insert re-latches the clocking each peck), but they demand
+                # DIFFERENT wrist configs — on the imported asset one family can hold the
+                # erect orientation yet never reach the bore (run 83: parked 67mm off-axis,
+                # weld 0.0, up +1.00). No lateral progress in 100 ticks -> next candidate.
+                if t_in % 100 == 0:
+                    lat_chk = float(lat_now.max())
+                    if lat_chk > 0.020 and lat_chk > clock_lat_prev - 0.010:
+                        psi_star[:] = psi_star + math.pi / 3.0
+                        print(f"    [clock] azimuth plateau at lat {lat_chk * 1e3:.0f}mm -> +60deg", flush=True)
+                    clock_lat_prev = lat_chk
             yaw_err = _wrap(yaw_of(key.data.root_quat_w) - psi_star).abs()
             centred = ((key.data.root_pos_w[:, 0:2] - bolt.data.root_pos_w[:, 0:2]).norm(dim=-1) < 0.001) \
                 & (yaw_err < math.radians(2.5))
             if not bool(bolt_ok(say=True).all()):
                 print("  ABORT: bolt left its nest before insertion", flush=True)
                 phase, marker = "retreat", i
-            elif bool(centred.all()) or t_in >= 2 * WP_TIMEOUT:
+            elif bool(centred.all()) or t_in >= 3 * WP_TIMEOUT:
                 phase, marker = "insert", i
         elif phase == "insert":  # hover-peck probe (the hex clearance is 0.7 mm/side): reposition
             # in FREE AIR between straight-down pecks over a small lateral lattice around the
@@ -1095,6 +1149,9 @@ def main() -> None:
                     drops += 1
                     print("  DROP: insertion never landed after repeated re-clocks", flush=True)
                     phase, marker = "retreat", i
+                elif aim_tries >= 2:
+                    print("  insert timed out; RESETTING the arm config before re-clocking", flush=True)
+                    phase, marker = "re_home", i
                 else:
                     print("  insert timed out, re-clocking", flush=True)
                     phase, marker = "clock", i
@@ -1119,29 +1176,30 @@ def main() -> None:
                 phase, marker = "retreat", i
             elif bool((swept | arm_near_limit() | slipping).all()) or t_in >= STROKE_TIMEOUT:
                 phase, marker = "hold_press", i
-        elif phase == "hold_press":  # VICE HAND: the LEFT arm presses its fingertip on the
-            # handle (the key is still welded to the RIGHT, so the press verifies real contact
-            # against a rigid target), then takes over the hold so the right can unwind freely.
-            hd = handle_dir()
-            hd2 = hd.clone(); hd2[:, 2] = 0.0
-            hd2 = hd2 / hd2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-            elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
+        elif phase == "hold_press":  # VICE HAND: the LEFT presses the key's VERTICAL arm —
+            # the one part of the key nothing else occupies (the RIGHT and its live claw own
+            # the handle; runs 79-85: every handle spot the left tried was blocked). The press
+            # azimuth is FULLY FREE around the vertical member, so the left always approaches
+            # from its own side; the perp gate verifies real contact against the member's axis.
             if t_in == 1:
-                # press the point on the handle the LEFT can actually reach at this azimuth,
-                # frozen for the press; capture the RIGHT's rigid hold target (a measured-
-                # joint follower is a pushover: run 69's press dragged the key down and out)
-                vice_sL[:] = ((base_L_xy - elbow[:, :2]) * hd2[:, :2]).sum(-1, keepdim=True).clamp(0.020, 0.095)
                 hold_qR[:] = artR.data.joint_pos[:, arm_ids]
-            hp = elbow + hd2 * vice_sL
-            nv = torch.stack((-hd2[:, 1], hd2[:, 0], torch.zeros(n, device=dev)), dim=-1)
-            sgnL = torch.sign(((base_L_xy - hp[:, :2]) * nv[:, :2]).sum(-1)).unsqueeze(-1)
-            sgnL = torch.where(sgnL == 0, torch.ones_like(sgnL), sgnL)
-            vice_sgnL[:] = sgnL
-            tip_tgt = hp + nv * sgnL * (0.0063 + TIP_R - PRESS_PAST)
-            if t_in < 40:      # come in BESIDE the handle, never over it
-                vt = tip_tgt + nv * sgnL * 0.045 + ez * 0.05
+            up_k = up_axis_of(key.data.root_quat_w)
+            vp = key.data.root_pos_w + up_k * (ARM_LEN - 0.048)  # 48mm below the elbow: the LEFT's claw rides ~29mm above its sphere and must clear UNDER the overhead handle at every azimuth
+            axis_xy = key.data.root_pos_w[:, 0:2]
+            nL = torch.zeros(n, 3, device=dev)
+            nL[:, 0:2] = base_L_xy - axis_xy
+            nL = nL / nL.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+            if hold_tries > 0:  # retry from a rotated azimuth: different geometry each attempt
+                _c = math.cos((0.0, 0.45, -0.45)[min(hold_tries, 2)])
+                _s = math.sin((0.0, 0.45, -0.45)[min(hold_tries, 2)])
+                nL = torch.stack((_c * nL[:, 0] - _s * nL[:, 1],
+                                  _s * nL[:, 0] + _c * nL[:, 1],
+                                  torch.zeros(n, device=dev)), dim=-1)
+            tip_tgt = vp + nL * (0.0063 + TIP_R - PRESS_PAST)
+            if t_in < 40:      # come in BESIDE the member, never over the key
+                vt = tip_tgt + nL * 0.045 + ez * 0.05
             elif t_in < 80:
-                vt = tip_tgt + nv * sgnL * 0.045
+                vt = tip_tgt + nL * 0.045
             else:
                 vt = tip_tgt
             left_to_tip(vt, OPEN_C)
@@ -1150,18 +1208,38 @@ def main() -> None:
             a[:, r_s.start : r_s.start + 6] = hold_qR
             a[:, r_s.start + 6] = grip_c
             act = a
+            def _vperp() -> torch.Tensor:
+                return (tip_pos("Left")[:, 0:2] - axis_xy).norm(dim=-1)
             if t_in >= 120 and t_in % 20 == 0:
-                dperp = tip_perp("Left")
-                okp = (dperp > TIP_R + 0.0043) & (dperp < TIP_R + 0.0093)
-                print(f"    [hold t{t_in:3d}] L-tip perp {float(dperp[0]) * 1e3:5.1f}mm", flush=True)
+                dperp = _vperp()
+                zok = (tip_pos("Left")[:, 2] - vp[:, 2]).abs() < 0.030
+                okp = (dperp > TIP_R + 0.0043) & (dperp < TIP_R + 0.0093) & zok
+                print(f"    [hold t{t_in:3d}] L-tip axis-perp {float(dperp[0]) * 1e3:5.1f}mm", flush=True)
                 if bool(okp.all()):
+                    hold_tries = 0
                     weld_on_L()
                     weld_off()
                     print("  vice handoff: LEFT holds, RIGHT unwinding", flush=True)
                     phase, marker = "unwind", i
+            if t_in == 3 * WP_TIMEOUT - 250:
+                hold_perp_ref = float(_vperp().max())
             if t_in >= 3 * WP_TIMEOUT and phase == "hold_press":
-                print("  ABORT: vice press never verified", flush=True)
-                phase, marker = "retreat", i
+                if float(_vperp().max()) < hold_perp_ref - 0.004:
+                    hold_perp_ref = float(_vperp().max())
+                    marker += 250  # converging under contact drag: extend, don't reset
+                    print(f"    vice press converging ({hold_perp_ref * 1e3:.1f}mm); extending", flush=True)
+                elif hold_tries < 2:
+                    hold_tries += 1
+                    print(f"  vice press stuck; retrying a rotated azimuth ({hold_tries}/2)", flush=True)
+                    left_park()
+                    marker = i  # restart the approach (high standoff -> side -> press)
+                else:
+                    hold_tries = 0
+                    print("  vice press failed; cranking on WITHOUT a handoff (short strokes)", flush=True)
+                    left_park()
+                    stroke_psi.zero_()
+                    stroke_y0[:] = yaw_of(key.data.root_quat_w)
+                    phase, marker = "stroke", i
         elif phase == "unwind":  # the right arm returns to its home posture, key safe in the vice
             a = torch.zeros(n, act_dim, device=dev)
             a[:, l_s] = left_cmd
@@ -1175,37 +1253,39 @@ def main() -> None:
             qerr = (artR.data.joint_pos[:, arm_ids] - artR.data.default_joint_pos[:, arm_ids]).abs().max()
             if float(qerr) < 0.10 or t_in >= WP_TIMEOUT:
                 phase, marker = "re_press", i
-        elif phase == "re_press":  # the RIGHT presses from ITS side and takes the weld back
+        elif phase == "re_press":  # the RIGHT presses DOWN on the held handle and takes the
+            # weld back — the pick's own proven mechanism (vertical stall at handle_top + tip
+            # radius). From above is the only ALWAYS-free direction at the vice: every side
+            # approach eventually found the left's hardware at some azimuth (runs 86-88).
             hd = handle_dir()
             hd2 = hd.clone(); hd2[:, 2] = 0.0
             hd2 = hd2 / hd2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
             if t_in == 1:
-                sR = ((base_R_xy - elbow[:, :2]) * hd2[:, :2]).sum(-1, keepdim=True).clamp(0.020, 0.095)
-                alt = torch.where(vice_sL > 0.0575, vice_sL - 0.045, vice_sL + 0.045).clamp(0.020, 0.095)
-                vice_sR[:] = torch.where((sR - vice_sL).abs() < 0.045, alt, sR)  # stay clear of the vice hand
+                sR = ((base_R_xy - elbow[:, :2]) * hd2[:, :2]).sum(-1, keepdim=True).clamp(0.050, 0.095)
+                vice_sR[:] = (sR + (0.0, 0.018, -0.018)[min(repress_tries, 2)]).clamp(0.050, 0.095)
             hp = elbow + hd2 * vice_sR
-            nv = torch.stack((-hd2[:, 1], hd2[:, 0], torch.zeros(n, device=dev)), dim=-1)
-            sgnR = -vice_sgnL  # guaranteed clear of the vice hand: the handle sits between them
-            tip_tgt = hp + nv * sgnR * (0.0063 + TIP_R - PRESS_PAST)
-            if t_in < 40:
-                vt = tip_tgt + nv * sgnR * 0.045 + ez * 0.05
-            elif t_in < 80:
-                vt = tip_tgt + nv * sgnR * 0.045
+            stall_z = hp[:, 2] + 0.0063 + TIP_R  # sphere center when seated on the handle top
+            tip_tgt = hp.clone()
+            tip_tgt[:, 2] = hp[:, 2]             # commanded INTO the handle: 16mm interference
+            if t_in < 50:
+                vt = tip_tgt.clone()
+                vt[:, 2] = stall_z + 0.05        # stage straight above the press point
             else:
                 vt = tip_tgt
             act = act_of_tip(vt, grip_c)
             left_cmd[:, 0:6] = hold_qL
             left_cmd[:, 6] = OPEN_C
             if t_in >= 120 and t_in % 20 == 0:
-                dperp = tip_perp("Right")
-                margR = torch.minimum(artR.data.joint_pos[:, arm_ids] - lo_lim,
-                                      hi_lim - artR.data.joint_pos[:, arm_ids]).min(dim=-1).values
-                okp = (dperp > TIP_R + 0.0043) & (dperp < TIP_R + 0.0093)
-                print(f"    [re-press t{t_in:3d}] R-tip perp {float(dperp[0]) * 1e3:5.1f}mm"
-                      f" | marg {float(margR.min()):.2f}", flush=True)
+                tzz = tip_pos("Right")
+                dz = tzz[:, 2] - stall_z
+                xy_ok = (tzz[:, 0:2] - hp[:, 0:2]).norm(dim=-1) < 0.015
+                okp = (dz.abs() < 0.0045) & xy_ok
+                print(f"    [re-press t{t_in:3d}] R-tip dz {float(dz[0]) * 1e3:+5.1f}mm"
+                      f" | xy {float((tzz[:, 0:2] - hp[:, 0:2]).norm(dim=-1)[0]) * 1e3:4.1f}mm", flush=True)
                 if bool(okp.all()):
                     repress_tries = 0
+                    right_hold_s[:] = vice_sR
                     weld_on()
                     weld_off_L()
                     stroke_psi.zero_()
@@ -1213,8 +1293,16 @@ def main() -> None:
                     cycles += 1
                     print("  vice handoff back: RIGHT holds, cranking", flush=True)
                     phase, marker = "hand_clear", i
+            def _rdz() -> float:
+                return float((tip_pos("Right")[:, 2] - stall_z).abs().max())
+            if t_in == 3 * WP_TIMEOUT - 250:
+                repress_perp_ref = _rdz()
             if t_in >= 3 * WP_TIMEOUT and phase == "re_press":
-                if repress_tries < 2:
+                if _rdz() < repress_perp_ref - 0.004:
+                    repress_perp_ref = _rdz()
+                    marker += 250
+                    print(f"    re-press converging (dz {repress_perp_ref * 1e3:.1f}mm); extending", flush=True)
+                elif repress_tries < 2:
                     repress_tries += 1
                     print(f"  re-press stuck; retrying via a fresh unwind ({repress_tries}/2)", flush=True)
                     phase, marker = "unwind", i

@@ -38,6 +38,9 @@ SUITE = "assembly"
 # The mimic-free WXAI variant (see WxaiRobot.GRIPPER_JOINTS): required wherever things are
 # welded to the carriage links, i.e. the aloha allen-key env's contact pads.
 _NOMIMIC_USD = str(Path(__file__).resolve().parents[3] / "robots" / "assets" / "wxai" / "wxai_follower_nomimic.usd")
+# Canonical URDF->USD re-import (c5b9985): jaw collision TRACKS on GPU — the vendored asset's
+# frozen-shape disease is absent. Same link/joint names; both carriages independently driven.
+_URDF_USD = str(Path(__file__).resolve().parents[3] / "robots" / "assets" / "wxai" / "wxai_urdf_import" / "wxai_follower_urdf.usd")
 
 register_env(SUITE, lambda: EnvCfg(scene="ikea_table", robot="null", env_spacing=3))  # scene physics only
 
@@ -164,10 +167,10 @@ for _mode in ("joint", "osc", "impedance"):
                 # (None) leaves that joint driveless on some parse paths — write them always
                 "left": ("wxai", WxaiRobotCfg(
                     base_pos=(0.80, 0.0, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
-                    wxai_usd=_NOMIMIC_USD,
+                    wxai_usd=_URDF_USD,
                     gripper_stiffness=217687.0, gripper_damping=10884.0)),
                 "right": ("wxai", WxaiRobotCfg(
-                    base_pos=(0.20, 0.0, 0.0), wxai_usd=_NOMIMIC_USD,
+                    base_pos=(0.20, 0.0, 0.0), wxai_usd=_URDF_USD,
                     gripper_stiffness=217687.0, gripper_damping=10884.0)),
             }),
             env_spacing=2,
