@@ -101,6 +101,9 @@ OPEN_C, CLOSE_C = 0.044, 0.018
 # ARM-level: the two arms press their fingertips on the handle from opposite sides; the stall
 # gate reads the true tip-center separation across the 12.6 mm hex (hex + 2r = 32.6 mm).
 TIP_R = 0.010            # fingertip sphere radius (m)
+SPIN_W_TICK = 0.012      # wrist-roll ramp per ctrl tick (rad) — the axis-spin screwing rate
+MEMBER_GRIP_DOWN = 0.065 # axis grip this far below the elbow: the blade span then ENDS below the handle plane, so the grip yaw is fully free (one fixed natural frame forever)
+J5_MARGIN = 0.16         # stay this far off the wrist-roll limits during spins (rad)
 COMFORT_R = 0.26         # wrist parks this far (horizontal) from its own base: the reach annulus sweet spot
 # Per-arm fingertip levers + tool tilts. The RIGHT (near arm, ~150mm from the key spawn) uses a
 # SHORT lever at near-vertical tilt — the old contract-gate pick's proven deep regime (link_6
@@ -244,6 +247,27 @@ def main() -> None:
             j.CreateExcludeFromArticulationAttr(True)
             rowl.append(f"{base}/hold_key_weld_{k}")
         weld_paths_L.append(rowl)
+    # DRIVE COUPLING pool: key<->bolt FixedJoints — the tool-fastener contract. Enabled only
+    # after the peck-insert PHYSICALLY verifies engagement (tip at the floor, centred, hex-
+    # clocked); the same verified-contact-then-joint philosophy as the grasp welds. The
+    # THREAD (bolt<->platform SDF) stays fully real: torque still fights the self-locking
+    # friction and depth is real helical advance.
+    couple_paths = []
+    for e in range(n):
+        base = f"/World/envs/env_{e}"
+        rowc = []
+        for k in range(6):
+            j = UsdPhysics.FixedJoint.Define(stage, f"{base}/drive_couple_{k}")
+            j.CreateBody0Rel().SetTargets([f"{base}/Bolt_0/allen_bolt"])
+            j.CreateBody1Rel().SetTargets([f"{base}/Key_0/allen_key"])
+            j.CreateLocalPos0Attr(Gf.Vec3f(0.0, 0.0, 0.0))
+            j.CreateLocalRot0Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+            j.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))
+            j.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+            j.CreateJointEnabledAttr(False)
+            j.CreateExcludeFromArticulationAttr(True)
+            rowc.append(f"{base}/drive_couple_{k}")
+        couple_paths.append(rowc)
 
     # ----- grasping is done by the REAL articulation jaws (URDF-imported asset) --------------
     # The imported asset's carriage collision TRACKS on GPU (c5b9985): grasp verification is
@@ -358,6 +382,30 @@ def main() -> None:
             UsdPhysics.FixedJoint.Get(stage, weld_paths[e][weld_k]).GetJointEnabledAttr().Set(False)
         weld_k += 1
         welded[:] = False
+
+    couple_k = 0
+    drive_coupled = False
+
+    def couple_on() -> None:
+        nonlocal couple_k, drive_coupled
+        bp, bq = bolt.data.root_pos_w, bolt.data.root_quat_w
+        cp = quat_apply_inverse(bq, key.data.root_pos_w - bp)
+        cq = quat_mul(quat_conjugate(bq), key.data.root_quat_w)
+        for e in range(n):
+            j = UsdPhysics.FixedJoint.Get(stage, couple_paths[e][couple_k])
+            pv, qv = cp[e].tolist(), cq[e].tolist()
+            j.GetLocalPos0Attr().Set(Gf.Vec3f(pv[0], pv[1], pv[2]))
+            j.GetLocalRot0Attr().Set(Gf.Quatf(qv[0], Gf.Vec3f(qv[1], qv[2], qv[3])))
+            j.GetJointEnabledAttr().Set(True)
+        drive_coupled = True
+        print("  [couple] drive coupling engaged (verified insert): key locked to the bolt", flush=True)
+
+    def couple_off() -> None:
+        nonlocal couple_k, drive_coupled
+        for e in range(n):
+            UsdPhysics.FixedJoint.Get(stage, couple_paths[e][couple_k]).GetJointEnabledAttr().Set(False)
+        couple_k += 1
+        drive_coupled = False
 
     def weld_drift() -> torch.Tensor:
         """|key position - where the active weld says it should be| (m); ~0 while a weld holds."""
@@ -723,6 +771,14 @@ def main() -> None:
     hold_perp_ref, repress_perp_ref = 1.0, 1.0  # perp at the extension checkpoint
     right_hold_s = torch.full((n, 1), HANDLE_GRIP_D, device=dev)  # where the RIGHT's weld grips the handle
     vice_gripL: float = CLOSE_C   # the LEFT's carriage hold while it owns the key (stall-based)
+    spin_q0 = torch.zeros(n, 6, device=dev)   # joint snapshot the spin ramps from
+    rt_up = torch.zeros(n, 3, device=dev)
+    spin_sign = 1.0                           # +1 = CW-from-above = screwing (runs 110/114 measured
+    spin_dir_locked = False                   # -1 as CCW); locked run-level after first evidence —
+                                              # a per-restart flag re-flips forever and ejects the bolt
+    spin_d0 = 0.0
+    spin_checked = False
+    rt_tries = 0
     unwind_up = torch.zeros(n, 3, device=dev)
     vspin_R, vspin_L = 1.0, -1.0  # ditto for the vice-hand presses
     # Carriage command while HOLDING the welded key. Pressing the full CLOSE_C past the stall
@@ -1100,7 +1156,8 @@ def main() -> None:
                     key_turn.zero_()
                     prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
                     prev_key_yaw = yaw_of(key.data.root_quat_w)
-                phase, marker = "stroke", i  # the handle grip IS the crank grip: no handoff
+                couple_on()
+                phase, marker = "retwist", i  # AXIS RATCHET: regrip the member top, spin j5
             elif t_in >= INSERT_TIMEOUT:
                 aim_tries += 1
                 if aim_tries >= 5 and cycles > 0:  # mid-loop re-seat exhausted: the key is at
@@ -1118,6 +1175,158 @@ def main() -> None:
                 else:
                     print("  insert timed out, re-clocking", flush=True)
                     phase, marker = "clock", i
+        elif phase == "retwist":  # AXIS RATCHET regrip: release (the key hangs on the drive
+            # coupling — it cannot fall or tilt), lift the open claw above the handle plane,
+            # counter-spin the wrist to the far end, descend straddling the member with the
+            # closing axis PERPENDICULAR to the live handle, close, stall-verify, weld.
+            up_k = up_axis_of(key.data.root_quat_w)
+            elbow = key.data.root_pos_w + up_k * ARM_LEN
+            gp = key.data.root_pos_w + up_k * (ARM_LEN - MEMBER_GRIP_DOWN)
+            zdn = torch.zeros(n, 3, device=dev)
+            if rt_tries == 0:
+                zdn[:, 0:2] = base_R_xy - bolt.data.root_pos_w[:, 0:2]  # natural yaw
+            else:
+                # retry with the closing axis PERPENDICULAR to the live handle: the descend
+                # corridor then passes beside the handle at whatever azimuth screwing left it
+                # (run 115: the fixed yaw's corridor met the handle and exhausted the retries)
+                hdd = handle_dir()
+                zdn[:, 0:2] = hdd[:, 0:2] if rt_tries == 1 else \
+                    torch.stack((-hdd[:, 1], hdd[:, 0]), dim=-1)
+            zdn = zdn / zdn.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+            xdn = -ez.expand(n, 3)
+            ydn = torch.linalg.cross(zdn, xdn)
+            q_dn = quat_from_matrix(torch.stack((xdn, ydn, zdn), dim=-1))
+            far_end = float((lo_lim[0, 5] + J5_MARGIN) if spin_sign > 0 else (hi_lim[0, 5] - J5_MARGIN))
+            if t_in == 1:
+                if welded.any():
+                    weld_off()
+                rt_up[:] = tip_pos("Right")
+                rt_up[:, 2] = elbow[:, 2] + 0.09  # blades clear the handle plane during the counter-spin
+            if t_in < 25:
+                a = torch.zeros(n, act_dim, device=dev)
+                a[:, l_s] = left_cmd
+                a[:, r_s.start : r_s.start + 6] = artR.data.joint_pos[:, arm_ids]
+                a[:, r_s.start + 6] = OPEN_C
+                act = a
+            elif t_in < 80:
+                act = act_of_tip(rt_up, OPEN_C)
+            elif t_in < 260:
+                if t_in == 80:
+                    spin_q0[:] = artR.data.joint_pos[:, arm_ids]
+                a = torch.zeros(n, act_dim, device=dev)
+                a[:, l_s] = left_cmd
+                a[:, r_s.start : r_s.start + 6] = spin_q0
+                j5c = float(spin_q0[0, 5])
+                step_to = j5c + max(-SPIN_W_TICK * 2.0 * (t_in - 80), far_end - j5c) if far_end < j5c \
+                    else j5c + min(SPIN_W_TICK * 2.0 * (t_in - 80), far_end - j5c)
+                a[:, r_s.start + 5] = step_to
+                a[:, r_s.start + 6] = OPEN_C
+                act = a
+            else:
+                wp_q[:] = q_dn
+                wp_p[:] = gp - quat_apply(q_dn, ex1) * tool_to_grip
+                t3 = t_in - 260
+                if t3 < 70:
+                    wp_p[:, 2] = wp_p[:, 2] + max(0.0, 0.06 * (1.0 - t3 / 70.0))
+                _pos_ok = (tip_pos("Right")[:, 0:2] - gp[:, 0:2]).norm(dim=-1) < 0.008
+                gcmd = 0.004 if (t3 >= 70 and bool(_pos_ok.all())) else OPEN_C
+                act = act_of(wp_p, wp_q, gcmd, rot_w=1.5)
+                if t3 >= 70 + CLOSE_STEPS and (t3 - 70 - CLOSE_STEPS) % 20 == 0:
+                    prr = jaw_pair(artR, jaw_ids_R)
+                    dxy = (tip_pos("Right")[:, 0:2] - gp[:, 0:2]).norm(dim=-1)
+                    # the VERTICAL member stalls the jaws at the blade FLARE (~31.5mm pair),
+                    # not the hook pocket (~15.8 for the horizontal handle) — a real, centred,
+                    # repeatable bilateral stall; the weld does the holding as always
+                    okp = (prr > 0.026) & (prr < 0.037) & (dxy < 0.010)
+                    print(f"    [axisgrip t{t3:3d}] pair {float(prr[0]) * 1e3:5.1f}mm"
+                          f" | dxy {float(dxy[0]) * 1e3:4.1f}mm", flush=True)
+                    if bool(okp.all()):
+                        rt_tries = 0
+                        grip_c = float(prr[0]) * 0.5 + 0.0005
+                        weld_on()
+                        print("  [ratchet] member gripped on-axis: spinning", flush=True)
+                        phase, marker = "spin", i
+            left_park()
+            if t_in >= 3 * WP_TIMEOUT and phase == "retwist":
+                if rt_tries < 2:
+                    rt_tries += 1
+                    print(f"  axis grip stuck; retrying ({rt_tries}/2)", flush=True)
+                    marker = i - 240  # restart at the descend stages
+                else:
+                    print("  ABORT: axis grip never verified", flush=True)
+                    phase, marker = "retreat", i
+        elif phase == "spin":  # SCREW: rotate the TOOL about the TRUE bolt axis (tool-space —
+            # a raw wrist-roll precesses the coupled pair around the weld's ~2mm off-axis
+            # capture and the thread BINDS against the bore, run 108). The IK distributes
+            # the rotation; the REAL thread converts it to descent. Direction self-checks
+            # against measured depth.
+            if t_in == 1:
+                spin_p0, spin_qq0 = tool_pose()
+                spin_p0 = spin_p0.clone(); spin_qq0 = spin_qq0.clone()
+                spin_d0 = float(depth().mean())
+                spin_by0 = float(yaw_of(bolt.data.root_quat_w)[0])
+                spin_ky0 = float(yaw_of(key.data.root_quat_w)[0])
+                spin_prog = 0.0
+                spin_prev_ky = spin_ky0
+                spin_checked = False
+            theta = torch.full((n,), spin_sign * SPIN_W_TICK * t_in, device=dev)
+            qz = quat_from_angle_axis(theta, ez)
+            axis_xy = bolt.data.root_pos_w[:, 0:2]
+            arm0 = spin_p0.clone()
+            arm0[:, 0:2] = arm0[:, 0:2] - axis_xy
+            wp_p[:] = quat_apply(qz, arm0)
+            wp_p[:, 0:2] = wp_p[:, 0:2] + axis_xy
+            # HELICAL DOWN-FEED: the thread descends pitch/2pi per radian — holding the wrist
+            # at fixed height fights the screw and stalls it (run 111: both trial directions
+            # read as 'unscrewing' from elastic noise against the rigid height hold)
+            wp_p[:, 2] = wp_p[:, 2] - (PITCH_MM * 1e-3) * theta.abs() / (2.0 * math.pi) - 0.0004
+            wp_q[:] = quat_mul(qz, spin_qq0)
+            act = act_of(wp_p, wp_q, grip_c, rot_w=2.0)
+            left_park()
+            if (not spin_dir_locked) and t_in >= 120 and t_in % 60 == 0:
+                # direction signal = the BOLT'S YAW (right-hand thread: clockwise-from-above
+                # i.e. NEGATIVE dyaw = screwing in). Depth is tilt-contaminated at the sub-mm
+                # decision scale (runs 111-112: both directions read as 'unscrewing').
+                dby = float(yaw_of(bolt.data.root_quat_w)[0]) - spin_by0
+                while dby > math.pi:
+                    dby -= 2.0 * math.pi
+                while dby < -math.pi:
+                    dby += 2.0 * math.pi
+                if dby > 0.08:
+                    spin_dir_locked = True
+                    spin_sign = -spin_sign
+                    print(f"  [spin] wrong way (bolt yaw {dby * 57.3:+.0f}deg CCW) — flipping, LOCKED", flush=True)
+                    marker = i  # restart the ramp from here
+                elif dby < -0.08:
+                    spin_dir_locked = True
+                    print(f"  [spin] direction confirmed (bolt {dby * 57.3:+.0f}deg CW), LOCKED", flush=True)
+            if t_in % 150 == 0:
+                print(f"    [spin t{t_in:4d}] depth {float(depth().mean()) * 1e3:+.2f}mm"
+                      f" | j5 {float(artR.data.joint_pos[0, arm_ids[5]]):+.2f}"
+                      f" | weld {float(weld_drift().max()) * 1e3:.1f}mm", flush=True)
+            if bool((depth() >= STOP_DEPTH).all()):
+                print("  [spin] SEATED — stop depth reached", flush=True)
+                phase, marker = "retreat", i
+            # end on the KEY'S measured yaw progress, not a joint position — the IK may
+            # realize the vertical rotation through the waist, leaving j5 wherever the
+            # grip parked it (run 109: instant exits, zero rotation)
+            ky_now = float(yaw_of(key.data.root_quat_w)[0])
+            dky = ky_now - spin_prev_ky
+            while dky > math.pi:
+                dky -= 2.0 * math.pi
+            while dky < -math.pi:
+                dky += 2.0 * math.pi
+            spin_prog += abs(dky)
+            spin_prev_ky = ky_now
+            if phase == "spin" and abs(float(theta[0])) > 5.6:
+                cycles += 1
+                if spin_prog < 2.0:
+                    print(f"  [ratchet] spin {cycles} STALLED (key turned {spin_prog * 57.3:.0f}deg of"
+                          f" {abs(float(theta[0])) * 57.3:.0f} commanded) — retwisting fresh", flush=True)
+                else:
+                    print(f"  [ratchet] spin {cycles} done: key turned {spin_prog * 57.3:.0f}deg,"
+                          f" depth {float(depth().mean()) * 1e3:+.2f}mm — retwisting", flush=True)
+                phase, marker = "retwist", i
         elif phase == "stroke":  # crank: orbit the handle about the bolt axis while pressing the
             # tip to the socket floor — the welded key's pose target fully determines the tool's
             # orbiting waypoint, and the stiff joint PD tracks it (torque comes from the lever)
