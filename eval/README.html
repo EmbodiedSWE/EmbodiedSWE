@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>robobench eval — README</title>
+<style>
+  :root {
+    --bg: #F7F9FA; --panel: #FFFFFF; --panel2: #EFF3F5;
+    --ink: #1A2830; --mut: #55656F; --faint: #86939C; --line: #E1E7EA;
+    --acc: #0D7377; --acc-ink: #0A5B5E; --acc-bg: #E3F1F1;
+    --good: #2F7D4C; --good-bg: #E5F2EA; --warn: #96690A; --warn-bg: #F6EFDC;
+    --code-bg: #EEF2F4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F1519; --panel: #161D23; --panel2: #1C242B;
+      --ink: #E4EAEE; --mut: #A2AFB8; --faint: #6F7C86; --line: #29333C;
+      --acc: #47BFC5; --acc-ink: #7DD3D8; --acc-bg: #113237;
+      --good: #5CBF82; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
+      --code-bg: #1C242B;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F7F9FA; --panel: #FFFFFF; --panel2: #EFF3F5;
+    --ink: #1A2830; --mut: #55656F; --faint: #86939C; --line: #E1E7EA;
+    --acc: #0D7377; --acc-ink: #0A5B5E; --acc-bg: #E3F1F1;
+    --good: #2F7D4C; --good-bg: #E5F2EA; --warn: #96690A; --warn-bg: #F6EFDC;
+    --code-bg: #EEF2F4;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1519; --panel: #161D23; --panel2: #1C242B;
+    --ink: #E4EAEE; --mut: #A2AFB8; --faint: #6F7C86; --line: #29333C;
+    --acc: #47BFC5; --acc-ink: #7DD3D8; --acc-bg: #113237;
+    --good: #5CBF82; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
+    --code-bg: #1C242B;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15.5px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+  code, .mono, .num { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; }
+  code { font-size: .85em; background: var(--code-bg); padding: .12em .35em; border-radius: 4px; }
+  a { color: var(--acc-ink); }
+  :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 4px; }
+  h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+
+  .wrap { max-width: 850px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- header ---------- */
+  header { padding: 44px 0 26px; }
+  .eyebrow { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11.5px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--acc-ink); margin: 0 0 10px; }
+  header h1 { font-size: 27px; font-weight: 700; letter-spacing: -.02em; }
+
+  /* ---------- sticky nav ---------- */
+  nav.bar { position: sticky; top: 0; z-index: 10; background: var(--bg);
+    border-bottom: 1px solid var(--line); }
+  nav.bar .row { display: flex; gap: 2px; overflow-x: auto; padding: 8px 0; }
+  nav.bar a { flex: none; display: flex; gap: 7px; align-items: baseline; text-decoration: none;
+    color: var(--mut); font-size: 13.5px; font-weight: 500; padding: 5px 11px; border-radius: 7px; }
+  nav.bar a .num { font-size: 11px; color: var(--faint); }
+  nav.bar a:hover { background: var(--panel2); color: var(--ink); }
+  nav.bar a.on { background: var(--acc-bg); color: var(--acc-ink); font-weight: 600; }
+  nav.bar a.on .num { color: var(--acc-ink); }
+
+  /* ---------- sections ---------- */
+  main { padding-bottom: 40px; }
+  section { padding: 36px 0 8px; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: 0; }
+  h2 { font-size: 20px; font-weight: 700; letter-spacing: -.015em; display: flex; gap: 12px; align-items: baseline; }
+  h2 .num { font-size: 12px; font-weight: 600; color: var(--acc-ink); letter-spacing: .05em; }
+  .lede { color: var(--mut); margin: 8px 0 20px; max-width: 66ch; }
+  h3 { font-size: 12px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase;
+       color: var(--faint); margin: 26px 0 10px; }
+  p { margin: 0 0 12px; }
+  .note { color: var(--faint); font-size: 13px; max-width: 72ch; margin: 10px 0 16px; }
+  ul.tight { margin: 0 0 16px; padding-left: 20px; display: flex; flex-direction: column; gap: 7px; }
+  ul.tight li::marker { color: var(--faint); }
+  .cols2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 12px 32px; margin-bottom: 16px; }
+
+  /* ---------- pipeline strip ---------- */
+  .pipe { display: flex; align-items: stretch; gap: 0; overflow-x: auto; margin: 4px 0 16px;
+          border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .pipe .step { flex: 1 1 0; min-width: 128px; padding: 12px 14px; border-right: 1px solid var(--line); }
+  .pipe .step:last-child { border-right: 0; }
+  .pipe .step b { display: block; font-size: 13px; margin-bottom: 3px; }
+  .pipe .step span { display: block; color: var(--mut); font-size: 12.5px; line-height: 1.5; }
+  .pipe .step.hot { background: var(--acc-bg); }
+  .pipe .step.hot b { color: var(--acc-ink); }
+  .pipe .step .freq { display: block; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin-bottom: 5px; }
+  .pipe .step.hot .freq { color: var(--acc-ink); opacity: .75; }
+  .pipe .step.open b, .pipe .step.open span { opacity: .62; }
+  .pipe .step.open .freq { color: var(--warn); opacity: 1; }
+
+  /* ---------- tables ---------- */
+  .twrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px;
+           background: var(--panel); margin: 0 0 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint);
+       background: var(--panel2); font-weight: 650; white-space: nowrap; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  td.t { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--mut); }
+
+  /* ---------- code / tree blocks ---------- */
+  .block { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
+           padding: 13px 16px; overflow-x: auto; margin: 0 0 16px;
+           font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12.5px; line-height: 1.75; }
+  .block i { color: var(--mut); font-style: normal; }
+  .block b { color: var(--acc-ink); font-weight: 650; }
+  .block .x { color: var(--faint); }
+
+  /* ---------- pills ---------- */
+  .pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11.5px;
+          font-weight: 650; letter-spacing: .02em; white-space: nowrap; }
+  .pill.done { background: var(--good-bg); color: var(--good); }
+  .pill.tbd  { background: var(--warn-bg); color: var(--warn); }
+  .pill.dim  { background: var(--panel2); color: var(--mut); }
+
+  /* ---------- mount map ---------- */
+  .mount { display: grid; grid-template-columns: minmax(0,1fr) 44px minmax(0,1.15fr); gap: 4px 8px;
+           align-items: baseline; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+           font-size: 12.5px; border: 1px solid var(--line); border-radius: 10px;
+           background: var(--panel); padding: 12px 16px; margin: 0 0 16px; overflow-x: auto; }
+  .mount .h { text-align: right; color: var(--mut); }
+  .mount .a { text-align: center; color: var(--acc-ink); font-weight: 700; }
+  .mount .c b { color: var(--acc-ink); }
+  .mount .c span { color: var(--mut); }
+  .mount .full { grid-column: 1 / -1; color: var(--faint); font-family: system-ui, sans-serif;
+                 font-size: 12px; text-align: center; padding-top: 6px; border-top: 1px dashed var(--line); margin-top: 6px; }
+
+  footer { color: var(--faint); font-size: 12.5px; padding: 26px 0 60px; }
+
+  @media (max-width: 640px) {
+    header { padding-top: 28px; }
+    header h1 { font-size: 22px; }
+    .pipe { flex-direction: column; }
+    .pipe .step { border-right: 0; border-bottom: 1px solid var(--line); }
+    .pipe .step:last-child { border-bottom: 0; }
+    .mount { grid-template-columns: 1fr; }
+    .mount .h { text-align: left; }
+    .mount .a { text-align: left; }
+    .mount .c { margin-bottom: 6px; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">CoSiGen · robobench · eval</p>
+    <h1>Evaluate coding agents on robobench tasks</h1>
+  </header>
+</div>
+
+<nav class="bar" aria-label="Sections">
+  <div class="wrap">
+    <div class="row">
+      <a href="#overview"><span class="num">01</span>Overview</a>
+      <a href="#docker"><span class="num">02</span>Docker images</a>
+      <a href="#experiment"><span class="num">03</span>Experiment folder</a>
+      <a href="#run"><span class="num">04</span>Run experiments</a>
+      <a href="#grade"><span class="num">05</span>Auto-grade</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <main>
+
+    <!-- 01 OVERVIEW ---------------------------------------------------- -->
+    <section id="overview">
+      <h2><span class="num">01</span>Overview</h2>
+      <p class="lede">A frontier coding agent (Claude Code, Codex, …) is dropped into an isolated container holding exactly three things — a minimal, boot-verified copy of the benchmark, the task, and an empty workspace — and asked to write a program that makes the robot solve the task. Nothing to copy, nothing to tamper with — the only way to succeed is to solve the task.</p>
+
+      <h3>The lifecycle</h3>
+      <div class="pipe">
+        <div class="step"><span class="freq">once per machine</span><b>Build the docker images</b><span>the simulator and the agent CLIs, installed into reusable images. The benchmark is never baked in — an image knows nothing about any task.</span></div>
+        <div class="step hot"><span class="freq">once per experiment</span><b>Build the world</b><span>distill a minimal benchmark for one registered task, apply any ablation surgery, boot-prove it, seal it with a receipt.</span></div>
+        <div class="step hot"><span class="freq">once per run</span><b>Run the agent</b><span>a disposable container: the proven world read-only, one writable workspace, guarded network. At the deadline the container dies; the workspace survives.</span></div>
+        <div class="step open"><span class="freq">per submission · open</span><b>Auto-grade</b><span>the submitted solution is replayed in a second isolated container — the exact same world, plus the private verifiers. The agent may do anything during its run; only what passes here counts. Details still undecided.</span></div>
+      </div>
+      <p class="note">Each boundary is also a trust boundary: images know no tasks, worlds are sealed before any agent exists, and the verifiers only ever appear in the grader's container — never the agent's.</p>
+
+      <h3>What keeps it honest</h3>
+      <ul class="tight">
+        <li><b>Tasks come from registered, verified configs.</b> Every registered scene–robot pairing has been solved at least once, so an agent is never handed an impossible world.</li>
+        <li><b>Nothing to cheat with.</b> The container holds no solutions, no verifiers, no demo scripts; the benchmark is read-only and the network reaches only the model API and the package index.</li>
+      </ul>
+    </section>
+
+    <!-- 02 DOCKER IMAGES ---------------------------------------------- -->
+    <section id="docker">
+      <h2><span class="num">02</span>Build the docker images</h2>
+      <p class="lede">Everything an agent run needs except the benchmark itself, baked once into layered images: the Isaac simulator stack in a ready venv, and the agent CLIs on top. Benchmark changes never require a rebuild.</p>
+
+      <h3>The images</h3>
+      <div class="twrap"><table>
+        <thead><tr><th>image</th><th>contains</th><th>size · rebuild when</th></tr></thead>
+        <tbody>
+          <tr><td class="name">rb-l0-isaaclab</td><td>Isaac Sim + Isaac Lab in a baked venv at <code>/opt/venv</code></td><td class="t">~35 GB · sim pins change</td></tr>
+          <tr><td class="name">rb-l1-agent</td><td>layer on l0: node + pinned agent CLIs (Claude Code, optional Codex) + non-root <code>agent</code> user</td><td class="t">small · CLI pins change</td></tr>
+          <tr><td class="name">rb-test</td><td>plumbing/dev image, no Isaac</td><td class="t">~2 GB · rarely</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Install</h3>
+      <div class="block"><i># 0 · host prerequisites — docker, NVIDIA container toolkit, CDI spec.</i>
+<i>#     CDI is mandatory (legacy --gpus breaks Vulkan/RTX): see eval/docker/INSTALL.md</i>
+<i>#     after every NVIDIA driver upgrade: sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml</i>
+
+<i># 1 · sanity checks (small image, GPU passthrough, agent CLI):</i>
+make test-image && make test-gpu && make test-claude
+
+<i># 2 · the real images:</i>
+make l0          <i># 30–60 min, once</i>
+make warm        <i># boots the baked venv once, warms the shader cache</i>
+make l1 CC_VERSION=$(npm view @anthropic-ai/claude-code version)   <i># minutes</i></div>
+      <p class="note">All make targets live in <code>eval/docker/Makefile</code>. Credentials are never baked into images — they enter later, per run, through environment variables.</p>
+    </section>
+
+    <!-- 03 EXPERIMENT FOLDER ------------------------------------------- -->
+    <section id="experiment">
+      <h2><span class="num">03</span>Build the experiment folder</h2>
+      <p class="lede">One command turns a registered task into a self-contained, boot-proven folder on disk — the world the agent will later be locked into.</p>
+
+      <div class="block">python3 eval/scripts/build_env.py --name bulb_smoke --stage bulb:franka
+<i>#   --list            show all registered presets</i>
+<i>#   --stage           scene:robot[:controller] — controller defaults osc &gt; impedance &gt; joint</i>
+<i>#   --no-set-states   ablation: disable snapshot-restore; solve from reset() forward</i>
+
+<i># transfer test: repeat --stage to build an ordered sequence — e.g. skills carried to a new scene:</i>
+python3 eval/scripts/build_env.py --name screw_transfer --stage bulb:franka --stage nut_thread:franka
+<i>#   each stage gets its own bench/; the agent keeps its workspace files from stage 01 into stage 02</i></div>
+
+      <h3>What it does</h3>
+      <div class="pipe">
+        <div class="step"><b>resolve</b><span>intent → registered preset, else fail with the menu of what exists</span></div>
+        <div class="step"><b>extract</b><span>minimal benchmark tree: no other suites, no demo scripts, only the assets this task needs; solve-provenance comments scrubbed</span></div>
+        <div class="step"><b>patch</b><span>ablations rewritten into the tree's code (e.g. <code>--no-set-states</code>)</span></div>
+        <div class="step hot"><b>boot-prove</b><span>launch the sim from the extracted tree and reset the actual preset — no world ships unbooted</span></div>
+        <div class="step"><b>receipt</b><span>content hash + repo revision + argv, so every result is attributable to exact code</span></div>
+      </div>
+
+      <h3>What lands on disk</h3>
+      <div class="block">experiments/bulb_smoke/
+├─ resolved.json   <i>receipt: argv · preset · hashes · repo revision</i>
+├─ MANIFEST        <i>human-readable summary</i>
+├─ stages/01_bulb_franka/
+│   ├─ bench/         <i>minimal benchmark tree, boot-proven (~141 MB for bulb)</i>
+│   └─ describe.txt   <i>the scene's describe(), harvested during the boot</i>
+└─ runs/           <i>created later, one per agent run</i></div>
+      <p class="note">Everything environmental fails here, at build time — unregistered combos, missing assets, broken presets. At agent time, a failure is the agent's. Task-prompt rendering is currently unplugged while the prompt design is revisited; <code>describe.txt</code> keeps the raw material.</p>
+    </section>
+
+    <!-- 04 RUN EXPERIMENTS ---------------------------------------------- -->
+    <section id="run">
+      <h2><span class="num">04</span>Run experiments <span class="pill tbd">deferred</span></h2>
+      <p class="lede">The experiment runner — which agents, how many repeats, stage sequencing for transfer, what gets measured — is future work, waiting on the prompt design. What is already fixed and proven is the container contract underneath it: one run = one disposable container over a built experiment, killed at its budget.</p>
+      <p class="note"><code>eval/scripts/run_agent.py</code> exists as a reference single-run launcher against that contract (dry-run tested; credentials ride shell env vars, never stored).</p>
+
+      <h3>The container contract — what the agent sees</h3>
+      <div class="mount">
+        <div class="h">stages/01_…/bench/</div><div class="a">→ ro</div><div class="c"><b>/bench</b> <span>import robobench = this tree, nothing else</span></div>
+        <div class="h">stages/01_…/task/</div><div class="a">→ ro</div><div class="c"><b>/task</b> <span>the task instruction (optional while prompts are redesigned)</span></div>
+        <div class="h">runs/&lt;r&gt;/workspace/</div><div class="a">↔ rw</div><div class="c"><b>/workspace</b> <span>the only writable dir; visible on the host live</span></div>
+        <div class="h">docker volume rb-ovcache</div><div class="a">↔ rw</div><div class="c"><b>/ovcache</b> <span>shared shader cache</span></div>
+        <div class="full">baked in the image, not mounted: /opt/venv (Isaac) · agent CLIs — and nothing of the repo</div>
+      </div>
+      <p class="note">The repo, your experiments, solutions, and .git do not exist inside the container. <code>run_agent.py</code> runs open-network for development; results that count go through <code>eval/docker/compose.agent.yaml</code>, whose egress allowlist admits only the model API and the package index (GitHub blocked — the public repo's history cites solve-calibrated configs).</p>
+    </section>
+
+    <!-- 05 AUTO-GRADE -------------------------------------------------- -->
+    <section id="grade">
+      <h2><span class="num">05</span>Auto-grade <span class="pill tbd">not built yet</span></h2>
+      <p class="lede">The shape is decided; the details are deliberately not. What is fixed: grading replays the submitted solution in a second isolated container — the exact same world as the agent's, plus the private verifiers, which never appear in the agent's container. The agent may do anything during its run; only what passes the replay counts.</p>
+      <p class="note">Verifier design, metrics, and scheduling are open. Runs archive everything raw so no option is closed.</p>
+    </section>
+
+  </main>
+
+  <footer>Proven by oracle replay — e.g. the bulb solve, seated in-sandbox on video.</footer>
+</div>
+
+<script>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll("nav.bar a"));
+    var sections = links.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
+    function mark(id) {
+      links.forEach(function (a) { a.classList.toggle("on", a.getAttribute("href") === "#" + id); });
+    }
+    if ("IntersectionObserver" in window) {
+      var current = sections[0] ? sections[0].id : null;
+      var visible = {};
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
+        for (var i = 0; i < sections.length; i++) {
+          if (sections[i] && visible[sections[i].id]) { current = sections[i].id; break; }
+        }
+        if (current) mark(current);
+      }, { rootMargin: "-64px 0px -60% 0px", threshold: 0 });
+      sections.forEach(function (s) { if (s) io.observe(s); });
+    }
+    mark(sections[0] ? sections[0].id : "");
+  })();
+</script>
+</html>
