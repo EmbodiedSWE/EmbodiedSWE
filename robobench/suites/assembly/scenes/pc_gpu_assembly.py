@@ -75,6 +75,15 @@ class PcGpuAssemblySceneCfg(BaseCfg):
     card_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
     card_contact_offset: float = info(0.0001)  # well below the 0.15 mm/side channel grip
     case_contact_offset: float = info(0.0001)  # ditto for the slot fixture's walls
+    # Optional foam holder (a floor pad + two rails flanking the card's 36 mm body slab) that
+    # presents the card UPRIGHT for a parallel-jaw grasp. The lying default is ungraspable by a
+    # Franka gripper: flat on its backplate the card's only sub-80 mm dimension (the 36 mm body
+    # thickness) points UP, so no top-down or side pinch can straddle it. Enable together with an
+    # upright `card_init_quat` (identity = the seated orientation) and `card_init_z` = the
+    # holder's floor top; the rails cap the free card's lean at ~3 deg and the pick pulls
+    # straight up out of them.
+    card_stand: bool = info(False)
+    card_stand_gap: float = info(0.0025)  # rail clearance per side around the body slab (m)
     # Selectable work surface (same presets as the sibling scenes).
     table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
     surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
@@ -110,6 +119,11 @@ class PcGpuAssemblySceneCfg(BaseCfg):
 class PcGpuAssemblyScene(BaseScene):
     cfg: PcGpuAssemblySceneCfg
 
+    # Card-local y extent of the body collision slab (from gpu_rtx2060.usd `/gpu/collision/body`:
+    # backplate plane -2 mm, fan-shroud plane +34 mm around the PCB-tab-centre origin). The stand's
+    # rails flank THESE faces — the same pair a parallel-jaw grasp pinches.
+    CARD_BODY_Y: ClassVar[tuple[float, float]] = (-0.002, 0.034)
+
     def __init__(self, cfg: PcGpuAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or PcGpuAssemblySceneCfg())
 
@@ -137,7 +151,7 @@ class PcGpuAssemblyScene(BaseScene):
             table_spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
 
         cx, cy = c.card_init_xy
-        return {
+        assets: dict[str, Any] = {
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
                 spawn=sim_utils.GroundPlaneCfg(),
@@ -192,6 +206,36 @@ class PcGpuAssemblyScene(BaseScene):
                 ),
             ),
         }
+        if c.card_stand:
+            # Foam holder for a gripper env: three STATIC boxes (no rigid body). The floor pad's
+            # top is the card spawn height (`card_init_z` = the tab-bottom plane), the two rails
+            # flank the body slab's faces at `card_stand_gap` per side. Rail tops stay 35+ mm
+            # below the pick grip band, so descending open fingers never meet them.
+            y0, y1 = self.CARD_BODY_Y
+            mid_y = wy + cy + 0.5 * (y0 + y1)  # body-slab mid-plane (the pinch/rail centre)
+            half_gap = 0.5 * (y1 - y0) + c.card_stand_gap  # rail inner face off the mid-plane
+            rail_h, rail_t = 0.055, 0.008
+            foam = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.17, 0.17, 0.2), roughness=0.9)
+            for name, size, pos in (
+                ("card_stand_floor", (0.11, 0.09, c.card_init_z),
+                 (wx + cx, mid_y, c.surface_z + 0.5 * c.card_init_z)),
+                ("card_stand_rail_pcb", (0.11, rail_t, rail_h),
+                 (wx + cx, mid_y - half_gap - 0.5 * rail_t, c.surface_z + c.card_init_z + 0.5 * rail_h)),
+                ("card_stand_rail_fan", (0.11, rail_t, rail_h),
+                 (wx + cx, mid_y + half_gap + 0.5 * rail_t, c.surface_z + c.card_init_z + 0.5 * rail_h)),
+            ):
+                assets[name] = AssetBaseCfg(
+                    prim_path="{ENV_REGEX_NS}/" + "".join(p.capitalize() for p in name.split("_")),
+                    spawn=sim_utils.CuboidCfg(
+                        size=size,
+                        collision_props=sim_utils.CollisionPropertiesCfg(
+                            contact_offset=0.001, rest_offset=0.0
+                        ),
+                        visual_material=foam,
+                    ),
+                    init_state=AssetBaseCfg.InitialStateCfg(pos=pos),
+                )
+        return assets
 
     def sim_cfg(self) -> SimCfg:
         return SimCfg(
@@ -256,11 +300,21 @@ class PcGpuAssemblyScene(BaseScene):
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
+        if self.cfg.card_stand:
+            card = (
+                "Beside the case a loose graphics card stands upright in a foam holder, already "
+                "in its installation orientation.\nGoal: grip the card by its top edge, lift it "
+                "straight out of the holder, "
+            )
+        else:
+            card = (
+                "Beside the case lies a loose graphics card, backplate down.\nGoal: lift the "
+                "card upright (fans toward the case front), "
+            )
         return (
             "A gaming-PC case lying on its side on a sturdy table, opening up, its motherboard "
             "facing the ceiling. The board's primary PCIe x16 slot is empty, and the rear I/O "
-            "panel has an open expansion-slot cutout. Beside the case lies a loose graphics "
-            "card, backplate down.\nGoal: lift the card upright (fans toward the case front), "
+            f"panel has an open expansion-slot cutout. {card}"
             "lower it into the case with its I/O bracket just forward of the rear panel, slide "
             "it rearward until the bracket and ports pass through the cutout, line its PCB edge "
             "connector up with the x16 slot, and press it straight down until it bottoms out. "
