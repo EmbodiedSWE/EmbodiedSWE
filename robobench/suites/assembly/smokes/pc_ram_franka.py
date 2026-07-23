@@ -5,28 +5,27 @@ straight down until it bottoms out.
 
 Grasping follows the benchmark weld-on-closure contract (cf. `pc_gpu_franka`): a normally-disabled
 FixedJoint hand<->stick is enabled when the gripper is verifiably closed around the stick's body
-slab and released when it opens. The INSERTION, though, is not pressed through the weld: the two
-target slots sit 19 mm apart while the finger's tip hull is 14.3 mm deep, so a flanking grip
-physically cannot descend beside an already-seated neighbour stick. Instead — exactly like a
-thumb-press on real RAM — the arm aligns the gripped stick over the slot, RELEASES it so the blade
-drops into the channel funnel, then closes the fingers into a pusher and presses the stick home
-with the fingerTIPS on its top edge (tip-on-face contact is live on this stack; the closed pusher
-spans only +-10.5 mm, clearing the standing neighbour). Stick<->channel physics, the drop, the
-tip-press and each seated stick holding on its own are all real — a missed grasp, a bounced drop
-or a stalled press fails honestly.
+slab and released when it opens. Each stick is pressed to FULL DEPTH while still gripped — the
+stick stays in the hand until it is seated. The geometric catch: the two target slots sit 19 mm
+apart while a flanking finger is 14.3-26 mm deep against the 11.7 mm inter-stick gap, so for the
+second stick the NEIGHBOUR-side finger splays wide through the press (the finger action is
+per-finger; its descending tip would otherwise land on the seated neighbour's top face and stall
+the press) while the weld carries the force and the stick-side finger keeps its grip on the face.
+Stick<->channel physics and each seated stick holding on its own after the hand opens are real —
+a missed grasp or a stalled press fails honestly.
 
 The `assembly.pc_ram.franka.*` env stages both sticks UPRIGHT in the scene's foam holders, already
 in the seated orientation (lying flat, their only sub-80 mm dimension points up — no parallel-jaw
 pinch exists; see the env registration). The far slot is inserted first, the near slot second, so
-the camera never watches an insertion behind an already-standing stick — and so the second,
-neighbour-constrained release height is only ever needed once.
+the camera never watches an insertion behind an already-standing stick — and so the splayed,
+neighbour-constrained press is only ever needed once.
 
 Phases, per stick: pick (hover/down/close, geometry-verified) -> lift -> carry (over the 195 mm
-case rim) -> drop (to the release hover over the slot) -> align (0.4 mm gate: the blade must beat
-the funnel AND the 0.5 mm end-stop play) -> release (the blade drops into the funnel) -> push
-(closed fingertips press the top edge to full depth, with re-tries) -> clear; then the next stick,
-then retreat -> settle. Verdict: per-stick seated count, blade depth vs the 4.44 mm stroke, and
-the residual errors after the final settle.
+case rim) -> drop (to the align hover over the slot) -> align (0.4 mm gate: the blade must beat
+the funnel AND the 0.5 mm end-stop play) -> press (straight down, gripped, to full depth, with
+re-tries) -> release (bleed, let go, rise) -> clear; then the next stick, then retreat -> settle.
+Verdict: per-stick seated count, blade depth vs the 4.44 mm stroke, and the residual errors after
+the final settle.
 
 The recorded video is one continuous MOVING shot per trip: it frames the active stick's holder for
 the grasp, cranes across the case as the stick is carried (the blend is driven by the stick's own
@@ -102,12 +101,14 @@ STRADDLE_W = 0.011       # per-finger width while descending AROUND the 7.3 mm s
                          # rails' outer faces sit at +-12.9 mm — the open fingers stay above them)
 GRIP_W = 0.0035          # per-finger closed width: the slab's half-width minus a 0.15 mm kiss,
                          # so the pads land exactly ON the stick's faces
-SPLAY_W = 0.030          # neighbour-side finger width during the SECOND stick's lower/release:
-                         # a fingertip descending at grip width lands ON the seated neighbour's
-                         # top face (tips meet it at blade ~13 mm — tip-on-face is the live
-                         # contact pair), so that finger swings wide instead: its whole hull
-                         # then starts 30 mm out, fully beyond the neighbour, while the weld —
-                         # not the fingers — carries the stick
+SPLAY_W = 0.030          # neighbour-side finger width through the SECOND stick's press: the two
+                         # target slots sit 19 mm apart and a flanking finger is 14.3-26 mm deep
+                         # against the 11.7 mm inter-stick gap — at grip width its descending tip
+                         # lands ON the seated neighbour's top face (tip-on-face is the live
+                         # contact pair) and stalls the press at blade ~13 mm. Splayed, the whole
+                         # finger hull starts 30 mm out, fully beyond the neighbour, while the
+                         # weld — not the fingers — carries the press; the stick-side finger
+                         # keeps its visual grip on the face all the way to seat
 # Closure window (sum of the two finger joints, m): both fingers at GRIP_W means nothing snagged
 # them on the way in; the pad-position check pins the stick between them.
 CLOSED_MIN, CLOSED_MAX = 0.005, 0.010
@@ -122,25 +123,15 @@ ORDER = (1, 0)
 CROSS_Z = 0.240          # origin height while crossing the case rim (clears the 195 mm walls)
 # Insertion heights (blade-bottom z, case frame). The stick ALIGNS at 17 mm — fine xy servoing
 # needs the hand up there; lower, the arm loses its last ~1.5 mm of lateral authority, wider
-# than the 1.2 mm funnel — then glides down GRIPPED to 6 mm and releases: a ~1.4 mm captured
-# drop (a 12 mm free drop bounces the blade 1-4 mm off the funnel onto the wall tops). During
-# the second stick's gripped descent below blade ~11 mm, the outer 2.6 mm of one fingertip
-# passes through the SEATED neighbour's top-corner volume (the flat-face pair generates no
-# contacts on this stack, and the sliver is occluded between the sticks); staying gripped to
-# the mouth is what the 19 mm slot pitch allows — a full gripped press never clears (a flanking
-# finger is 14.3-26 mm deep against the 11.7 mm gap), hence the fingertip PUSH below.
+# than the 1.2 mm funnel — then presses straight down GRIPPED to full depth: the stick stays
+# held until it is seated, like a hand would keep hold of it.
 ALIGN_Z = 0.017
-RELEASE_LOW = 0.0048     # commanded blade z for the release: at/just into the funnel mouth
-                         # (4.65), so the walls already bracket the blade when the grip opens —
-                         # a stick released with only its blade TIP at the mouth can rest leaned
-                         # 10-20 deg and the push then cannot right it
-PUSH_DX = (0.0, -0.0015)  # pusher x offset per sequence: the second push shades away from the
-                          # standing neighbour, buying the closed tips another 1.5 mm of margin
-PUSH_TIP_TGT = -0.004    # commanded tip depth below the seated stick top (standing lead — the
-                         # blade needs a sustained ~10-20 N through the 0.15 mm/side grip band;
-                         # the channel floor takes the surplus)
+PRESS_TGT = -0.002       # commanded blade z below the seated origin (standing lead — the blade
+                         # needs a sustained push through the 0.15 mm/side grip band; the
+                         # channel floor takes the surplus)
+RESEAT_Z = 0.010         # press re-tries rise back to this blade height, still gripped
 PRESS_DONE = 0.0042      # blade depth below the slot mouth to call a stick seated (stroke 4.44)
-MAX_RETRIES = 2          # push re-tries per stick (rise, re-centre, push again)
+MAX_RETRIES = 2          # press re-tries per stick (rise, re-settle, press again)
 
 # Waypoint tolerances and per-phase budgets, in CONTROL steps (15 Hz -> 16 substeps each at 1/240).
 TOL_P, TOL_R = 0.004, 0.06
@@ -151,7 +142,7 @@ SHOW_END = 20
 WP_TIMEOUT, SETTLE_STEPS = 75, 45
 HOVER_STEPS, DOWN_STEPS, CLOSE_STEPS = 110, 40, 18  # pick glide lengths (approach / descend / close)
 LIFT_STEPS, CARRY_STEPS, RETREAT_STEPS = 60, 100, 50
-DROP_STEPS, PUSH_STEPS, PUSH_MAX = 70, 45, 140
+DROP_STEPS, PRESS_STEPS, PRESS_MAX = 70, 60, 180
 # Every long move GLIDES its commanded target (smoothstep from the phase-entry pose; the approach
 # glides the wrist yaw too): a step-jump goal saturates the norm-clamped servo and the gravity-
 # uncompensated arm swings wide and rings. Budgets are deliberately unhurried.
@@ -425,7 +416,6 @@ def main() -> None:
     home_p, home_q = None, None
     picks = 0
     retries = 0
-    drops = 0
     pos_off = torch.zeros(n, 3, device=dev)   # INTEGRATED bias (desired - achieved, free air): the
     # OSC has no gravity compensation, so its realized pose sags configuration-dependently by
     # several mm — commands near contact add this learned offset so the achieved pose lands true
@@ -449,7 +439,7 @@ def main() -> None:
     drop_from = torch.zeros(n, device=dev)
     release_p = torch.zeros(n, 3, device=dev)
     release_q = torch.zeros(n, 4, device=dev)
-    push_from = torch.zeros(n, device=dev)
+    press_from = torch.zeros(n, device=dev)
 
     def smoothstep(t: float) -> float:
         t = min(max(t, 0.0), 1.0)
@@ -610,103 +600,70 @@ def main() -> None:
             if bool(ok.all()) or t_in >= 6 * WP_TIMEOUT:
                 print(f"  aligned stick {k}: xy err {float(xy_err().max()) * 1e3:.2f} mm, rot "
                       f"{float(torch.rad2deg(rot_err()).max()):.2f} deg", flush=True)
-                drop_from[:] = ram().data.root_pos_w[:, 2]
-                phase, marker = "lower", i
-        elif phase == "lower":  # glide the GRIPPED blade down to just above the mouth, xy held on
-            # the slot axis (a vertical move barely disturbs the aligned xy; the release drop is
-            # then a captured ~1.4 mm instead of a bouncy 12 mm free fall)
-            s = smoothstep(t_in / 30.0)
+                press_from[:] = ram().data.root_pos_w[:, 2]
+                phase, marker = "press", i
+        elif phase == "press":  # straight down, STILL GRIPPED, to full depth: the channel funnel
+            # guides the blade's last millimetres while the weld carries the press force. For
+            # the second stick the neighbour-side finger splays wide (see SPLAY_W); the descent
+            # is otherwise identical for both sticks.
+            s = smoothstep(t_in / PRESS_STEPS)
             kp = seats_w[k].clone()
-            kp[:, 2] = drop_from + s * (board_z + RELEASE_LOW - drop_from)
-            if s >= 1.0:  # stationary target: keep trimming xy against the live stick
+            kp[:, 2] = press_from + s * (board_z + sc.cfg.seat_pos[k][2] + PRESS_TGT - press_from)
+            if t_in % 3 == 0 and s < 0.6:  # free air until the blade meets the mouth: keep the
+                # xy trim live so the blade arrives centred on the funnel
                 pos_off[:, 0:2] = (pos_off[:, 0:2]
-                                   + 0.05 * (kp[:, 0:2] - ram().data.root_pos_w[:, 0:2])).clamp(-0.12, 0.12)
+                                   + 0.1 * (kp[:, 0:2] - ram().data.root_pos_w[:, 0:2])).clamp(-0.12, 0.12)
             tp, tq = hand_for_stick(kp + pos_off, upright_cmd())
-            grip = grip_pair(GRIP_W, SPLAY_W) if seq > 0 else GRIP_W  # splay past the neighbour
+            grip = grip_pair(GRIP_W, SPLAY_W) if seq > 0 else GRIP_W
             act = servo(tp, tq, grip)
-            if t_in >= 50:
-                print(f"  lowered stick {k}: xy err {float(xy_err().max()) * 1e3:.2f} mm at blade "
-                      f"{float((ram().data.root_pos_w[:, 2] - board_z).mean()) * 1e3:.1f} mm "
-                      f"(mouth 4.65)", flush=True)
+            if bool((depth() >= PRESS_DONE).all()):
                 phase, marker = "release", i
-        elif phase == "release":  # let go: the blade drops into the funnel. First re-target the
-            # LIVE pose with the finger PD frozen at its measured squeeze (cutting the weld while
-            # the servo still leans pops the arm back). Then CATCH-FENCE the drop: the fingers
-            # open only to the straddle width and the hand FOLLOWS the falling stick down, so the
-            # fingertips — the live contact features — fence the stick's one free topple mode
-            # (roll about its length axis; pitch is blocked by the 128 mm blade in the channel,
-            # yaw by the end stops). A 17 mm free release without the fence lands ~90 deg flat.
+            elif t_in >= PRESS_MAX:
+                if retries < MAX_RETRIES:
+                    retries += 1
+                    print(f"  WARN: press on stick {k} stalled at {float(depth().mean() * 1e3):+.2f} mm "
+                          f"— retry {retries}/{MAX_RETRIES}", flush=True)
+                    phase, marker = "reseat", i
+                else:
+                    print(f"  WARN: press on stick {k} exhausted its retries — releasing as-is", flush=True)
+                    phase, marker = "release", i
+        elif phase == "reseat":  # rise back to just above the mouth, still gripped, and re-press
+            kp = seats_w[k].clone()
+            kp[:, 2] = board_z + RESEAT_Z
+            tp, tq = hand_for_stick(kp + pos_off, upright_cmd())
+            grip = grip_pair(GRIP_W, SPLAY_W) if seq > 0 else GRIP_W
+            act = servo(tp, tq, grip)
+            if t_in >= WP_TIMEOUT // 2:
+                press_from[:] = ram().data.root_pos_w[:, 2]
+                phase, marker = "press", i
+        elif phase == "release":  # the stick is seated: bleed the stored press through the weld,
+            # let go, rise clear. Cutting the weld while the servo still presses pops the arm
+            # back with the fingers dragging the stick — so first re-target the LIVE pose with
+            # the finger PD frozen at its measured positions, then disable the weld, open, rise.
             if t_in == 1:
                 grip_freeze[:] = art.data.joint_pos[:, fingers]
                 release_p[:] = hp
                 release_q[:] = hq
-            if t_in <= 6:
+            if t_in <= 8:
                 act = servo(release_p, release_q, grip_freeze)
             else:
                 if welded.any():
                     weld_off()
                 wp2 = release_p.clone()
-                if t_in > 12:  # rise clear with the fingers still STRADDLING (they fence the
-                    # stick's one free topple mode); they must NOT close at pad level — a
-                    # closing sweep through the stick's body kicks it out of the mouth (and,
-                    # beside a seated neighbour, would sweep through IT — the splayed finger
-                    # stays wide until the pusher forms above everything)
-                    s2 = smoothstep((t_in - 12) / 12.0)
-                    wp2[:, 2] = release_p[:, 2] + s2 * 0.024
+                if t_in > 14:  # straight up (glided): the fingers back off the seated top edge
+                    s2 = smoothstep((t_in - 14) / 20.0)
+                    wp2[:, 2] = release_p[:, 2] + s2 * 0.05
                 grip = grip_pair(STRADDLE_W, SPLAY_W) if seq > 0 else STRADDLE_W
                 act = servo(wp2, release_q, grip)
-            if t_in >= 28:
-                lodged = (xy_err() < 0.0015) & (stick_upright() > math.cos(math.radians(8.0))) \
-                    & ((ram().data.root_pos_w[:, 2] - board_z) < RELEASE_LOW + 0.002)
-                if bool(lodged.all()) or drops >= 2:
-                    phase, marker = "push_pos", i
-                else:
-                    drops += 1
-                    print(f"  DROP: stick {k} left the mouth (xy {float(xy_err().max()) * 1e3:.1f} mm, "
-                          f"up {float(stick_upright().min()):+.2f}) — re-grasping", flush=True)
-                    phase, marker = "pick_hover", i
-                    picks += 1
-        elif phase == "push_pos":  # become a PUSHER: fingers close to zero in free air ABOVE the
-            # dropped stick's top, tips centred over its top edge (shaded by PUSH_DX away from a
-            # standing neighbour — the closed tip pair spans +-14.3 mm at the tips, which is what
-            # clears the 19 mm slot pitch where a flanking grip cannot)
-            if t_in == 1:
-                push_from[:] = ram().data.root_pos_w[:, 2] + GRIP_TOP_ZC + 0.008 + hand_to_tip
-            wp_p[:] = seats_w[k]
-            wp_p[:, 0] += PUSH_DX[seq]
-            wp_p[:, 2] = push_from
-            width = STRADDLE_W if t_in <= 10 else 0.0  # position first, close above the top
-            act = servo(wp_p + pos_off, wp_q, width)
-            gap = art.data.joint_pos[:, fingers].sum(dim=-1)
-            if (t_in >= 24 and bool((gap < 0.002).all()) and bool(at(wp_p + pos_off, wp_q).all())) \
-                    or t_in >= WP_TIMEOUT:
-                phase, marker = "push", i
-        elif phase == "push":  # press the stick home with the closed fingerTIPS on its top edge —
-            # live tip-on-face contact; the channel funnel guides the blade's last 4.4 mm
-            s = smoothstep(t_in / PUSH_STEPS)
-            tip_tgt = seats_w[k][:, 2] + GRIP_TOP_ZC + PUSH_TIP_TGT  # tips just below the seated top
-            kp = wp_p.clone()
-            kp[:, 2] = push_from + s * (tip_tgt + hand_to_tip - push_from)
-            act = servo(kp + pos_off, wp_q, 0.0)
-            if bool((depth() >= PRESS_DONE).all()):
+            if t_in >= 40:
                 phase, marker = "clear", i
-            elif t_in >= PUSH_MAX:
-                if retries < MAX_RETRIES:
-                    retries += 1
-                    print(f"  WARN: push on stick {k} stalled at {float(depth().mean() * 1e3):+.2f} mm "
-                          f"— retry {retries}/{MAX_RETRIES}", flush=True)
-                    push_from[:] = hp[:, 2] + 0.015
-                    phase, marker = "push_pos", i
-                else:
-                    print(f"  WARN: push on stick {k} exhausted its retries — moving on", flush=True)
-                    phase, marker = "clear", i
-        elif phase == "clear":  # rise off the seated stick, then the next stick or the retreat
+        elif phase == "clear":  # rise straight off the seated stick, then the next stick/retreat
             if t_in == 1:
                 drop_from[:] = hp[:, 2]
             s = smoothstep(t_in / 30.0)
-            kp = wp_p.clone()
+            kp = release_p.clone()
             kp[:, 2] = drop_from + s * (board_z + CROSS_Z + hand_to_tip - drop_from)
-            act = servo(kp, wp_q, OPEN_W)
+            act = servo(kp, release_q, OPEN_W)
             if t_in >= 34:
                 print(f"  stick {k} pressed: depth {float(depth().mean() * 1e3):+.2f} mm, xy "
                       f"{float(xy_err().mean() * 1e3):.2f} mm", flush=True)
@@ -767,7 +724,7 @@ def main() -> None:
     )
     print(f"PC-RAM-FRANKA | seated {int(all_ok.sum())}/{n} envs ({int(seated.sum())}/{n * sc.cfg.num_slots} "
           f"sticks) | stroke 4.44, seat >= {sc.cfg.seat_depth * 1e3:.1f} | {per_slot} | "
-          f"{picks} picks, {retries} push retries, {drops} re-drops", flush=True)
+          f"{picks} picks, {retries} press retries", flush=True)
     close_and_exit(env, app)
 
 
