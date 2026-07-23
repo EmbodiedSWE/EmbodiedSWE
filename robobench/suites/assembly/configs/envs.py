@@ -118,17 +118,15 @@ for _mode in ("osc", "impedance", "joint"):
     )
 
 # Franka arm at the pc-gpu scene. The base stands in the table's NORTH strip at (0.64, -0.34),
-# yaw 180 deg, right beside the case's north-east corner; the card holder sits west of it at
-# (0.28, -0.36). The lab table's real top plate is x [-0.32, 0.96] x y [-0.47, 0.44] (measured
-# with a marker-sphere calibration render — the USD's whole-body bbox + side-rail furniture
-# read 1.28 m along the wrong axis, and two earlier layouts left the base footprint or its
-# 154 mm rear foot hanging past an edge; panda link0 spans x [-0.154, +0.072] x y +-0.095, so
-# the north strip only fits it with the foot pointing +-x). Reach stays in the arm's accurate
-# band: pick 0.36 m at 3 deg left of facing, placement 0.393 m / seat 0.384 m at ~74 deg
-# right, slide slightly radially inward. Placement history: from the -x side (origin) the
-# seat is a 0.49-0.53 m top-down reach and the arm saturates ~5-8 mm short — exactly the
-# millimetres the channel's 1.5 mm end-stop play cannot spare. The case stays at the table
-# preset's 0.5 m. The loose card cannot start in the scene's lying default:
+# yaw 180 deg, beside the case's north-east corner; the card holder sits west of it at
+# (0.28, -0.36). Both fit fully on the lab table's top plate — x [-0.32, 0.96] x y [-0.47, 0.44]
+# in world, with panda link0's footprint spanning x [-0.154, +0.072] x y +-0.095 around the base
+# origin, so the 0.26 m-deep strip only fits it with the rear foot pointing +-x. Reach stays in
+# the arm's accurate band: pick 0.36 m near dead-ahead, placement 0.393 m / seat 0.384 m at
+# ~74 deg right, and the rearward slide runs slightly radially inward. (A base much beyond
+# ~0.45 m from the seat saturates the top-down arm several mm short — more than the channel's
+# 1.5 mm end-stop play.) The case stays at the table preset's 0.5 m. The loose card cannot
+# start in the scene's lying default:
 # flat on its backplate its only sub-80 mm dimension (the 36 mm body thickness) points UP, so no
 # parallel-jaw pinch can take it off the table. The gripper env therefore stages it UPRIGHT in the
 # scene's foam holder (`card_stand=True`), already in the seated orientation — one top-down
