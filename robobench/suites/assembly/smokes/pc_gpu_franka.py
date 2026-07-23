@@ -86,10 +86,14 @@ DT = 1.0 / 240.0  # sim timestep (matches the registered env's dt override)
 # closes clean through the card at any speed, offset, or card representation (convex/box/SDF),
 # so the classic 36 mm-stall grip cannot be verified. The wedge grip gives a real, force-verified
 # closure; the weld contract (below) then carries the load, as in the sibling franka smokes.
-GRIP_TOP_ZC = 0.1233     # body-slab collision TOP face above the card origin: the wedge site
-GRIP_YC = 0.016          # body-slab mid-plane (faces at y -0.002 / +0.034)
+GRIP_TOP_ZC = 0.1155     # body-slab TOP face above the card origin (the collider is trimmed to
+                         # the VISUAL shroud top edge, so the wedging tips touch what they grip)
+GRIP_YC = 0.0154         # body-slab mid-plane (faces at y -0.002 / +0.0328)
 WEDGE_BELOW = 0.015      # commanded pad-centre depth below the slab top during the wedge press
                          # (the corners stall it after a few mm — the command keeps a bite force)
+HOVER_CLEAR = 0.05       # pad-centre hover height above the slab top before the wedge: must
+                         # out-clear the unbiased gravity sag (~15 mm standing, ~35 mm at the
+                         # approach's low transient) or the tips snag the card while learning
 # panda_finger body origin -> finger-pad centre, along the hand's approach axis (the hand-frame ->
 # pad distance itself is measured live at reset: hand -> finger base + this).
 FINGER_TO_PAD = 0.045
@@ -123,6 +127,10 @@ PLACE_TOL = 0.0008       # card-origin xy gate at the placement point / after th
                          # channel funnel absorbs 1.2 mm/side; the scripted smoke used the same)
 SHOW_END = 20
 WP_TIMEOUT, SETTLE_STEPS = 75, 45
+HOVER_STEPS, LIFT_STEPS, CARRY_STEPS, RETREAT_STEPS = 40, 30, 45, 25  # transit glide lengths:
+# every long move GLIDES its commanded target (smoothstep) from the phase-entry pose — a
+# step-jump goal saturates the norm-clamped servo and the gravity-uncompensated arm swings
+# 30-40 mm wide, then rings while the bias integrator unwinds the veer (reads as hovering)
 DROP_STEPS, SLIDE_STEPS, PRESS_STEPS, PRESS_MAX = 45, 75, 60, 180
 PICK_RETRIES = 3
 LOG_EVERY = 45
@@ -201,7 +209,7 @@ def main() -> None:
     osc = env.robot.controller.controllers[0]
     osc._kp[0:3] = 400.0
     osc._kp[3:6] = 450.0
-    osc._kd = 2.0 * osc._kp.sqrt()
+    osc._kd = 2.2 * osc._kp.sqrt()  # slightly overdamped: transits must not ring
 
     case_pos = case.data.root_pos_w.clone()  # (n, 3): origin ON the board face, at its centre
     board_z = case_pos[:, 2].clone()
@@ -389,7 +397,11 @@ def main() -> None:
     wedge_ok = torch.zeros(n, device=dev)  # consecutive ticks the wedge has read stalled+near
     wp_p = torch.zeros(n, 3, device=dev)
     wp_q = torch.zeros(n, 4, device=dev)
+    hover_from = torch.zeros(n, 3, device=dev)
+    carry_from = torch.zeros(n, 3, device=dev)
+    retreat_from = torch.zeros(n, 3, device=dev)
     lift_xy = torch.zeros(n, 2, device=dev)
+    lift_from = torch.zeros(n, device=dev)
     drop_from = torch.zeros(n, device=dev)
     press_from = torch.zeros(n, device=dev)
     release_p = torch.zeros(n, 3, device=dev)
@@ -426,24 +438,30 @@ def main() -> None:
                 phase, marker = "pick_hover", i
                 picks += 1
         elif phase == "pick_hover":  # top-down over the standing card's top edge, fingers
-            # pre-narrowed to less than the slab so the descending tips land ON the top face
+            # pre-narrowed to less than the slab so the descending tips land ON the top face;
+            # the approach GLIDES from wherever the hand is (see HOVER_STEPS note)
+            if t_in == 1:
+                hover_from[:] = hp
             grip_pt[:] = grip_point()
             kx = quat_apply(card.data.root_quat_w, torch.tensor([1.0, 0.0, 0.0], device=dev).expand(n, 3))
             raw_yaw = torch.atan2(kx[:, 1], kx[:, 0])  # hand x along the card length -> fingers across the slab
             grip_yaw[:] = nearest_parity(raw_yaw, prev=grip_yaw if t_in > 1 else None)
             wp_p[:] = grip_pt
-            wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + 0.02  # tips ~11 mm above the top face
+            wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + HOVER_CLEAR  # tips well above the top
+            # face even UNBIASED: the raw gravity sag is ~15 mm, and tips that dip into the top
+            # edge before the bias has learned knock the card around the holder
             wp_q[:] = q_down(grip_yaw)
-            if t_in > 10:  # settled free air: learn the pad-centre bias for the wedge press
+            s = smoothstep(t_in / HOVER_STEPS)
+            if s >= 1.0:  # arrived, free air: learn the pad-centre bias for the wedge press
                 want = grip_pt.clone()
-                want[:, 2] += 0.02
+                want[:, 2] += HOVER_CLEAR
                 pos_off[:] = (pos_off + 0.3 * (want - pad_centre())).clamp(-0.08, 0.08)
-            act = servo(wp_p + pos_off, wp_q, NARROW_W)
-            # Enter the wedge only once the PAD is measured on-target in xy: the long home->hover
-            # move veers laterally (no gravity comp) and a wedge started 30 mm off just grinds
-            # its budget away re-centring.
+            goal = wp_p + pos_off
+            act = servo(hover_from + (goal - hover_from) * s, wp_q, NARROW_W)
+            # Enter the wedge only once the PAD is measured on-target in xy — a wedge started
+            # off-centre just grinds its budget away re-centring.
             pad_err = (pad_centre()[:, 0:2] - grip_pt[:, 0:2]).norm(dim=-1)
-            if (t_in >= 30 and bool((pad_err < 0.006).all()) and bool(at(wp_p + pos_off, wp_q).all())) \
+            if (t_in >= HOVER_STEPS + 8 and bool((pad_err < 0.006).all()) and bool(at(goal, wp_q).all())) \
                     or t_in >= 2 * WP_TIMEOUT:
                 wedge_ok.zero_()
                 phase, marker = "pick_wedge", i
@@ -457,9 +475,9 @@ def main() -> None:
             # the xy axes through the action's direction norm-clamp and the hand veers off the
             # grip point — and the XY bias keeps learning against the live pad position (the tips
             # may grind along the top face back over the tab; only z is contact-held).
-            s = smoothstep(t_in / 12.0)
+            s = smoothstep(t_in / 20.0)
             wp_p[:] = grip_pt
-            wp_p[:, 2] = grip_pt[:, 2] + 0.02 + hand_to_pad - s * (0.02 + WEDGE_BELOW)
+            wp_p[:, 2] = grip_pt[:, 2] + HOVER_CLEAR + hand_to_pad - s * (HOVER_CLEAR + WEDGE_BELOW)
             pos_off[:, 0:2] = (0.8 * pos_off[:, 0:2]
                                + 0.2 * (grip_pt[:, 0:2] - pad_centre()[:, 0:2])).clamp(-0.08, 0.08)
             act = servo(wp_p + pos_off, wp_q, NARROW_W)
@@ -483,28 +501,36 @@ def main() -> None:
                 else:
                     print("  ABORT: pick failed", flush=True)
                     phase, marker = "retreat", i
-        elif phase == "lift":  # straight up out of the holder to rim-crossing height
+        elif phase == "lift":  # straight up out of the holder to rim-crossing height (glided)
             if t_in == 1:
                 lift_xy[:] = card.data.root_pos_w[:, 0:2]  # rise only: latched, not live (a live
                 # xy target rides the achieved pose and drifts sideways through the holder rails)
+                lift_from[:] = card.data.root_pos_w[:, 2]
+            s = smoothstep(t_in / LIFT_STEPS)
             kp = card.data.root_pos_w.clone()
             kp[:, 0:2] = lift_xy
-            kp[:, 2] = board_z + CROSS_Z
+            kp[:, 2] = lift_from + s * (board_z + CROSS_Z - lift_from)
             tp, tq = hand_for_card(kp, upright_cmd())
             act = servo(tp, tq, NARROW_W)
-            if bool(((board_z + CROSS_Z - card.data.root_pos_w[:, 2]).abs() < 0.01).all()) or t_in >= WP_TIMEOUT:
+            if (t_in >= LIFT_STEPS and bool(((board_z + CROSS_Z - card.data.root_pos_w[:, 2]).abs() < 0.01).all())) \
+                    or t_in >= WP_TIMEOUT:
                 pos_off.zero_()  # pick-spot bias is stale here; re-learn on the carry
                 phase, marker = "carry", i
-        elif phase == "carry":  # translate to above the PLACEMENT point, at crossing height
-            kp = place_w.clone()
-            kp[:, 2] = board_z + CROSS_Z
-            if t_in > 10:  # settled free air near the case: learn the card-frame biases
-                pos_off[:] = (pos_off + 0.25 * (kp - card.data.root_pos_w)).clamp(-0.08, 0.08)
+        elif phase == "carry":  # translate to above the PLACEMENT point, at crossing height,
+            # gliding the card target across
+            if t_in == 1:
+                carry_from[:] = card.data.root_pos_w
+            goal = place_w.clone()
+            goal[:, 2] = board_z + CROSS_Z
+            s = smoothstep(t_in / CARRY_STEPS)
+            if s >= 1.0:  # arrived, free air near the case: learn the card-frame biases
+                pos_off[:] = (pos_off + 0.25 * (goal - card.data.root_pos_w)).clamp(-0.08, 0.08)
                 learn_rot()
+            kp = carry_from + (goal - carry_from) * s
             tp, tq = hand_for_card(kp + pos_off, upright_cmd())
             act = servo(tp, tq, NARROW_W)
             arrived = (card.data.root_pos_w[:, 0:2] - place_w[:, 0:2]).norm(dim=-1) < 0.003
-            if (t_in >= 25 and bool(arrived.all())) or t_in >= WP_TIMEOUT:
+            if (t_in >= CARRY_STEPS + 5 and bool(arrived.all())) or t_in >= 2 * WP_TIMEOUT:
                 drop_from[:] = card.data.root_pos_w[:, 2]
                 phase, marker = "drop", i
         elif phase == "drop":  # descend INSIDE the case, bracket forward of the rear panel
@@ -550,7 +576,8 @@ def main() -> None:
             tp, tq = hand_for_card(kp + pos_off, upright_cmd())
             act = servo(tp, tq, NARROW_W)
             still = card.data.root_lin_vel_w.norm(dim=-1) < 0.01
-            done = (xy_err(seat_w) < PLACE_TOL) & still
+            done = (xy_err(seat_w) < 0.001) & still  # the funnel mouth eats 1.2 mm/side — idling
+            # a timeout to shave the last 0.1 mm buys nothing
             if (t_in >= SLIDE_STEPS and bool(done.all())) or t_in >= 2 * SLIDE_STEPS:
                 print(f"  slid: xy err {float(xy_err(seat_w).max()) * 1e3:.2f} mm", flush=True)
                 press_from[:] = card.data.root_pos_w[:, 2]
@@ -594,14 +621,18 @@ def main() -> None:
                 if welded.any():
                     weld_off()
                 wp2 = release_p.clone()
-                if t_in > 14:  # straight up: the open fingers back off the card's top edge
-                    wp2[:, 2] = board_z + CROSS_Z
+                if t_in > 14:  # straight up (glided): the open fingers back off the card's top edge
+                    s2 = smoothstep((t_in - 14) / 20.0)
+                    wp2[:, 2] = release_p[:, 2] + s2 * (board_z + CROSS_Z - release_p[:, 2])
                 act = servo(wp2, release_q, OPEN_W)
             if t_in >= 45:
                 phase, marker = "retreat", i
-        elif phase == "retreat":
-            act = servo(home_p, home_q, OPEN_W)
-            if t_in >= WP_TIMEOUT // 2:
+        elif phase == "retreat":  # glide home
+            if t_in == 1:
+                retreat_from[:] = hp
+            s = smoothstep(t_in / RETREAT_STEPS)
+            act = servo(retreat_from + (home_p - retreat_from) * s, home_q, OPEN_W)
+            if t_in >= RETREAT_STEPS + 10:
                 phase, marker = "settle", i
         else:  # settle: hands off — the seated card must hold on its own
             act = servo(home_p, home_q, OPEN_W)

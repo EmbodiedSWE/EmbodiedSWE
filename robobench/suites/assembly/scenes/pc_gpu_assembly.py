@@ -120,9 +120,10 @@ class PcGpuAssemblyScene(BaseScene):
     cfg: PcGpuAssemblySceneCfg
 
     # Card-local y extent of the body collision slab (from gpu_rtx2060.usd `/gpu/collision/body`:
-    # backplate plane -2 mm, fan-shroud plane +34 mm around the PCB-tab-centre origin). The stand's
-    # rails flank THESE faces — the same pair a parallel-jaw grasp pinches.
-    CARD_BODY_Y: ClassVar[tuple[float, float]] = (-0.002, 0.034)
+    # backplate plane -2 mm, fan-shroud plane +32.8 mm around the PCB-tab-centre origin — the
+    # collider is trimmed to the VISUAL shell). The stand's rails flank THESE faces — the same
+    # pair a parallel-jaw grasp pinches.
+    CARD_BODY_Y: ClassVar[tuple[float, float]] = (-0.002, 0.0328)
 
     def __init__(self, cfg: PcGpuAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or PcGpuAssemblySceneCfg())
