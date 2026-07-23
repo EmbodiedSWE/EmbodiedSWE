@@ -127,9 +127,11 @@ FINGER_TO_TIP = 0.070
 
 # Differential IK (damped least squares) — the servo core replacing the Franka smoke's OSC deltas.
 IK_LAMBDA = 0.05
-POS_STEP = 0.008         # max Cartesian step per control tick (m; ~0.4 m/s at 50 Hz)
-ROT_STEP = 0.06          # max rotation step per control tick (rad; ~3 rad/s)
-DQ_STEP = 0.12           # per-joint step clamp (rad per tick)
+POS_STEP = 0.0035        # max Cartesian step per control tick (m) — halved+ for watchable motion
+ROT_STEP = 0.03          # max rotation step per control tick (rad)
+DQ_STEP = 0.08           # per-joint step clamp (rad per tick)
+FILT_BETA = 0.045        # folding-style target-filter pole: the servo never sees step targets
+GRIP_BETA = 0.05         # grip command ramp (~0.4s open<->close instead of an instant snap)
 
 # Choreography (all waypoints recomputed from live poses; distances in m, angles in rad):
 HANDLE_GRIP_D = 0.045    # grip the handle this far out from the elbow (crank radius ~= this)
@@ -153,9 +155,9 @@ PICK_RETRIES = 3
 
 # Timeouts in CONTROL steps (~50 Hz -> ~5 substeps each at 1/240).
 SHOW_END, STAGE_SETTLE = 60, 120
-WP_TIMEOUT, CLOSE_STEPS, STROKE_TIMEOUT, SETTLE_STEPS = 250, 100, 400, 150  # the carriage needs ~2 s to travel its 44 mm
+WP_TIMEOUT, CLOSE_STEPS, STROKE_TIMEOUT, SETTLE_STEPS = 400, 140, 600, 150  # budgets scaled for the slowed, filtered motion
 PECK_PERIOD = 40         # ctrl steps per peck (hover-reposition, then press)
-INSERT_TIMEOUT = 850     # descent from the hover + a full 19-point peck lattice
+INSERT_TIMEOUT = 1200    # descent + the 19-point lattice + floor drive (slowed-clock handovers eat lead time)
 LOG_EVERY = 150
 
 
@@ -389,7 +391,7 @@ def main() -> None:
             torch.stack((v[:, 2], z, -v[:, 0]), dim=-1),
             torch.stack((-v[:, 1], v[:, 0], z), dim=-1),
         ), dim=1)
-    wrist_mask = torch.tensor([[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]], device=dev)  # null bias: wrists only
+    wrist_mask = torch.tensor([[0.0, 1.0, 1.0, 1.0, 1.0, 1.0]], device=dev)  # null pull: base joint free, rest toward home (the folding recipe)
 
     def ik_arm(tp: torch.Tensor, tq: torch.Tensor, rot_w: float = 2.0) -> torch.Tensor:
         """One DLS step of the RIGHT arm's 6 joints toward the tool waypoint (world frame).
@@ -419,11 +421,15 @@ def main() -> None:
         q_tgt = artR.data.joint_pos[:, arm_ids] + dq
         return q_tgt.clamp(lo_lim + 0.02, hi_lim - 0.02)
 
-    def act_of(tp: torch.Tensor, tq: torch.Tensor, grip: float | torch.Tensor, rot_w: float = 2.0) -> torch.Tensor:
+    def act_of(tp: torch.Tensor, tq: torch.Tensor, grip: float | torch.Tensor, rot_w: float = 2.0,
+               raw: bool = False) -> torch.Tensor:
+        # raw=True: precision micro-motion (the insert's peck square-wave) — the smoothing
+        # filter would attenuate exactly that signal (run 117: pecks smoothed into mush)
+        sp, sq = (tp, tq) if raw else _shape_pose(_fRp, tool_pose, tp, tq)
         a = torch.zeros(n, act_dim, device=dev)
         a[:, l_s] = left_cmd
-        a[:, r_s.start : r_s.start + 6] = ik_arm(tp, tq, rot_w)
-        a[:, r_s.start + 6] = grip
+        a[:, r_s.start : r_s.start + 6] = ik_arm(sp, sq, rot_w)
+        a[:, r_s.start + 6] = _shape_grip("R", grip)
         return a
 
     def hold_act(grip: float | torch.Tensor) -> torch.Tensor:
@@ -472,8 +478,9 @@ def main() -> None:
 
     def left_to(tp: torch.Tensor, tq: torch.Tensor, grip: float = OPEN_C, rot_w: float = 2.0) -> None:
         """Aim the LEFT arm's next action at a tool waypoint (one DLS step; call every tick)."""
-        left_cmd[:, 0:6] = ik_left(tp, tq, rot_w)
-        left_cmd[:, 6] = grip
+        sp, sq = _shape_pose(_fLp, toolL_pose, tp, tq)
+        left_cmd[:, 0:6] = ik_left(sp, sq, rot_w)
+        left_cmd[:, 6] = _shape_grip("L", grip)
 
     def left_hold() -> None:
         left_cmd[:, 0:6] = artL.data.joint_pos[:, arm_ids_L]
@@ -593,15 +600,58 @@ def main() -> None:
         return (art.data.joint_pos[:, ids_a] + dq).clamp(lo + 0.02, hi - 0.02)
 
     def act_of_tip(tt: torch.Tensor, grip: float | torch.Tensor) -> torch.Tensor:
+        st = _shape_pt(_fRt, lambda: tip_pos("Right"), tt)
         a = torch.zeros(n, act_dim, device=dev)
         a[:, l_s] = left_cmd
-        a[:, r_s.start : r_s.start + 6] = _ik_tip(artR, arm_ids, ee_idx, tool_to_grip, lo_lim, hi_lim, tt)
-        a[:, r_s.start + 6] = grip
+        a[:, r_s.start : r_s.start + 6] = _ik_tip(artR, arm_ids, ee_idx, tool_to_grip, lo_lim, hi_lim, st)
+        a[:, r_s.start + 6] = _shape_grip("R", grip)
         return a
 
     def left_to_tip(tt: torch.Tensor, grip: float = OPEN_C) -> None:
-        left_cmd[:, 0:6] = _ik_tip(artL, arm_ids_L, eeL_idx, tool_to_grip, lo_lim_L, hi_lim_L, tt)
-        left_cmd[:, 6] = grip
+        st = _shape_pt(_fLt, lambda: tip_pos("Left"), tt)
+        left_cmd[:, 0:6] = _ik_tip(artL, arm_ids_L, eeL_idx, tool_to_grip, lo_lim_L, hi_lim_L, st)
+        left_cmd[:, 6] = _shape_grip("L", grip)
+
+    # ----- folding-style command shaping ---------------------------------------------------------
+    # The folding suite's smoothness recipe: every Cartesian goal is EXPONENTIALLY eased
+    # (filt += (goal - filt) * beta) and the filter re-seeds from the LIVE pose whenever its
+    # channel wasn't driven last tick — so phase switches never step the servo input. Four
+    # independent channels (R/L x pose-path/tip-path) because the two paths command different
+    # semantic points (wrist vs TCP). Grip commands ramp through their own pole.
+    _fRp = {"p": None, "q": None, "t": -9}
+    _fRt = {"p": None, "t": -9}
+    _fLp = {"p": None, "q": None, "t": -9}
+    _fLt = {"p": None, "t": -9}
+    _fg = {"R": None, "L": None}
+
+    def _nlerp(qf: torch.Tensor, qt: torch.Tensor, alpha: float) -> torch.Tensor:
+        qt = torch.where((qf * qt).sum(-1, keepdim=True) < 0.0, -qt, qt)
+        q = qf + (qt - qf) * alpha
+        return q / q.norm(dim=-1, keepdim=True).clamp_min(1e-9)
+
+    def _shape_pose(f: dict, live, gp: torch.Tensor, gq: torch.Tensor):
+        if f["t"] != step_i - 1 or f["p"] is None:
+            lp, lq = live()
+            f["p"], f["q"] = lp.clone(), lq.clone()
+        f["p"] = f["p"] + (gp - f["p"]) * FILT_BETA
+        f["q"] = _nlerp(f["q"], gq, FILT_BETA)
+        f["t"] = step_i
+        return f["p"], f["q"]
+
+    def _shape_pt(f: dict, live, gp: torch.Tensor) -> torch.Tensor:
+        if f["t"] != step_i - 1 or f["p"] is None:
+            f["p"] = live().clone()
+        f["p"] = f["p"] + (gp - f["p"]) * FILT_BETA
+        f["t"] = step_i
+        return f["p"]
+
+    def _shape_grip(arm: str, g) -> torch.Tensor:
+        gt = torch.as_tensor(g, device=dev, dtype=torch.float32).expand(n).clone() \
+            if not torch.is_tensor(g) else g.expand(n).clone()
+        if _fg[arm] is None:
+            _fg[arm] = gt.clone()
+        _fg[arm] = _fg[arm] + (gt - _fg[arm]) * GRIP_BETA
+        return _fg[arm]
 
     def tip_perp(arm_name: str) -> torch.Tensor:
         """Perpendicular distance (m) of the arm's fingertip center to the HANDLE line."""
@@ -1045,6 +1095,9 @@ def main() -> None:
             # floor. The stiff joint PD tracks mm-level, so most runs catch on the first pecks.
             if t_in == 1:
                 seat_ok.zero_()
+                ins_last_ax = 9.9
+                ins_stuck = 0
+                ins_unwedge_until = 0
             if t_in % PECK_PERIOD == 1:  # re-latch the clocking each peck: taps walk the bolt's yaw
                 ky = yaw_of(key.data.root_quat_w)
                 dpsi = _wrap((yaw_of(bolt.data.root_quat_w) - ky) % (math.pi / 3.0))
@@ -1064,17 +1117,45 @@ def main() -> None:
             floor_z = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z
             hover = (t_in % PECK_PERIOD) < PECK_PERIOD // 2
             z_cmd = mouth_z + (0.002 if hover else -0.0012)
-            tip_in = key_tip_axial() < SOCKET_MOUTH_Z - 0.0005  # caught: drive to the floor (caught pecks read ~-1.0mm vs +0.1 uncaught; the old 1.0mm latch discarded 0.98mm catches)
+            tip_in = (key_tip_axial() < SOCKET_MOUTH_Z - 0.0005) & (key_lateral() < 0.003)  # caught = below the mouth AND over the bore — axial alone reads true with the key beside the platform on the table (run 123: 'caught' at lat 185mm)
             kp = torch.zeros(n, 3, device=dev)
             kp[:, 0] = bolt.data.root_pos_w[:, 0] + torch.where(tip_in, torch.zeros_like(depth()), torch.full_like(depth(), ox))
             kp[:, 1] = bolt.data.root_pos_w[:, 1] + torch.where(tip_in, torch.zeros_like(depth()), torch.full_like(depth(), oy))
             kp[:, 2] = torch.where(tip_in, floor_z, z_cmd.clamp(min=floor_z))
+            # WEDGED-CATCH BREAKER: a catch at lat > the socket's 0.7mm clearance jams on the
+            # wall and the permanent straight-down drive can never advance or free it (run
+            # 119: frozen at -2.28mm, lat 1.27). Caught + axially stagnant ~100 ticks -> lift
+            # 2mm above the mouth for 30 ticks and let the lattice re-peck fresh.
+            _axn = float(key_tip_axial().mean())
+            if bool(tip_in.all()) and abs(ins_last_ax - _axn) < 2e-4:
+                ins_stuck += 1
+            else:
+                ins_stuck = 0
+            ins_last_ax = _axn
+            # SEATING DITHER: the old full-speed pecks seated by tap MOMENTUM rattling the
+            # hex through the tight zone; the slowed quasi-static press just leans on the
+            # wall (runs 117-120: deterministic wedge at -4.2mm). Caught + stagnating ->
+            # rotate a 0.5mm lateral micro-wiggle while pressing.
+            if bool(tip_in.all()) and 20 <= ins_stuck:
+                _ph = (t_in // 10) % 4
+                kp[:, 0] = kp[:, 0] + (0.0005, 0.0, -0.0005, 0.0)[_ph]
+                kp[:, 1] = kp[:, 1] + (0.0, 0.0005, 0.0, -0.0005)[_ph]
+            if ins_stuck > 100:
+                ins_stuck = 0
+                ins_unwedge_until = t_in + 30
+                print(f"    [insert] wedged catch at {_axn * 1e3:+.2f}mm — lifting to re-peck", flush=True)
+                if cam is not None:
+                    import imageio.v2 as _iio
+                    _iio.imwrite(str(Path(args.video).parent / f"wedge_{t_in}.png"),
+                                 cam.data.output["rgb"][0].cpu().numpy())
+            if t_in < ins_unwedge_until:
+                kp[:, 2] = mouth_z + 0.002
             tp, tq = tool_for_key(kp, kq)
             # position-primary during the peck descent: the jaw grip's wrist pose can make
             # the last few mm of descent fight the held orientation (run 92: hovering +5.6mm
             # with dpsi 0.0 forever). The clocking re-latches every peck, so a few degrees of
             # transient drift are self-correcting.
-            act = act_of(tp, tq, grip_c, rot_w=0.6)
+            act = act_of(tp, tq, grip_c, rot_w=0.6, raw=True)
             if t_in % PECK_PERIOD == PECK_PERIOD - 1:  # end of each press: where did it land?
                 dp = _wrap((yaw_of(bolt.data.root_quat_w) - yaw_of(key.data.root_quat_w)) % (math.pi / 3.0))
                 dp = torch.where(dp > math.pi / 6.0, dp - math.pi / 3.0, dp)
@@ -1082,7 +1163,11 @@ def main() -> None:
                 over = key_tip_axial() - SOCKET_MOUTH_Z
                 print(f"    [probe {probe:2d}] lat {float(lat.max()) * 1e3:4.2f}mm | dpsi "
                       f"{float(torch.rad2deg(dp.abs().max())):4.1f}deg | tip over mouth {float(over.min()) * 1e3:+5.2f}mm", flush=True)
-            settled = (key_tip_axial() < SOCKET_FLOOR_Z + 0.002) & (key_tip_axial() > SOCKET_FLOOR_Z - 0.002) \
+            # Seated = the key's BEND resting on the socket mouth (~4.2mm of hex engagement) —
+            # the key's true geometric bottom (wedge frame, run 122). The old floor-band gate
+            # only ever passed because full-speed taps transiently PENETRATED ~1mm; honest
+            # quasi-static contact stops at the bend.
+            settled = (key_tip_axial() < SOCKET_MOUTH_Z - 0.0035) & (key_tip_axial() > SOCKET_FLOOR_Z - 0.002) \
                 & (key_lateral() < 0.0015) & (up_axis_of(key.data.root_quat_w)[:, 2] > 0.99) & bolt_ok()
             seat_ok[:] = torch.where(settled, seat_ok + 1, torch.zeros_like(seat_ok))
             if not bool(bolt_ok(say=True).all()):
