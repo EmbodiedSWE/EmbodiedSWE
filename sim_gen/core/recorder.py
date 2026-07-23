@@ -1,9 +1,12 @@
 """Video recorder for sim_gen scenes.
 
 House rule: EVERY smoke/validation run records a video.  Frames are captured through
-MuJoCo's offscreen renderer (osmesa works headless on this box; EGL does not) and
-encoded H.264 + yuv420p via imageio-ffmpeg's bundled ffmpeg — never OpenCV's mp4v,
-which renders as a green screen in the IDE player.
+MuJoCo's offscreen renderer and encoded H.264 + yuv420p via imageio-ffmpeg's bundled
+ffmpeg — never OpenCV's mp4v, which renders as a green screen in the IDE player.
+
+The offscreen GL backend defaults to osmesa (software, works on any headless box) but
+is overridable via SIM_GEN_MUJOCO_GL for boxes where a GPU path is preferable/required
+(e.g. SIM_GEN_MUJOCO_GL=egl when libOSMesa is unavailable but a GPU + EGL is).
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ from __future__ import annotations
 import os
 import subprocess
 
-os.environ.setdefault("MUJOCO_GL", "osmesa")
+os.environ.setdefault("MUJOCO_GL", os.environ.get("SIM_GEN_MUJOCO_GL", "osmesa"))
 
 import imageio_ffmpeg
 import mujoco

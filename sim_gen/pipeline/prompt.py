@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 SIM_GEN_ROOT = Path(__file__).resolve().parent.parent
@@ -83,12 +84,12 @@ It is the seed's own port — your task must NOT be that.
 - Self-contained: only mujoco + numpy + sim_gen.core. No new dependencies, no assets
   from disk (procedural geometry only).
 - Iterate until the smoke prints "SIM_GEN_SMOKE: ALL PASS". Run it with:
-  cd {cosigen_root} && MUJOCO_GL=osmesa {python} -m sim_gen.tasks.{task_name}.smoke \
+  cd {cosigen_root} && MUJOCO_GL={mujoco_gl} {python} -m sim_gen.tasks.{task_name}.smoke \
       --video sim_gen/artifacts/{task_name}_smoke.mp4
   Watch out: if a check fails, fix the ROOT CAUSE (scene or check), never delete or
   weaken a check to pass.
 - After the smoke passes, ALSO run the validator and fix root causes until it PASSes:
-  cd {cosigen_root} && MUJOCO_GL=osmesa {python} sim_gen/pipeline/validate.py \
+  cd {cosigen_root} && MUJOCO_GL={mujoco_gl} {python} sim_gen/pipeline/validate.py \
       --task {task_name}
   You own this problem until it is accepted — do not stop at the first green smoke.
 
@@ -129,4 +130,5 @@ def build_prompt(seed_id: str, seed_path: Path, task_name: str, python: str,
         ref_dir="sim_gen/tasks/push_cube_ref",
         cosigen_root=SIM_GEN_ROOT.parent,
         python=python,
+        mujoco_gl=os.environ.get("SIM_GEN_MUJOCO_GL", "osmesa"),
     )

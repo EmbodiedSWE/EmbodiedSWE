@@ -132,7 +132,7 @@ def run_smoke(task_name: str) -> dict:
     """Run the task's own smoke (its oracle solution + test battery), require ALL PASS."""
     video = SIM_GEN_ROOT / "artifacts" / f"{task_name}_smoke.mp4"
     cmd = [PYTHON, "-m", f"sim_gen.tasks.{task_name}.smoke", "--video", str(video)]
-    env = dict(os.environ, MUJOCO_GL="osmesa")
+    env = dict(os.environ, MUJOCO_GL=os.environ.get("SIM_GEN_MUJOCO_GL", "osmesa"))
     proc = subprocess.run(cmd, cwd=str(COSIGEN_ROOT), env=env,
                           capture_output=True, text=True, timeout=1800)
     out = proc.stdout + proc.stderr

@@ -48,6 +48,7 @@ RELAY_DIR = Path(os.environ.get("SIM_GEN_RELAY_DIR", SIM_GEN_ROOT / "super_relay
 RELAY_PORT = int(os.environ.get("SIM_GEN_RELAY_PORT", "8118"))
 OAUTH_ENV = Path(os.environ.get("SIM_GEN_OAUTH_ENV",
                                 Path.home() / ".claude_oauth_env"))
+MUJOCO_GL = os.environ.get("SIM_GEN_MUJOCO_GL", "osmesa")
 
 
 def relay_raw_log() -> Path | None:
@@ -118,7 +119,8 @@ def spawn(seed_id: str, task_name: str | None, model: str, tier: str) -> int:
         # binds IPv4 (see super_relay README).
         "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{RELAY_PORT}",
         "ANTHROPIC_API_KEY": "",
-        "MUJOCO_GL": "osmesa",
+        "MUJOCO_GL": MUJOCO_GL,
+        "SIM_GEN_MUJOCO_GL": MUJOCO_GL,
     })
     cmd = ["claude", "-p", prompt_text, "--model", model,
            "--dangerously-skip-permissions", "--verbose",

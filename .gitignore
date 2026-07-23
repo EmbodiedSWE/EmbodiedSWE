@@ -151,6 +151,7 @@ activemq-data/
 .env
 .envrc
 .venv
+.venv_simgen/
 env_newton/
 env/
 venv/
@@ -236,3 +237,7 @@ robobench/suites/*/videos/
 
 # sim_gen run artifacts (videos, relay logs, trajectories, reports)
 /sim_gen/artifacts/
+
+
+.claude/
+CLAUDE.md
