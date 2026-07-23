@@ -117,17 +117,18 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
-# Franka arm at the pc-gpu scene. The base stands at (0.90, 0), yaw 180 deg — ON the table's
-# east half, facing the case, beside the DemoTable's built-in robot-mount bracket. The lab
-# table's real top plate is x [0.045, 1.30] x y [-0.47, 0.44] (measured with a marker-sphere
-# calibration render: its long axis runs +x, NOT +y — an earlier +y-side layout left the base
-# footprint and card holder hanging past the y edge). Reach geometry stays in the arm's
-# accurate band: pick 0.35 m (82 deg left of facing), placement 0.40 m, seat 0.37 m dead
-# ahead, and the rearward (+x) slide runs radially INWARD, gaining reach. Placement history:
-# from the -x side (origin) the seat is a 0.49-0.53 m top-down reach and the arm saturates
-# ~5-8 mm short — exactly the millimetres the channel's 1.5 mm end-stop play cannot spare.
-# The case stays at the table preset's 0.5 m. The loose card cannot start in the scene's
-# lying default:
+# Franka arm at the pc-gpu scene. The base stands in the table's NORTH strip at (0.64, -0.34),
+# yaw 180 deg, right beside the case's north-east corner; the card holder sits west of it at
+# (0.28, -0.36). The lab table's real top plate is x [-0.32, 0.96] x y [-0.47, 0.44] (measured
+# with a marker-sphere calibration render — the USD's whole-body bbox + side-rail furniture
+# read 1.28 m along the wrong axis, and two earlier layouts left the base footprint or its
+# 154 mm rear foot hanging past an edge; panda link0 spans x [-0.154, +0.072] x y +-0.095, so
+# the north strip only fits it with the foot pointing +-x). Reach stays in the arm's accurate
+# band: pick 0.36 m at 3 deg left of facing, placement 0.393 m / seat 0.384 m at ~74 deg
+# right, slide slightly radially inward. Placement history: from the -x side (origin) the
+# seat is a 0.49-0.53 m top-down reach and the arm saturates ~5-8 mm short — exactly the
+# millimetres the channel's 1.5 mm end-stop play cannot spare. The case stays at the table
+# preset's 0.5 m. The loose card cannot start in the scene's lying default:
 # flat on its backplate its only sub-80 mm dimension (the 36 mm body thickness) points UP, so no
 # parallel-jaw pinch can take it off the table. The gripper env therefore stages it UPRIGHT in the
 # scene's foam holder (`card_stand=True`), already in the seated orientation — one top-down
@@ -146,7 +147,7 @@ for _mode in ("osc", "impedance", "joint"):
         lambda mode=_mode: EnvCfg(
             scene="pc_gpu",
             scene_cfg=PcGpuAssemblySceneCfg(
-                card_init_xy=(0.35, -0.35),  # table-relative -> world (0.85, -0.35): the pick band
+                card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36): the pick band
                 card_init_z=0.030,  # tab-bottom plane = the holder's floor top
                 card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
                 reset_pos_jitter=0.0,
@@ -154,7 +155,8 @@ for _mode in ("osc", "impedance", "joint"):
             ),
             robot="franka",
             robot_cfg=FrankaRobotCfg(
-                base_pos=(0.90, 0.0, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces the case
+                base_pos=(0.64, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x,
+                # the 154 mm rear foot points +x along the strip (the only fit inside it)
             ),
             control_mode=mode,
             env_spacing=2,
