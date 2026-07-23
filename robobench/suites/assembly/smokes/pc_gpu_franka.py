@@ -23,6 +23,11 @@ through the cutout) -> press (with reseat re-tries that never rise above slide h
 bracket sits in the cutout) -> release -> retreat -> settle. Verdict: seated count, tab depth vs
 the 5 mm stroke, residual errors after release, picks and press retries.
 
+The recorded video is one continuous MOVING shot: it opens framing the foam holder for the
+grasp, cranes across the case as the card is carried (the blend is driven by the card's own
+progress along its holder->seat line), and settles into the proven slot close-up for the
+slide + press + release.
+
 .venv/bin/python -m robobench.suites.assembly.smokes.pc_gpu_franka --headless
 python -m robobench.suites.assembly.smokes.pc_gpu_franka --livestream 2
 python -m robobench.suites.assembly.smokes.pc_gpu_franka \
@@ -204,13 +209,39 @@ def main() -> None:
     place_w = seat_w.clone()  # placement point INSIDE the case: bracket forward of the rear panel
     place_w[:, 0] -= SLIDE_OFF
 
+    # ----- moving camera: one continuous shot that shows the grasp AND the insertion --------------
+    # Two anchor framings, blended by the CARD'S OWN PROGRESS along its holder->seat line so the
+    # camera always follows the action with no phase plumbing: a 3/4 view from the holder's open
+    # (-x, +y) quadrant for the pick (from the slot view's side the 195 mm case rim occludes the
+    # holder), craning across the case into the force-driven smoke's proven slot close-up — the
+    # only angle that shows the gold edge connector over the slot. A sin(pi*s) altitude bump keeps
+    # the elevated carry in frame mid-transit; per-frame easing plus a monotonic latch keep the
+    # shot smooth through pick retries and hold the final framing once the card is seated.
+    cam_pose = None
     if cam is not None:
         p0 = case_pos[0]
-        # The force-driven smoke's proven view: close-in 3/4 onto the card's backplate from just
-        # inside the case opening — the only angle that shows the gold edge connector over the slot.
-        eye = torch.tensor([[p0[0] + 0.13, p0[1] - 0.26, p0[2] + 0.40]], dtype=torch.float32, device=dev)
-        tgt = torch.tensor([[p0[0] + 0.03, p0[1] + 0.02, p0[2] + 0.075]], dtype=torch.float32, device=dev)
-        cam.set_world_poses_from_view(eye, tgt)
+        holder_xy = card.data.root_pos_w[0, 0:2].clone()  # card spawn xy = the foam holder
+        path_v = seat_w[0, 0:2] - holder_xy
+        path_len = float(path_v.norm())
+        path_dir = path_v / path_len
+        pick_eye = torch.tensor([float(holder_xy[0]) - 0.38, float(holder_xy[1]) + 0.39, 0.40], device=dev)
+        pick_tgt = torch.tensor([float(holder_xy[0]), float(holder_xy[1]), 0.12], device=dev)
+        ins_eye = torch.tensor([float(p0[0]) + 0.13, float(p0[1]) - 0.26, float(p0[2]) + 0.40], device=dev)
+        ins_tgt = torch.tensor([float(p0[0]) + 0.03, float(p0[1]) + 0.02, float(p0[2]) + 0.075], device=dev)
+        cam_s = 0.0  # eased, latched blend state
+
+        def cam_pose() -> tuple[torch.Tensor, torch.Tensor]:
+            nonlocal cam_s
+            u = float((card.data.root_pos_w[0, 0:2] - holder_xy) @ path_dir) / path_len
+            s = smoothstep(u)
+            cam_s = max(cam_s, cam_s + 0.12 * (s - cam_s))  # ease toward s, never retreat
+            arc = math.sin(math.pi * cam_s)
+            eye = pick_eye + (ins_eye - pick_eye) * cam_s
+            tgt = pick_tgt + (ins_tgt - pick_tgt) * cam_s
+            eye = eye + torch.tensor([0.0, 0.0, 0.12 * arc], device=dev)
+            tgt = tgt + torch.tensor([0.0, 0.0, 0.16 * arc], device=dev)
+            return eye.unsqueeze(0), tgt.unsqueeze(0)
+
     print(env.describe(), flush=True)
 
     # Measure hand-frame -> finger-pad-centre once from the live articulation (robust to asset edits).
@@ -332,6 +363,8 @@ def main() -> None:
         nonlocal step_i
         step_i += 1
         capture = writer is not None and step_i % args.cap == 0
+        if capture:
+            cam.set_world_poses_from_view(*cam_pose())  # move the shot BEFORE this step's render
         env.step(action, render=capture or render)
         if capture:
             import numpy as np
