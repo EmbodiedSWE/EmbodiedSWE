@@ -22,8 +22,8 @@ Phases: show -> [lift -> cross -> drop -> align -> press (with logged re-tries) 
 -> settle. Verdict: per-stick seated count, blade depth below the slot mouth vs the 4.44 mm
 stroke, and the residual errors after release.
 
-python -m robobench.suites.assembly.scripts.pc_ram_smoke --livestream 2
-python -m robobench.suites.assembly.scripts.pc_ram_smoke \
+python -m robobench.suites.assembly.smokes.pc_ram_smoke --livestream 2
+python -m robobench.suites.assembly.smokes.pc_ram_smoke \
     --headless --enable_cameras --video robobench/suites/assembly/videos/pc_ram.mp4
 """
 
@@ -54,6 +54,7 @@ import isaaclab.sim as sim_utils  # noqa: E402
 import robobench  # noqa: E402
 from isaaclab.utils.math import axis_angle_from_quat, quat_apply_inverse  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
+from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
 if TYPE_CHECKING:
     from robobench.suites.assembly.scenes import PcRamAssemblyScene
@@ -298,9 +299,8 @@ def main() -> None:
     print(f"PC-RAM | seated {int(all_ok.sum())}/{n} envs ({int(seated.sum())}/{n * sc.cfg.num_slots} "
           f"sticks) | stroke 4.44, seat >= {sc.cfg.seat_depth * 1e3:.1f} | {per_slot} | "
           f"retries {retries_total}", flush=True)
-    env.close()
+    close_and_exit(env, app)
 
 
 if __name__ == "__main__":
     main()
-    app.close()

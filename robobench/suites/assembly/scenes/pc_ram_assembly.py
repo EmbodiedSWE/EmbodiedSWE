@@ -87,6 +87,14 @@ class PcRamAssemblySceneCfg(BaseCfg):
     ram_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # flat
     ram_contact_offset: float = info(0.0001)  # well below the 0.15 mm/side channel grip
     case_contact_offset: float = info(0.0001)  # ditto for the slot fixtures' walls
+    # Optional foam holders (per stick: a floor pad + two rails flanking the 7.3 mm body slab)
+    # that present the sticks UPRIGHT for a parallel-jaw grasp. The lying default is ungraspable
+    # by a Franka gripper: flat on its face a stick's only sub-80 mm dimension (its thickness)
+    # points UP, so no top-down or side pinch can straddle it. Enable together with upright
+    # `ram_init_quat` (identity = the seated orientation) and `ram_init_z` = the holders' floor
+    # top; the rails cap a free stick's lean at ~5 deg and the pick pulls straight up out of them.
+    ram_stand: bool = info(False)
+    ram_stand_gap: float = info(0.0012)  # rail clearance per side around the body slab (m)
     # Selectable work surface (same presets as the sibling scenes).
     table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
     surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
@@ -125,6 +133,11 @@ class PcRamAssemblySceneCfg(BaseCfg):
 @SCENES.register("pc_ram")
 class PcRamAssemblyScene(BaseScene):
     cfg: PcRamAssemblySceneCfg
+
+    # Stick-local x extent of the body collision slab (from ram_tridentz.usd
+    # `/ram/collision/body`; it matches the visual shell). The holders' rails flank THESE
+    # faces — the same pair a parallel-jaw grasp pinches.
+    STICK_BODY_X: ClassVar[tuple[float, float]] = (-0.0037, 0.0036)
 
     def __init__(self, cfg: PcRamAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or PcRamAssemblySceneCfg())
@@ -208,6 +221,36 @@ class PcRamAssemblyScene(BaseScene):
                     pos=(wx + ix, wy + iy, c.surface_z + c.ram_init_z), rot=c.ram_init_quat
                 ),
             )
+        if c.ram_stand:
+            # Foam holders for a gripper env: per stick, three STATIC boxes (no rigid body). The
+            # floor pad's top is the stick spawn height (`ram_init_z` = the blade-bottom plane),
+            # the two rails flank the body slab's faces at `ram_stand_gap` per side. Rail tops
+            # stay several mm below the pick grip band, clear of descending fingertips.
+            x0, x1 = self.STICK_BODY_X
+            half_gap = 0.5 * (x1 - x0) + c.ram_stand_gap  # rail inner face off the slab mid-plane
+            rail_h, rail_t, stand_l = 0.018, 0.008, 0.145
+            foam = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.17, 0.17, 0.2), roughness=0.9)
+            for k, (ix, iy) in enumerate(c.ram_init_xy):
+                mid_x = wx + ix + 0.5 * (x0 + x1)  # body-slab mid-plane (the pinch/rail centre)
+                for name, size, pos in (
+                    (f"ram_stand_{k}_floor", (0.022, stand_l, c.ram_init_z),
+                     (mid_x, wy + iy, c.surface_z + 0.5 * c.ram_init_z)),
+                    (f"ram_stand_{k}_rail_a", (rail_t, stand_l, rail_h),
+                     (mid_x - half_gap - 0.5 * rail_t, wy + iy, c.surface_z + c.ram_init_z + 0.5 * rail_h)),
+                    (f"ram_stand_{k}_rail_b", (rail_t, stand_l, rail_h),
+                     (mid_x + half_gap + 0.5 * rail_t, wy + iy, c.surface_z + c.ram_init_z + 0.5 * rail_h)),
+                ):
+                    out[name] = AssetBaseCfg(
+                        prim_path="{ENV_REGEX_NS}/" + "".join(p_.capitalize() for p_ in name.split("_")),
+                        spawn=sim_utils.CuboidCfg(
+                            size=size,
+                            collision_props=sim_utils.CollisionPropertiesCfg(
+                                contact_offset=0.001, rest_offset=0.0
+                            ),
+                            visual_material=foam,
+                        ),
+                        init_state=AssetBaseCfg.InitialStateCfg(pos=pos),
+                    )
         return out
 
     def sim_cfg(self) -> SimCfg:
@@ -275,15 +318,25 @@ class PcRamAssemblyScene(BaseScene):
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
+        if self.cfg.ram_stand:
+            sticks = (
+                "Beside the case two loose RAM sticks stand upright in foam holders, already in "
+                "their installation orientation.\nGoal: grip each stick by its top edge, lift it "
+                "straight out of its holder, "
+            )
+        else:
+            sticks = (
+                "Beside the case lie two loose RAM sticks, flat on the table.\nGoal: stand each "
+                "stick upright, "
+            )
         return (
             "A gaming-PC case lying on its side on a sturdy table, opening up, its motherboard "
-            "facing the ceiling. All four memory slots are empty. Beside the case lie two loose "
-            "RAM sticks, flat on the table.\nGoal: stand each stick upright, carry it over the "
-            "case wall, line its gold edge connector up with its slot — the outermost and the "
-            "second-from-socket, the alternating pair a dual-channel kit fills (the notch only "
-            "fits one way — heat-spreader faces along the slot) — and press it straight down "
-            "until it clicks fully home. A seated stick stays put on its own. The task is "
-            "complete once both sticks are fully seated."
+            f"facing the ceiling. All four memory slots are empty. {sticks}"
+            "carry it over the case wall, line its gold edge connector up with its slot — the "
+            "outermost and the second-from-socket, the alternating pair a dual-channel kit fills "
+            "(the notch only fits one way — heat-spreader faces along the slot) — and press it "
+            "straight down until it clicks fully home. A seated stick stays put on its own. The "
+            "task is complete once both sticks are fully seated."
         )
 
     # ----- progress (public: seated()/engaged(); reads how far the assembly has got) -------------
