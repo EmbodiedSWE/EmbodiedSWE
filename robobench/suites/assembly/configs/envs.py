@@ -28,6 +28,7 @@ from robobench.suites.assembly.scenes import (
     BulbAssemblySceneCfg,
     IkeaTableAssemblySceneCfg,
     NutThreadAssemblySceneCfg,
+    PcGpuAssemblySceneCfg,
 )
 
 SUITE = "assembly"
@@ -113,6 +114,51 @@ for _mode in ("osc", "impedance", "joint"):
             robot="franka",
             control_mode=mode,
             env_spacing=2,
+        ),
+    )
+
+# Franka arm at the pc-gpu scene. The base stands in the table's NORTH strip at (0.64, -0.34),
+# yaw 180 deg, beside the case's north-east corner; the card holder sits west of it at
+# (0.28, -0.36). Both fit fully on the lab table's top plate — x [-0.32, 0.96] x y [-0.47, 0.44]
+# in world, with panda link0's footprint spanning x [-0.154, +0.072] x y +-0.095 around the base
+# origin, so the 0.26 m-deep strip only fits it with the rear foot pointing +-x. Reach stays in
+# the arm's accurate band: pick 0.36 m near dead-ahead, placement 0.393 m / seat 0.384 m at
+# ~74 deg right, and the rearward slide runs slightly radially inward. (A base much beyond
+# ~0.45 m from the seat saturates the top-down arm several mm short — more than the channel's
+# 1.5 mm end-stop play.) The case stays at the table preset's 0.5 m. The loose card cannot
+# start in the scene's lying default:
+# flat on its backplate its only sub-80 mm dimension (the 36 mm body thickness) points UP, so no
+# parallel-jaw pinch can take it off the table. The gripper env therefore stages it UPRIGHT in the
+# scene's foam holder (`card_stand=True`), already in the seated orientation — one top-down
+# fingertip grip on the card's top edge (see the smoke's grasp-geometry note) then serves pick,
+# carry, slide and press, with no re-orientation anywhere near the case. Deterministic spawn (no
+# jitter): the holder is static geometry authored at the spawn point, so a jittered card would
+# spawn inside a rail.
+# sim dt 1/240 — the depth the force-driven pc_gpu smoke validated for the 0.15 mm/side channel.
+# Three control modes, switchable by env name:
+#   - "assembly.pc_gpu.franka.osc"       — operational-space control (default)
+#   - "assembly.pc_gpu.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_gpu.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_gpu",
+            scene_cfg=PcGpuAssemblySceneCfg(
+                card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36): the pick band
+                card_init_z=0.030,  # tab-bottom plane = the holder's floor top
+                card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                reset_pos_jitter=0.0,
+                card_stand=True,
+            ),
+            robot="franka",
+            robot_cfg=FrankaRobotCfg(
+                base_pos=(0.64, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x,
+                # the 154 mm rear foot points +x along the strip (the only fit inside it)
+            ),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
         ),
     )
 
