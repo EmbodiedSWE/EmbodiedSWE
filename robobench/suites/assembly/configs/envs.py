@@ -29,6 +29,7 @@ from robobench.suites.assembly.scenes import (
     IkeaTableAssemblySceneCfg,
     NutThreadAssemblySceneCfg,
     PcGpuAssemblySceneCfg,
+    PcRamAssemblySceneCfg,
 )
 
 SUITE = "assembly"
@@ -62,6 +63,42 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_gpu", robot="null", env_spacing=2))
 # two loose RAM sticks to press in, scene physics only for now.
 # -> "assembly.pc_ram"
 register_env(SUITE, lambda: EnvCfg(scene="pc_ram", robot="null", env_spacing=2))
+
+# Franka arm at the pc-ram scene (the case/table preset sits at 0.55 here). Same north-strip
+# placement family as pc_gpu.franka: the base stands at (0.72, -0.34) yaw 180 with its whole
+# link0 footprint (x [-0.154, +0.072] x y +-0.095) on the top plate, and the two stick holders
+# sit west of it at world (0.30, -0.36) and (0.42, -0.36) — reaches: picks 0.42 / 0.30 m, slots
+# 0.376 / 0.365 m, all in the arm's accurate band. The sticks cannot start in the scene's lying
+# default (flat, their 7.3 mm thickness points up — no parallel-jaw pinch off the table), so the
+# gripper env stages them UPRIGHT in the scene's foam holders, already in the seated
+# orientation. Deterministic spawn (no jitter): the holders are static geometry authored at the
+# spawn points. sim dt 1/240, the depth the force-driven pc_ram smoke runs at.
+# Three control modes, switchable by env name:
+#   - "assembly.pc_ram.franka.osc"       — operational-space control (default)
+#   - "assembly.pc_ram.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_ram.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_ram",
+            scene_cfg=PcRamAssemblySceneCfg(
+                ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
+                ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                reset_pos_jitter=0.0,
+                ram_stand=True,
+            ),
+            robot="franka",
+            robot_cfg=FrankaRobotCfg(
+                base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x,
+                # the 154 mm rear foot points +x along the strip
+            ),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
 
 # SO101 full-arm assembly (seat + screw the elbow servo, clip + screw the forearm fork onto its
 # horn) on a workbench, scene physics only.
