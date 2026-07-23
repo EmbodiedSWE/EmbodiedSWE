@@ -131,14 +131,14 @@ PLACE_TOL = 0.0008       # card-origin xy gate at the placement point / after th
                          # channel funnel absorbs 1.2 mm/side; the scripted smoke used the same)
 SHOW_END = 20
 WP_TIMEOUT, SETTLE_STEPS = 75, 45
-HOVER_STEPS, DOWN_STEPS, CLOSE_STEPS = 90, 30, 15  # pick glide lengths (approach / descend / close)
-LIFT_STEPS, CARRY_STEPS, RETREAT_STEPS = 45, 75, 25
+HOVER_STEPS, DOWN_STEPS, CLOSE_STEPS = 140, 45, 20  # pick glide lengths (approach / descend / close)
+LIFT_STEPS, CARRY_STEPS, RETREAT_STEPS = 70, 120, 50
 # Every long move GLIDES its commanded target (smoothstep) from the phase-entry pose, and the
 # approach glides the wrist YAW too — a step-jump goal saturates the norm-clamped servo and the
 # gravity-uncompensated arm swings 30-40 mm wide, then rings while the bias integrator unwinds
 # the veer (reads as swinging/hovering on video). Budgets are deliberately unhurried: peak
 # commanded speed stays well under the 0.3 m/s the 20 mm/step latch can saturate at.
-DROP_STEPS, SLIDE_STEPS, PRESS_STEPS, PRESS_MAX = 45, 75, 60, 180
+DROP_STEPS, SLIDE_STEPS, PRESS_STEPS, PRESS_MAX = 70, 100, 75, 200
 PICK_RETRIES = 3
 LOG_EVERY = 45
 
@@ -256,8 +256,8 @@ def main() -> None:
             lift_h = max(0.0, float(card.data.root_pos_w[0, 2]) - 0.20) * (1.0 - cam_s)
             eye = pick_eye + (ins_eye - pick_eye) * cam_s
             tgt = pick_tgt + (ins_tgt - pick_tgt) * cam_s
-            eye = eye + torch.tensor([0.0, 0.0, 0.12 * arc + 0.7 * lift_h], device=dev)
-            tgt = tgt + torch.tensor([0.0, 0.0, 0.16 * arc + 1.2 * lift_h], device=dev)
+            eye = eye + torch.tensor([0.0, 0.0, 0.12 * arc + 0.9 * lift_h], device=dev)
+            tgt = tgt + torch.tensor([0.0, 0.0, 0.16 * arc + 1.6 * lift_h], device=dev)
             return eye.unsqueeze(0), tgt.unsqueeze(0)
 
     print(env.describe(), flush=True)
@@ -411,6 +411,8 @@ def main() -> None:
     hover_yaw0 = torch.zeros(n, device=dev)
     carry_from = torch.zeros(n, 3, device=dev)
     retreat_from = torch.zeros(n, 3, device=dev)
+    retreat_q0 = torch.zeros(n, 4, device=dev)
+    retreat_aa = torch.zeros(n, 3, device=dev)
     lift_xy = torch.zeros(n, 2, device=dev)
     lift_from = torch.zeros(n, device=dev)
     drop_from = torch.zeros(n, device=dev)
@@ -475,7 +477,7 @@ def main() -> None:
             # 4.6 mm/side, so the descent must start centred
             pad_err = (pad_centre()[:, 0:2] - grip_pt[:, 0:2]).norm(dim=-1)
             if (t_in >= HOVER_STEPS + 10 and bool((pad_err < 0.004).all()) and bool(at(goal, wp_q).all())) \
-                    or t_in >= 3 * WP_TIMEOUT:
+                    or t_in >= HOVER_STEPS + 2 * WP_TIMEOUT:
                 phase, marker = "pick_down", i
         elif phase == "pick_down":  # descend AROUND the card: the open fingers pass the top edge
             # on both sides until the pads flank the slab's upper faces. Free air all the way
@@ -536,7 +538,7 @@ def main() -> None:
             tp, tq = hand_for_card(kp, upright_cmd())
             act = servo(tp, tq, GRIP_W)
             if (t_in >= LIFT_STEPS and bool(((board_z + CROSS_Z - card.data.root_pos_w[:, 2]).abs() < 0.01).all())) \
-                    or t_in >= WP_TIMEOUT:
+                    or t_in >= LIFT_STEPS + 45:
                 pos_off.zero_()  # pick-spot bias is stale here; re-learn on the carry
                 phase, marker = "carry", i
         elif phase == "carry":  # translate to above the PLACEMENT point, at crossing height,
@@ -553,7 +555,7 @@ def main() -> None:
             tp, tq = hand_for_card(kp + pos_off, upright_cmd())
             act = servo(tp, tq, GRIP_W)
             arrived = (card.data.root_pos_w[:, 0:2] - place_w[:, 0:2]).norm(dim=-1) < 0.003
-            if (t_in >= CARRY_STEPS + 5 and bool(arrived.all())) or t_in >= 2 * WP_TIMEOUT:
+            if (t_in >= CARRY_STEPS + 5 and bool(arrived.all())) or t_in >= CARRY_STEPS + WP_TIMEOUT:
                 drop_from[:] = card.data.root_pos_w[:, 2]
                 phase, marker = "drop", i
         elif phase == "drop":  # descend INSIDE the case, bracket forward of the rear panel
@@ -645,16 +647,23 @@ def main() -> None:
                     weld_off()
                 wp2 = release_p.clone()
                 if t_in > 14:  # straight up (glided): the open fingers back off the card's top edge
-                    s2 = smoothstep((t_in - 14) / 20.0)
+                    s2 = smoothstep((t_in - 14) / 35.0)
                     wp2[:, 2] = release_p[:, 2] + s2 * (board_z + CROSS_Z - release_p[:, 2])
                 act = servo(wp2, release_q, OPEN_W)
-            if t_in >= 45:
+            if t_in >= 60:
                 phase, marker = "retreat", i
-        elif phase == "retreat":  # glide home
+        elif phase == "retreat":  # glide home — position AND orientation (the wrist otherwise
+            # snaps ~135 deg of yaw at entry, the last visible swing of the run)
             if t_in == 1:
                 retreat_from[:] = hp
+                retreat_q0[:] = hq
+                qe = quat_mul(home_q, quat_conjugate(hq))
+                qe = torch.where(qe[:, :1] >= 0, qe, -qe)
+                retreat_aa[:] = axis_angle_from_quat(qe)
             s = smoothstep(t_in / RETREAT_STEPS)
-            act = servo(retreat_from + (home_p - retreat_from) * s, home_q, OPEN_W)
+            ang = retreat_aa.norm(dim=-1).clamp_min(1e-9)
+            q_cmd = quat_mul(quat_from_angle_axis(ang * s, retreat_aa / ang.unsqueeze(-1)), retreat_q0)
+            act = servo(retreat_from + (home_p - retreat_from) * s, q_cmd, OPEN_W)
             if t_in >= RETREAT_STEPS + 10:
                 phase, marker = "settle", i
         else:  # settle: hands off — the seated card must hold on its own
