@@ -239,7 +239,7 @@ def main() -> None:
         path_v = seat_w[0, 0:2] - holder_xy
         path_len = float(path_v.norm())
         path_dir = path_v / path_len
-        pick_eye = torch.tensor([float(holder_xy[0]) - 0.38, float(holder_xy[1]) + 0.39, 0.40], device=dev)
+        pick_eye = torch.tensor([float(holder_xy[0]) - 0.35, float(holder_xy[1]) - 0.42, 0.40], device=dev)
         pick_tgt = torch.tensor([float(holder_xy[0]), float(holder_xy[1]), 0.12], device=dev)
         ins_eye = torch.tensor([float(p0[0]) + 0.13, float(p0[1]) - 0.26, float(p0[2]) + 0.40], device=dev)
         ins_tgt = torch.tensor([float(p0[0]) + 0.03, float(p0[1]) + 0.02, float(p0[2]) + 0.075], device=dev)
