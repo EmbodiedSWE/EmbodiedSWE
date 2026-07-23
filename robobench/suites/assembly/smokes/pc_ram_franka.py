@@ -650,18 +650,24 @@ def main() -> None:
                 if welded.any():
                     weld_off()
                 wp2 = release_p.clone()
-                if t_in > 14:  # straight up (glided): the fingers back off the seated top edge
-                    s2 = smoothstep((t_in - 14) / 20.0)
-                    wp2[:, 2] = release_p[:, 2] + s2 * 0.05
+                if t_in > 14:  # rise first (glided): the fingers back off the seated top edge
+                    s2 = smoothstep((t_in - 14) / 16.0)
+                    wp2[:, 2] = release_p[:, 2] + s2 * 0.045
+                if t_in > 26:  # then peel WEST while still rising: the camera's view axis runs
+                    # nearly along x, so a finger beside the stick (the splayed one especially)
+                    # reads as glued to it until the hand separates ACROSS that axis
+                    s3 = smoothstep((t_in - 26) / 14.0)
+                    wp2[:, 0] = release_p[:, 0] - s3 * 0.035
                 grip = grip_pair(STRADDLE_W, SPLAY_W) if seq > 0 else STRADDLE_W
                 act = servo(wp2, release_q, grip)
-            if t_in >= 40:
+            if t_in >= 44:
                 phase, marker = "clear", i
         elif phase == "clear":  # rise straight off the seated stick, then the next stick/retreat
             if t_in == 1:
                 drop_from[:] = hp[:, 2]
+                wp_p[:] = hp  # hold the peeled-away xy; rise only
             s = smoothstep(t_in / 30.0)
-            kp = release_p.clone()
+            kp = wp_p.clone()
             kp[:, 2] = drop_from + s * (board_z + CROSS_Z + hand_to_tip - drop_from)
             act = servo(kp, release_q, OPEN_W)
             if t_in >= 34:
