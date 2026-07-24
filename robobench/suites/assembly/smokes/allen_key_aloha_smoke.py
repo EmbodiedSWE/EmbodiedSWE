@@ -40,6 +40,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--video", type=str, default="", help="save an mp4 here (needs --headless --enable_cameras)")
 parser.add_argument("--cap", type=int, default=5, help="with --video: capture one frame every N control steps (5 at 50 Hz control -> ~3x speed at 30 fps)")
+parser.add_argument("--demo-insert", action="store_true", help="end after the verified insert (pick->carry->erect->insert), key left seated — the motion-quality demo")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
@@ -127,11 +128,11 @@ FINGER_TO_TIP = 0.070
 
 # Differential IK (damped least squares) — the servo core replacing the Franka smoke's OSC deltas.
 IK_LAMBDA = 0.05
-POS_STEP = 0.0035        # max Cartesian step per control tick (m) — halved+ for watchable motion
-ROT_STEP = 0.03          # max rotation step per control tick (rad)
-DQ_STEP = 0.08           # per-joint step clamp (rad per tick)
-FILT_BETA = 0.045        # folding-style target-filter pole: the servo never sees step targets
-GRIP_BETA = 0.05         # grip command ramp (~0.4s open<->close instead of an instant snap)
+POS_STEP = 0.0018        # max Cartesian step per control tick (m) — ~4x slower than the fast era
+ROT_STEP = 0.015         # max rotation step per control tick (rad)
+DQ_STEP = 0.05           # per-joint step clamp (rad per tick)
+FILT_BETA = 0.03         # folding-style target-filter pole: the servo never sees step targets
+GRIP_BETA = 0.035        # grip command ramp (~0.6s open<->close instead of an instant snap)
 
 # Choreography (all waypoints recomputed from live poses; distances in m, angles in rad):
 HANDLE_GRIP_D = 0.045    # grip the handle this far out from the elbow (crank radius ~= this)
@@ -155,7 +156,7 @@ PICK_RETRIES = 3
 
 # Timeouts in CONTROL steps (~50 Hz -> ~5 substeps each at 1/240).
 SHOW_END, STAGE_SETTLE = 60, 120
-WP_TIMEOUT, CLOSE_STEPS, STROKE_TIMEOUT, SETTLE_STEPS = 400, 140, 600, 150  # budgets scaled for the slowed, filtered motion
+WP_TIMEOUT, CLOSE_STEPS, STROKE_TIMEOUT, SETTLE_STEPS = 700, 200, 900, 150  # budgets scaled for the doubly-slowed motion
 PECK_PERIOD = 40         # ctrl steps per peck (hover-reposition, then press)
 INSERT_TIMEOUT = 1200    # descent + the 19-point lattice + floor drive (slowed-clock handovers eat lead time)
 LOG_EVERY = 150
@@ -915,7 +916,7 @@ def main() -> None:
             grip_pt[:] = elbow + hd2 * HANDLE_GRIP_D
             tcp_tgt = grip_pt.clone()
             tcp_tgt[:, 2] = 0.012  # pocket brackets the handle's upper half; claw tips clear the table
-            grip_cmd = OPEN_C if t_in < 60 else 0.004
+            grip_cmd = OPEN_C if t_in < 120 else 0.004
             left_park()
             act = act_of_tip(tcp_tgt, grip_cmd)
             if t_in % 20 == 0:
@@ -923,7 +924,7 @@ def main() -> None:
                 kp0 = key.data.root_pos_w
                 print(f"    [jaw t{t_in:3d}] pair {float(pr[0]) * 1e3:5.1f}mm"
                       f" | key ({float(kp0[0, 0]):+.3f},{float(kp0[0, 1]):+.3f},{float(kp0[0, 2]):+.4f})", flush=True)
-            if t_in >= 60 + CLOSE_STEPS:
+            if t_in >= 120 + CLOSE_STEPS:
                 pr = jaw_pair(artR, jaw_ids_R)
                 tzz = tip_pos("Right")
                 xy_ok = (tzz[:, 0:2] - grip_pt[:, 0:2]).norm(dim=-1) < 0.015
@@ -1185,7 +1186,11 @@ def main() -> None:
                     key_turn.zero_()
                     prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
                     prev_key_yaw = yaw_of(key.data.root_quat_w)
-                phase, marker = "stroke", i  # the handle grip IS the crank grip: no handoff
+                if args.demo_insert:
+                    print("  [demo] insert verified — holding the pose, then a gentle release", flush=True)
+                    phase, marker = "admire", i
+                else:
+                    phase, marker = "stroke", i  # the handle grip IS the crank grip: no handoff
             elif t_in >= INSERT_TIMEOUT:
                 aim_tries += 1
                 if aim_tries >= 5 and cycles > 0:  # mid-loop re-seat exhausted: the key is at
@@ -1203,6 +1208,12 @@ def main() -> None:
                 else:
                     print("  insert timed out, re-clocking", flush=True)
                     phase, marker = "clock", i
+        elif phase == "admire":  # demo ending: hold the seated key for the camera, then a
+            # slow release and withdrawal — the key STAYS seated in the socket
+            act = hold_act(grip_c)
+            left_park()
+            if t_in >= 180:
+                phase, marker = "retreat", i
         elif phase == "stroke":  # crank: orbit the handle about the bolt axis while pressing the
             # tip to the socket floor — the welded key's pose target fully determines the tool's
             # orbiting waypoint, and the stiff joint PD tracks it (torque comes from the lever)
