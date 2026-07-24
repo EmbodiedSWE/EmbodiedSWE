@@ -162,7 +162,11 @@ PRESS_DZ = 0.0035        # crank press: command the tip this far below the live 
 # (the stiff joint-PD press is FAR harder than the franka's compliant OSC — 1.5 mm of
 # commanded interpenetration hammered the staged bolt off its helix capture: it then spun
 # crest-nested, +76 deg with zero descent, and the key cammed out on the next stroke)
-STROKE_RAD = math.radians(120.0)   # nominal crank sweep per cycle (screw-in = negative yaw)
+STROKE_RAD = math.radians(300.0)   # sweep cap per grab — the JOINT-LIMIT GUARD is the real
+                                   # limiter; the R's good-grab arc is narrow (~±40deg of the
+                                   # nearest azimuth: run 151 cycle 2 pinned the shoulder at
+                                   # home-52deg), so each grab must harvest as much sweep as
+                                   # the arm allows before regripping near home
 CAGE_C = 0.0060          # STAGE 2 steady-rest: L carriage command for the passive cage (hex spins
                          # inside, tip bounded); the closed-bite pocket already wraps the post
 CAGE_SLIDE = 0.035       # cage slides this far DOWN the post so the orbiting crank clears the claw
