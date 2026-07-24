@@ -85,10 +85,10 @@ DT = 1.0 / 240.0  # sim timestep (matches the registered env's dt override)
 # Stick-local grasp geometry (from ram_tridentz.usd `/ram/collision`; origin = blade bottom centre,
 # axes = the seated/case axes; the body collider matches the visual shell). The grip is a top-down
 # PINCH of the body slab's upper faces — the slab is 7.3 mm thick across x, so the fingers close
-# along WORLD X and the hand's x axis runs along the stick's length (world y). On this stack the
-# flat finger faces and the slab faces generate no contacts (only fingertip/chamfer features do),
-# so closure is verified GEOMETRICALLY (pads flanking the slab at the grip band, fingers at the
-# commanded width) and the weld contract carries the stick, as in `pc_gpu_franka`.
+# along WORLD X and the hand's x axis runs along the stick's length (world y). The pads stop at a
+# light kiss of the faces; closure is verified GEOMETRICALLY (pads flanking the slab at the grip
+# band, fingers at the commanded width) and the weld contract carries the stick, as in
+# `pc_gpu_franka`.
 GRIP_TOP_ZC = 0.0401     # body-slab TOP face above the stick origin (= the visual top edge)
 GRIP_XC = -0.00005       # body-slab mid-plane (faces at x -0.0037 / +0.0036)
 GRIP_DEPTH = 0.005       # pad-centre depth below the slab top at the pinch (pads wrap the faces)
@@ -105,22 +105,20 @@ STRADDLE_W = 0.011       # per-finger width while descending AROUND the 7.3 mm s
 GRIP_W = 0.0035          # per-finger closed width: the slab's half-width minus a 0.15 mm kiss,
                          # so the pads land exactly ON the stick's faces
 GRIP_DEPTH_HI = -0.00575  # SECOND-stick pad-centre height: 5.75 mm ABOVE the slab top — a
-                         # top-edge pinch, ~3 mm of pad on each face. The slots sit 18.96 mm
-                         # apart and a fingertip is 14.3 mm deep outward with its pad face
-                         # running to its very bottom, so at ANY pad-on-face grip the
-                         # neighbour-side tip overhangs the seated neighbour's slab (near face
-                         # 15.26 mm out) as soon as the tip is below the neighbour's top, and
-                         # lands ON it (tip-bottom-on-top-face fires; pushing a pad >1 mm INTO
-                         # a face fires too — measured, not the GPU card's dead pair). With the
-                         # top-edge pinch the tips ride 1 mm below the gripped slab's own top,
-                         # keeping the gripped press legal down to blade ~1 mm — deeper than
-                         # the mouth's capture, so the pinch can hand over to the fingertips.
-CAPTURE_Z = 0.0042       # gripped-press handoff height: the blade is captured by the slot mouth
-                         # (proven at ~4.3 mm) and the stick stands on its own once the pinch opens
+                         # top-edge pinch with ~3 mm of pad on each face. The slots sit 18.96 mm
+                         # apart and a fingertip reaches 14.3 mm outward with its pad face
+                         # running to its very bottom, so any pad-on-face grip overhangs the
+                         # seated neighbour's slab (near face 15.26 mm out) once the tips are
+                         # below the neighbour's top. With the top-edge pinch the tips ride just
+                         # 1 mm below the gripped slab's own top, keeping the gripped press
+                         # clear of the neighbour down to blade ~1 mm — deeper than the mouth's
+                         # capture height, so the pinch can hand the stick to the fingertips.
+CAPTURE_Z = 0.0042       # gripped-press handoff height: the slot mouth has captured the blade,
+                         # so the stick stands on its own once the pinch opens
 TIP_W = 0.0005           # per-finger width for the fingertip seat-press: the closed tips' bottoms
                          # overlap the stick's top edge ~3.1 mm/side, and the outer tip edge
                          # (14.8 mm) clears the seated neighbour's near face (15.26 mm)
-REFORM_STEPS, SEAT_STEPS, SEAT_MAX = 42, 40, 120
+REFORM_STEPS, SEAT_STEPS, SEAT_MAX = 42, 40, 120  # re-form glide / seat-press glide / press budget
 # Closure window (sum of the two finger joints, m): both fingers at GRIP_W means nothing snagged
 # them on the way in; the pad-position check pins the stick between them.
 CLOSED_MIN, CLOSED_MAX = 0.005, 0.010
@@ -470,7 +468,6 @@ def main() -> None:
         act = servo(home_p, home_q, OPEN_W)  # default: hold home, fingers open
         gd = GRIP_DEPTH if seq == 0 else GRIP_DEPTH_HI  # second stick: top-edge pinch
 
-
         if phase == "show":
             if t_in >= SHOW_END:
                 phase, marker = "pick_hover", i
@@ -672,8 +669,8 @@ def main() -> None:
                     pos_off[:, 0:2] = (pos_off[:, 0:2] + 0.15 * (tip_p[:, 0:2] - hp[:, 0:2])).clamp(-0.12, 0.12)
                 w = STRADDLE_W + (TIP_W - STRADDLE_W) * s
                 act = servo(wp_p + pos_off, reform_q, w)
-                if (t_in >= REFORM_STEPS + 10
-                        and bool(((tip_p[:, 0:2] - hp[:, 0:2]).norm(dim=-1) < 0.0012).all()))                         or t_in >= 2 * WP_TIMEOUT:
+                on_edge = bool(((tip_p[:, 0:2] - hp[:, 0:2]).norm(dim=-1) < 0.0012).all())
+                if (t_in >= REFORM_STEPS + 10 and on_edge) or t_in >= 2 * WP_TIMEOUT:
                     phase, marker = "seatpress", i
         elif phase == "seatpress":  # drive the fingertips down on the top edge until the blade
             # bottoms out: REAL contact seats the stick (tip-bottom-on-top-face is a live pair)
