@@ -924,7 +924,7 @@ def main() -> None:
     cage_p0 = torch.zeros(n, 3, device=dev)     # L cage pose at conversion
     cage_q0 = torch.zeros(n, 4, device=dev)
     pairR_hold = torch.zeros(n, device=dev)     # stability sample for the crank-grab gate
-    crank_tries, crank_cycles = 0, 0
+    crank_tries, crank_cycles, crank_bounce = 0, 0, 0
     crank_sign, crank_dir_checked = 1.0, False
     grip_c_L: float | torch.Tensor = CLOSE_C  # L's hold at its measured post stall
 
@@ -1702,6 +1702,7 @@ def main() -> None:
                     grip_c = float(prR[0]) * 0.5 + 0.0005
                     weld_on()
                     crank_tries = 0
+                    crank_bounce = 0
                     print(f"  CRANK GRAB: R stall {float(prR[0]) * 1e3:.1f}mm — stroking", flush=True)
                     phase, marker = "crank_stroke", i
                 elif crank_tries < 4:
@@ -1709,8 +1710,13 @@ def main() -> None:
                     print(f"  crank grab missed (pair {float(prR[0]) * 1e3:.1f}mm, perp "
                           f"{float(crank_perp('Right').max()) * 1e3:.1f}mm), frame {crank_tries + 1}", flush=True)
                     marker = i
+                elif crank_bounce < 1:
+                    crank_bounce += 1
+                    crank_tries = 0
+                    print("  R grab arc exhausted — bouncing to the LEFT", flush=True)
+                    phase, marker = "crank_approach_L", i
                 else:
-                    print("  crank grab exhausted; releasing with the insert result", flush=True)
+                    print("  crank grab exhausted; releasing with the progress", flush=True)
                     phase, marker = "crank_release", i
         elif phase == "crank_stroke":  # the small-orbit screw stroke: rotate the key about the
             # bore axis (helical floor press), the L cage holding the post vertical
@@ -1787,7 +1793,18 @@ def main() -> None:
             left_hold()
             if t_in >= 600:
                 crank_tries = 0
-                phase, marker = "crank_approach_L", i  # HAND-OVER-HAND: the far arc is the L's near arc
+                # ADAPTIVE HAND: whichever arm's best frame is cheaper takes the next stroke
+                # (strides differ, so the crank isn't alternately in each arc — run 153: the
+                # L swept 127deg and left the crank still deep in its own territory)
+                sdh2 = up_axis_of(key.data.root_quat_w).clone()
+                sdh2[:, 2] = 0.0
+                sdh2 = sdh2 / sdh2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+                cl2 = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * CRANK_GRIP_D
+                cR2 = crank_frames(cl2, sdh2)[0][0]
+                cL2 = crank_frames_L(cl2, sdh2)[0][0]
+                phase = "crank_approach" if cR2 <= cL2 else "crank_approach_L"
+                print(f"    [swap] frame costs R {cR2:.2f} / L {cL2:.2f} -> {'RIGHT' if cR2 <= cL2 else 'LEFT'}", flush=True)
+                marker = i
         elif phase == "crank_approach_L":  # the LEFT grabs the advanced crank (far arc)
             sdh = up_axis_of(key.data.root_quat_w).clone()
             sdh[:, 2] = 0.0
@@ -1827,6 +1844,7 @@ def main() -> None:
                     grip_c_L = float(prL[0]) * 0.5 + 0.0005
                     weld_on_L()
                     crank_tries = 0
+                    crank_bounce = 0
                     print(f"  CRANK GRAB (L): stall {float(prL[0]) * 1e3:.1f}mm — stroking", flush=True)
                     phase, marker = "crank_stroke_L", i
                 elif crank_tries < 4:
@@ -1834,9 +1852,14 @@ def main() -> None:
                     print(f"  L crank grab missed (pair {float(prL[0]) * 1e3:.1f}mm, perp "
                           f"{float(crank_perp('Left').max()) * 1e3:.1f}mm), frame {crank_tries + 1}", flush=True)
                     marker = i
+                elif crank_bounce < 1:
+                    crank_bounce += 1
+                    crank_tries = 0
+                    print("  L grab arc exhausted — bouncing to the RIGHT", flush=True)
+                    phase, marker = "crank_approach", i
                 else:
-                    print("  L crank grab exhausted; releasing with the progress so far", flush=True)
-                    phase, marker = "crank_release", i
+                    print("  L crank grab exhausted; releasing with the progress", flush=True)
+                    phase, marker = "crank_release_L", i
         elif phase == "crank_stroke_L":  # the LEFT's sweep through the far arc
             if t_in == 1:
                 stroke_psi.zero_()
@@ -1897,7 +1920,15 @@ def main() -> None:
                 if crank_cycles >= MAX_CRANK_CYCLES or float(bolt_turn.mean()) >= 2.0 * math.pi * args.demo_revs:
                     phase, marker = "admire", i
                 else:
-                    phase, marker = "crank_approach", i
+                    sdh2 = up_axis_of(key.data.root_quat_w).clone()
+                    sdh2[:, 2] = 0.0
+                    sdh2 = sdh2 / sdh2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+                    cl2 = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * CRANK_GRIP_D
+                    cR2 = crank_frames(cl2, sdh2)[0][0]
+                    cL2 = crank_frames_L(cl2, sdh2)[0][0]
+                    phase = "crank_approach" if cR2 <= cL2 else "crank_approach_L"
+                    print(f"    [swap] frame costs R {cR2:.2f} / L {cL2:.2f} -> {'RIGHT' if cR2 <= cL2 else 'LEFT'}", flush=True)
+                    marker = i
         elif phase == "crank_release_L":  # demo end from an L-held stroke
             if t_in == 1:
                 wpL0_p[:] = toolL_pose()[0]
