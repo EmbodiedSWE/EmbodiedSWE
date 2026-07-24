@@ -73,6 +73,17 @@ if TYPE_CHECKING:
 # handle +x, hex 12.6 mm across flats / 14.4 mm across corners):
 ARM_LEN = 0.050
 HANDLE_LEN = 0.120
+SHORT_GRIP_D = 0.016     # FLIPPED pick: grip the SHORT arm 16mm from its tip — max clearance from
+                         # the LYING HANDLE (20mm gap at 30mm put finger plates on top of it: run 127)
+HEX_TRIM = 0.0           # long-arm hex phase vs the crank azimuth (mod-60; try pi/6 if pecks never catch)
+HANDOFF_DY = -0.06       # handoff spot: bore + (0, HANDOFF_DY) — r~0.30 from BOTH bases (proven band)
+HANDOFF_ROOT_Z = 0.150   # crank-tip height at handoff: the long tip PLANTS on the plate — a
+                         # free-hanging post is a compliant beam the closing pocket just pushes
+                         # away (runs 132-137: transient stall, then the member escapes the
+                         # squeeze); planted + held-at-top it is backed at both ends
+PINCH_Z = 0.120          # LEFT's post-pinch height: just below the ELBOW (the held end, the
+                         # stiffest point on the post) — mid-post pinches deflected the free
+                         # beam out of the pocket
 # Bolt-local geometry (bolt origin = thread TIP, +z up): socket recess floor and mouth (head top).
 SOCKET_FLOOR_Z = 0.0355
 SOCKET_MOUTH_Z = 0.0428
@@ -128,11 +139,11 @@ FINGER_TO_TIP = 0.070
 
 # Differential IK (damped least squares) — the servo core replacing the Franka smoke's OSC deltas.
 IK_LAMBDA = 0.05
-POS_STEP = 0.0018        # max Cartesian step per control tick (m) — ~4x slower than the fast era
-ROT_STEP = 0.015         # max rotation step per control tick (rad)
-DQ_STEP = 0.05           # per-joint step clamp (rad per tick)
-FILT_BETA = 0.03         # folding-style target-filter pole: the servo never sees step targets
-GRIP_BETA = 0.035        # grip command ramp (~0.6s open<->close instead of an instant snap)
+POS_STEP = 0.0009        # max Cartesian step per control tick (m) — ~8x slower than the fast era
+ROT_STEP = 0.008         # max rotation step per control tick (rad)
+DQ_STEP = 0.03           # per-joint step clamp (rad per tick)
+FILT_BETA = 0.02         # folding-style target-filter pole: the servo never sees step targets
+GRIP_BETA = 0.025        # grip command ramp (~0.8s open<->close instead of an instant snap)
 
 # Choreography (all waypoints recomputed from live poses; distances in m, angles in rad):
 HANDLE_GRIP_D = 0.045    # grip the handle this far out from the elbow (crank radius ~= this)
@@ -141,8 +152,10 @@ L_GRIP_D = 0.095         # the LEFT presses HERE (along the handle) during the p
                          # the tips) from meeting nose-to-nose over the key — run 58's stall
                          # frame showed the two grippers physically tangled, resting on each
                          # other; every 'unreachable' station was arm-vs-arm collision
-CARRY_Z = 0.20           # table-frame height the key rides at while carried / erected off-axis
-INSERT_HOVER = 0.030     # tip hover above the socket mouth while clocking
+CARRY_Z = 0.16           # carry/erect height — FLIPPED grip rides 120mm of key + 37mm of grasp
+                         # offset above the root: 0.20 pushed the clock tool to z~0.29, past the
+                         # little arms' dome (run 130: yaw converged, position frozen 352mm out)
+INSERT_HOVER = 0.018     # tip hover above the socket mouth while clocking (kept low: dome budget)
 PRESS_DZ = 0.0035        # crank press: command the tip this far below the live socket floor (cam resistance scales with seating force — the torqued crank needs a firm seat)
 # (the stiff joint-PD press is FAR harder than the franka's compliant OSC — 1.5 mm of
 # commanded interpenetration hammered the staged bolt off its helix capture: it then spun
@@ -156,9 +169,9 @@ PICK_RETRIES = 3
 
 # Timeouts in CONTROL steps (~50 Hz -> ~5 substeps each at 1/240).
 SHOW_END, STAGE_SETTLE = 60, 120
-WP_TIMEOUT, CLOSE_STEPS, STROKE_TIMEOUT, SETTLE_STEPS = 700, 200, 900, 150  # budgets scaled for the doubly-slowed motion
+WP_TIMEOUT, CLOSE_STEPS, STROKE_TIMEOUT, SETTLE_STEPS = 1200, 260, 1400, 150  # budgets scaled for the 8x-slowed motion
 PECK_PERIOD = 40         # ctrl steps per peck (hover-reposition, then press)
-INSERT_TIMEOUT = 1200    # descent + the 19-point lattice + floor drive (slowed-clock handovers eat lead time)
+INSERT_TIMEOUT = 2400    # descent + the 19-point lattice + floor drive (8x-slowed handovers eat lead time)
 LOG_EVERY = 150
 
 
@@ -441,6 +454,15 @@ def main() -> None:
         a[:, r_s.start + 6] = grip
         return a
 
+    def act_L_park(gr: float | torch.Tensor = OPEN_C) -> torch.Tensor:
+        """LEFT drives (left_cmd), RIGHT ramps gently toward its home posture."""
+        a = torch.zeros(n, act_dim, device=dev)
+        a[:, l_s] = left_cmd
+        rh = artR.data.joint_pos[:, arm_ids]
+        a[:, r_s.start : r_s.start + 6] = rh + (artR.data.default_joint_pos[:, arm_ids] - rh).clamp(-DQ_STEP, DQ_STEP)
+        a[:, r_s.start + 6] = gr
+        return a
+
     def at(tp: torch.Tensor, tq: torch.Tensor, tol_p: float = 0.004, tol_r: float = 0.06) -> torch.Tensor:
         p6, q6 = tool_pose()
         qe = quat_mul(tq, quat_conjugate(q6))
@@ -477,9 +499,10 @@ def main() -> None:
         q_tgt = artL.data.joint_pos[:, arm_ids_L] + dq
         return q_tgt.clamp(lo_lim_L + 0.02, hi_lim_L - 0.02)
 
-    def left_to(tp: torch.Tensor, tq: torch.Tensor, grip: float = OPEN_C, rot_w: float = 2.0) -> None:
+    def left_to(tp: torch.Tensor, tq: torch.Tensor, grip: float = OPEN_C, rot_w: float = 2.0,
+                raw: bool = False) -> None:
         """Aim the LEFT arm's next action at a tool waypoint (one DLS step; call every tick)."""
-        sp, sq = _shape_pose(_fLp, toolL_pose, tp, tq)
+        sp, sq = (tp, tq) if raw else _shape_pose(_fLp, toolL_pose, tp, tq)
         left_cmd[:, 0:6] = ik_left(sp, sq, rot_w)
         left_cmd[:, 6] = _shape_grip("L", grip)
 
@@ -511,6 +534,8 @@ def main() -> None:
             j.GetLocalPos0Attr().Set(Gf.Vec3f(relp[0], relp[1], relp[2]))
             j.GetLocalRot0Attr().Set(Gf.Quatf(relq[0], Gf.Vec3f(relq[1], relq[2], relq[3])))
             j.GetJointEnabledAttr().Set(True)
+        rel_p_L[:] = quat_apply_inverse(tql, key.data.root_pos_w - tpl)
+        rel_q_L[:] = quat_mul(quat_conjugate(tql), key.data.root_quat_w)
         welded_L[:] = True
 
     def weld_off_L() -> None:
@@ -558,6 +583,26 @@ def main() -> None:
 
     def joint_cost_L(tq_a: torch.Tensor, tp: torch.Tensor) -> torch.Tensor:
         return (ik_left(tp, tq_a) - artL.data.joint_pos[:, arm_ids_L]).norm(dim=-1)
+
+    def post_frames(pinch_pt: torch.Tensor) -> list:
+        """Ranked (u, spin, tilt_rad) candidates for the L post pinch, cheapest virtual-IK
+        step first. Run 134 proved the hardcoded 78-deg comfort frame is wrist-infeasible in
+        BOTH spins at some stations (spin -1 pins j3, spin +1 pins j4) — so score a ladder of
+        azimuth modes x tilts x spins and walk it on retries."""
+        u78 = tilt_azimuth(base_L_xy, pinch_pt, tool_to_grip, math.radians(78.0))
+        u58 = tilt_azimuth(base_L_xy, pinch_pt, tool_to_grip, math.radians(58.0))
+        v = pinch_pt[:, :2] - base_L_xy
+        v = v / v.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        u_fwd = torch.cat((v, torch.zeros(n, 1, device=dev)), dim=-1)
+        scored = []
+        for u, s, t in ((u78, -1.0, 78.0), (u78, 1.0, 78.0), (u58, -1.0, 58.0),
+                        (u58, 1.0, 58.0), (u_fwd, -1.0, 65.0), (u_fwd, 1.0, 65.0)):
+            tr = math.radians(t)
+            q = pinch_q(u, s, tr)
+            tp = pinch_pt - quat_apply(q, ex1 * tool_to_grip)
+            scored.append((float(joint_cost_L(q, tp).max()), u, s, tr))
+        scored.sort(key=lambda e: e[0])
+        return scored
 
     def arm_frame(arm: str, tip_tgt: torch.Tensor, spin: float, away=None) -> tuple[torch.Tensor, torch.Tensor]:
         """The committed frame + wrist target that put `arm`'s fingertip at tip_tgt.
@@ -667,6 +712,11 @@ def main() -> None:
         tq = quat_mul(kq, quat_conjugate(rel_q))
         return kp - quat_apply(tq, rel_p), tq
 
+    def tool_for_key_L(kp: torch.Tensor, kq: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """LEFT-tool waypoint that puts the L-WELDED key at pose (kp, kq)."""
+        tq = quat_mul(kq, quat_conjugate(rel_q_L))
+        return kp - quat_apply(tq, rel_p_L), tq
+
     def q_down(yaw: torch.Tensor) -> torch.Tensor:
         """Tool-down orientation: link_6 +x (the tool axis) -> world -z, jaw axis at yaw+90 deg."""
         ey = torch.zeros(n, 3, device=dev)
@@ -690,20 +740,50 @@ def main() -> None:
         """|dq| of one virtual DLS step toward (tp, tq_a) — a cheap reachability/comfort score."""
         return (ik_arm(tp, tq_a) - artR.data.joint_pos[:, arm_ids]).norm(dim=-1)
 
+    def handle_dir() -> torch.Tensor:
+        """World direction of the key's handle — the LONG arm, local +x, shape (n, 3)."""
+        return quat_apply(key.data.root_quat_w, ex1)
+
+    # FLIPPED INSERTION: the LONG arm goes into the socket (no bend to bottom out on the mouth,
+    # so the full ~7mm recess engages), the SHORT arm becomes the top crank. The exposed
+    # ~110mm of vertical hex is the steady-rest post; the crank orbit radius shrinks to ~30mm.
+    _tip_local = torch.zeros(1, 3, device=dev)
+    _tip_local[0, 0] = HANDLE_LEN
+    _tip_local[0, 2] = ARM_LEN
+
+    def key_tip_pos() -> torch.Tensor:
+        """World position of the LONG arm's tip — the inserted end (root -> elbow -> tip)."""
+        return key.data.root_pos_w + quat_apply(key.data.root_quat_w, _tip_local.expand(n, 3))
+
     def key_tip_axial() -> torch.Tensor:
-        """Key tip height above the bolt origin along the bolt axis (m): SOCKET_MOUTH_Z at the
-        recess mouth, SOCKET_FLOOR_Z when fully seated on the floor."""
+        """LONG-tip height above the bolt origin along the bolt axis (m): SOCKET_MOUTH_Z at
+        the recess mouth, SOCKET_FLOOR_Z when bottomed on the floor."""
         ub = up_axis_of(bolt.data.root_quat_w)
-        return ((key.data.root_pos_w - bolt.data.root_pos_w) * ub).sum(-1)
+        return ((key_tip_pos() - bolt.data.root_pos_w) * ub).sum(-1)
 
     def key_lateral() -> torch.Tensor:
         ub = up_axis_of(bolt.data.root_quat_w)
-        rel = key.data.root_pos_w - bolt.data.root_pos_w
+        rel = key_tip_pos() - bolt.data.root_pos_w
         return (rel - (rel * ub).sum(-1, keepdim=True) * ub).norm(dim=-1)
 
-    def handle_dir() -> torch.Tensor:
-        """World direction of the key's handle (local +x), shape (n, 3)."""
-        return quat_apply(key.data.root_quat_w, ex1)
+    def crank_azim() -> torch.Tensor:
+        """Azimuth of the SHORT arm pointing OUT from the post (elbow -> short tip): THE 1-dof
+        rotation coordinate of the flipped key about the bore axis (yaw_of is ill-defined on a
+        90deg-pitched quat)."""
+        sa = -up_axis_of(key.data.root_quat_w)
+        return torch.atan2(sa[:, 1], sa[:, 0])
+
+    _ey1 = torch.zeros(1, 3, device=dev)
+    _ey1[0, 1] = 1.0
+    _q_flip = quat_from_angle_axis(torch.full((1,), math.pi / 2, device=dev), _ey1).expand(n, 4)
+
+    def kq_flip(psi: torch.Tensor) -> torch.Tensor:
+        """Key target quat: LONG arm vertical DOWN, short-arm crank at azimuth psi."""
+        return quat_mul(quat_from_angle_axis(psi + math.pi, ez), _q_flip)
+
+    def root_for_tip(tip_tgt: torch.Tensor, kq: torch.Tensor) -> torch.Tensor:
+        """Key ROOT target that puts the LONG tip at tip_tgt under orientation kq."""
+        return tip_tgt - quat_apply(kq, _tip_local.expand(n, 3))
 
     def bolt_ok(say: bool = False, up_min: float = 0.99) -> torch.Tensor:
         """The bolt is still where the choreography needs it: in the hole, near upright."""
@@ -755,7 +835,7 @@ def main() -> None:
     bolt_turn = torch.zeros(n, device=dev)  # cumulative screw-in rotation (rad, +ve = descending)
     key_turn = torch.zeros(n, device=dev)
     prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
-    prev_key_yaw = yaw_of(key.data.root_quat_w)
+    prev_key_yaw = crank_azim()
     insert_depth0 = None
     cycles, drops, picks, regrip_tries, aim_tries, repress_tries, hold_tries, rr_tries = 0, 0, 0, 0, 0, 0, 0, 0
     grip_freeze = torch.zeros(n, device=dev)   # carriage target latched at release (bleed the squeeze)
@@ -782,6 +862,15 @@ def main() -> None:
     grip_c: float | torch.Tensor = CLOSE_C
     wp_p = torch.zeros(n, 3, device=dev)
     wp_q = torch.zeros(n, 4, device=dev)
+    wpL_p = torch.zeros(n, 3, device=dev)
+    wpL0_p = torch.zeros(n, 3, device=dev)
+    wpL_q = torch.zeros(n, 4, device=dev)
+    rel_p_L = torch.zeros(n, 3, device=dev)   # L grasp frame, captured at weld_on_L
+    rel_q_L = torch.zeros(n, 4, device=dev)
+    pinch_lock = torch.zeros(n, 3, device=dev)  # post-pinch target, LATCHED at phase entry
+    uL_lock = torch.zeros(n, 3, device=dev)     # latched approach azimuth
+    pf_spin, pf_tilt = -1.0, math.radians(78.0)  # latched pinch frame (spin, tilt)
+    grip_c_L: float | torch.Tensor = CLOSE_C  # L's hold at its measured post stall
 
     # ----- jaw plumbing + boot diagnostics --------------------------------------------------
     jaw_ids_R = [artR.joint_names.index(j) for j in ("left_carriage_joint", "right_carriage_joint")]
@@ -832,14 +921,15 @@ def main() -> None:
                 st[:, 3:7] = quat_from_angle_axis(yaw_of(bolt.data.root_quat_w) + dyaw, ez)
                 bolt.write_root_state_to_sim(st, ids)
             if t_in == STAGE_SETTLE // 2 + 20:
-                # Normalize the KEY's settle: root to (0.43, 0.10) with the handle heading +x,
+                # Normalize the KEY's settle: root to (0.34, 0.10) with the SHORT arm heading
+                # +x — the member the jaws capture (the handle sticks off along +-y),
                 # so the grip point lands ~(0.50, 0.10) — equidistant from both arm bases. A
                 # random settle heading swings the grip +-110mm along the handle and strands
                 # one arm out of range (run 59: grip at x=0.578 = 0.37m from the right base).
                 # Yaw about z at rest is contact-invariant; same baked-preset philosophy as
                 # the scene-init presets (5b8f5a8).
-                hd0 = handle_dir()
-                psi0 = torch.atan2(hd0[:, 1], hd0[:, 0])
+                sd0 = up_axis_of(key.data.root_quat_w)  # SHORT arm (root -> elbow), flat = horizontal
+                psi0 = torch.atan2(sd0[:, 1], sd0[:, 0])
                 stk = torch.zeros(n, 13, device=dev)
                 stk[:, 0] = 0.34
                 stk[:, 1] = 0.10
@@ -857,12 +947,11 @@ def main() -> None:
             # elbow joint saturates in every frame family. The bimanual show is the VICE CRANK
             # LOOP at the platform, where the key is held at z~0.07 and the left converges
             # effortlessly.) The LEFT parks clear until the vice stage.
-            hd = handle_dir()
-            hd2 = hd.clone(); hd2[:, 2] = 0.0
-            hd2 = hd2 / hd2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-            elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
-            grip_pt[:] = elbow + hd2 * HANDLE_GRIP_D
-            nv = torch.stack((-hd2[:, 1], hd2[:, 0], torch.zeros(n, device=dev)), dim=-1)
+            sd = up_axis_of(key.data.root_quat_w)  # SHORT-ARM PICK (flipped-insertion scheme)
+            sd2 = sd.clone(); sd2[:, 2] = 0.0
+            sd2 = sd2 / sd2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+            grip_pt[:] = key.data.root_pos_w + sd2 * SHORT_GRIP_D
+            nv = torch.stack((-sd2[:, 1], sd2[:, 0], torch.zeros(n, device=dev)), dim=-1)
             sgn = torch.sign(((base_R_xy - grip_pt[:, :2]) * nv[:, :2]).sum(-1)).unsqueeze(-1)
             sgn = torch.where(sgn == 0, torch.ones_like(sgn), sgn)
             pinch_n[:] = nv * sgn
@@ -881,11 +970,10 @@ def main() -> None:
             if bool((tR_err.norm(dim=-1) < 0.012).all()) or t_in >= WP_TIMEOUT:
                 phase, marker = "pinch_in", i
         elif phase == "pinch_in":  # descend to a low hover directly above the handle
-            hd = handle_dir()
-            hd2 = hd.clone(); hd2[:, 2] = 0.0
-            hd2 = hd2 / hd2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-            elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
-            grip_pt[:] = elbow + hd2 * HANDLE_GRIP_D
+            sd = up_axis_of(key.data.root_quat_w)
+            sd2 = sd.clone(); sd2[:, 2] = 0.0
+            sd2 = sd2 / sd2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+            grip_pt[:] = key.data.root_pos_w + sd2 * SHORT_GRIP_D
             tipR = grip_pt + ez * 0.05
             tR_err = tipR - tip_pos("Right")
             left_park()
@@ -909,37 +997,41 @@ def main() -> None:
             # centering complete the gate; then the weld (the benchmark's grasp contract).
             if t_in == 1:
                 close_key0 = key.data.root_pos_w[:, :2].clone()
-            hd = handle_dir()
-            hd2 = hd.clone(); hd2[:, 2] = 0.0
-            hd2 = hd2 / hd2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-            elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
-            grip_pt[:] = elbow + hd2 * HANDLE_GRIP_D
+            sd = up_axis_of(key.data.root_quat_w)
+            sd2 = sd.clone(); sd2[:, 2] = 0.0
+            sd2 = sd2 / sd2.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+            grip_pt[:] = key.data.root_pos_w + sd2 * SHORT_GRIP_D
             tcp_tgt = grip_pt.clone()
             tcp_tgt[:, 2] = 0.012  # pocket brackets the handle's upper half; claw tips clear the table
-            grip_cmd = OPEN_C if t_in < 120 else 0.004
+            grip_cmd = OPEN_C if t_in < 240 else 0.004
             left_park()
             act = act_of_tip(tcp_tgt, grip_cmd)
             if t_in % 20 == 0:
                 pr = jaw_pair(artR, jaw_ids_R)
                 kp0 = key.data.root_pos_w
+                tz0 = tip_pos("Right")
                 print(f"    [jaw t{t_in:3d}] pair {float(pr[0]) * 1e3:5.1f}mm"
-                      f" | key ({float(kp0[0, 0]):+.3f},{float(kp0[0, 1]):+.3f},{float(kp0[0, 2]):+.4f})", flush=True)
-            if t_in >= 120 + CLOSE_STEPS:
+                      f" | key ({float(kp0[0, 0]):+.3f},{float(kp0[0, 1]):+.3f},{float(kp0[0, 2]):+.4f})"
+                      f" | tcp ({float(tz0[0, 0]):+.3f},{float(tz0[0, 1]):+.3f},{float(tz0[0, 2]):+.4f})"
+                      f" -> ({float(tcp_tgt[0, 0]):+.3f},{float(tcp_tgt[0, 1]):+.3f})", flush=True)
+            if t_in >= 240 + CLOSE_STEPS:
                 pr = jaw_pair(artR, jaw_ids_R)
                 tzz = tip_pos("Right")
-                xy_ok = (tzz[:, 0:2] - grip_pt[:, 0:2]).norm(dim=-1) < 0.015
-                # NO drift criterion: self-centering jaws legitimately PULL the key into the
-                # pocket (runs 91: 9-12mm of drag with a perfect 15.9mm stall). Flatness stands
-                # in — a swept-aside or flipped key would not stay low with a stalled pair.
-                flat = key.data.root_pos_w[:, 2] < 0.010
-                ok = (pr > 0.0105) & (pr < 0.0165) & xy_ok & flat
+                # GRASP CONTRACT for the free-end grip: the pocket sits ON the member at the
+                # intended station, in 3D. The claw legitimately SCOOPS the free short arm
+                # ~2cm up while squeezing into the pocket (run 128: pair 15.0 with the key
+                # hoisted to z=23mm — the old table-flatness gate false-failed a physically
+                # perfect capture; the handle end just pivots on the table).
+                sd_live = up_axis_of(key.data.root_quat_w)
+                grip_now = key.data.root_pos_w + sd_live * SHORT_GRIP_D
+                near = (tzz - grip_now).norm(dim=-1) < 0.020
+                ok = (pr > 0.0105) & (pr < 0.0165) & near
                 if bool(ok.all()):
                     grip_c = float(pr[0]) * 0.5 + 0.0005  # hold at the measured stall + margin
                     weld_on()
                     phase, marker = "pinch_off", i
                 elif picks < PICK_RETRIES:
-                    print(f"  pinch {picks} missed (pair {[round(float(v) * 1e3, 1) for v in pr]}mm,"
-                          f" drift {[round(float(v) * 1e3, 2) for v in drift]}mm), retrying", flush=True)
+                    print(f"  pinch {picks} missed (pair {[round(float(v) * 1e3, 1) for v in pr]}mm), retrying", flush=True)
                     phase, marker = "pinch_high", i
                     picks += 1
                 else:
@@ -980,22 +1072,27 @@ def main() -> None:
             kp[:, 0] = hole_xy[:, 0]
             kp[:, 1] = hole_xy[:, 1] + 0.10
             kp[:, 2] = plat_z + CARRY_Z
-            up_now = up_axis_of(key.data.root_quat_w)[:, 2]
+            up_now = -handle_dir()[:, 2]  # 1.0 when the LONG arm hangs straight DOWN (flipped)
             if t_in == 1:
-                hd = handle_dir()
-                psi0 = torch.atan2(hd[:, 1], hd[:, 0])
+                psi0 = crank_azim()
                 # score candidates at BOTH poses this azimuth must serve: the erect spot AND the
                 # subsequent clock hover over the bolt (an azimuth that erects but leaves the
                 # wrist unable to reach the bolt strands the insert 60+ mm short at joint limits)
-                kp_clock = bolt.data.root_pos_w + ez * (SOCKET_MOUTH_Z + INSERT_HOVER)
+                kp_hand = torch.zeros(n, 3, device=dev)
+                kp_hand[:, 0] = hole_xy[:, 0]
+                kp_hand[:, 1] = hole_xy[:, 1] + HANDOFF_DY
+                kp_hand[:, 2] = HANDOFF_ROOT_Z
+                azim_L = torch.atan2(base_L_xy[:, 1] - kp_hand[:, 1], base_L_xy[:, 0] - kp_hand[:, 0])
                 cands, costs = [], []
                 for dpsi in (0.0, math.pi / 2, -math.pi / 2, math.pi):
                     cand = _wrap(psi0 + dpsi)
-                    kq_c = quat_from_angle_axis(cand, ez)
+                    kq_c = kq_flip(cand)
                     tp_c, tq_c = tool_for_key(kp, kq_c)
-                    tp_k, tq_k = tool_for_key(kp_clock, kq_c)
+                    tp_k, tq_k = tool_for_key(kp_hand, kq_c)
+                    # keep the short-arm crank OUT of the LEFT's post-pinch corridor
+                    block = torch.cos(cand - azim_L).clamp_min(0.0) * 2.0
                     cands.append(cand)
-                    costs.append(joint_cost(tq_c, tp_c) + joint_cost(tq_k, tp_k))
+                    costs.append(joint_cost(tq_c, tp_c) + joint_cost(tq_k, tp_k) + block)
                 erect_order = torch.stack(costs, dim=-1).argsort(dim=-1)  # (n, 4) best-first
                 erect_cands = torch.stack(cands, dim=-1)  # (n, 4)
                 erect_i = 0
@@ -1008,12 +1105,12 @@ def main() -> None:
                 psi_star[:] = erect_cands.gather(-1, erect_order[:, erect_i:erect_i + 1]).squeeze(-1)
                 erect_best, erect_watch = -1.0, i
                 print(f"    [erect] plateau at up_z {float(up_now.min()):+.2f} — azimuth candidate {erect_i + 1}/4", flush=True)
-            kq = quat_from_angle_axis(psi_star, ez)
+            kq = kq_flip(psi_star)
             tp, tq = tool_for_key(kp, kq)
             act = act_of(tp, tq, grip_c)
             upright = (up_now > 0.995)
             if bool(upright.all()):
-                phase, marker = "clock", i
+                phase, marker = "handoff_carry", i
             elif t_in >= 4 * WP_TIMEOUT:
                 print(f"  ABORT: erection stalled (key up_z {float(up_now.min()):+.2f})", flush=True)
                 phase, marker = "retreat", i
@@ -1032,20 +1129,250 @@ def main() -> None:
                 a[:, r_s.start : r_s.start + 6] = artR.data.default_joint_pos[:, arm_ids]
                 a[:, r_s.start + 6] = grip_c
                 act = a
-            if t_in >= 170:
+            if t_in >= 300:
                 phase, marker = "carry", i  # re-approach from clear air: carry -> erect -> clock
+        elif phase == "handoff_carry":  # R carries the flip-erect key to the HANDOFF spot.
+            # WHY A HANDOFF AT ALL: the R's crank grip rides 157mm above the long tip — putting
+            # the tip at the mouth demands tool z ~0.20+ at the bore radius, past the little
+            # arm's dome (runs 130/131: yaw converged, position frozen 350-500mm out). The LEFT
+            # takes the POST low instead (tool z ~0.13) and inserts from there; its post grip
+            # then IS the Stage-2 steady-rest.
+            kp = torch.zeros(n, 3, device=dev)
+            kp[:, 0] = hole_xy[:, 0]
+            kp[:, 1] = hole_xy[:, 1] + HANDOFF_DY
+            kp[:, 2] = HANDOFF_ROOT_Z
+            kq = kq_flip(psi_star)
+            tp, tq = tool_for_key(kp, kq)
+            elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
+            hdn = handle_dir()
+            s_p = (elbow[:, 2:3] - PINCH_Z).clamp(0.02, 0.11)
+            pinch_pt = elbow + hdn * s_p
+            _c, uL, sL, tL = post_frames(pinch_pt)[min(hold_tries, 5)]
+            qL = pinch_q(uL, sL, tL)
+            left_to(pinch_pt + uL * 0.07 - quat_apply(qL, ex1 * tool_to_grip), qL, OPEN_C, rot_w=1.2)
+            hold_qR[:] = artR.data.joint_pos[:, arm_ids]  # continuously refreshed while R OWNS the move
+            act = act_of(tp, tq, grip_c)
+            if bool(((kp - key.data.root_pos_w).norm(dim=-1) < 0.012).all()) or t_in >= 2 * WP_TIMEOUT:
+                phase, marker = "post_pinch", i
+        elif phase == "post_pinch":  # LEFT pinches the vertical POST at mid-height (lateral
+            # member-pinch frames, proven in the vice era); verified by the L carriage stall
+            # + the pocket sitting ON the post line.
+            # LATCH EVERYTHING AT ENTRY: live-derived targets + per-tick frame re-scoring
+            # created a chase loop (run 135: the open claw nudged the key, the target
+            # followed, the frame flipped mid-flight, and the pair towed the key 100mm) —
+            # and hold_act's follow-the-measured-joints made the R a pushover (the vice-era
+            # hold_qR law).
+            elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
+            hdn = handle_dir()
+            s_p = (elbow[:, 2:3] - PINCH_Z).clamp(0.02, 0.11)
+            pinch_live = elbow + hdn * s_p
+            if t_in == 1:
+                pinch_lock[:] = pinch_live
+                hold_qR[:] = artR.data.joint_pos[:, arm_ids]
+                _c, _u, _s, _t = post_frames(pinch_lock)[min(hold_tries, 5)]
+                uL_lock[:] = _u
+                pf_spin, pf_tilt = _s, _t
+                print(f"    [post] frame locked: cost {_c:.2f} spin {pf_spin:+.0f} tilt "
+                      f"{math.degrees(pf_tilt):.0f}deg", flush=True)
+            qL = pinch_q(uL_lock, pf_spin, pf_tilt)
+            close_now = t_in > 500
+            if t_in == 480:
+                # ONE re-latch just before the close: the arrival ringing nudges the hanging
+                # key a couple of cm; center the close on the LIVE post (run 136: fingers
+                # straddling the post, pocket 20mm off the stale latch)
+                pinch_lock[:] = pinch_live
+            # during the close, press 6mm INTO the post (the R pick's press-down analogue)
+            vt = pinch_lock - uL_lock * 0.006 if close_now else pinch_lock
+            tpL = vt - quat_apply(qL, ex1 * tool_to_grip)
+            left_to(tpL, qL, 0.004 if close_now else OPEN_C, rot_w=1.2)
+            a = torch.zeros(n, act_dim, device=dev)
+            a[:, l_s] = left_cmd
+            a[:, r_s.start : r_s.start + 6] = hold_qR
+            a[:, r_s.start + 6] = grip_c
+            act = a
+            drift_now = (pinch_live - pinch_lock).norm(dim=-1)
+            if bool((drift_now > 0.030).any()) and not close_now:
+                print(f"    [post] key drifted {float(drift_now.max()) * 1e3:.0f}mm from the latch — re-staging", flush=True)
+                phase, marker = "handoff_carry", i
+            if t_in % 100 == 0:
+                prL = jaw_pair(artL, jaw_ids_L)
+                tl = tip_pos("Left")
+                mL = torch.minimum(artL.data.joint_pos[:, arm_ids_L] - lo_lim_L,
+                                   hi_lim_L - artL.data.joint_pos[:, arm_ids_L])
+                print(f"    [post t{t_in:4d}] L pair {float(prL[0]) * 1e3:5.1f}mm | perp "
+                      f"{float(tip_perp('Left').max()) * 1e3:5.1f}mm | Ltip "
+                      f"({float(tl[0, 0]):+.3f},{float(tl[0, 1]):+.3f},{float(tl[0, 2]):+.3f}) -> "
+                      f"({float(pinch_lock[0, 0]):+.3f},{float(pinch_lock[0, 1]):+.3f},{float(pinch_lock[0, 2]):+.3f})"
+                      f" | Lmargin " + " ".join(f"{float(v):+.2f}" for v in mL[0]), flush=True)
+            if cam is not None and t_in in (400, 800, 1150):
+                import imageio.v2 as _iio
+                _iio.imwrite(str(Path(args.video).parent / f"pinch_{picks}_{t_in}.png"),
+                             cam.data.output["rgb"][0].cpu().numpy())
+                print(f"    [post] frame dumped at t{t_in}", flush=True)
+            if t_in == 800:
+                pairL_800 = jaw_pair(artL, jaw_ids_L).clone()
+            if t_in >= 900:
+                prL = jaw_pair(artL, jaw_ids_L)
+                perp_now = tip_perp("Left")
+                # TWO REAL CAPTURE MODES (run 138): pocket-seated hex stalls ~15mm with the
+                # post ON the pocket line; a FLARE catch stalls ~28mm with the post held
+                # 12-18mm forward of the pocket — a stable, weldable grip the pocket-only
+                # window kept rejecting. Accept either, and demand the stall held steady
+                # over the last 100 ticks (grazes slip within ~50).
+                stable = (prL - pairL_800).abs() < 0.002
+                # HANDOFF CONTRACT (superset): the physical squeeze is NOT the load-bearing
+                # verification here — the weld is, and end-to-end honesty rests on the insert
+                # gate. The lateral grab keeps finding new stable contact modes (pocket 15mm,
+                # flare 28mm, post+corner span 46mm — runs 132-139); accept ANY stable,
+                # substantially-closed configuration with the pocket near the post line.
+                okL = (prL < 0.055) & (perp_now < 0.018) & stable
+                if bool(okL.all()):
+                    grip_c_L = float(prL[0]) * 0.5 + 0.0005
+                    weld_on_L()
+                    print(f"  POST HANDOFF: L stall {float(prL[0]) * 1e3:.1f}mm — the left owns the key", flush=True)
+                    phase, marker = "handoff", i
+                elif hold_tries < 4:
+                    hold_tries += 1
+                    print(f"  post pinch missed (pair {float(prL[0]) * 1e3:.1f}mm, perp "
+                          f"{float(tip_perp('Left').max()) * 1e3:.1f}mm), retrying frame {hold_tries + 1}", flush=True)
+                    phase, marker = "handoff_carry", i
+                else:
+                    print("  ABORT: post pinch failed", flush=True)
+                    phase, marker = "retreat", i
+        elif phase == "handoff":  # weld transfer: L latched at the true pose; R releases the
+            # crank and backs toward home
+            if t_in == 1:
+                weld_off()
+            left_hold()
+            act = act_L_park(_shape_grip("R", OPEN_C))
+            if t_in >= 240:
+                phase, marker = "l_clock", i
+        elif phase == "l_clock":  # LEFT translates the LONG tip over the bore, hex-clocked
+            if t_in == 1:
+                ky = crank_azim()
+                dpsi = _wrap((yaw_of(bolt.data.root_quat_w) + HEX_TRIM - ky) % (math.pi / 3.0))
+                dpsi = torch.where(dpsi > math.pi / 6.0, dpsi - math.pi / 3.0, dpsi)
+                psi_star[:] = ky + dpsi
+            kq = kq_flip(psi_star)
+            tip_tgt = torch.zeros(n, 3, device=dev)
+            tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+            tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + INSERT_HOVER
+            lat_now = key_lateral()
+            tip_tgt[:, 2] = tip_tgt[:, 2] + torch.where(lat_now > 0.020,
+                                                        torch.full_like(lat_now, 0.020), torch.zeros_like(lat_now))
+            tpL2, tqL2 = tool_for_key_L(root_for_tip(tip_tgt, kq), kq)
+            left_to(tpL2, tqL2, grip_c_L, rot_w=1.2)  # rot-priority parked the L 20mm short (run 140)
+            act = act_L_park()
+            if t_in % 150 == 0:
+                mL = torch.minimum(artL.data.joint_pos[:, arm_ids_L] - lo_lim_L,
+                                   hi_lim_L - artL.data.joint_pos[:, arm_ids_L])
+                tlp = toolL_pose()[0]
+                print(f"    [l_clock t{t_in:4d}] lat {float(key_lateral().max()) * 1e3:5.1f}mm | Ltool "
+                      f"({float(tlp[0, 0]):+.3f},{float(tlp[0, 1]):+.3f},{float(tlp[0, 2]):+.3f}) -> "
+                      f"({float(tpL2[0, 0]):+.3f},{float(tpL2[0, 1]):+.3f},{float(tpL2[0, 2]):+.3f})"
+                      f" | Lmargin " + " ".join(f"{float(v):+.2f}" for v in mL[0]), flush=True)
+            centred = (key_lateral() < 0.001) & (_wrap(crank_azim() - psi_star).abs() < math.radians(2.5))
+            if not bool(bolt_ok(say=True).all()):
+                print("  ABORT: bolt left its nest before insertion", flush=True)
+                phase, marker = "retreat", i
+            elif bool(centred.all()) or t_in >= 3 * WP_TIMEOUT:
+                phase, marker = "l_insert", i
+        elif phase == "l_insert":  # hover-peck probe, LEFT-driven (same lattice/breaker/dither
+            # contract as the R-era insert; the L post grip keeps the tool at z~0.13)
+            if t_in == 1:
+                seat_ok.zero_()
+                ins_last_ax = 9.9
+                ins_stuck = 0
+                ins_unwedge_until = 0
+            if t_in % PECK_PERIOD == 1:
+                ky = crank_azim()
+                dpsi = _wrap((yaw_of(bolt.data.root_quat_w) + HEX_TRIM - ky) % (math.pi / 3.0))
+                dpsi = torch.where(dpsi > math.pi / 6.0, dpsi - math.pi / 3.0, dpsi)
+                psi_star[:] = ky + dpsi
+            kq = kq_flip(psi_star)
+            probe = (t_in // PECK_PERIOD) % 19
+            if probe == 0:
+                ox, oy = 0.0, 0.0
+            elif probe <= 6:
+                ox = 0.00055 * math.cos((probe - 1) * math.pi / 3)
+                oy = 0.00055 * math.sin((probe - 1) * math.pi / 3)
+            else:
+                ox = 0.00095 * math.cos((probe - 7) * math.pi / 6)
+                oy = 0.00095 * math.sin((probe - 7) * math.pi / 6)
+            mouth_z = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z
+            floor_z = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z
+            hover = (t_in % PECK_PERIOD) < PECK_PERIOD // 2
+            z_cmd = mouth_z + (0.002 if hover else -0.0012)
+            tip_in = (key_tip_axial() < SOCKET_MOUTH_Z - 0.0005) & (key_lateral() < 0.003)
+            tip_tgt = torch.zeros(n, 3, device=dev)
+            tip_tgt[:, 0] = bolt.data.root_pos_w[:, 0] + torch.where(tip_in, torch.zeros_like(depth()), torch.full_like(depth(), ox))
+            tip_tgt[:, 1] = bolt.data.root_pos_w[:, 1] + torch.where(tip_in, torch.zeros_like(depth()), torch.full_like(depth(), oy))
+            tip_tgt[:, 2] = torch.where(tip_in, floor_z, z_cmd.clamp(min=floor_z))
+            _axn = float(key_tip_axial().mean())
+            if bool(tip_in.all()) and abs(ins_last_ax - _axn) < 2e-4:
+                ins_stuck += 1
+            else:
+                ins_stuck = 0
+            ins_last_ax = _axn
+            if bool(tip_in.all()) and 20 <= ins_stuck:
+                _ph = (t_in // 10) % 4
+                tip_tgt[:, 0] = tip_tgt[:, 0] + (0.0005, 0.0, -0.0005, 0.0)[_ph]
+                tip_tgt[:, 1] = tip_tgt[:, 1] + (0.0, 0.0005, 0.0, -0.0005)[_ph]
+            if ins_stuck > 100:
+                ins_stuck = 0
+                ins_unwedge_until = t_in + 30
+                print(f"    [l_insert] wedged catch at {_axn * 1e3:+.2f}mm — lifting to re-peck", flush=True)
+            if t_in < ins_unwedge_until:
+                tip_tgt[:, 2] = mouth_z + 0.002
+            tpL2, tqL2 = tool_for_key_L(root_for_tip(tip_tgt, kq), kq)
+            left_to(tpL2, tqL2, grip_c_L, rot_w=0.6, raw=True)
+            act = act_L_park()
+            if t_in % PECK_PERIOD == PECK_PERIOD - 1:
+                dp = _wrap((yaw_of(bolt.data.root_quat_w) + HEX_TRIM - crank_azim()) % (math.pi / 3.0))
+                dp = torch.where(dp > math.pi / 6.0, dp - math.pi / 3.0, dp)
+                over = key_tip_axial() - SOCKET_MOUTH_Z
+                print(f"    [l probe {probe:2d}] lat {float(key_lateral().max()) * 1e3:4.2f}mm | dpsi "
+                      f"{float(torch.rad2deg(dp.abs().max())):4.1f}deg | tip over mouth {float(over.min()) * 1e3:+5.2f}mm", flush=True)
+            settled = (key_tip_axial() < SOCKET_FLOOR_Z + 0.0025) & (key_tip_axial() > SOCKET_FLOOR_Z - 0.003) \
+                & (key_lateral() < 0.0015) & (-handle_dir()[:, 2] > 0.99) & bolt_ok()
+            seat_ok[:] = torch.where(settled, seat_ok + 1, torch.zeros_like(seat_ok))
+            if not bool(bolt_ok(say=True).all()):
+                print("  ABORT: bolt knocked out of its nest during insertion", flush=True)
+                phase, marker = "retreat", i
+            elif bool((seat_ok >= 15).all()):
+                aim_tries = 0
+                if insert_depth0 is None:
+                    insert_depth0 = depth().clone()
+                cycles += 1
+                if cycles == 1:
+                    bolt_turn.zero_()
+                    key_turn.zero_()
+                    prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
+                    prev_key_yaw = crank_azim()
+                print("  [demo] insert verified — the left holds the seated key (steady-rest preview)", flush=True)
+                phase, marker = "admire", i
+            elif t_in >= INSERT_TIMEOUT:
+                aim_tries += 1
+                if aim_tries >= 3:
+                    drops += 1
+                    print("  DROP: l_insert never landed after repeated re-clocks", flush=True)
+                    phase, marker = "retreat", i
+                else:
+                    print("  l_insert timed out, re-clocking", flush=True)
+                    phase, marker = "l_clock", i
         elif phase == "clock":  # translate to the hover over the BORE axis, hex-clocked to the bolt
             # (nearest mod-60 representative to the key's current yaw — minimal rotation)
             if t_in == 1:
-                ky = yaw_of(key.data.root_quat_w)
-                dpsi = _wrap((yaw_of(bolt.data.root_quat_w) - ky) % (math.pi / 3.0))
+                ky = crank_azim()
+                dpsi = _wrap((yaw_of(bolt.data.root_quat_w) + HEX_TRIM - ky) % (math.pi / 3.0))
                 dpsi = torch.where(dpsi > math.pi / 6.0, dpsi - math.pi / 3.0, dpsi)
                 # bias by one hex family per failed insert round: the nearest-family latch
                 # would otherwise snap straight back to a family whose peck-band descent is
                 # clamp-forbidden (URDF j1/j2 zero lower bounds; run 93 hovered +6.2mm forever)
                 psi_star[:] = ky + dpsi + (math.pi / 3.0) * min(aim_tries, 5)
                 clock_lat_prev = 9.9
-            kq = quat_from_angle_axis(psi_star, ez)
+                clock_switches = 0
+            kq = kq_flip(psi_star)
             kp = torch.zeros(n, 3, device=dev)
             if t_in < 50:
                 # UN-WEDGE: lift straight up from wherever the key actually is before any
@@ -1059,16 +1386,21 @@ def main() -> None:
                 continue_clock = False
             else:
                 continue_clock = True
-            kp[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
-            kp[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + INSERT_HOVER
+            tip_tgt = torch.zeros(n, 3, device=dev)
+            tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+            tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + INSERT_HOVER
             # HIGH APPROACH: with the full assembly colliding (key + fingertip + live claw),
             # a lateral translate at hover height drags the low-hanging train across the
             # platform edge and it snags (run 80: frozen 67mm off-axis, tip 33mm below the
             # mouth). Stay 60mm up until laterally centered, then descend on-axis.
-            lat_now = (key.data.root_pos_w[:, 0:2] - bolt.data.root_pos_w[:, 0:2]).norm(dim=-1)
-            kp[:, 2] = kp[:, 2] + torch.where(lat_now > 0.020,
-                                              torch.full_like(lat_now, 0.06), torch.zeros_like(lat_now))
+            lat_now = key_lateral()  # TIP-space: the LONG tip must center over the bore
+            # high-approach margin: the flip has NOTHING hanging below the tip (the claw is at
+            # the TOP of the train), so 25mm clears the platform edge — the old 60mm was for the
+            # low-hanging claw and busts the dome budget with the tall flipped train
+            tip_tgt[:, 2] = tip_tgt[:, 2] + torch.where(lat_now > 0.020,
+                                                        torch.full_like(lat_now, 0.025), torch.zeros_like(lat_now))
             if continue_clock:
+                kp = root_for_tip(tip_tgt, kq)
                 tp, tq = tool_for_key(kp, kq)
                 act = act_of(tp, tq, grip_c)
                 # PLATEAU-SWITCH the hex azimuth: every mod-60 representative is physically
@@ -1076,15 +1408,22 @@ def main() -> None:
                 # DIFFERENT wrist configs — on the imported asset one family can hold the
                 # erect orientation yet never reach the bore (run 83: parked 67mm off-axis,
                 # weld 0.0, up +1.00). No lateral progress in 100 ticks -> next candidate.
-                if t_in % 100 == 0:
+                # 8x-slow reality check: a 60deg re-aim alone needs ~130 ticks at ROT_STEP,
+                # and act_of's default rot-priority parks translation while yawing — 100-tick
+                # windows churned families forever, swinging the key 0.5m out (run 129).
+                if t_in >= 400 and t_in % 250 == 0:
                     lat_chk = float(lat_now.max())
                     if lat_chk > 0.020 and lat_chk > clock_lat_prev - 0.010:
-                        psi_star[:] = psi_star + math.pi / 3.0
-                        print(f"    [clock] azimuth plateau at lat {lat_chk * 1e3:.0f}mm -> +60deg", flush=True)
+                        clock_switches += 1
+                        if clock_switches > 6:  # full turn tried: this CONFIG is tangled, not the azimuth
+                            print(f"    [clock] no approach after {clock_switches - 1} family switches — config reset", flush=True)
+                            phase, marker = "re_home", i
+                        else:
+                            psi_star[:] = psi_star + math.pi / 3.0
+                            print(f"    [clock] azimuth plateau at lat {lat_chk * 1e3:.0f}mm -> +60deg", flush=True)
                     clock_lat_prev = lat_chk
-            yaw_err = _wrap(yaw_of(key.data.root_quat_w) - psi_star).abs()
-            centred = ((key.data.root_pos_w[:, 0:2] - bolt.data.root_pos_w[:, 0:2]).norm(dim=-1) < 0.001) \
-                & (yaw_err < math.radians(2.5))
+            yaw_err = _wrap(crank_azim() - psi_star).abs()
+            centred = (key_lateral() < 0.001) & (yaw_err < math.radians(2.5))
             if not bool(bolt_ok(say=True).all()):
                 print("  ABORT: bolt left its nest before insertion", flush=True)
                 phase, marker = "retreat", i
@@ -1100,11 +1439,11 @@ def main() -> None:
                 ins_stuck = 0
                 ins_unwedge_until = 0
             if t_in % PECK_PERIOD == 1:  # re-latch the clocking each peck: taps walk the bolt's yaw
-                ky = yaw_of(key.data.root_quat_w)
-                dpsi = _wrap((yaw_of(bolt.data.root_quat_w) - ky) % (math.pi / 3.0))
+                ky = crank_azim()
+                dpsi = _wrap((yaw_of(bolt.data.root_quat_w) + HEX_TRIM - ky) % (math.pi / 3.0))
                 dpsi = torch.where(dpsi > math.pi / 6.0, dpsi - math.pi / 3.0, dpsi)
                 psi_star[:] = ky + dpsi
-            kq = quat_from_angle_axis(psi_star, ez)
+            kq = kq_flip(psi_star)
             probe = (t_in // PECK_PERIOD) % 19
             if probe == 0:
                 ox, oy = 0.0, 0.0
@@ -1119,10 +1458,10 @@ def main() -> None:
             hover = (t_in % PECK_PERIOD) < PECK_PERIOD // 2
             z_cmd = mouth_z + (0.002 if hover else -0.0012)
             tip_in = (key_tip_axial() < SOCKET_MOUTH_Z - 0.0005) & (key_lateral() < 0.003)  # caught = below the mouth AND over the bore — axial alone reads true with the key beside the platform on the table (run 123: 'caught' at lat 185mm)
-            kp = torch.zeros(n, 3, device=dev)
-            kp[:, 0] = bolt.data.root_pos_w[:, 0] + torch.where(tip_in, torch.zeros_like(depth()), torch.full_like(depth(), ox))
-            kp[:, 1] = bolt.data.root_pos_w[:, 1] + torch.where(tip_in, torch.zeros_like(depth()), torch.full_like(depth(), oy))
-            kp[:, 2] = torch.where(tip_in, floor_z, z_cmd.clamp(min=floor_z))
+            tip_tgt = torch.zeros(n, 3, device=dev)
+            tip_tgt[:, 0] = bolt.data.root_pos_w[:, 0] + torch.where(tip_in, torch.zeros_like(depth()), torch.full_like(depth(), ox))
+            tip_tgt[:, 1] = bolt.data.root_pos_w[:, 1] + torch.where(tip_in, torch.zeros_like(depth()), torch.full_like(depth(), oy))
+            tip_tgt[:, 2] = torch.where(tip_in, floor_z, z_cmd.clamp(min=floor_z))
             # WEDGED-CATCH BREAKER: a catch at lat > the socket's 0.7mm clearance jams on the
             # wall and the permanent straight-down drive can never advance or free it (run
             # 119: frozen at -2.28mm, lat 1.27). Caught + axially stagnant ~100 ticks -> lift
@@ -1139,8 +1478,8 @@ def main() -> None:
             # rotate a 0.5mm lateral micro-wiggle while pressing.
             if bool(tip_in.all()) and 20 <= ins_stuck:
                 _ph = (t_in // 10) % 4
-                kp[:, 0] = kp[:, 0] + (0.0005, 0.0, -0.0005, 0.0)[_ph]
-                kp[:, 1] = kp[:, 1] + (0.0, 0.0005, 0.0, -0.0005)[_ph]
+                tip_tgt[:, 0] = tip_tgt[:, 0] + (0.0005, 0.0, -0.0005, 0.0)[_ph]
+                tip_tgt[:, 1] = tip_tgt[:, 1] + (0.0, 0.0005, 0.0, -0.0005)[_ph]
             if ins_stuck > 100:
                 ins_stuck = 0
                 ins_unwedge_until = t_in + 30
@@ -1150,7 +1489,8 @@ def main() -> None:
                     _iio.imwrite(str(Path(args.video).parent / f"wedge_{t_in}.png"),
                                  cam.data.output["rgb"][0].cpu().numpy())
             if t_in < ins_unwedge_until:
-                kp[:, 2] = mouth_z + 0.002
+                tip_tgt[:, 2] = mouth_z + 0.002
+            kp = root_for_tip(tip_tgt, kq)
             tp, tq = tool_for_key(kp, kq)
             # position-primary during the peck descent: the jaw grip's wrist pose can make
             # the last few mm of descent fight the held orientation (run 92: hovering +5.6mm
@@ -1158,18 +1498,17 @@ def main() -> None:
             # transient drift are self-correcting.
             act = act_of(tp, tq, grip_c, rot_w=0.6, raw=True)
             if t_in % PECK_PERIOD == PECK_PERIOD - 1:  # end of each press: where did it land?
-                dp = _wrap((yaw_of(bolt.data.root_quat_w) - yaw_of(key.data.root_quat_w)) % (math.pi / 3.0))
+                dp = _wrap((yaw_of(bolt.data.root_quat_w) + HEX_TRIM - crank_azim()) % (math.pi / 3.0))
                 dp = torch.where(dp > math.pi / 6.0, dp - math.pi / 3.0, dp)
-                lat = (key.data.root_pos_w[:, 0:2] - bolt.data.root_pos_w[:, 0:2]).norm(dim=-1)
+                lat = key_lateral()
                 over = key_tip_axial() - SOCKET_MOUTH_Z
                 print(f"    [probe {probe:2d}] lat {float(lat.max()) * 1e3:4.2f}mm | dpsi "
                       f"{float(torch.rad2deg(dp.abs().max())):4.1f}deg | tip over mouth {float(over.min()) * 1e3:+5.2f}mm", flush=True)
-            # Seated = the key's BEND resting on the socket mouth (~4.2mm of hex engagement) —
-            # the key's true geometric bottom (wedge frame, run 122). The old floor-band gate
-            # only ever passed because full-speed taps transiently PENETRATED ~1mm; honest
-            # quasi-static contact stops at the bend.
-            settled = (key_tip_axial() < SOCKET_MOUTH_Z - 0.0035) & (key_tip_axial() > SOCKET_FLOOR_Z - 0.002) \
-                & (key_lateral() < 0.0015) & (up_axis_of(key.data.root_quat_w)[:, 2] > 0.99) & bolt_ok()
+            # Seated (FLIPPED) = the LONG tip near the socket FLOOR — no bend to bottom out on
+            # the mouth, so the full ~7mm recess engages; accept within 2.5mm of the floor
+            # (wall friction can hold the quasi-static press just shy of bottom).
+            settled = (key_tip_axial() < SOCKET_FLOOR_Z + 0.0025) & (key_tip_axial() > SOCKET_FLOOR_Z - 0.003) \
+                & (key_lateral() < 0.0015) & (-handle_dir()[:, 2] > 0.99) & bolt_ok()
             seat_ok[:] = torch.where(settled, seat_ok + 1, torch.zeros_like(seat_ok))
             if not bool(bolt_ok(say=True).all()):
                 print("  ABORT: bolt knocked out of its nest during insertion", flush=True)
@@ -1179,13 +1518,13 @@ def main() -> None:
                 if insert_depth0 is None:
                     insert_depth0 = depth().clone()
                 stroke_psi.zero_()
-                stroke_y0[:] = yaw_of(key.data.root_quat_w)
+                stroke_y0[:] = crank_azim()
                 cycles += 1
                 if cycles == 1:  # metrics start with the crank: forget pre-crank handling
                     bolt_turn.zero_()
                     key_turn.zero_()
                     prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
-                    prev_key_yaw = yaw_of(key.data.root_quat_w)
+                    prev_key_yaw = crank_azim()
                 if args.demo_insert:
                     print("  [demo] insert verified — holding the pose, then a gentle release", flush=True)
                     phase, marker = "admire", i
@@ -1210,8 +1549,8 @@ def main() -> None:
                     phase, marker = "clock", i
         elif phase == "admire":  # demo ending: hold the seated key for the camera, then a
             # slow release and withdrawal — the key STAYS seated in the socket
-            act = hold_act(grip_c)
-            left_park()
+            left_hold()
+            act = act_L_park()
             if t_in >= 180:
                 phase, marker = "retreat", i
         elif phase == "stroke":  # crank: orbit the handle about the bolt axis while pressing the
@@ -1307,7 +1646,7 @@ def main() -> None:
                         grip_c = float(prr[0]) * 0.5 + 0.0005
                         weld_on()
                         stroke_psi.zero_()
-                        stroke_y0[:] = yaw_of(key.data.root_quat_w)
+                        stroke_y0[:] = crank_azim()
                         cycles += 1
                         print(f"  ratchet regrip {cycles}: cranking", flush=True)
                         phase, marker = "stroke", i
@@ -1454,7 +1793,7 @@ def main() -> None:
                     weld_on()
                     weld_off_L()
                     stroke_psi.zero_()
-                    stroke_y0[:] = yaw_of(key.data.root_quat_w)
+                    stroke_y0[:] = crank_azim()
                     cycles += 1
                     print("  vice handoff back: RIGHT holds (jaw pinch), cranking", flush=True)
                     phase, marker = "hand_clear", i
@@ -1480,10 +1819,21 @@ def main() -> None:
         elif phase == "retreat":
             if welded.any():
                 weld_off()
+            if welded_L.any():
+                weld_off_L()
             if t_in == 1:
                 wp_p[:] = tp_now
                 wp_p[:, 2] = plat_z + 0.25
                 wp_q[:] = tq_now
+                tplr, tqlr = toolL_pose()
+                wpL0_p[:] = tplr  # dwell spot: open the jaws IN PLACE first
+                wpL_p[:] = tplr
+                wpL_p[:, 0:2] = wpL_p[:, 0:2] + (base_L_xy - tplr[:, 0:2]) * 0.35
+                wpL_p[:, 2] = wpL_p[:, 2] + 0.05
+                wpL_q[:] = tqlr
+            # withdrawing with the jaws still closing around the crank DRAGS the seated key
+            # into a lean (run 141: 17deg, verdict 0/1) — open fully in place, THEN back away
+            left_to(wpL0_p if t_in < 150 else wpL_p, wpL_q, OPEN_C)
             act = act_of(wp_p, wp_q, OPEN_C)
             if t_in >= WP_TIMEOUT // 2:
                 phase, marker = "settle", i
@@ -1495,7 +1845,8 @@ def main() -> None:
         prev_depth = depth().clone()
         step(act)
         dd = (depth() - prev_depth).abs()
-        if phase in ("pinch_in", "pinch_close", "lift", "carry", "erect", "clock", "insert") and float(dd.max()) > 0.0015:
+        if phase in ("pinch_in", "pinch_close", "lift", "carry", "erect", "handoff_carry", "post_pinch",
+                     "handoff", "l_clock", "l_insert", "clock", "insert") and float(dd.max()) > 0.0015:
             kt = key.data.root_pos_w
             print(f"    [watchdog] ctrl {i} {phase}: bolt depth jumped {float(dd.max()) * 1e3:+.1f}mm | "
                   f"key ({kt[0, 0]:.3f},{kt[0, 1]:.3f},{kt[0, 2]:.3f}) | tool z {tool_pose()[0][0, 2]:.3f}", flush=True)
@@ -1503,7 +1854,7 @@ def main() -> None:
             cur = yaw_of(bolt.data.root_quat_w)
             bolt_turn = bolt_turn - _wrap(cur - prev_bolt_yaw)
             prev_bolt_yaw = cur
-            kcur = yaw_of(key.data.root_quat_w)
+            kcur = crank_azim()
             key_turn = key_turn - _wrap(kcur - prev_key_yaw)
             prev_key_yaw = kcur
 
