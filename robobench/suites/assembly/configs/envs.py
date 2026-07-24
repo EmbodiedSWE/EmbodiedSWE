@@ -71,21 +71,22 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_ram", robot="null", env_spacing=2))
 # -> "assembly.pc_gpu_ram"
 register_env(SUITE, lambda: EnvCfg(scene="pc_gpu_ram", robot="null", env_spacing=2))
 
-# Franka arm at the combined gpu+ram scene: the card goes into the PCIe slot FIRST, then the two
-# sticks into the DIMM pair. One base serves all five work points — the pc_ram placement
-# verbatim (base (0.72, -0.34) yaw 180, case/table preset at 0.55): from there the PCIe seat is
-# 0.394 m, its placement point 0.404 m (the rearward slide runs slightly radially inward) and
-# the DIMM seats 0.365/0.378 m. The three parts stage side by side AND PARALLEL (every part's
-# length along x) in three rows on the table strip south of the case (the case's real footprint
-# reaches y -0.212 case-local, and a 267 mm card cannot share one row with the stick holders
-# inside the arm's reach window): the sticks stand yawed 90 deg from their seated heading at
-# world (0.36, -0.265) and (0.36, -0.315) (reaches 0.368/0.361 m, 27 mm clear of the case face,
-# 50 mm row pitch), and the CARD row in front at world (0.34, -0.405) (0.386 m reach, 25 mm
-# clear of the stick rows, 49 mm off the table edge). The smoke un-yaws each stick during its
-# carry, in free air over the case. The card is installed first, so its emptied holder never
-# obstructs the later stick flights. All parts stage UPRIGHT in foam holders (their lying defaults are ungraspable —
-# see the single-task envs); deterministic spawn (no jitter): the holders are static geometry
-# authored at the spawn points. sim dt 1/240 — the depth both force-driven smokes validated.
+# Franka arm at the combined gpu+ram scene: the card goes into the PCIe x16 slot FIRST (placed
+# inside the case, slid rearward through the I/O cutout, pressed to seat), then the two sticks
+# go into the DIMM pair. The three parts stage side by side in ONE line on the table south of
+# the case, every part's length along y — pointing away from the case, so no pick brings the
+# wrist near its 22 cm wall: stick 0 at world (0.29, -0.32), the card lengthwise between the
+# sticks at (0.365, -0.321), stick 1 at (0.44, -0.32). The sticks stand in their seated heading;
+# the card stands yawed 90 deg and the smoke rotates it back during its carry, in free air over
+# the case. The case sits 40 mm north of the table anchor (`case_xy`) so the 267 mm card fits
+# lengthwise in the staging strip, and the base follows to (0.72, -0.30) yaw 180 — the whole
+# work cell translates rigidly, keeping every case-relative reach in the arm's accurate band:
+# PCIe seat 0.394 m, its placement point 0.404 m (the rearward slide runs slightly radially
+# inward), DIMM seats 0.365/0.378 m, picks 0.43/0.36/0.28 m. The card is installed first, so
+# its emptied holder never obstructs the later stick flights. All parts stage UPRIGHT in foam
+# holders (their lying defaults are ungraspable — see the single-task envs); deterministic
+# spawn (no jitter): the holders are static geometry authored at the spawn points. sim dt
+# 1/240 — the depth both force-driven smokes validated.
 # Three control modes, switchable by env name:
 #   - "assembly.pc_gpu_ram.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_gpu_ram.franka.impedance" — Jacobian-transpose task-space impedance
