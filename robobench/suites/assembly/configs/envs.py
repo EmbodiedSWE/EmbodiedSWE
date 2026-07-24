@@ -74,14 +74,17 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_gpu_ram", robot="null", env_spacing
 # Franka arm at the combined gpu+ram scene: the card goes into the PCIe slot FIRST, then the two
 # sticks into the DIMM pair. One base serves all five work points — the pc_ram placement
 # verbatim (base (0.72, -0.34) yaw 180, case/table preset at 0.55): from there the PCIe seat is
-# 0.393 m, its placement point 0.404 m (the rearward slide runs slightly radially inward), the
-# DIMM seats 0.365/0.378 m, the stick holders 0.30/0.42 m — all in the arm's accurate band. The
-# card holder cannot share the stick holders' south-strip band (every spot there in reach is
-# taken), so it sits north of it at world (0.34, -0.24), 0.393 m dead-ahead of the base — the
-# card is installed first, so the empty holder never obstructs the later stick flights. All
-# parts stage UPRIGHT in foam holders (their lying defaults are ungraspable — see the
-# single-task envs); deterministic spawn (no jitter): the holders are static geometry authored
-# at the spawn points. sim dt 1/240 — the depth both force-driven smokes validated.
+# 0.394 m, its placement point 0.404 m (the rearward slide runs slightly radially inward) and
+# the DIMM seats 0.365/0.378 m. The three parts stage side by side in a two-row cluster on the
+# table strip south of the case (the case's real footprint reaches y -0.212 case-local and its
+# west end to world 0.203, and a 267 mm card cannot share one row with the stick holders inside
+# the arm's reach window): the STICK row stands nearest the case at world (0.30/0.42, -0.29)
+# (reaches 0.42/0.30 m, 13 mm clear of the case face) and the CARD row in FRONT of it at world
+# (0.34, -0.416) (0.388 m reach, 15 mm clear of the stick holders, 38 mm off the table edge) —
+# the long card farthest from the case, so on camera nothing crowds the case silhouette. The
+# card is installed first, so its emptied holder never obstructs the later stick flights. All parts stage UPRIGHT in foam holders (their lying defaults are ungraspable —
+# see the single-task envs); deterministic spawn (no jitter): the holders are static geometry
+# authored at the spawn points. sim dt 1/240 — the depth both force-driven smokes validated.
 # Three control modes, switchable by env name:
 #   - "assembly.pc_gpu_ram.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_gpu_ram.franka.impedance" — Jacobian-transpose task-space impedance
@@ -92,10 +95,12 @@ for _mode in ("osc", "impedance", "joint"):
         lambda mode=_mode: EnvCfg(
             scene="pc_gpu_ram",
             scene_cfg=PcGpuRamAssemblySceneCfg(
-                card_init_xy=(-0.21, -0.24),  # table-rel -> world (0.34, -0.24), north of the strip
+                card_init_xy=(-0.21, -0.416),  # table-rel -> world (0.34, -0.416): the front
+                # row, beside the sticks and clear of the case
                 card_init_z=0.030,  # tab-bottom plane = the holder's floor top
                 card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
-                ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
+                ram_init_xy=((-0.25, -0.29), (-0.13, -0.29)),  # table-rel -> world
+                # (0.30/0.42, -0.29): the row between the card and the case
                 ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
                 ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
                 reset_pos_jitter=0.0,

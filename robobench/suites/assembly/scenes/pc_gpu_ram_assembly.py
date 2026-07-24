@@ -259,13 +259,15 @@ class PcGpuRamAssemblyScene(BaseScene):
 
         if c.card_stand:
             # Foam holder presenting the card upright (floor pad + two rails flanking the 34.8 mm
-            # body slab); geometry as in `pc_gpu_assembly`. Rail tops stay 35+ mm below the pick
-            # grip band, clear of descending open fingers.
+            # body slab); geometry as in `pc_gpu_assembly`, with a slimmer floor pad — the card's
+            # staging row sits in the pocket between the case's south face and the stick holders,
+            # so the pad hugs the rails instead of overhanging the row. Rail tops stay 35+ mm
+            # below the pick grip band, clear of descending open fingers.
             y0, y1 = self.CARD_BODY_Y
             mid_y = wy + cy + 0.5 * (y0 + y1)
             half_gap = 0.5 * (y1 - y0) + c.card_stand_gap
             rail_h, rail_t = 0.055, 0.008
-            stand("card_stand_floor", (0.11, 0.09, c.card_init_z),
+            stand("card_stand_floor", (0.11, 0.062, c.card_init_z),
                   (wx + cx, mid_y, c.surface_z + 0.5 * c.card_init_z))
             stand("card_stand_rail_pcb", (0.11, rail_t, rail_h),
                   (wx + cx, mid_y - half_gap - 0.5 * rail_t, c.surface_z + c.card_init_z + 0.5 * rail_h))
@@ -276,7 +278,8 @@ class PcGpuRamAssemblyScene(BaseScene):
             # flanking the 7.3 mm body slab); geometry as in `pc_ram_assembly`.
             x0, x1 = self.STICK_BODY_X
             half_gap = 0.5 * (x1 - x0) + c.ram_stand_gap
-            rail_h, rail_t, stand_l = 0.018, 0.008, 0.145
+            rail_h, rail_t, stand_l = 0.018, 0.008, 0.130  # rails just cover the 128.6 mm stick,
+            # so the two staging rows (sticks + card) fit the strip south of the case together
             for k, (ix, iy) in enumerate(c.ram_init_xy):
                 mid_x = wx + ix + 0.5 * (x0 + x1)
                 stand(f"ram_stand_{k}_floor", (0.022, stand_l, c.ram_init_z),
