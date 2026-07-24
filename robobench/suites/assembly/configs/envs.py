@@ -96,14 +96,16 @@ for _mode in ("osc", "impedance", "joint"):
         lambda mode=_mode: EnvCfg(
             scene="pc_gpu_ram",
             scene_cfg=PcGpuRamAssemblySceneCfg(
-                card_init_xy=(-0.21, -0.405),  # table-rel -> world (0.34, -0.405): the front
-                # row, beside the sticks and clear of the case
+                case_xy=(0.55, 0.04),  # case 40 mm north of the table anchor: stretches the
+                # staging strip so the card fits lengthwise; the base follows (see below)
+                card_init_xy=(-0.185, -0.321),  # table-rel -> world (0.365, -0.321): the middle
+                # of the staging line, lengthwise between the sticks
                 card_init_z=0.030,  # tab-bottom plane = the holder's floor top
-                card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
-                ram_init_xy=((-0.19, -0.265), (-0.19, -0.315)),  # table-rel -> world
-                # (0.36, -0.265/-0.315): two rows PARALLEL to the card, between it and the case
-                ram_init_quat=(0.70711, 0.0, 0.0, 0.70711),  # upright, yawed 90 deg: staged
-                # parallel to the card; the carry rotates each stick back to its seated heading
+                card_init_quat=(0.70711, 0.0, 0.0, 0.70711),  # upright, yawed 90 deg: staged
+                # parallel to the sticks; the carry rotates it back to its seated heading
+                ram_init_xy=((-0.26, -0.32), (-0.11, -0.32)),  # table-rel -> world
+                # (0.29/0.44, -0.32): flanking the card, all three parts parallel along y
+                ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
                 ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
                 reset_pos_jitter=0.0,
                 card_stand=True,
@@ -111,8 +113,8 @@ for _mode in ("osc", "impedance", "joint"):
             ),
             robot="franka",
             robot_cfg=FrankaRobotCfg(
-                base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x,
-                # the 154 mm rear foot points +x along the strip
+                base_pos=(0.72, -0.30, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x;
+                # 40 mm north with the case, the 154 mm rear foot points +x along the strip
             ),
             control_mode=mode,
             env_spacing=2,
