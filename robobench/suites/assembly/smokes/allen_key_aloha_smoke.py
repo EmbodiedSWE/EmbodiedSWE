@@ -1724,6 +1724,9 @@ def main() -> None:
                 stroke_psi.zero_()
                 stroke_y0[:] = crank_azim()
                 crank_press_hold = 0
+                if bool((key_tip_axial() > SOCKET_MOUTH_Z + 0.004).any()) or bool((key.data.root_pos_w[:, 2] < 0.10).any()):
+                    print("  [crank] key NOT seated at stroke start (fell during a swap) — releasing honestly", flush=True)
+                    phase, marker = "crank_release", i
             popped = key_tip_axial() > SOCKET_MOUTH_Z - 0.002
             if crank_press_hold == 0 and bool(popped.any()):
                 # the orbit start can YANK the tip above the mouth (run 148 stroke 2): DO NOT
@@ -1865,6 +1868,9 @@ def main() -> None:
                 stroke_psi.zero_()
                 stroke_y0[:] = crank_azim()
                 crank_press_hold = 0
+                if bool((key_tip_axial() > SOCKET_MOUTH_Z + 0.004).any()) or bool((key.data.root_pos_w[:, 2] < 0.10).any()):
+                    print("  [crankL] key NOT seated at stroke start (fell during a swap) — releasing honestly", flush=True)
+                    phase, marker = "crank_release_L", i
             popped = key_tip_axial() > SOCKET_MOUTH_Z - 0.002
             if crank_press_hold == 0 and bool(popped.any()):
                 crank_press_hold = 300
