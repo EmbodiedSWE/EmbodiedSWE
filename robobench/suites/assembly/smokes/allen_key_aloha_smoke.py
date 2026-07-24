@@ -41,6 +41,8 @@ parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--video", type=str, default="", help="save an mp4 here (needs --headless --enable_cameras)")
 parser.add_argument("--cap", type=int, default=5, help="with --video: capture one frame every N control steps (5 at 50 Hz control -> ~3x speed at 30 fps)")
 parser.add_argument("--demo-insert", action="store_true", help="end after the verified insert (pick->carry->erect->insert), key left seated — the motion-quality demo")
+parser.add_argument("--demo-crank", action="store_true", help="STAGE 2: after the verified insert, the LEFT converts to a passive steady-rest CAGE and the RIGHT cranks the short arm until --demo-revs of bolt rotation")
+parser.add_argument("--demo-revs", type=float, default=1.5, help="with --demo-crank: end after this many bolt revolutions")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
@@ -161,6 +163,12 @@ PRESS_DZ = 0.0035        # crank press: command the tip this far below the live 
 # commanded interpenetration hammered the staged bolt off its helix capture: it then spun
 # crest-nested, +76 deg with zero descent, and the key cammed out on the next stroke)
 STROKE_RAD = math.radians(120.0)   # nominal crank sweep per cycle (screw-in = negative yaw)
+CAGE_C = 0.0075          # STAGE 2 steady-rest: L carriage command for the passive cage (hex spins
+                         # inside, tip bounded); the closed-bite pocket already wraps the post
+CAGE_SLIDE = 0.035       # cage slides this far DOWN the post so the orbiting crank clears the claw
+CRANK_GRIP_D = 0.012     # R's stroke grip: 12mm inboard of the crank tip (end-on grab)
+CRANK_W = 0.0025         # crank rate (rad/tick): 120deg in ~840 ticks — watchable
+MAX_CRANK_CYCLES = 10    # stroke budget for the demo (release honestly with measured revs)
 STROKE_W = 1.0           # commanded crank rate (rad/s)
 JOINT_MARGIN = 0.12      # end the stroke when any arm joint is this close to a limit (rad)
 REWIND_LIFT = 0.045      # lift between strokes so the open jaws clear the handle sweep
@@ -604,6 +612,27 @@ def main() -> None:
         scored.sort(key=lambda e: e[0])
         return scored
 
+    def crank_frames(cp: torch.Tensor, u_in: torch.Tensor) -> list:
+        """Ranked frames for the R's END-ON crank grab (horizontal member: approach along
+        the crank axis, slot across it) — post_frames' mirror, scored on the RIGHT arm."""
+        u65 = tilt_azimuth(base_R_xy, cp, tool_to_grip, math.radians(65.0))
+        scored = []
+        for u, s, t in ((u_in, -1.0, 78.0), (u_in, 1.0, 78.0), (u_in, -1.0, 65.0),
+                        (u_in, 1.0, 65.0), (u65, -1.0, 65.0), (u65, 1.0, 65.0)):
+            tr = math.radians(t)
+            q = pinch_q(u, s, tr)
+            tp = cp - quat_apply(q, ex1 * tool_to_grip)
+            scored.append((float(joint_cost(q, tp).max()), u, s, tr))
+        scored.sort(key=lambda e: e[0])
+        return scored
+
+    def crank_perp(arm_name: str) -> torch.Tensor:
+        """Distance of the arm's pocket to the CRANK line (root along the short arm)."""
+        sd3 = up_axis_of(key.data.root_quat_w)
+        sd3 = sd3 / sd3.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        rel = tip_pos(arm_name) - key.data.root_pos_w
+        return (rel - (rel * sd3).sum(-1, keepdim=True) * sd3).norm(dim=-1)
+
     def arm_frame(arm: str, tip_tgt: torch.Tensor, spin: float, away=None) -> tuple[torch.Tensor, torch.Tensor]:
         """The committed frame + wrist target that put `arm`'s fingertip at tip_tgt.
         `away` (n,2): lean the claw body away from this direction's opposite — pass the
@@ -870,6 +899,16 @@ def main() -> None:
     pinch_lock = torch.zeros(n, 3, device=dev)  # post-pinch target, LATCHED at phase entry
     uL_lock = torch.zeros(n, 3, device=dev)     # latched approach azimuth
     pf_spin, pf_tilt = -1.0, math.radians(78.0)  # latched pinch frame (spin, tilt)
+    crank_lock = torch.zeros(n, 3, device=dev)  # STAGE 2: latched crank grab point
+    uR_lock = torch.zeros(n, 3, device=dev)
+    cf_spin, cf_tilt = 1.0, math.radians(65.0)
+    wpR0_p = torch.zeros(n, 3, device=dev)      # R release/dwell pose
+    wpR0_q = torch.zeros(n, 4, device=dev)
+    cage_p0 = torch.zeros(n, 3, device=dev)     # L cage pose at conversion
+    cage_q0 = torch.zeros(n, 4, device=dev)
+    pairR_hold = torch.zeros(n, device=dev)     # stability sample for the crank-grab gate
+    crank_tries, crank_cycles = 0, 0
+    crank_sign, crank_dir_checked = 1.0, False
     grip_c_L: float | torch.Tensor = CLOSE_C  # L's hold at its measured post stall
 
     # ----- jaw plumbing + boot diagnostics --------------------------------------------------
@@ -1377,8 +1416,12 @@ def main() -> None:
                     key_turn.zero_()
                     prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
                     prev_key_yaw = crank_azim()
-                print("  [demo] insert verified — the left holds the seated key (steady-rest preview)", flush=True)
-                phase, marker = "admire", i
+                if args.demo_crank:
+                    print("  insert verified — LEFT converts to the steady-rest cage, RIGHT cranks", flush=True)
+                    phase, marker = "cage_convert", i
+                else:
+                    print("  [demo] insert verified — the left holds the seated key (steady-rest preview)", flush=True)
+                    phase, marker = "admire", i
             elif t_in >= INSERT_TIMEOUT:
                 aim_tries += 1
                 if aim_tries >= 3:
@@ -1575,6 +1618,149 @@ def main() -> None:
                 else:
                     print("  insert timed out, re-clocking", flush=True)
                     phase, marker = "clock", i
+        elif phase == "cage_convert":  # STAGE 2: the L's grip becomes a PASSIVE CAGE — weld
+            # off, jaws opened to a spin clearance, slid LOW so the orbiting crank clears the
+            # claw body. The post rotates freely inside; the key cannot tip or lift out.
+            if t_in == 1:
+                weld_off_L()
+                cage_p0[:], cage_q0[:] = toolL_pose()
+            slide = min(max((t_in - 200) / 400.0, 0.0), 1.0) * CAGE_SLIDE
+            tgt = cage_p0.clone()
+            tgt[:, 2] = cage_p0[:, 2] - slide
+            left_to(tgt, cage_q0, CAGE_C)
+            act = hold_act(OPEN_C)
+            if t_in >= 700:
+                cage_q0[:] = toolL_pose()[1]
+                ok_seat = (key_tip_axial() < SOCKET_MOUTH_Z - 0.004) & (key_lateral() < 0.004)
+                if bool(ok_seat.all()):
+                    print(f"  cage set: L pair {float(jaw_pair(artL, jaw_ids_L)[0]) * 1e3:.1f}mm | "
+                          f"key axial {float(key_tip_axial().mean()) * 1e3:.1f}mm", flush=True)
+                    phase, marker = "crank_approach", i
+                else:
+                    print("  cage convert lost the seat; ending with the insert result", flush=True)
+                    phase, marker = "admire", i
+        elif phase == "crank_approach":  # RIGHT grabs the CRANK end-on (approach along the
+            # member, slot across it) with its own scored frame ladder; the caged, seated key
+            # is backed at both ends so the close cannot push it away
+            sdh = up_axis_of(key.data.root_quat_w).clone()
+            sdh[:, 2] = 0.0
+            sdh = sdh / sdh.norm(dim=-1, keepdim=True).clamp_min(1e-6)  # tip -> elbow, horizontal
+            crank_live = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * CRANK_GRIP_D
+            if t_in == 1:
+                wpR0_p[:], wpR0_q[:] = tool_pose()
+                crank_lock[:] = crank_live
+                _c, _u, _s, _t = crank_frames(crank_lock, sdh)[min(crank_tries, 5)]
+                uR_lock[:] = _u
+                cf_spin, cf_tilt = _s, _t
+                print(f"    [crank] frame locked: cost {_c:.2f} spin {cf_spin:+.0f} tilt "
+                      f"{math.degrees(cf_tilt):.0f}deg (cycle {crank_cycles + 1})", flush=True)
+            qR = pinch_q(uR_lock, cf_spin, cf_tilt)
+            if t_in < 200:
+                # open-in-place dwell (matters on retries, harmless on entry)
+                act = act_of(wpR0_p, wpR0_q, OPEN_C, rot_w=1.2)
+                left_hold()
+            else:
+                if t_in == 1130:
+                    crank_lock[:] = crank_live  # one pre-close re-latch
+                close_now = t_in > 1150
+                # the FIRST approach starts from the R's park (~0.25m out): long hover leg
+                off = -0.06 if t_in < 800 else (0.006 if close_now else 0.0)
+                vt = crank_lock + uR_lock * off
+                tpR = vt - quat_apply(qR, ex1 * tool_to_grip)
+                act = act_of(tpR, qR, 0.004 if close_now else OPEN_C, rot_w=1.2)
+                left_hold()
+            if t_in % 150 == 0:
+                prR = jaw_pair(artR, jaw_ids_R)
+                mR = torch.minimum(artR.data.joint_pos[:, arm_ids] - lo_lim,
+                                   hi_lim - artR.data.joint_pos[:, arm_ids])
+                print(f"    [crank t{t_in:4d}] R pair {float(prR[0]) * 1e3:5.1f}mm | perp "
+                      f"{float(crank_perp('Right').max()) * 1e3:5.1f}mm | Rmargin "
+                      + " ".join(f"{float(v):+.2f}" for v in mR[0]), flush=True)
+            if t_in == 1500:
+                pairR_hold[:] = jaw_pair(artR, jaw_ids_R)
+            if t_in >= 1600:
+                prR = jaw_pair(artR, jaw_ids_R)
+                stableR = (prR - pairR_hold).abs() < 0.002
+                okR = (prR < 0.020) & (crank_perp("Right") < 0.018) & stableR
+                if bool(okR.all()):
+                    grip_c = float(prR[0]) * 0.5 + 0.0005
+                    weld_on()
+                    crank_tries = 0
+                    print(f"  CRANK GRAB: R stall {float(prR[0]) * 1e3:.1f}mm — stroking", flush=True)
+                    phase, marker = "crank_stroke", i
+                elif crank_tries < 4:
+                    crank_tries += 1
+                    print(f"  crank grab missed (pair {float(prR[0]) * 1e3:.1f}mm, perp "
+                          f"{float(crank_perp('Right').max()) * 1e3:.1f}mm), frame {crank_tries + 1}", flush=True)
+                    marker = i
+                else:
+                    print("  crank grab exhausted; releasing with the insert result", flush=True)
+                    phase, marker = "crank_release", i
+        elif phase == "crank_stroke":  # the small-orbit screw stroke: rotate the key about the
+            # bore axis (helical floor press), the L cage holding the post vertical
+            if t_in == 1:
+                stroke_psi.zero_()
+                stroke_y0[:] = crank_azim()
+            stroke_psi += CRANK_W
+            stroke_psi.clamp_(max=STROKE_RAD)
+            kq = kq_flip(stroke_y0 - crank_sign * stroke_psi)
+            tip_tgt = torch.zeros(n, 3, device=dev)
+            tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+            tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.0015
+            kp = root_for_tip(tip_tgt, kq)
+            tp, tq = tool_for_key(kp, kq)
+            act = act_of(tp, tq, grip_c, rot_w=1.2)
+            left_hold()
+            if not crank_dir_checked and t_in == 500:
+                crank_dir_checked = True
+                if float(torch.rad2deg(bolt_turn).mean()) < -3.0:
+                    crank_sign = -1.0  # run-level lock: flip ONCE (backing-out response)
+                    print("  [crank] direction flip: the bolt was backing out — locked reversed", flush=True)
+                    marker = i
+            popped = key_tip_axial() > SOCKET_MOUTH_Z - 0.002
+            if not bool(bolt_ok(say=True).all()):
+                print("  ABORT: bolt left its nest mid-stroke", flush=True)
+                phase, marker = "retreat", i
+            elif bool(popped.any()):
+                print("  [crank] key popped above the mouth — regripping to re-press", flush=True)
+                phase, marker = "crank_regrip", i
+            elif bool(arm_near_limit().any()) and t_in > 100:
+                crank_cycles += 1
+                print(f"  [stroke end] joint-limit at {math.degrees(float(stroke_psi.max())):.0f}deg "
+                      f"| bolt {float(torch.rad2deg(bolt_turn).mean()):+.0f}deg", flush=True)
+                phase, marker = "crank_regrip", i
+            elif bool((stroke_psi >= STROKE_RAD - 1e-6).all()) or t_in > 1400:
+                crank_cycles += 1
+                slip_now = float(torch.rad2deg(key_turn - bolt_turn).mean())
+                print(f"  [stroke {crank_cycles}] swept {math.degrees(float(stroke_psi.max())):.0f}deg | "
+                      f"bolt {float(torch.rad2deg(bolt_turn).mean()):+.0f}deg | slip {slip_now:+.0f}deg | "
+                      f"depth {float(depth().mean()) * 1e3:+.2f}mm", flush=True)
+                if float(bolt_turn.mean()) >= 2.0 * math.pi * args.demo_revs:
+                    print(f"  [demo] {args.demo_revs} revolutions driven — releasing", flush=True)
+                    phase, marker = "crank_release", i
+                elif crank_cycles >= MAX_CRANK_CYCLES:
+                    print("  stroke budget spent — releasing with the measured revs", flush=True)
+                    phase, marker = "crank_release", i
+                else:
+                    phase, marker = "crank_regrip", i
+        elif phase == "crank_regrip":  # release discipline, then re-approach the advanced crank
+            if t_in == 1:
+                wpR0_p[:], wpR0_q[:] = tool_pose()
+                weld_off()
+            act = act_of(wpR0_p + (ez * 0.06 if t_in >= 250 else ez * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
+            left_hold()
+            if t_in >= 600:
+                crank_tries = 0
+                phase, marker = "crank_approach", i
+        elif phase == "crank_release":  # demo end: open in place, vertical exit, then admire
+            if t_in == 1:
+                wpR0_p[:], wpR0_q[:] = tool_pose()
+                if bool(welded.any()):
+                    weld_off()
+            act = act_of(wpR0_p + (ez * 0.06 if t_in >= 250 else ez * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
+            left_hold()
+            if t_in >= 600:
+                phase, marker = "admire", i
         elif phase == "admire":  # demo ending: hold the seated key for the camera, then a
             # slow release and withdrawal — the key STAYS seated in the socket
             left_hold()
@@ -1878,7 +2064,8 @@ def main() -> None:
         step(act)
         dd = (depth() - prev_depth).abs()
         if phase in ("pinch_in", "pinch_close", "lift", "carry", "erect", "handoff_carry", "post_pinch",
-                     "handoff", "l_clock", "l_insert", "clock", "insert") and float(dd.max()) > 0.0015:
+                     "handoff", "l_clock", "l_insert", "cage_convert", "crank_approach",
+                     "crank_regrip", "clock", "insert") and float(dd.max()) > 0.0015:
             kt = key.data.root_pos_w
             print(f"    [watchdog] ctrl {i} {phase}: bolt depth jumped {float(dd.max()) * 1e3:+.1f}mm | "
                   f"key ({kt[0, 0]:.3f},{kt[0, 1]:.3f},{kt[0, 2]:.3f}) | tool z {tool_pose()[0][0, 2]:.3f}", flush=True)
