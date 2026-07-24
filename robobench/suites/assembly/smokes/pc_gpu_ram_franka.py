@@ -20,11 +20,13 @@ commanded width) and released when it opens. Everything else is live physics —
 card<->rear-panel frame, and every released part holding its seat under gravity — so a missed
 grasp, a jammed slide, or a stalled press fails honestly.
 
-The `assembly.pc_gpu_ram.franka.*` env stages all three parts UPRIGHT in foam holders, already
-in their seated orientations (lying flat, each part's only sub-80 mm dimension points up — no
-parallel-jaw pinch exists; see the env registration). The card goes first, so its holder (north
-of the stick holders, dead-ahead of the base) is empty before any stick flies; the far DIMM slot
-is filled before the near one, so the camera never watches an insertion behind an
+The `assembly.pc_gpu_ram.franka.*` env stages all three parts UPRIGHT in foam holders (lying
+flat, each part's only sub-80 mm dimension points up — no parallel-jaw pinch exists; see the env
+registration), side by side and PARALLEL on the strip south of the case: two stick rows nearest
+the case, the card row in front, every part's length along x. The card stands in its seated
+orientation; the sticks stand yawed 90 deg from theirs, and each un-yaws during its carry, in
+free air over the case. The card goes first, so its holder is empty before any stick flies; the
+far DIMM slot is filled before the near one, so the camera never watches an insertion behind an
 already-standing stick.
 
 Phases, per part: pick (hover/down/close, geometry-verified) -> lift -> carry (over the 195 mm
@@ -468,6 +470,7 @@ def main() -> None:
     hover_from = torch.zeros(n, 3, device=dev)
     hover_yaw0 = torch.zeros(n, device=dev)
     carry_from = torch.zeros(n, 3, device=dev)
+    carry_q0 = torch.zeros(n, 4, device=dev)  # as-picked part orientation, latched at lift
     retreat_from = torch.zeros(n, 3, device=dev)
     retreat_q0 = torch.zeros(n, 4, device=dev)
     retreat_aa = torch.zeros(n, 3, device=dev)
@@ -604,16 +607,20 @@ def main() -> None:
                 else:
                     print("  ABORT: pick failed", flush=True)
                     phase, marker = "retreat", i
-        elif phase == "lift":  # straight up out of the holder to rim-crossing height (glided)
+        elif phase == "lift":  # straight up out of the holder to rim-crossing height (glided),
+            # HOLDING the as-picked orientation: a stick stages yawed 90 deg from its seated
+            # heading, and twisting it while still between the holder rails would jam
             if t_in == 1:
                 lift_xy[:] = part().data.root_pos_w[:, 0:2]  # rise only: latched, not live (a
                 # live xy target rides the achieved pose and drifts through the holder rails)
                 lift_from[:] = part().data.root_pos_w[:, 2]
+                q0 = part().data.root_quat_w
+                carry_q0[:] = torch.where(q0[:, :1] >= 0, q0, -q0)
             s = smoothstep(t_in / LIFT_STEPS)
             kp = part().data.root_pos_w.clone()
             kp[:, 0:2] = lift_xy
             kp[:, 2] = lift_from + s * (board_z + CROSS_Z - lift_from)
-            tp, tq = hand_for_part(kp, upright_cmd())
+            tp, tq = hand_for_part(kp, carry_q0)
             act = servo(tp, tq, w_grip)
             if (t_in >= LIFT_STEPS and bool(((board_z + CROSS_Z - part().data.root_pos_w[:, 2]).abs() < 0.01).all())) \
                     or t_in >= LIFT_STEPS + 45:
@@ -621,7 +628,7 @@ def main() -> None:
                 phase, marker = "carry", i
         elif phase == "carry":  # translate to above the work point, at crossing height (glided):
             # the card heads for its PLACEMENT point (bracket forward of the rear panel), a stick
-            # for its slot
+            # for its slot — rotating from its staged heading to the seated one on the way
             if t_in == 1:
                 carry_from[:] = part().data.root_pos_w
             goal = (place_w if is_card else seats_w[k]).clone()
@@ -630,8 +637,14 @@ def main() -> None:
             if s >= 1.0:  # arrived, free air near the case: learn the part-frame biases
                 pos_off[:] = (pos_off + 0.25 * (goal - part().data.root_pos_w)).clamp(-0.12, 0.12)
                 learn_rot()
+            qe = quat_mul(upright_cmd(), quat_conjugate(carry_q0))
+            qe = torch.where(qe[:, :1] >= 0, qe, -qe)
+            aa = axis_angle_from_quat(qe)
+            ang = aa.norm(dim=-1).clamp_min(1e-9)
+            q_cmd = quat_mul(quat_from_angle_axis(ang * s, aa / ang.unsqueeze(-1)), carry_q0)
             kp = carry_from + (goal - carry_from) * s
-            tp, tq = hand_for_part(kp + pos_off, upright_cmd())
+            tp, tq = hand_for_part(kp + pos_off, q_cmd)  # position AND heading glide together:
+            # a stick staged parallel to the card un-yaws 90 deg here, in free air over the case
             act = servo(tp, tq, w_grip)
             ref = place_w if is_card else seats_w[k]
             arrived = (part().data.root_pos_w[:, 0:2] - ref[:, 0:2]).norm(dim=-1) < 0.003
