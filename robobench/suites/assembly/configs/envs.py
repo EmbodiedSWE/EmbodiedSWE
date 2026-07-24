@@ -75,14 +75,15 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_gpu_ram", robot="null", env_spacing
 # sticks into the DIMM pair. One base serves all five work points — the pc_ram placement
 # verbatim (base (0.72, -0.34) yaw 180, case/table preset at 0.55): from there the PCIe seat is
 # 0.394 m, its placement point 0.404 m (the rearward slide runs slightly radially inward) and
-# the DIMM seats 0.365/0.378 m. The three parts stage side by side in a two-row cluster on the
-# table strip south of the case (the case's real footprint reaches y -0.212 case-local and its
-# west end to world 0.203, and a 267 mm card cannot share one row with the stick holders inside
-# the arm's reach window): the STICK row stands nearest the case at world (0.30/0.42, -0.29)
-# (reaches 0.42/0.30 m, 13 mm clear of the case face) and the CARD row in FRONT of it at world
-# (0.34, -0.416) (0.388 m reach, 15 mm clear of the stick holders, 38 mm off the table edge) —
-# the long card farthest from the case, so on camera nothing crowds the case silhouette. The
-# card is installed first, so its emptied holder never obstructs the later stick flights. All parts stage UPRIGHT in foam holders (their lying defaults are ungraspable —
+# the DIMM seats 0.365/0.378 m. The three parts stage side by side AND PARALLEL (every part's
+# length along x) in three rows on the table strip south of the case (the case's real footprint
+# reaches y -0.212 case-local, and a 267 mm card cannot share one row with the stick holders
+# inside the arm's reach window): the sticks stand yawed 90 deg from their seated heading at
+# world (0.36, -0.265) and (0.36, -0.315) (reaches 0.368/0.361 m, 27 mm clear of the case face,
+# 50 mm row pitch), and the CARD row in front at world (0.34, -0.405) (0.386 m reach, 25 mm
+# clear of the stick rows, 49 mm off the table edge). The smoke un-yaws each stick during its
+# carry, in free air over the case. The card is installed first, so its emptied holder never
+# obstructs the later stick flights. All parts stage UPRIGHT in foam holders (their lying defaults are ungraspable —
 # see the single-task envs); deterministic spawn (no jitter): the holders are static geometry
 # authored at the spawn points. sim dt 1/240 — the depth both force-driven smokes validated.
 # Three control modes, switchable by env name:
@@ -95,14 +96,15 @@ for _mode in ("osc", "impedance", "joint"):
         lambda mode=_mode: EnvCfg(
             scene="pc_gpu_ram",
             scene_cfg=PcGpuRamAssemblySceneCfg(
-                card_init_xy=(-0.21, -0.416),  # table-rel -> world (0.34, -0.416): the front
+                card_init_xy=(-0.21, -0.405),  # table-rel -> world (0.34, -0.405): the front
                 # row, beside the sticks and clear of the case
                 card_init_z=0.030,  # tab-bottom plane = the holder's floor top
                 card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
-                ram_init_xy=((-0.25, -0.29), (-0.13, -0.29)),  # table-rel -> world
-                # (0.30/0.42, -0.29): the row between the card and the case
+                ram_init_xy=((-0.19, -0.265), (-0.19, -0.315)),  # table-rel -> world
+                # (0.36, -0.265/-0.315): two rows PARALLEL to the card, between it and the case
+                ram_init_quat=(0.70711, 0.0, 0.0, 0.70711),  # upright, yawed 90 deg: staged
+                # parallel to the card; the carry rotates each stick back to its seated heading
                 ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
-                ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
                 reset_pos_jitter=0.0,
                 card_stand=True,
                 ram_stand=True,

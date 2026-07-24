@@ -275,19 +275,31 @@ class PcGpuRamAssemblyScene(BaseScene):
                   (wx + cx, mid_y + half_gap + 0.5 * rail_t, c.surface_z + c.card_init_z + 0.5 * rail_h))
         if c.ram_stand:
             # Foam holders presenting the sticks upright (per stick: floor pad + two rails
-            # flanking the 7.3 mm body slab); geometry as in `pc_ram_assembly`.
+            # flanking the 7.3 mm body slab); geometry as in `pc_ram_assembly`. The holders
+            # follow the staging yaw in `ram_init_quat`: at identity a stick stands in its
+            # seated heading (length along y); at yaw 90 it stands PARALLEL to the card
+            # (length along x) and the rails flank the slab across y instead.
             x0, x1 = self.STICK_BODY_X
             half_gap = 0.5 * (x1 - x0) + c.ram_stand_gap
-            rail_h, rail_t, stand_l = 0.018, 0.008, 0.130  # rails just cover the 128.6 mm stick,
-            # so the two staging rows (sticks + card) fit the strip south of the case together
+            rail_h, rail_t, stand_l = 0.018, 0.008, 0.130
+            rot90 = abs(c.ram_init_quat[3]) > 0.5  # staged yawed 90 deg about z
             for k, (ix, iy) in enumerate(c.ram_init_xy):
-                mid_x = wx + ix + 0.5 * (x0 + x1)
-                stand(f"ram_stand_{k}_floor", (0.022, stand_l, c.ram_init_z),
-                      (mid_x, wy + iy, c.surface_z + 0.5 * c.ram_init_z))
-                stand(f"ram_stand_{k}_rail_a", (rail_t, stand_l, rail_h),
-                      (mid_x - half_gap - 0.5 * rail_t, wy + iy, c.surface_z + c.ram_init_z + 0.5 * rail_h))
-                stand(f"ram_stand_{k}_rail_b", (rail_t, stand_l, rail_h),
-                      (mid_x + half_gap + 0.5 * rail_t, wy + iy, c.surface_z + c.ram_init_z + 0.5 * rail_h))
+                if rot90:
+                    mid_y = wy + iy + 0.5 * (x0 + x1)
+                    stand(f"ram_stand_{k}_floor", (stand_l, 0.022, c.ram_init_z),
+                          (wx + ix, mid_y, c.surface_z + 0.5 * c.ram_init_z))
+                    stand(f"ram_stand_{k}_rail_a", (stand_l, rail_t, rail_h),
+                          (wx + ix, mid_y - half_gap - 0.5 * rail_t, c.surface_z + c.ram_init_z + 0.5 * rail_h))
+                    stand(f"ram_stand_{k}_rail_b", (stand_l, rail_t, rail_h),
+                          (wx + ix, mid_y + half_gap + 0.5 * rail_t, c.surface_z + c.ram_init_z + 0.5 * rail_h))
+                else:
+                    mid_x = wx + ix + 0.5 * (x0 + x1)
+                    stand(f"ram_stand_{k}_floor", (0.022, stand_l, c.ram_init_z),
+                          (mid_x, wy + iy, c.surface_z + 0.5 * c.ram_init_z))
+                    stand(f"ram_stand_{k}_rail_a", (rail_t, stand_l, rail_h),
+                          (mid_x - half_gap - 0.5 * rail_t, wy + iy, c.surface_z + c.ram_init_z + 0.5 * rail_h))
+                    stand(f"ram_stand_{k}_rail_b", (rail_t, stand_l, rail_h),
+                          (mid_x + half_gap + 0.5 * rail_t, wy + iy, c.surface_z + c.ram_init_z + 0.5 * rail_h))
         return out
 
     def sim_cfg(self) -> SimCfg:
