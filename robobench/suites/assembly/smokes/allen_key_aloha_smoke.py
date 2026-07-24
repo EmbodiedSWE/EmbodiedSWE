@@ -1140,16 +1140,29 @@ def main() -> None:
             kp = torch.zeros(n, 3, device=dev)
             kp[:, 0] = hole_xy[:, 0]
             kp[:, 1] = hole_xy[:, 1] + HANDOFF_DY
-            kp[:, 2] = HANDOFF_ROOT_Z
+            xy_far = (kp[:, 0:2] - key.data.root_pos_w[:, 0:2]).norm(dim=-1) > 0.015
+            # carry HIGH, plant only at the station: a planted-tip transit drags the tip
+            # across the plate and through the BOLT (run 145: bolt flat at depth -7mm,
+            # tilt 73deg, after the retry carries plowed it)
+            kp[:, 2] = HANDOFF_ROOT_Z + torch.where(xy_far, torch.full_like(kp[:, 2], 0.030),
+                                                    torch.zeros_like(kp[:, 2]))
             kq = kq_flip(psi_star)
             tp, tq = tool_for_key(kp, kq)
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
             hdn = handle_dir()
             s_p = (elbow[:, 2:3] - PINCH_Z).clamp(0.02, 0.11)
             pinch_pt = elbow + hdn * s_p
+            if t_in == 1:
+                wpL0_p[:] = toolL_pose()[0]  # dwell spot for the open-in-place discipline
             _c, uL, sL, tL = post_frames(pinch_pt)[min(hold_tries, 5)]
             qL = pinch_q(uL, sL, tL)
-            left_to(pinch_pt + uL * 0.07 - quat_apply(qL, ex1 * tool_to_grip), qL, OPEN_C, rot_w=1.2)
+            # after a MISSED pinch the L jaws are still around the post: moving while closing
+            # drags the welded train and can knock the bolt out (run 143) — open IN PLACE
+            # for 150 ticks, then go to the staging hover
+            if t_in < 150:
+                left_to(wpL0_p, toolL_pose()[1], OPEN_C, rot_w=1.2)
+            else:
+                left_to(pinch_pt + uL * 0.07 - quat_apply(qL, ex1 * tool_to_grip), qL, OPEN_C, rot_w=1.2)
             hold_qR[:] = artR.data.joint_pos[:, arm_ids]  # continuously refreshed while R OWNS the move
             act = act_of(tp, tq, grip_c)
             if bool(((kp - key.data.root_pos_w).norm(dim=-1) < 0.012).all()) or t_in >= 2 * WP_TIMEOUT:
@@ -1225,7 +1238,13 @@ def main() -> None:
                 # gate. The lateral grab keeps finding new stable contact modes (pocket 15mm,
                 # flare 28mm, post+corner span 46mm — runs 132-139); accept ANY stable,
                 # substantially-closed configuration with the pocket near the post line.
-                okL = (prL < 0.055) & (perp_now < 0.018) & stable
+                # CLOSED BITE ONLY: wide-span grabs (28-50mm pair) weld the tool at a lever
+                # where the clock's lateral translate is kinematically DEGENERATE — the L
+                # descends but cannot move sideways (run 142: lat frozen 21mm through the
+                # whole insert, margins healthy). The 8-16mm closed bite (runs 140/141) is
+                # the mode whose clock works; retry until the claw gets it (pre-commit, the
+                # R still holds the key).
+                okL = (prL < 0.020) & (perp_now < 0.018) & stable
                 if bool(okL.all()):
                     grip_c_L = float(prL[0]) * 0.5 + 0.0005
                     weld_on_L()
@@ -1254,13 +1273,22 @@ def main() -> None:
                 dpsi = torch.where(dpsi > math.pi / 6.0, dpsi - math.pi / 3.0, dpsi)
                 psi_star[:] = ky + dpsi
             kq = kq_flip(psi_star)
-            tip_tgt = torch.zeros(n, 3, device=dev)
-            tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
-            tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + INSERT_HOVER
-            lat_now = key_lateral()
-            tip_tgt[:, 2] = tip_tgt[:, 2] + torch.where(lat_now > 0.020,
-                                                        torch.full_like(lat_now, 0.020), torch.zeros_like(lat_now))
-            tpL2, tqL2 = tool_for_key_L(root_for_tip(tip_tgt, kq), kq)
+            if t_in == 1:
+                wpL0_p[:] = key.data.root_pos_w
+                wpL0_p[:, 2] = wpL0_p[:, 2] + 0.055
+            if t_in < 220:
+                # UN-PLANT PRE-LIFT (the R clock's un-wedge, 8x-scaled): rise straight OFF the
+                # plate before any lateral travel — the filtered lift+translate blend cuts the
+                # corner and drags the low tip across the bolt head (run 144: bolt knocked out)
+                tpL2, tqL2 = tool_for_key_L(wpL0_p, kq)
+            else:
+                tip_tgt = torch.zeros(n, 3, device=dev)
+                tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+                tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + INSERT_HOVER
+                lat_now = key_lateral()
+                tip_tgt[:, 2] = tip_tgt[:, 2] + torch.where(lat_now > 0.020,
+                                                            torch.full_like(lat_now, 0.020), torch.zeros_like(lat_now))
+                tpL2, tqL2 = tool_for_key_L(root_for_tip(tip_tgt, kq), kq)
             left_to(tpL2, tqL2, grip_c_L, rot_w=1.2)  # rot-priority parked the L 20mm short (run 140)
             act = act_L_park()
             if t_in % 150 == 0:
@@ -1831,9 +1859,13 @@ def main() -> None:
                 wpL_p[:, 0:2] = wpL_p[:, 0:2] + (base_L_xy - tplr[:, 0:2]) * 0.35
                 wpL_p[:, 2] = wpL_p[:, 2] + 0.05
                 wpL_q[:] = tqlr
-            # withdrawing with the jaws still closing around the crank DRAGS the seated key
-            # into a lean (run 141: 17deg, verdict 0/1) — open fully in place, THEN back away
-            left_to(wpL0_p if t_in < 150 else wpL_p, wpL_q, OPEN_C)
+            # release discipline: open fully IN PLACE (300 ticks), then exit VERTICALLY —
+            # the horizontal slot cannot drag the post sideways on a pure +z path (runs
+            # 141/146: lateral-first withdrawal left the seated key leaning 15-17deg)
+            if t_in < 300:
+                left_to(wpL0_p, wpL_q, OPEN_C)
+            else:
+                left_to(wpL0_p + ez * 0.05, wpL_q, OPEN_C)
             act = act_of(wp_p, wp_q, OPEN_C)
             if t_in >= WP_TIMEOUT // 2:
                 phase, marker = "settle", i
