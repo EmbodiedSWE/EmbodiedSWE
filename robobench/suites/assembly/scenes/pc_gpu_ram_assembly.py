@@ -98,7 +98,10 @@ class PcGpuRamAssemblySceneCfg(BaseCfg):
     card_stand_gap: float = info(0.0025)  # rail clearance per side around the card's body slab (m)
     ram_stand: bool = info(False)
     ram_stand_gap: float = info(0.0012)  # rail clearance per side around a stick's body slab (m)
-    # Selectable work surface (same presets as the sibling scenes; the case sits at the table xy).
+    # Selectable work surface (same presets as the sibling scenes).
+    case_xy: tuple[float, float] | None = info(None)  # world xy the case sits at; None -> the
+    # table anchor. Shifting the case (with the robot base following) stretches the staging
+    # strip south of it without touching any case-relative work geometry.
     table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
     surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
     workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
@@ -128,6 +131,8 @@ class PcGpuRamAssemblySceneCfg(BaseCfg):
             self.surface_z = preset["surface_z"]
         if self.workbench_pos is None:
             self.workbench_pos = preset["pos"]
+        if self.case_xy is None:
+            self.case_xy = tuple(self.workbench_pos)
         self.workbench_usd = self.workbench_usd or str(assets / "props" / preset["usd"][0] / preset["usd"][1])
 
     @property
@@ -208,7 +213,9 @@ class PcGpuRamAssemblyScene(BaseScene):
                     ),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
                 ),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(wx, wy, c.surface_z + c.case_lift)),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=(c.case_xy[0], c.case_xy[1], c.surface_z + c.case_lift)
+                ),
             ),
             # Part contact offsets must stay well below the channel grips (0.15 mm/side) or
             # speculative contacts choke the fits.
@@ -259,20 +266,30 @@ class PcGpuRamAssemblyScene(BaseScene):
 
         if c.card_stand:
             # Foam holder presenting the card upright (floor pad + two rails flanking the 34.8 mm
-            # body slab); geometry as in `pc_gpu_assembly`, with a slimmer floor pad — the card's
-            # staging row sits in the pocket between the case's south face and the stick holders,
-            # so the pad hugs the rails instead of overhanging the row. Rail tops stay 35+ mm
-            # below the pick grip band, clear of descending open fingers.
+            # body slab); geometry as in `pc_gpu_assembly`, with a slimmer floor pad. The holder
+            # follows the staging yaw in `card_init_quat`: at identity the card stands in its
+            # seated heading (length along x); at yaw 90 it stands lengthwise along y and the
+            # rails flank the slab across x instead. Rail tops stay 35+ mm below the pick grip
+            # band, clear of descending open fingers.
             y0, y1 = self.CARD_BODY_Y
-            mid_y = wy + cy + 0.5 * (y0 + y1)
             half_gap = 0.5 * (y1 - y0) + c.card_stand_gap
             rail_h, rail_t = 0.055, 0.008
-            stand("card_stand_floor", (0.11, 0.062, c.card_init_z),
-                  (wx + cx, mid_y, c.surface_z + 0.5 * c.card_init_z))
-            stand("card_stand_rail_pcb", (0.11, rail_t, rail_h),
-                  (wx + cx, mid_y - half_gap - 0.5 * rail_t, c.surface_z + c.card_init_z + 0.5 * rail_h))
-            stand("card_stand_rail_fan", (0.11, rail_t, rail_h),
-                  (wx + cx, mid_y + half_gap + 0.5 * rail_t, c.surface_z + c.card_init_z + 0.5 * rail_h))
+            if abs(c.card_init_quat[3]) > 0.5:  # staged yawed 90 deg about z (local +y -> -x)
+                mid_x = wx + cx - 0.5 * (y0 + y1)
+                stand("card_stand_floor", (0.062, 0.11, c.card_init_z),
+                      (mid_x, wy + cy, c.surface_z + 0.5 * c.card_init_z))
+                stand("card_stand_rail_pcb", (rail_t, 0.11, rail_h),
+                      (mid_x - half_gap - 0.5 * rail_t, wy + cy, c.surface_z + c.card_init_z + 0.5 * rail_h))
+                stand("card_stand_rail_fan", (rail_t, 0.11, rail_h),
+                      (mid_x + half_gap + 0.5 * rail_t, wy + cy, c.surface_z + c.card_init_z + 0.5 * rail_h))
+            else:
+                mid_y = wy + cy + 0.5 * (y0 + y1)
+                stand("card_stand_floor", (0.11, 0.062, c.card_init_z),
+                      (wx + cx, mid_y, c.surface_z + 0.5 * c.card_init_z))
+                stand("card_stand_rail_pcb", (0.11, rail_t, rail_h),
+                      (wx + cx, mid_y - half_gap - 0.5 * rail_t, c.surface_z + c.card_init_z + 0.5 * rail_h))
+                stand("card_stand_rail_fan", (0.11, rail_t, rail_h),
+                      (wx + cx, mid_y + half_gap + 0.5 * rail_t, c.surface_z + c.card_init_z + 0.5 * rail_h))
         if c.ram_stand:
             # Foam holders presenting the sticks upright (per stick: floor pad + two rails
             # flanking the 7.3 mm body slab); geometry as in `pc_ram_assembly`. The holders

@@ -22,12 +22,12 @@ grasp, a jammed slide, or a stalled press fails honestly.
 
 The `assembly.pc_gpu_ram.franka.*` env stages all three parts UPRIGHT in foam holders (lying
 flat, each part's only sub-80 mm dimension points up — no parallel-jaw pinch exists; see the env
-registration), side by side and PARALLEL on the strip south of the case: two stick rows nearest
-the case, the card row in front, every part's length along x. The card stands in its seated
-orientation; the sticks stand yawed 90 deg from theirs, and each un-yaws during its carry, in
-free air over the case. The card goes first, so its holder is empty before any stick flies; the
-far DIMM slot is filled before the near one, so the camera never watches an insertion behind an
-already-standing stick.
+registration), side by side and PARALLEL in one line south of the case, every part's length
+along y — pointing away from the case, so no pick ever brings the wrist near its wall. The
+sticks stand in their seated heading; the card stands yawed 90 deg from its own and un-yaws
+during its carry, in free air over the case. The card goes first, so its holder is empty before
+any stick flies; the far DIMM slot is filled before the near one, so the camera never watches an
+insertion behind an already-standing stick.
 
 Phases, per part: pick (hover/down/close, geometry-verified) -> lift -> carry (over the 195 mm
 case rim) -> drop -> align -> [card only: slide (rearward through the cutout)] -> press
