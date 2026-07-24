@@ -29,6 +29,7 @@ from robobench.suites.assembly.scenes import (
     IkeaTableAssemblySceneCfg,
     NutThreadAssemblySceneCfg,
     PcGpuAssemblySceneCfg,
+    PcGpuRamAssemblySceneCfg,
     PcRamAssemblySceneCfg,
 )
 
@@ -63,6 +64,64 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_gpu", robot="null", env_spacing=2))
 # two loose RAM sticks to press in, scene physics only for now.
 # -> "assembly.pc_ram"
 register_env(SUITE, lambda: EnvCfg(scene="pc_ram", robot="null", env_spacing=2))
+
+# The full build: the same case with BOTH work sites open — the empty PCIe x16 slot (+ rear
+# cutout) and the two empty DIMM slots — a loose graphics card and two loose RAM sticks beside
+# it, scene physics only for now.
+# -> "assembly.pc_gpu_ram"
+register_env(SUITE, lambda: EnvCfg(scene="pc_gpu_ram", robot="null", env_spacing=2))
+
+# Franka arm at the combined gpu+ram scene: the card goes into the PCIe x16 slot FIRST (placed
+# inside the case, slid rearward through the I/O cutout, pressed to seat), then the two sticks
+# go into the DIMM pair. The three parts stage side by side in ONE line on the table south of
+# the case, every part's length along y — pointing away from the case, so no pick brings the
+# wrist near its 22 cm wall: stick 0 at world (0.29, -0.32), the card lengthwise between the
+# sticks at (0.365, -0.321), stick 1 at (0.44, -0.32). The sticks stand in their seated heading;
+# the card stands yawed 90 deg and the smoke rotates it back during its carry, in free air over
+# the case. The case sits 40 mm north of the table anchor (`case_xy`) so the 267 mm card fits
+# lengthwise in the staging strip, and the base follows to (0.72, -0.30) yaw 180 — the whole
+# work cell translates rigidly, keeping every case-relative reach in the arm's accurate band:
+# PCIe seat 0.394 m, its placement point 0.404 m (the rearward slide runs slightly radially
+# inward), DIMM seats 0.365/0.378 m, picks 0.43/0.36/0.28 m. The card is installed first, so
+# its emptied holder never obstructs the later stick flights. All parts stage UPRIGHT in foam
+# holders (their lying defaults are ungraspable — see the single-task envs); deterministic
+# spawn (no jitter): the holders are static geometry authored at the spawn points. sim dt
+# 1/240 — the depth both force-driven smokes validated.
+# Three control modes, switchable by env name:
+#   - "assembly.pc_gpu_ram.franka.osc"       — operational-space control (default)
+#   - "assembly.pc_gpu_ram.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_gpu_ram.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_gpu_ram",
+            scene_cfg=PcGpuRamAssemblySceneCfg(
+                case_xy=(0.55, 0.04),  # case 40 mm north of the table anchor: stretches the
+                # staging strip so the card fits lengthwise; the base follows (see below)
+                card_init_xy=(-0.185, -0.321),  # table-rel -> world (0.365, -0.321): the middle
+                # of the staging line, lengthwise between the sticks
+                card_init_z=0.030,  # tab-bottom plane = the holder's floor top
+                card_init_quat=(0.70711, 0.0, 0.0, 0.70711),  # upright, yawed 90 deg: staged
+                # parallel to the sticks; the carry rotates it back to its seated heading
+                ram_init_xy=((-0.26, -0.32), (-0.11, -0.32)),  # table-rel -> world
+                # (0.29/0.44, -0.32): flanking the card, all three parts parallel along y
+                ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                reset_pos_jitter=0.0,
+                card_stand=True,
+                ram_stand=True,
+            ),
+            robot="franka",
+            robot_cfg=FrankaRobotCfg(
+                base_pos=(0.72, -0.30, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x;
+                # 40 mm north with the case, the 154 mm rear foot points +x along the strip
+            ),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
 
 # Franka arm at the pc-ram scene (the case/table preset sits at 0.55 here). Same north-strip
 # placement family as pc_gpu.franka: the base stands at (0.72, -0.34) yaw 180 with its whole
