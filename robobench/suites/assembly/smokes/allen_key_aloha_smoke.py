@@ -1754,21 +1754,25 @@ def main() -> None:
                     phase, marker = "crank_release", i
                 else:
                     phase, marker = "crank_regrip", i
-        elif phase == "crank_regrip":  # release discipline, then re-approach the advanced crank
+        elif phase == "crank_regrip":  # release discipline, then re-approach the advanced crank.
+            # EXIT ALONG THE CRANK AXIS, not vertically: the hooks scoop UNDER the horizontal
+            # member — a rising exit lifts the key out of the socket and the falling key
+            # unscrews the bolt (runs 148/150: +54deg wound back to +21deg). Slide the open
+            # pocket OFF the member's end instead (the way it came in).
             if t_in == 1:
                 wpR0_p[:], wpR0_q[:] = tool_pose()
                 weld_off()
-            act = act_of(wpR0_p + (ez * 0.06 if t_in >= 250 else ez * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
+            act = act_of(wpR0_p - (uR_lock * 0.08 if t_in >= 250 else uR_lock * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
             left_hold()
             if t_in >= 600:
                 crank_tries = 0
                 phase, marker = "crank_approach", i
-        elif phase == "crank_release":  # demo end: open in place, vertical exit, then admire
+        elif phase == "crank_release":  # demo end: open in place, exit along the crank axis
             if t_in == 1:
                 wpR0_p[:], wpR0_q[:] = tool_pose()
                 if bool(welded.any()):
                     weld_off()
-            act = act_of(wpR0_p + (ez * 0.06 if t_in >= 250 else ez * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
+            act = act_of(wpR0_p - (uR_lock * 0.08 if t_in >= 250 else uR_lock * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
             left_hold()
             if t_in >= 600:
                 phase, marker = "admire", i
