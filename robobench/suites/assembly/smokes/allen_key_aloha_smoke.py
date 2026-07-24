@@ -1665,6 +1665,7 @@ def main() -> None:
             if t_in == 1:
                 wpR0_p[:], wpR0_q[:] = tool_pose()
                 crank_lock[:] = crank_live
+                crank_near = False
                 _c, _u, _s, _t = crank_frames(crank_lock, sdh)[min(crank_tries, 5)]
                 uR_lock[:] = _u
                 cf_spin, cf_tilt = _s, _t
@@ -1678,7 +1679,12 @@ def main() -> None:
             else:
                 if t_in == 1130:
                     crank_lock[:] = crank_live  # one pre-close re-latch
-                close_now = t_in > 1150
+                    crank_near = bool((crank_perp("Right") < 0.025).all())
+                    if not crank_near:
+                        print(f"    [crank] approach never converged (perp "
+                              f"{float(crank_perp('Right').max()) * 1e3:.0f}mm) — NOT closing (a far"
+                              f" press-in topples the standing key)", flush=True)
+                close_now = t_in > 1150 and crank_near
                 # the FIRST approach starts from the R's park (~0.25m out): long hover leg
                 off = -0.06 if t_in < 800 else (0.006 if close_now else 0.0)
                 vt = crank_lock + uR_lock * off
@@ -1817,6 +1823,7 @@ def main() -> None:
                 wpL0_p[:] = toolL_pose()[0]
                 wpL_q[:] = toolL_pose()[1]
                 crank_lock[:] = crank_live
+                crank_near = False
                 _c, _u, _s, _t = crank_frames_L(crank_lock, sdh)[min(crank_tries, 5)]
                 uL_lock[:] = _u
                 pf_spin, pf_tilt = _s, _t
@@ -1828,7 +1835,11 @@ def main() -> None:
             else:
                 if t_in == 1130:
                     crank_lock[:] = crank_live
-                close_now = t_in > 1150
+                    crank_near = bool((crank_perp("Left") < 0.025).all())
+                    if not crank_near:
+                        print(f"    [crankL] approach never converged (perp "
+                              f"{float(crank_perp('Left').max()) * 1e3:.0f}mm) — NOT closing", flush=True)
+                close_now = t_in > 1150 and crank_near
                 off = -0.06 if t_in < 800 else (0.006 if close_now else 0.0)
                 vt = crank_lock + uL_lock * off
                 left_to(vt - quat_apply(qL, ex1 * tool_to_grip), qL, 0.004 if close_now else OPEN_C, rot_w=1.2)
