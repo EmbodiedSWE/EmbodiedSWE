@@ -297,7 +297,7 @@ def main() -> None:
             arc = math.sin(math.pi * cam_s)
             lift_h = max(0.0, float(part().data.root_pos_w[0, 2]) - 0.15) * (1.0 - cam_s)
             if sq == 0:
-                # high enough to see the stick row over the card standing in the front row
+                # a high 3/4 view that frames the whole staging line around the card
                 pick_eye = torch.tensor([float(hxy[0]) - 0.35, float(hxy[1]) - 0.44, 0.60], device=dev)
                 pick_tgt = torch.tensor([float(hxy[0]), float(hxy[1]), 0.08], device=dev)
                 ins_eye, ins_tgt, arc_e, arc_t = gpu_eye, gpu_tgt, 0.12, 0.16
