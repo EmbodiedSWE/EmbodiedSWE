@@ -163,7 +163,7 @@ PRESS_DZ = 0.0035        # crank press: command the tip this far below the live 
 # commanded interpenetration hammered the staged bolt off its helix capture: it then spun
 # crest-nested, +76 deg with zero descent, and the key cammed out on the next stroke)
 STROKE_RAD = math.radians(120.0)   # nominal crank sweep per cycle (screw-in = negative yaw)
-CAGE_C = 0.0075          # STAGE 2 steady-rest: L carriage command for the passive cage (hex spins
+CAGE_C = 0.0060          # STAGE 2 steady-rest: L carriage command for the passive cage (hex spins
                          # inside, tip bounded); the closed-bite pocket already wraps the post
 CAGE_SLIDE = 0.035       # cage slides this far DOWN the post so the orbiting crank clears the claw
 CRANK_GRIP_D = 0.012     # R's stroke grip: 12mm inboard of the crank tip (end-on grab)
@@ -1701,15 +1701,30 @@ def main() -> None:
             if t_in == 1:
                 stroke_psi.zero_()
                 stroke_y0[:] = crank_azim()
-            stroke_psi += CRANK_W
-            stroke_psi.clamp_(max=STROKE_RAD)
+                crank_press_hold = 0
+            popped = key_tip_axial() > SOCKET_MOUTH_Z - 0.002
+            if crank_press_hold == 0 and bool(popped.any()):
+                # the orbit start can YANK the tip above the mouth (run 148 stroke 2): DO NOT
+                # release a precarious key — freeze the orbit and RE-PRESS while still welded
+                crank_press_hold = 300
+                print("  [crank] tip above the mouth — freezing the orbit to re-press", flush=True)
+            if crank_press_hold > 0:
+                crank_press_hold -= 1
+                if not bool(popped.any()):
+                    crank_press_hold = 0  # re-seated: resume the sweep
+                elif crank_press_hold == 0:
+                    print("  [crank] re-press failed — regripping", flush=True)
+                    phase, marker = "crank_regrip", i
+            else:
+                stroke_psi += CRANK_W * min(t_in / 200.0, 1.0)  # rate ramp: no start jerk
+                stroke_psi.clamp_(max=STROKE_RAD)
             kq = kq_flip(stroke_y0 - crank_sign * stroke_psi)
             tip_tgt = torch.zeros(n, 3, device=dev)
             tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
-            tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.0015
+            tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.0025
             kp = root_for_tip(tip_tgt, kq)
             tp, tq = tool_for_key(kp, kq)
-            act = act_of(tp, tq, grip_c, rot_w=1.2)
+            act = act_of(tp, tq, grip_c, rot_w=0.8)  # press-primary: the orbit must not win over the seat
             left_hold()
             if not crank_dir_checked and t_in == 500:
                 crank_dir_checked = True
@@ -1717,13 +1732,9 @@ def main() -> None:
                     crank_sign = -1.0  # run-level lock: flip ONCE (backing-out response)
                     print("  [crank] direction flip: the bolt was backing out — locked reversed", flush=True)
                     marker = i
-            popped = key_tip_axial() > SOCKET_MOUTH_Z - 0.002
             if not bool(bolt_ok(say=True).all()):
                 print("  ABORT: bolt left its nest mid-stroke", flush=True)
                 phase, marker = "retreat", i
-            elif bool(popped.any()):
-                print("  [crank] key popped above the mouth — regripping to re-press", flush=True)
-                phase, marker = "crank_regrip", i
             elif bool(arm_near_limit().any()) and t_in > 100:
                 crank_cycles += 1
                 print(f"  [stroke end] joint-limit at {math.degrees(float(stroke_psi.max())):.0f}deg "
