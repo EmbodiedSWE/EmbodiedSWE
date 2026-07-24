@@ -29,6 +29,7 @@ from robobench.suites.assembly.scenes import (
     IkeaTableAssemblySceneCfg,
     NutThreadAssemblySceneCfg,
     PcGpuAssemblySceneCfg,
+    PcGpuRamAssemblySceneCfg,
     PcRamAssemblySceneCfg,
 )
 
@@ -63,6 +64,54 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_gpu", robot="null", env_spacing=2))
 # two loose RAM sticks to press in, scene physics only for now.
 # -> "assembly.pc_ram"
 register_env(SUITE, lambda: EnvCfg(scene="pc_ram", robot="null", env_spacing=2))
+
+# The full build: the same case with BOTH work sites open — the empty PCIe x16 slot (+ rear
+# cutout) and the two empty DIMM slots — a loose graphics card and two loose RAM sticks beside
+# it, scene physics only for now.
+# -> "assembly.pc_gpu_ram"
+register_env(SUITE, lambda: EnvCfg(scene="pc_gpu_ram", robot="null", env_spacing=2))
+
+# Franka arm at the combined gpu+ram scene: the card goes into the PCIe slot FIRST, then the two
+# sticks into the DIMM pair. One base serves all five work points — the pc_ram placement
+# verbatim (base (0.72, -0.34) yaw 180, case/table preset at 0.55): from there the PCIe seat is
+# 0.393 m, its placement point 0.404 m (the rearward slide runs slightly radially inward), the
+# DIMM seats 0.365/0.378 m, the stick holders 0.30/0.42 m — all in the arm's accurate band. The
+# card holder cannot share the stick holders' south-strip band (every spot there in reach is
+# taken), so it sits north of it at world (0.34, -0.24), 0.393 m dead-ahead of the base — the
+# card is installed first, so the empty holder never obstructs the later stick flights. All
+# parts stage UPRIGHT in foam holders (their lying defaults are ungraspable — see the
+# single-task envs); deterministic spawn (no jitter): the holders are static geometry authored
+# at the spawn points. sim dt 1/240 — the depth both force-driven smokes validated.
+# Three control modes, switchable by env name:
+#   - "assembly.pc_gpu_ram.franka.osc"       — operational-space control (default)
+#   - "assembly.pc_gpu_ram.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_gpu_ram.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_gpu_ram",
+            scene_cfg=PcGpuRamAssemblySceneCfg(
+                card_init_xy=(-0.21, -0.24),  # table-rel -> world (0.34, -0.24), north of the strip
+                card_init_z=0.030,  # tab-bottom plane = the holder's floor top
+                card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
+                ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                reset_pos_jitter=0.0,
+                card_stand=True,
+                ram_stand=True,
+            ),
+            robot="franka",
+            robot_cfg=FrankaRobotCfg(
+                base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x,
+                # the 154 mm rear foot points +x along the strip
+            ),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
 
 # Franka arm at the pc-ram scene (the case/table preset sits at 0.55 here). Same north-strip
 # placement family as pc_gpu.franka: the base stands at (0.72, -0.34) yaw 180 with its whole
