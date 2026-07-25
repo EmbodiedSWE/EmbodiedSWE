@@ -956,6 +956,7 @@ def main() -> None:
     crank_tries, crank_cycles, crank_bounce = 0, 0, 0
     grip_hold_R: float | torch.Tensor = CLOSE_C  # the R's steady-hand bite command
     holder = "L"  # which arm is the steady hand (admire/retreat must not yank it)
+    last_sweep = 9.9  # last stroke's swept angle (rad) — a short sweep means the arc is SPENT
     crank_sign, crank_dir_checked = 1.0, False
     grip_c_L: float | torch.Tensor = CLOSE_C  # L's hold at its measured post stall
 
@@ -1802,11 +1803,13 @@ def main() -> None:
                 phase, marker = "retreat", i
             elif bool((-handle_dir()[:, 2] < 0.97).any()) and float(stroke_psi.max()) > math.radians(35):
                 crank_cycles += 1
+                last_sweep = float(stroke_psi.max())
                 print(f"  [stroke end] tilt-guard at {math.degrees(float(stroke_psi.max())):.0f}deg "
                       f"| bolt {float(torch.rad2deg(bolt_turn).mean()):+.0f}deg — swapping hands", flush=True)
                 phase, marker = "crank_regrip", i
             elif bool(arm_near_limit().any()) and t_in > 100:
                 crank_cycles += 1
+                last_sweep = float(stroke_psi.max())
                 print(f"  [stroke end] joint-limit at {math.degrees(float(stroke_psi.max())):.0f}deg "
                       f"| bolt {float(torch.rad2deg(bolt_turn).mean()):+.0f}deg", flush=True)
                 phase, marker = "crank_regrip", i
@@ -1846,9 +1849,10 @@ def main() -> None:
                 cl2 = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * CRANK_GRIP_D
                 cR2 = crank_frames(cl2, sdh2)[0][0]
                 cL2 = crank_frames_L(cl2, sdh2)[0][0]
-                phase = "crank_approach" if cR2 <= cL2 else "role_swap_R_holder"
-                print(f"    [swap] frame costs R {cR2:.2f} / L {cL2:.2f} -> "
-                      f"{'RIGHT re-grabs' if cR2 <= cL2 else 'ROLE SWAP (R holds, L cranks)'}", flush=True)
+                spent = last_sweep < math.radians(30)  # a short sweep = the arc is done, whatever the cost says
+                phase = "crank_approach" if (cR2 <= cL2 and not spent) else "role_swap_R_holder"
+                print(f"    [swap] costs R {cR2:.2f} / L {cL2:.2f}{' | arc SPENT' if spent else ''} -> "
+                      f"{'RIGHT re-grabs' if phase == 'crank_approach' else 'ROLE SWAP (R holds, L cranks)'}", flush=True)
                 marker = i
         elif phase == "crank_approach_L":  # the LEFT grabs the advanced crank (far arc)
             sdh = up_axis_of(key.data.root_quat_w).clone()
@@ -1944,6 +1948,7 @@ def main() -> None:
                 phase, marker = "retreat", i
             elif bool((-handle_dir()[:, 2] < 0.97).any()) and float(stroke_psi.max()) > math.radians(35):
                 crank_cycles += 1
+                last_sweep = float(stroke_psi.max())
                 print(f"  [strokeL end] tilt-guard at {math.degrees(float(stroke_psi.max())):.0f}deg "
                       f"| bolt {float(torch.rad2deg(bolt_turn).mean()):+.0f}deg — swapping hands", flush=True)
                 phase, marker = "crank_regrip_L", i
@@ -1979,9 +1984,10 @@ def main() -> None:
                     cl2 = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * CRANK_GRIP_D
                     cR2 = crank_frames(cl2, sdh2)[0][0]
                     cL2 = crank_frames_L(cl2, sdh2)[0][0]
-                    phase = "crank_approach_L" if cL2 <= cR2 else "role_swap_L_holder"
-                    print(f"    [swap] frame costs R {cR2:.2f} / L {cL2:.2f} -> "
-                          f"{'LEFT re-grabs' if cL2 <= cR2 else 'ROLE SWAP (L holds, R cranks)'}", flush=True)
+                    spent = last_sweep < math.radians(30)
+                    phase = "crank_approach_L" if (cL2 <= cR2 and not spent) else "role_swap_L_holder"
+                    print(f"    [swap] costs R {cR2:.2f} / L {cL2:.2f}{' | arc SPENT' if spent else ''} -> "
+                          f"{'LEFT re-grabs' if phase == 'crank_approach_L' else 'ROLE SWAP (L holds, R cranks)'}", flush=True)
                     marker = i
         elif phase == "crank_release_L":  # demo end from an L-held stroke
             if t_in == 1:
