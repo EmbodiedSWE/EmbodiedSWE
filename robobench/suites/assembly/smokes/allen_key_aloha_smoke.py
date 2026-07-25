@@ -171,7 +171,9 @@ CAGE_C = 0.0060          # STAGE 2 steady-rest: L carriage command for the passi
                          # inside, tip bounded); the closed-bite pocket already wraps the post
 CAGE_SLIDE = 0.035       # cage slides this far DOWN the post so the orbiting crank clears the claw
 CRANK_GRIP_D = 0.012     # R's stroke grip: 12mm inboard of the crank tip (end-on grab)
-POST_HOLD_Z_R = 0.060    # the R's steady-hand station (below the L's pocket: both fit the post)
+POST_HOLD_Z_R = 0.118    # the R's steady-hand station: ABOVE the L's pocket (~0.095), below
+                         # the crank (0.150) — the low station's approach ran through the L
+                         # holder's claw zone and parked 26-109mm out (run 162, all frames)
 POST_HOLD_Z_L = 0.095    # the L's steady-hand station
 CRANK_W = 0.0025         # crank rate (rad/tick): 120deg in ~840 ticks — watchable
 MAX_CRANK_CYCLES = 10    # stroke budget for the demo (release honestly with measured revs)
@@ -1360,7 +1362,7 @@ def main() -> None:
             kq = kq_flip(psi_star)
             if t_in == 1:
                 wpL0_p[:] = key.data.root_pos_w
-                wpL0_p[:, 2] = wpL0_p[:, 2] + 0.055
+                wpL0_p[:, 2] = wpL0_p[:, 2] + 0.075
             if t_in < 220:
                 # UN-PLANT PRE-LIFT (the R clock's un-wedge, 8x-scaled): rise straight OFF the
                 # plate before any lateral travel — the filtered lift+translate blend cuts the
