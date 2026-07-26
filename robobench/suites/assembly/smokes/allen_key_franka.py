@@ -1,11 +1,17 @@
-"""Franka smoke for AllenBoltAssemblyScene — the arm picks the allen key off the table, stands it
-tip-down in the staged bolt's hex socket, and ratchet-screws the bolt down the platform's real SDF
-threads until it seats.
+"""Franka smoke for AllenBoltAssemblyScene — the arm picks the allen key off the table, stands its
+LONG arm tip-down in the staged bolt's hex socket, and ratchet-screws the bolt down the platform's
+real SDF threads until it seats, cranking the short arm.
+
+The key inserts by its LONG (120 mm) arm on purpose: the protruding lever is then the 50 mm short
+arm — less than half the swept diameter of the handle-out grip — and the gripper rides a long
+vertical shaft, so every grip sits high above the bolt head instead of scraping the horizontal
+hand's low-workspace floor. The heavy handle mass moves ONTO the screw axis, so the key stands in
+the socket far more gently when released.
 
 Grasping follows the benchmark weld-on-closure contract (cf. the pc_* franka smokes): a
 normally-disabled FixedJoint hand<->key is enabled when the gripper is verifiably closed around
-the key's hex arm (closure verified geometrically: pads flanking the arm at the grip band,
-fingers at a real-grip width) and released when it opens. Everything else is live physics —
+one of the key's hex arms (closure verified geometrically: pads flanking the arm at the grip
+band, fingers at a real-grip width) and released when it opens. Everything else is live physics —
 key<->socket hex contact, bolt<->platform thread contact, and the key standing unheld in the
 socket during the one mid-task regrasp — so a missed grasp, a jammed insertion, or a dropped key
 fails honestly.
@@ -13,15 +19,16 @@ fails honestly.
 The choreography works around two hard constraints:
   * A flat-spawned key can only be erected tip-down by pitching the hand 90 deg with it — the
     hand that erects the key ends HORIZONTAL, and no single grasp of the lying key yields the
-    top-down grip that screwing needs. So the arm picks the lying key by its working arm, erects
-    it about the HANDLE axis (the handle stays put; the arm sweeps tip-down), inserts the tip
-    into the socket with the horizontal hand, releases, and re-grasps the standing arm TOP-DOWN —
-    from there the wrist roll maps 1:1 onto the key's screw axis.
+    top-down grip that screwing needs. So the arm picks the lying key by mid-handle, erects it
+    about the SHORT arm's axis (the short arm stays put; the handle sweeps tip-down), lowers the
+    tip into the socket with the horizontal hand, releases, and re-grasps the SHORT ARM top-down
+    — a clean pick-like pinch ~110 mm above the bolt head with nothing near it.
   * The wrist's +-166 deg joint-7 range cannot turn the ~10 revolutions a full seat needs, so the
-    smoke ratchets WITHOUT ever letting go: press + twist a stroke until joint 7 nears its stop,
-    bleed the torsional wind-up, lift the tip just clear of the socket, rewind the wrist by a
-    multiple of 60 deg (the hex-symmetry step — clocking is preserved exactly), drop back in and
-    stroke again. The key never leaves the hand between the regrasp and the final release.
+    smoke ratchets WITHOUT ever letting go: press + twist a stroke until joint 7 nears its stop
+    (the hand orbits the 22 mm crank circle; the wrist roll still winds 1:1 with the screw), bleed
+    the torsional wind-up, lift the tip just clear of the socket, rewind by a multiple of 60 deg
+    (the hex-symmetry step — clocking is preserved exactly), drop back in and stroke again. The
+    key never leaves the hand between the regrasp and the final release.
 
 The bolt itself is staged HAND-STARTED, the way a person finger-spins a bolt two turns before
 reaching for the key: teleported upright over the hole, dropped to nest on the thread crests
@@ -35,7 +42,7 @@ Phases: show -> stage(drop/nest -> helix-set -> hold) -> pick(hover/down/close) 
 insert(descend, peck-retry) -> handoff(release in socket) -> regrasp(hover/down/close) ->
 [stroke -> unload -> lift -> rewind -> reinsert]* -> release -> retreat -> settle.
 Verdict: seated count, depth the key drove vs the ratchet's revolutions (expected ~2.0 mm/rev,
-the M16 pitch), key->bolt slip, cycles, picks, drops.
+the M16 pitch), within-stroke key->bolt slip, cycles, picks, drops.
 
 .venv/bin/python -m robobench.suites.assembly.smokes.allen_key_franka --headless
 python -m robobench.suites.assembly.smokes.allen_key_franka --livestream 2
@@ -85,9 +92,18 @@ if TYPE_CHECKING:
 DT = 1.0 / 240.0  # sim timestep (matches the registered env's dt override)
 
 # Key geometry baked into the committed key USD (informs every grip/clearance constant below):
-# tip at origin, 50 mm working arm up +z, 120 mm handle along +x off the elbow; both arms hex
-# 12.6 mm across flats / 14.4 mm across corners, corners authored at k*60 deg; the handle spans
-# 42.8-57.2 mm above the tip.
+# body origin at the SHORT arm's tip, 50 mm short arm up local +z, 120 mm handle along local +x
+# off the elbow at z = 50 mm; both arms hex 12.6 mm across flats / 14.4 mm across corners. The
+# smoke inserts the HANDLE's far end — key-local (0.120, 0, 0.050) — so when the key stands in
+# the socket the shaft is the vertical handle and the short arm cranks horizontally at the top.
+TIP_LOCAL = (0.120, 0.0, 0.050)      # the inserting tip: the handle's far end
+PICK_GRIP_LOCAL = (0.060, 0.0, 0.050)  # pick grip: mid-handle, 60 mm from the inserting tip
+CRANK_GRIP_LOCAL = (0.0, 0.0, 0.028)   # screw grip: on the short arm, 22 mm out from the elbow
+# The INSERTED orientation at screw angle psi: R_z(psi) * Q0, with Q0 = R_y(90 deg) mapping the
+# handle (local +x) straight down and the short arm (local +z) to the horizontal crank. The hex
+# about the shaft then presents its corners at heading psi + k*60 — the same clocking convention
+# as the socket (both author corners at k*60) — so psi == bolt yaw (mod 60) mates.
+Q0_WXYZ = (0.70711, 0.0, 0.70711, 0.0)
 # ----- bolt-local geometry (origin = thread tip, +z up through the head) -------------------------
 SOCKET_FLOOR_Z = 0.0355  # hex recess floor
 SOCKET_MOUTH_Z = 0.0428  # head top = recess mouth (7.3 mm deep socket, 0.75 mm/side clearance)
@@ -104,34 +120,30 @@ FINGER_TO_PAD = 0.045      # panda_finger body origin -> finger-pad centre, alon
                            # (the finger TIP ends 8.8 mm past the pad centre)
 
 # ----- grips --------------------------------------------------------------------------------------
-# Pick: top-down pinch of the LYING key's working arm (fingers close across the arm; the lying
-# hex presents its corners sideways, so the pads land across corners, 14.4 mm).
-PICK_GRIP_D = 0.030        # grip point: this far up the lying arm from the tip. HIGH on purpose:
-                           # the tip must reach the socket floor with a HORIZONTAL hand, whose
-                           # workspace bottoms out around z ~0.096 m here — every mm of grip
-                           # height is a mm of tip depth. The 18 mm pads then span 21-39 mm of
-                           # the 50 mm arm, still clear of the handle root (flank at ~43.7 mm).
-PICK_PAD_LIFT = 0.0045     # pad-centre height above the lying arm's axis (fingertips ~2 mm off
+# Pick: top-down pinch of the LYING handle at mid-length (fingers close across it; the lying hex
+# presents its corners sideways, so the pads land across corners, 14.4 mm).
+PICK_PAD_LIFT = 0.0045     # pad-centre height above the lying handle's axis (fingertips ~2 mm off
                            # the table; the 18 mm pad still spans the whole 12.6 mm hex)
 PICK_W = 0.0069            # per-finger closed width: across-corners half-width minus a kiss
-# Screw grip: top-down pinch of the STANDING arm, fingers across the flats (the hand x axis runs
-# along the handle, so the finger bodies clear it; the pads' upper edges stay under the handle).
-GRIP_UP = 0.030            # grip point: this far above the key tip (pad top 39 mm < handle 42.8)
+# Screw grip: top-down pinch of the horizontal SHORT arm (the crank), 22 mm out from the elbow —
+# the pads land across its FLATS, the inner finger stays 5 mm clear of the vertical shaft, and
+# nothing at all sits above the grip.
 SCREW_W = 0.0057           # per-finger closed width: across-flats half-width minus a kiss
-STRADDLE_W = 0.015         # per-finger width while descending AROUND the arm
+STRADDLE_W = 0.015         # per-finger width while descending AROUND an arm
 CLOSED_MIN, CLOSED_MAX = 0.009, 0.017  # closure window (finger-joint sum, m): hex 12.6-14.4 mm
 
 # ----- choreography -------------------------------------------------------------------------------
 HOVER_CLEAR = 0.05         # pad hover height above the grip point before a descent
-CARRY_TIP_Z = 0.16         # key-tip height (above the table top) for the lift/erect/carry legs
+ERECT_ORIGIN_Z = 0.20      # key-origin height (above the table) while erecting: the 120 mm handle
+                           # sweeps tip-down BELOW the held origin and must clear the table
 INSERT_HOVER = 0.012       # tip hover above the socket mouth before the first insertion
 PRESS_LEAD = 0.004         # stroke press: command the tip this far below the live socket floor
                            # (the press is what keeps the hex from camming out under torque)
 LIFT_CLEAR = 0.004         # recock lift: tip this far above the socket mouth (out of the hex)
 J7_GUARD = 2.6             # end a stroke when joint 7 exceeds this (limit 2.897 rad)
 J7_START = -2.1            # rewind aims joint 7 back here (leaves ~270 deg of stroke)
-STROKE_W = 1.2             # commanded stroke yaw rate (rad/s), under the 1.455 rad/s action cap
-REWIND_W = 1.8             # rewind yaw rate (rad/s), free air
+STROKE_W = 1.2             # commanded stroke spin rate (rad/s), under the 1.455 rad/s action cap
+REWIND_W = 1.8             # rewind spin rate (rad/s), free air
 SLIP_ABORT = math.radians(45.0)  # end a stroke early if the key slips this far over the hex
 MAX_CYCLES = 30            # ratchet cycle budget (a clean run needs ~13)
 PICK_RETRIES = 3
@@ -142,7 +154,7 @@ DROP_BUDGET = 3
 TOL_P, TOL_R = 0.004, 0.06
 SHOW_END, STAGE_SETTLE = 20, 25
 WP_TIMEOUT, CLOSE_STEPS, SETTLE_STEPS = 75, 18, 45
-LIFT_STEPS, ERECT_STEPS, CARRY_STEPS, INSERT_STEPS, RETREAT_STEPS = 55, 60, 90, 45, 50
+LIFT_STEPS, ERECT_STEPS, CARRY_STEPS, INSERT_STEPS, RETREAT_STEPS = 55, 75, 90, 45, 50
 STROKE_TIMEOUT, REWIND_TIMEOUT, REINSERT_TIMEOUT = 90, 60, 60
 HARD_CAP = 6000
 LOG_EVERY = 45
@@ -186,6 +198,11 @@ def main() -> None:
     render = (not args.headless) or livestream_on
     ez = torch.tensor([0.0, 0.0, 1.0], device=dev).expand(n, 3)
     ex = torch.tensor([1.0, 0.0, 0.0], device=dev).expand(n, 3)
+    e_local_z = torch.tensor([0.0, 0.0, 1.0], device=dev).expand(n, 3)
+    tip_local = torch.tensor(TIP_LOCAL, device=dev).expand(n, 3)
+    pick_grip_local = torch.tensor(PICK_GRIP_LOCAL, device=dev).expand(n, 3)
+    crank_grip_local = torch.tensor(CRANK_GRIP_LOCAL, device=dev).expand(n, 3)
+    q0_flip = torch.tensor(Q0_WXYZ, device=dev).expand(n, 4)
 
     # ----- hand<->key welds (the grasp contract): pre-authored, disabled FixedJoints --------------
     # PhysX latches a joint's local frames when it is FIRST enabled; frame rewrites on a re-enabled
@@ -244,8 +261,8 @@ def main() -> None:
         k0 = key.data.root_pos_w[0]
         pick_eye = torch.tensor([float(k0[0]) - 0.28, float(k0[1]) - 0.38, float(p0[2]) + 0.40], device=dev)
         pick_tgt = torch.tensor([float(k0[0]), float(k0[1]), float(p0[2]) + 0.05], device=dev)
-        ins_eye = torch.tensor([float(p0[0]) + 0.16, float(p0[1]) - 0.30, float(p0[2]) + 0.22], device=dev)
-        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]), float(p0[2]) + 0.07], device=dev)
+        ins_eye = torch.tensor([float(p0[0]) + 0.16, float(p0[1]) - 0.30, float(p0[2]) + 0.24], device=dev)
+        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]), float(p0[2]) + 0.10], device=dev)
         trip = float((k0[0:2] - p0[0:2]).norm())
         cam_s = 0.0
 
@@ -326,6 +343,11 @@ def main() -> None:
         hq = quat_mul(kq, quat_conjugate(rel_q))
         return kp - quat_apply(hq, rel_p), hq
 
+    def hand_for_tip(tip_p: torch.Tensor, kq: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Hand waypoint that puts the welded key's INSERTING TIP (the handle's far end) at
+        `tip_p` with key orientation `kq`."""
+        return hand_for_key(tip_p - quat_apply(kq, tip_local), kq)
+
     def q_down(yaw: torch.Tensor) -> torch.Tensor:
         """Top-down hand orientation (approach -z) with the given world yaw."""
         flip = torch.zeros(n, 4, device=dev)
@@ -355,28 +377,40 @@ def main() -> None:
     def depth() -> torch.Tensor:  # bolt tip depth below the plate top (m), per env
         return plat_z + plate_top - bolt.data.root_pos_w[:, 2]
 
+    def tip_pos() -> torch.Tensor:
+        """World position of the key's INSERTING TIP (the handle's far end)."""
+        return key.data.root_pos_w + quat_apply(key.data.root_quat_w, tip_local)
+
     def tip_axial() -> torch.Tensor:
-        """Key tip height above the bolt origin along the bolt axis (m): SOCKET_MOUTH_Z at the
-        recess mouth, SOCKET_FLOOR_Z seated on the floor."""
+        """Inserting-tip height above the bolt origin along the bolt axis (m): SOCKET_MOUTH_Z at
+        the recess mouth, SOCKET_FLOOR_Z seated on the floor."""
         ub = up_axis_of(bolt.data.root_quat_w)
-        return ((key.data.root_pos_w - bolt.data.root_pos_w) * ub).sum(-1)
+        return ((tip_pos() - bolt.data.root_pos_w) * ub).sum(-1)
 
     def tip_lateral() -> torch.Tensor:
         ub = up_axis_of(bolt.data.root_quat_w)
-        rel = key.data.root_pos_w - bolt.data.root_pos_w
+        rel = tip_pos() - bolt.data.root_pos_w
         return (rel - (rel * ub).sum(-1, keepdim=True) * ub).norm(dim=-1)
 
+    def spin_of(kq: torch.Tensor) -> torch.Tensor:
+        """The key's screw angle about the vertical: the world heading of local +z (the short
+        arm's line — also the shaft hex's corner direction, so `spin == bolt yaw (mod 60)` is the
+        mating condition). For the commanded R_z(psi) * Q0 this reads exactly psi."""
+        v = quat_apply(kq, e_local_z)
+        return torch.atan2(v[:, 1], v[:, 0])
+
     def clock_err() -> torch.Tensor:
-        """Key hex yaw error to the socket's nearest hex sector, wrapped to [-30, 30) deg."""
-        dp = (yaw_of(bolt.data.root_quat_w) - yaw_of(key.data.root_quat_w)) % (math.pi / 3)
+        """Key hex spin error to the socket's nearest hex sector, wrapped to [-30, 30) deg."""
+        dp = (yaw_of(bolt.data.root_quat_w) - spin_of(key.data.root_quat_w)) % (math.pi / 3)
         return torch.where(dp > math.pi / 6, dp - math.pi / 3, dp)
 
     def handle_heading() -> torch.Tensor:
         hv = quat_apply(key.data.root_quat_w, ex)
         return torch.atan2(hv[:, 1], hv[:, 0])
 
-    def key_up() -> torch.Tensor:
-        return up_axis_of(key.data.root_quat_w)[:, 2]
+    def shaft_up() -> torch.Tensor:
+        """z-component of the INSERTED shaft's up direction (-local x): 1 = handle straight down."""
+        return -quat_apply(key.data.root_quat_w, ex)[:, 2]
 
     def in_socket(margin: float = 0.002) -> torch.Tensor:
         return (tip_axial() < SOCKET_MOUTH_Z - margin) & (tip_lateral() < 0.004)
@@ -393,20 +427,23 @@ def main() -> None:
         return (f"bolt: depth {float(depth().min()) * 1e3:+.1f}mm, axis err "
                 f"{float(axis_err.max()) * 1e3:.1f}mm, tilt {float(tilt.max()):.1f}deg")
 
-    def upright_cmd(psi: torch.Tensor) -> torch.Tensor:
-        """Commanded key orientation: upright at yaw `psi`, pre-rotated by the learned tilt bias so
-        the ACHIEVED pose stands vertical (yaw is the caller's command, never biased)."""
+    def flip_cmd(psi: torch.Tensor) -> torch.Tensor:
+        """Commanded key orientation: shaft-down at screw angle `psi`, pre-rotated by the learned
+        tilt bias so the ACHIEVED shaft stands vertical (psi is the caller's command, never
+        biased)."""
         ang = tilt_bias.norm(dim=-1).clamp_min(1e-9)
         axis = torch.cat([tilt_bias / ang.unsqueeze(-1), torch.zeros(n, 1, device=dev)], dim=-1)
-        return quat_mul(quat_from_angle_axis(ang, axis), quat_from_angle_axis(psi, ez))
+        base = quat_mul(quat_from_angle_axis(psi, ez), q0_flip)
+        return quat_mul(quat_from_angle_axis(ang, axis), base)
 
     def learn_tilt(gain: float = 0.2) -> None:
-        """Integrate the key's residual LEAN (free air only): the command already carries the bias,
-        so the residual drives it until the achieved arm axis is vertical."""
-        r = torch.cross(up_axis_of(key.data.root_quat_w), ez, dim=-1)[:, 0:2]  # rights up_k onto ez
+        """Integrate the shaft's residual LEAN (free air only): the command already carries the
+        bias, so the residual drives it until the achieved shaft is vertical."""
+        shaft = -quat_apply(key.data.root_quat_w, ex)
+        r = torch.cross(shaft, ez, dim=-1)[:, 0:2]  # rights the shaft onto ez
         tilt_bias[:] = (tilt_bias + gain * r).clamp(-0.15, 0.15)
 
-    # ----- staging: teleport the bolt over the hole, then hand-start it with a wrench -------------
+    # ----- staging: teleport the bolt over the hole, then set it down its own helix ---------------
     def stage_drop() -> None:
         st = torch.zeros(n, 13, device=dev)
         st[:, 0:2] = hole_xy
@@ -437,7 +474,7 @@ def main() -> None:
     bolt_turn = torch.zeros(n, device=dev)  # cumulative screw-in rotation (rad, +ve = descending)
     key_turn = torch.zeros(n, device=dev)
     prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
-    prev_key_yaw = yaw_of(key.data.root_quat_w)
+    prev_key_spin = spin_of(key.data.root_quat_w)
     handoff_depth = None       # depth when the ratchet takes over (gain baseline)
     nest_depth = torch.zeros(n, device=dev)
     staged_depth = torch.zeros(n, device=dev)
@@ -445,7 +482,7 @@ def main() -> None:
     pos_off = torch.zeros(n, 3, device=dev)   # INTEGRATED bias (desired - achieved, free air): the
     # OSC has no gravity compensation, so its realized pose sags configuration-dependently by
     # several mm — commands near contact add this learned offset so the achieved pose lands true
-    tilt_bias = torch.zeros(n, 2, device=dev)  # the same for the key's LEAN (axis-angle xy)
+    tilt_bias = torch.zeros(n, 2, device=dev)  # the same for the shaft's LEAN (axis-angle xy)
     grip_freeze = torch.zeros(n, 2, device=dev)  # finger targets latched at release: freezing the
     # PD at the MEASURED positions decays the squeeze before the pads separate
     close_ok = torch.zeros(n, device=dev)     # consecutive ticks the closure has verified
@@ -459,7 +496,7 @@ def main() -> None:
     glide_yaw0 = torch.zeros(n, device=dev)
     glide_q0 = torch.zeros(n, 4, device=dev)
     glide_aa = torch.zeros(n, 3, device=dev)
-    psi_cmd = torch.zeros(n, device=dev)      # commanded key yaw through insert/stroke/rewind
+    psi_cmd = torch.zeros(n, device=dev)      # commanded key spin through insert/stroke/rewind
     rewind_tgt = torch.zeros(n, device=dev)
     rw_arrived = torch.zeros(n, dtype=torch.bool, device=dev)
     stroke_slip0 = torch.zeros(n, device=dev)
@@ -474,7 +511,7 @@ def main() -> None:
     def start_insert_glide() -> None:
         """Latch the descent glide state (shared by insert and reinsert)."""
         glide_from_z[:] = tip_axial()
-        psi_cmd[:] = yaw_of(key.data.root_quat_w) + clock_err()
+        psi_cmd[:] = spin_of(key.data.root_quat_w) + clock_err()
 
     phase, marker = "show", 0
     i = 0
@@ -513,17 +550,15 @@ def main() -> None:
                       f"helix (nested at {float(nest_depth.mean()) * 1e3:+.2f} mm) and holding", flush=True)
                 picks += 1
                 phase, marker = "pick_hover", i
-        elif phase == "pick_hover":  # glide to a top-down hover over the lying key's working arm
+        elif phase == "pick_hover":  # glide to a top-down hover over the lying key's mid-handle
             if t_in == 1:
                 pos_off.zero_()
                 glide_from_p[:] = hp
-                arm = up_axis_of(key.data.root_quat_w)  # lying: the arm's horizontal direction
-                grip_yaw[:] = nearest_parity(torch.atan2(arm[:, 1], arm[:, 0]))  # hand x along the
-                # arm -> the fingers close across it
+                grip_yaw[:] = nearest_parity(handle_heading())  # hand x along the handle -> the
+                # fingers close across it
                 hx = quat_apply(hq, ex)
                 glide_yaw0[:] = torch.atan2(hx[:, 1], hx[:, 0])
-            arm = up_axis_of(key.data.root_quat_w)
-            grip_pt[:] = key.data.root_pos_w + arm * PICK_GRIP_D
+            grip_pt[:] = key.data.root_pos_w + quat_apply(key.data.root_quat_w, pick_grip_local)
             grip_pt[:, 2] = key.data.root_pos_w[:, 2] + PICK_PAD_LIFT
             wp_p[:] = grip_pt
             wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + HOVER_CLEAR
@@ -539,7 +574,7 @@ def main() -> None:
             if (t_in >= WP_TIMEOUT + 10 and bool((pad_err < 0.004).all()) and bool(at(goal, wp_q).all())) \
                     or t_in >= 3 * WP_TIMEOUT:
                 phase, marker = "pick_down", i
-        elif phase == "pick_down":  # descend AROUND the arm: open fingers pass it on both sides
+        elif phase == "pick_down":  # descend AROUND the handle: open fingers pass it on both sides
             s = smoothstep(t_in / 40.0)
             wp_p[:] = grip_pt
             wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + HOVER_CLEAR * (1.0 - s)
@@ -551,20 +586,19 @@ def main() -> None:
             if (t_in >= 48 and bool(pad_on.all())) or t_in >= 2 * WP_TIMEOUT:
                 close_ok.zero_()
                 phase, marker = "pick_close", i
-        elif phase == "pick_close":  # close to the arm's width; verify geometrically, then weld
+        elif phase == "pick_close":  # close to the handle's width; verify geometrically, then weld
             s = smoothstep(t_in / CLOSE_STEPS)
             width = STRADDLE_W + (PICK_W - STRADDLE_W) * s
             act = servo(wp_p + pos_off, wp_q, width)
             gap = art.data.joint_pos[:, fingers].sum(dim=-1)
-            arm = up_axis_of(key.data.root_quat_w)  # the closing pads may nudge the key: verify
-            grip_pt[:] = key.data.root_pos_w + arm * PICK_GRIP_D  # closure against its LIVE pose
-            grip_pt[:, 2] = key.data.root_pos_w[:, 2] + PICK_PAD_LIFT
+            grip_pt[:] = key.data.root_pos_w + quat_apply(key.data.root_quat_w, pick_grip_local)
+            grip_pt[:, 2] = key.data.root_pos_w[:, 2] + PICK_PAD_LIFT  # closure vs the LIVE pose
             near = (pad_centre() - grip_pt).norm(dim=-1) < 0.004
             ok = near & (gap > CLOSED_MIN) & (gap < CLOSED_MAX)
             close_ok[:] = torch.where(ok, close_ok + 1, torch.zeros_like(close_ok))
             if t_in >= CLOSE_STEPS + 6 and bool((close_ok >= 4).all()):
                 weld_on()
-                print(f"  picked the key: pads across the lying arm, finger gap "
+                print(f"  picked the key: pads across the lying handle, finger gap "
                       f"{[f'{float(g) * 1e3:.1f}' for g in gap]} mm (hex 12.6/14.4)", flush=True)
                 phase, marker = "lift", i
             elif t_in >= CLOSE_STEPS + 30:
@@ -575,30 +609,30 @@ def main() -> None:
                 else:
                     print("  ABORT: pick failed", flush=True)
                     phase, marker = "retreat", i
-        elif phase == "lift":  # straight up to carry height, holding the as-picked orientation
+        elif phase == "lift":  # straight up to the erect height, holding the as-picked orientation
             if t_in == 1:
                 glide_from_p[:] = key.data.root_pos_w
                 q0 = key.data.root_quat_w
                 glide_q0[:] = torch.where(q0[:, :1] >= 0, q0, -q0)
             s = smoothstep(t_in / LIFT_STEPS)
             kp = glide_from_p.clone()
-            kp[:, 2] = glide_from_p[:, 2] + s * (table_z + CARRY_TIP_Z - glide_from_p[:, 2])
+            kp[:, 2] = glide_from_p[:, 2] + s * (table_z + ERECT_ORIGIN_Z - glide_from_p[:, 2])
             tp, tq = hand_for_key(kp, glide_q0)
             act = servo(tp, tq, PICK_W)
-            if (t_in >= LIFT_STEPS and bool(((table_z + CARRY_TIP_Z - key.data.root_pos_w[:, 2]).abs() < 0.015).all())) \
+            if (t_in >= LIFT_STEPS and bool(((table_z + ERECT_ORIGIN_Z - key.data.root_pos_w[:, 2]).abs() < 0.015).all())) \
                     or t_in >= LIFT_STEPS + 40:
                 phase, marker = "erect", i
-        elif phase == "erect":  # pitch the welded key tip-down ABOUT ITS HANDLE AXIS (the handle
-            # stays put, the arm sweeps down); the target yaw is the bolt's hex sector nearest the
-            # current handle heading, so the erection IS the clocking and everything after it only
-            # translates. The rotation glides — a step-jump goal would swing the gravity-
-            # uncompensated arm wide.
+        elif phase == "erect":  # pitch the welded key handle-down ABOUT THE SHORT ARM'S AXIS (the
+            # short arm stays put and becomes the crank; the 120 mm handle sweeps tip-down BELOW
+            # the held origin); the target spin is the bolt's hex sector nearest the current one,
+            # so the erection IS the clocking and everything after it only translates. The
+            # rotation glides — a step-jump goal would swing the gravity-uncompensated arm wide.
             if t_in == 1:
-                h0 = handle_heading()
+                h0 = spin_of(key.data.root_quat_w)
                 dp = (yaw_of(bolt.data.root_quat_w) - h0) % (math.pi / 3)
                 dp = torch.where(dp > math.pi / 6, dp - math.pi / 3, dp)
                 psi_cmd[:] = h0 + dp
-                q_tgt = quat_from_angle_axis(psi_cmd, ez)
+                q_tgt = quat_mul(quat_from_angle_axis(psi_cmd, ez), q0_flip)
                 q0 = key.data.root_quat_w
                 glide_q0[:] = torch.where(q0[:, :1] >= 0, q0, -q0)
                 qe = quat_mul(q_tgt, quat_conjugate(glide_q0))
@@ -608,19 +642,19 @@ def main() -> None:
             s = smoothstep(t_in / ERECT_STEPS)
             ang = glide_aa.norm(dim=-1).clamp_min(1e-9)
             q_cmd = quat_mul(quat_from_angle_axis(ang * s, glide_aa / ang.unsqueeze(-1)), glide_q0)
-            tp, tq = hand_for_key(glide_from_p, q_cmd)  # tip holds its spot; only the quat sweeps
+            tp, tq = hand_for_key(glide_from_p, q_cmd)  # origin holds; only the quat sweeps
             act = servo(tp, tq, PICK_W)
-            upright = key_up() > 0.995
+            upright = shaft_up() > 0.995
             if t_in >= ERECT_STEPS + 10 and bool(upright.all()):
                 phase, marker = "carry", i
             elif t_in >= ERECT_STEPS + 2 * WP_TIMEOUT:
-                print(f"  ABORT: erection stalled (key up_z {float(key_up().min()):+.2f})", flush=True)
+                print(f"  ABORT: erection stalled (shaft up_z {float(shaft_up().min()):+.2f})", flush=True)
                 phase, marker = "retreat", i
-        elif phase == "carry":  # translate the upright key to the hover over the bore, learning
-            # the tip's pose bias in free air on arrival (the tip IS the body origin, so the
-            # learned offset absorbs the lean-induced tip shift too)
+        elif phase == "carry":  # translate the shaft-down key until its TIP hovers over the bore,
+            # learning the tip's pose bias in free air on arrival (the learned offset absorbs the
+            # lean-induced tip shift too)
             if t_in == 1:
-                glide_from_p[:] = key.data.root_pos_w
+                glide_from_p[:] = tip_pos()
                 pos_off.zero_()
             goal = torch.zeros(n, 3, device=dev)
             goal[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
@@ -628,13 +662,13 @@ def main() -> None:
             s = smoothstep(t_in / CARRY_STEPS)
             kp = glide_from_p + (goal - glide_from_p) * s
             if s >= 1.0:
-                pos_off[:] = (pos_off + 0.25 * (goal - key.data.root_pos_w)).clamp(-0.12, 0.12)
+                pos_off[:] = (pos_off + 0.25 * (goal - tip_pos())).clamp(-0.12, 0.12)
                 learn_tilt()
-            psi_cmd[:] = yaw_of(key.data.root_quat_w) + clock_err()  # live trim: the wrench-staged
+            psi_cmd[:] = spin_of(key.data.root_quat_w) + clock_err()  # live trim: the staged
             # bolt's yaw is whatever the helix left; the trim is <= 30 deg by construction
-            tp, tq = hand_for_key(kp + pos_off, upright_cmd(psi_cmd))
+            tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, PICK_W)
-            settled = (goal - key.data.root_pos_w).norm(dim=-1) < 0.0008
+            settled = (goal - tip_pos()).norm(dim=-1) < 0.0008
             clocked = clock_err().abs() < math.radians(3.0)
             if (t_in >= CARRY_STEPS + 15 and bool((settled & clocked).all())) or t_in >= CARRY_STEPS + 3 * WP_TIMEOUT:
                 if not bool(bolt_ok().all()):
@@ -652,12 +686,11 @@ def main() -> None:
             kp = torch.zeros(n, 3, device=dev)
             kp[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
             kp[:, 2] = bolt.data.root_pos_w[:, 2] + glide_from_z + s * (SOCKET_FLOOR_Z - glide_from_z)
-            tp, tq = hand_for_key(kp + pos_off, upright_cmd(psi_cmd))
+            tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, PICK_W)
-            # "in far enough": ~5 mm of hex engagement stands through the handoff — the LOW
-            # horizontal hand may saturate a hair short of the floor, and the first top-down
-            # stroke presses the last bit home anyway
-            seated = (tip_axial() < SOCKET_FLOOR_Z + 0.0022) & (tip_lateral() < 0.002) & (key_up() > 0.99)
+            # "in far enough": ~5 mm of hex engagement stands through the handoff — the first
+            # top-down stroke presses the last bit home anyway
+            seated = (tip_axial() < SOCKET_FLOOR_Z + 0.0022) & (tip_lateral() < 0.002) & (shaft_up() > 0.99)
             seat_ok[:] = torch.where(seated & bolt_ok(), seat_ok + 1, torch.zeros_like(seat_ok))
             stalled = t_in >= INSERT_STEPS + 12 and bool((tip_axial() > SOCKET_MOUTH_Z - 0.0015).any())
             if not bool(bolt_ok().all()):
@@ -681,25 +714,25 @@ def main() -> None:
             goal = torch.zeros(n, 3, device=dev)
             goal[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
             goal[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + 0.006
-            settled = (goal - key.data.root_pos_w).norm(dim=-1) < 0.0008
+            settled = (goal - tip_pos()).norm(dim=-1) < 0.0008
             if t_in > 10:
-                pos_off[:] = (pos_off + 0.25 * (goal - key.data.root_pos_w)).clamp(-0.12, 0.12)
+                pos_off[:] = (pos_off + 0.25 * (goal - tip_pos())).clamp(-0.12, 0.12)
                 learn_tilt(0.1)
-            psi_cmd[:] = yaw_of(key.data.root_quat_w) + clock_err()
-            tp, tq = hand_for_key(goal + pos_off, upright_cmd(psi_cmd))
+            psi_cmd[:] = spin_of(key.data.root_quat_w) + clock_err()
+            tp, tq = hand_for_tip(goal + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, PICK_W)
             if (t_in >= 20 and bool(settled.all())) or t_in >= WP_TIMEOUT:
                 seat_ok.zero_()
                 start_insert_glide()
                 phase, marker = "insert", i
         elif phase == "handoff":  # the key stands in the socket — let go WITHOUT knocking it over.
-            # The unheld key MUST lean toward its handle (off-axis weight) until the hex binds
-            # (~12-18 deg, a stable tip+wall+rim tripod), and the pads flank the arm exactly
-            # along that lean line (fixed at the pick, rigid through the weld) — so the key
-            # settles ONTO a pad. The release therefore: unloads the press + torsion while still
-            # welded, then GLIDES the fingers open so the pad lowers the leaning key gently onto
-            # its bind instead of whipping it past (a step-open ejected it), dwells, and only
-            # then backs the hand straight out of the grip corridor and rises.
+            # The unheld key leans toward its crank (the only off-axis mass left) until the hex
+            # binds — a stable tip+wall+rim tripod — and the pads flank the shaft exactly along
+            # that lean line (fixed at the pick, rigid through the weld) — so the key settles
+            # ONTO a pad. The release therefore: unloads the press + torsion while still welded,
+            # then GLIDES the fingers open so the pad lowers the leaning key gently onto its bind
+            # instead of whipping it past (a step-open ejected it), dwells, and only then backs
+            # the hand straight out of the grip corridor and rises.
             if t_in == 1:
                 grip_freeze[:] = art.data.joint_pos[:, fingers]
                 back_axis[:] = -quat_apply(hq, ez)  # -approach: straight back out of the grip
@@ -707,7 +740,7 @@ def main() -> None:
             if t_in <= 10:  # still welded: lift the press off the floor, unload the torsion
                 ub = up_axis_of(bolt.data.root_quat_w)
                 kp = bolt.data.root_pos_w + ub * (SOCKET_FLOOR_Z + 0.0005)
-                tp, tq = hand_for_key(kp + pos_off, upright_cmd(psi_cmd))
+                tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
                 act = servo(tp, tq, grip_freeze)
                 if t_in == 10:
                     release_p[:] = hp
@@ -717,7 +750,7 @@ def main() -> None:
                     weld_off()
                 w = grip_freeze + (OPEN_W - grip_freeze) * smoothstep((t_in - 10) / 20.0)
                 wp2 = release_p.clone()
-                if t_in > 50:  # fingers spread + the lean settled before the hand moves
+                if t_in > 50:  # the fingers had 1.3 s to spread clear before the hand moves
                     s2 = smoothstep((t_in - 50) / 25.0)
                     wp2 += back_axis * (0.06 * s2)
                 if t_in > 75:
@@ -726,10 +759,10 @@ def main() -> None:
                 act = servo(wp2, release_q, w)
             if t_in % 8 == 0:
                 print(f"    [handoff {t_in:3d}] tip {float((tip_axial() - SOCKET_FLOOR_Z).mean()) * 1e3:+5.2f}mm "
-                      f"| lat {float(tip_lateral().max()) * 1e3:4.2f}mm | up {float(key_up().min()):+.3f} "
+                      f"| lat {float(tip_lateral().max()) * 1e3:4.2f}mm | up {float(shaft_up().min()):+.3f} "
                       f"| gap {float((art.data.joint_pos[:, fingers].sum(dim=-1)).mean()) * 1e3:4.1f}mm", flush=True)
             if t_in >= 105:
-                if bool(in_socket(0.0015).all()) and bool((key_up() > 0.90).all()):
+                if bool(in_socket(0.0015).all()) and bool((shaft_up() > 0.90).all()):
                     if handoff_depth is None:
                         handoff_depth = depth().clone()
                     pos_off.zero_()  # learned in the horizontal-hand configuration — stale for
@@ -741,22 +774,21 @@ def main() -> None:
                     if drops > DROP_BUDGET:
                         print("  ABORT: drop budget exhausted", flush=True)
                         phase, marker = "retreat", i
-                    elif bool((key_up() < 0.5).all()):  # fell flat: pick it up wherever it lies
+                    elif bool((shaft_up() < 0.5).all()):  # fell flat: pick it up wherever it lies
                         print("  DROP: key left the socket during the handoff — re-picking", flush=True)
                         picks += 1
                         phase, marker = "pick_hover", i
                     else:
                         print("  DROP: key adrift after the handoff", flush=True)
                         phase, marker = "retreat", i
-        elif phase == "regrasp_hover":  # top-down hover over the STANDING arm: hand x runs along
-            # the handle (the only headings whose finger bodies clear it), pads will land across
-            # the hex flats; the free-air dwell learns the pad bias before the descent. The hand
-            # arrives HORIZONTAL from the handoff, so the reorientation glides as one axis-angle
-            # sweep (the top-down yaw heuristics are degenerate here) and the 180-deg grip parity
-            # is picked by the smaller total hand rotation.
+        elif phase == "regrasp_hover":  # top-down hover over the horizontal CRANK (the short arm,
+            # ~110 mm above the bolt head with nothing near it): hand x runs along the crank so
+            # the fingers close across its FLATS; the inner finger stays 5 mm clear of the shaft.
+            # The hand arrives HORIZONTAL from the handoff, so the reorientation glides as one
+            # axis-angle sweep and the 180-deg grip parity is picked by the smaller hand rotation.
             if t_in == 1:
                 glide_from_p[:] = hp
-                psi_h = handle_heading()
+                psi_h = spin_of(key.data.root_quat_w)  # the crank's heading
                 alt = _wrap(psi_h - math.pi)
                 ang_a = 2 * torch.arccos(quat_mul(q_down(psi_h), quat_conjugate(hq))[:, 0].abs().clamp(max=1.0))
                 ang_b = 2 * torch.arccos(quat_mul(q_down(alt), quat_conjugate(hq))[:, 0].abs().clamp(max=1.0))
@@ -765,8 +797,7 @@ def main() -> None:
                 qe = quat_mul(q_down(grip_yaw), quat_conjugate(glide_q0))
                 qe = torch.where(qe[:, :1] >= 0, qe, -qe)
                 glide_aa[:] = axis_angle_from_quat(qe)
-            up_k = up_axis_of(key.data.root_quat_w)
-            grip_pt[:] = key.data.root_pos_w + up_k * GRIP_UP
+            grip_pt[:] = key.data.root_pos_w + quat_apply(key.data.root_quat_w, crank_grip_local)
             wp_p[:] = grip_pt
             wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + HOVER_CLEAR
             s = smoothstep(t_in / WP_TIMEOUT)
@@ -782,10 +813,9 @@ def main() -> None:
             if (t_in >= WP_TIMEOUT + 10 and bool((pad_err < 0.004).all()) and bool(at(goal, wp_q).all())) \
                     or t_in >= 3 * WP_TIMEOUT:
                 phase, marker = "regrasp_down", i
-        elif phase == "regrasp_down":  # descend around the standing arm to the grip band
+        elif phase == "regrasp_down":  # descend around the crank to its axis height
             s = smoothstep(t_in / 40.0)
-            up_k = up_axis_of(key.data.root_quat_w)
-            grip_pt[:] = key.data.root_pos_w + up_k * GRIP_UP
+            grip_pt[:] = key.data.root_pos_w + quat_apply(key.data.root_quat_w, crank_grip_local)
             wp_p[:] = grip_pt
             wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + HOVER_CLEAR * (1.0 - s)
             if s >= 1.0:
@@ -800,9 +830,8 @@ def main() -> None:
             width = STRADDLE_W + (SCREW_W - STRADDLE_W) * s
             act = servo(wp_p + pos_off, wp_q, width)
             gap = art.data.joint_pos[:, fingers].sum(dim=-1)
-            up_k = up_axis_of(key.data.root_quat_w)  # closure verified against the LIVE key pose
-            grip_pt[:] = key.data.root_pos_w + up_k * GRIP_UP
-            near = (pad_centre() - grip_pt).norm(dim=-1) < 0.004
+            grip_pt[:] = key.data.root_pos_w + quat_apply(key.data.root_quat_w, crank_grip_local)
+            near = (pad_centre() - grip_pt).norm(dim=-1) < 0.004  # closure vs the LIVE key pose
             ok = near & (gap > CLOSED_MIN) & (gap < CLOSED_MAX)
             close_ok[:] = torch.where(ok, close_ok + 1, torch.zeros_like(close_ok))
             if t_in >= CLOSE_STEPS + 6 and bool((close_ok >= 4).all()):
@@ -811,16 +840,16 @@ def main() -> None:
                 bolt_turn.zero_()  # the ratchet metrics start here: forget the staging's turns
                 key_turn.zero_()
                 prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
-                prev_key_yaw = yaw_of(key.data.root_quat_w)
-                print(f"  re-grasped the standing key top-down (gap "
+                prev_key_spin = spin_of(key.data.root_quat_w)
+                print(f"  re-grasped the crank top-down (gap "
                       f"{[f'{float(g) * 1e3:.1f}' for g in gap]} mm) — ratcheting", flush=True)
                 phase, marker = "stroke", i
             elif t_in >= CLOSE_STEPS + 30:
                 regrasp_tries += 1
-                if regrasp_tries < 4 and bool(in_socket(0.0015).all()) and bool((key_up() > 0.85).all()):
+                if regrasp_tries < 4 and bool(in_socket(0.0015).all()) and bool((shaft_up() > 0.85).all()):
                     print(f"  regrasp missed (gap {[f'{float(g) * 1e3:.1f}' for g in gap]} mm), retrying", flush=True)
                     phase, marker = "regrasp_hover", i
-                elif bool((key_up() < 0.5).all()):
+                elif bool((shaft_up() < 0.5).all()):
                     drops += 1
                     picks += 1
                     if drops > DROP_BUDGET:
@@ -834,17 +863,18 @@ def main() -> None:
                     phase, marker = "retreat", i
         elif phase == "stroke":  # press + twist: the key drives the bolt down the threads until
             # the wrist nears its stop. The tip is commanded BELOW the live socket floor (the
-            # press feed rides the descending bolt); the yaw sweeps at a fixed rate so the torque
-            # comes from a small, bounded tracking lag.
+            # press feed rides the descending bolt); the spin sweeps at a fixed rate so the
+            # torque comes from a small, bounded tracking lag; the hand orbits the 22 mm crank
+            # circle while its wrist roll winds 1:1 with the screw.
             if t_in == 1:
-                psi_cmd[:] = yaw_of(key.data.root_quat_w)
+                psi_cmd[:] = spin_of(key.data.root_quat_w)
                 stroke_slip0[:] = key_turn - bolt_turn
                 slip_armed[:] = False
                 peck_tries = 0
                 cycles += 1
-            # arm the slip watch only once the key reads upright: righting a leaned key changes
-            # its READ yaw without any true hex slip, which tripped the guard as a phantom
-            newly_up = (key_up() > 0.995) & ~slip_armed
+            # arm the slip watch only once the shaft reads vertical: righting a leaned key changes
+            # its READ spin without any true hex slip, which tripped the guard as a phantom
+            newly_up = (shaft_up() > 0.995) & ~slip_armed
             stroke_slip0[:] = torch.where(newly_up, key_turn - bolt_turn, stroke_slip0)
             slip_armed |= newly_up
             room = J7_GUARD - art.data.joint_pos[:, j7]
@@ -852,9 +882,9 @@ def main() -> None:
             psi_cmd[:] = psi_cmd - torch.where(room > 0.15, sweep, torch.zeros_like(sweep))
             ub = up_axis_of(bolt.data.root_quat_w)
             kp = bolt.data.root_pos_w + ub * (SOCKET_FLOOR_Z - PRESS_LEAD)
-            tp, tq = hand_for_key(kp + pos_off, quat_from_angle_axis(psi_cmd, ez))
+            tp, tq = hand_for_tip(kp + pos_off, quat_mul(quat_from_angle_axis(psi_cmd, ez), q0_flip))
             act = servo(tp, tq, SCREW_W)
-            # screw-in sweeps NEGATIVE yaw, so a camming key runs AHEAD of the bolt in the
+            # screw-in sweeps NEGATIVE spin, so a camming key runs AHEAD of the bolt in the
             # negative direction — watch the magnitude, not one sign
             slip = ((key_turn - bolt_turn) - stroke_slip0).abs() * slip_armed
             done = bool((depth() >= STOP_DEPTH).all())
@@ -877,7 +907,7 @@ def main() -> None:
                 psi_cmd[:] = psi_cmd + math.radians(4.0)
             ub = up_axis_of(bolt.data.root_quat_w)
             kp = bolt.data.root_pos_w + ub * (SOCKET_FLOOR_Z - PRESS_LEAD)
-            tp, tq = hand_for_key(kp + pos_off, quat_from_angle_axis(psi_cmd, ez))
+            tp, tq = hand_for_tip(kp + pos_off, quat_mul(quat_from_angle_axis(psi_cmd, ez), q0_flip))
             act = servo(tp, tq, SCREW_W)
             if t_in >= 6:
                 if bool((depth() >= STOP_DEPTH).all()) or cycles >= MAX_CYCLES:
@@ -886,19 +916,19 @@ def main() -> None:
                     phase, marker = "release", i
                 else:
                     phase, marker = "recock_lift", i
-        elif phase == "recock_lift":  # lift the tip just clear of the socket, yaw held; the glide
+        elif phase == "recock_lift":  # lift the tip just clear of the socket, spin held; the glide
             # starts from the PRESSED command depth so the stored press bleeds smoothly
             s = smoothstep(t_in / 20.0)
             zt = (SOCKET_FLOOR_Z - PRESS_LEAD) + s * (SOCKET_MOUTH_Z + LIFT_CLEAR - SOCKET_FLOOR_Z + PRESS_LEAD)
             ub = up_axis_of(bolt.data.root_quat_w)
             kp = bolt.data.root_pos_w + ub * zt
-            tp, tq = hand_for_key(kp + pos_off, quat_from_angle_axis(psi_cmd, ez))
+            tp, tq = hand_for_tip(kp + pos_off, quat_mul(quat_from_angle_axis(psi_cmd, ez), q0_flip))
             act = servo(tp, tq, SCREW_W)
             cleared = bool((tip_axial() > SOCKET_MOUTH_Z + 0.002).all())
             if t_in >= 24 and cleared:
                 # rewind by a MULTIPLE OF 60 DEG (hex symmetry: clocking is preserved exactly),
                 # sized to re-arm the wrist near J7_START; the flipped top-down hand maps a
-                # positive key yaw to a negative joint-7 move
+                # positive key spin to a negative joint-7 move
                 steps60 = torch.round((art.data.joint_pos[:, j7] - J7_START) / (math.pi / 3))
                 rewind_tgt[:] = psi_cmd + steps60 * (math.pi / 3)
                 phase, marker = "recock_rewind", i
@@ -906,7 +936,7 @@ def main() -> None:
                 # unscrew the bolt): a tip that cannot disengage is an honest failure
                 print("  ABORT: key would not lift out of the socket", flush=True)
                 phase, marker = "retreat", i
-        elif phase == "recock_rewind":  # swept, monotone yaw glide the LONG way round — a plain
+        elif phase == "recock_rewind":  # swept, monotone spin glide the LONG way round — a plain
             # quat target would take the short path and wind joint 7 THROUGH its stop. Arrival is
             # LATCHED; the hex-slip correction is a ONE-SHOT at arrival plus a gentle trickle —
             # a fat per-step trim servo limit-cycles around the +-30 deg sector boundary.
@@ -920,14 +950,14 @@ def main() -> None:
             ub = up_axis_of(bolt.data.root_quat_w)
             kp = bolt.data.root_pos_w + ub * (SOCKET_MOUTH_Z + LIFT_CLEAR)
             if bool(rw_arrived.all()) and t_in % 2 == 0:  # settled free air: re-learn tip bias
-                pos_off[:] = (pos_off + 0.2 * ((kp - key.data.root_pos_w))).clamp(-0.12, 0.12)
+                pos_off[:] = (pos_off + 0.2 * ((kp - tip_pos()))).clamp(-0.12, 0.12)
                 learn_tilt(0.1)
-            tp, tq = hand_for_key(kp + pos_off, upright_cmd(psi_cmd))
+            tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, SCREW_W)
             # the reinsert only gets a sub-clearance start: xy on the bore axis to half the
             # 0.75 mm/side play, tip height settled, hex clocked
-            xy_err = (key.data.root_pos_w[:, 0:2] - bolt.data.root_pos_w[:, 0:2]).norm(dim=-1)
-            settled = (xy_err < 0.0005) & ((kp[:, 2] - key.data.root_pos_w[:, 2]).abs() < 0.0012)
+            xy_err = (tip_pos()[:, 0:2] - bolt.data.root_pos_w[:, 0:2]).norm(dim=-1)
+            settled = (xy_err < 0.0005) & ((kp[:, 2] - tip_pos()[:, 2]).abs() < 0.0012)
             clocked = clock_err().abs() < math.radians(2.5)
             if bool(rw_arrived.all()) and t_in >= 10 and bool((settled & clocked).all()):
                 seat_ok.zero_()
@@ -942,7 +972,7 @@ def main() -> None:
             zt = glide_from_z + s * ((SOCKET_FLOOR_Z - PRESS_LEAD) - glide_from_z)
             ub = up_axis_of(bolt.data.root_quat_w)
             kp = bolt.data.root_pos_w + ub * zt
-            tp, tq = hand_for_key(kp + pos_off, upright_cmd(psi_cmd))
+            tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, SCREW_W)
             entered = (tip_axial() < SOCKET_FLOOR_Z + 0.0015) & (tip_lateral() < 0.002)
             seat_ok[:] = torch.where(entered & bolt_ok(), seat_ok + 1, torch.zeros_like(seat_ok))
@@ -962,8 +992,7 @@ def main() -> None:
                     rewind_tgt[:] = psi_cmd  # no further rewind: just re-settle and drop again
                     phase, marker = "recock_rewind", i
         elif phase == "release":  # seated (or budget spent): bleed, let go, rise straight off the
-            # standing key — the top-down fingers open past the handle's flanks, the palm is
-            # already above its top
+            # crank — nothing sits above it, so the open fingers exit clean
             if t_in == 1:
                 grip_freeze[:] = art.data.joint_pos[:, fingers]
                 release_p[:] = hp
@@ -1002,14 +1031,14 @@ def main() -> None:
 
         step(act)
 
-        # Track yaws EVERY step (a stale prev across the staging spin reads as a +-pi jump), but
+        # Track angles EVERY step (a stale prev across the staging spin reads as a +-pi jump), but
         # accumulate the turn counters only once the robot phase is live.
         cur = yaw_of(bolt.data.root_quat_w)
-        kcur = yaw_of(key.data.root_quat_w)
+        kcur = spin_of(key.data.root_quat_w)
         if phase not in ("show", "stage_drop", "stage_hold"):
             bolt_turn = bolt_turn - _wrap(cur - prev_bolt_yaw)
-            key_turn = key_turn - _wrap(kcur - prev_key_yaw)
-        prev_bolt_yaw, prev_key_yaw = cur, kcur
+            key_turn = key_turn - _wrap(kcur - prev_key_spin)
+        prev_bolt_yaw, prev_key_spin = cur, kcur
 
         if not torch.isfinite(bolt.data.root_pos_w).all() or not torch.isfinite(key.data.root_pos_w).all():
             print("  ABORT: state went non-finite", flush=True)
@@ -1025,7 +1054,7 @@ def main() -> None:
             print(f"  ctrl {i:5d} [{phase:13s}] | cyc {cycles:2d} | tip depth {float(d.mean()):+6.2f}mm | bolt "
                   f"{float(torch.rad2deg(bolt_turn).mean()):+7.0f}deg | slip {float(slip.mean()):+6.1f}deg | "
                   f"q7 {float(q7d.mean()):+6.0f}deg | key z {float(key.data.root_pos_w[:, 2].mean()):.3f} "
-                  f"up {float(key_up().mean()):+.2f} | hand z {float(hp[:, 2].mean()):.3f} | "
+                  f"up {float(shaft_up().mean()):+.2f} | hand z {float(hp[:, 2].mean()):.3f} | "
                   f"gap {float(gap.mean()):4.1f}mm", flush=True)
 
     if writer is not None:
