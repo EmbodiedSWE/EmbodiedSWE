@@ -2209,7 +2209,10 @@ def main() -> None:
             else:
                 if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     crank_lock[:] = post_pt
-                    crank_near = bool((tip_perp("Right") < 0.030).all())
+                    crank_near = bool((tip_perp("Right") < 0.040).all())  # swap grab: the
+                    # incumbent's rigid stall holds the key — a press-in from ~33mm cannot
+                    # topple it (roll 203: two frames stalled at exactly 33mm, 3mm outside
+                    # the old gate); the bite gate still rejects bad closes
                     if not crank_near and t_in == 1130:
                         print(f"    [roleswap->R] not converged at t1130 (perp "
                               f"{float(tip_perp('Right').max()) * 1e3:.0f}mm) — rechecking to t1370", flush=True)
@@ -2289,7 +2292,7 @@ def main() -> None:
             else:
                 if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     pinch_lock[:] = post_pt
-                    crank_near = bool((tip_perp("Left") < 0.030).all())
+                    crank_near = bool((tip_perp("Left") < 0.040).all())  # see role_swap_R_holder
                     if not crank_near and t_in == 1130:
                         print(f"    [roleswap->L] not converged at t1130 (perp "
                               f"{float(tip_perp('Left').max()) * 1e3:.0f}mm) — rechecking to t1370", flush=True)
