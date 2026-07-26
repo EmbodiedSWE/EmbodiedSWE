@@ -5,140 +5,190 @@
 <title>robobench eval — README</title>
 <style>
   :root {
-    --bg: #F7F9FA; --panel: #FFFFFF; --panel2: #EFF3F5;
-    --ink: #1A2830; --mut: #55656F; --faint: #86939C; --line: #E1E7EA;
-    --acc: #0D7377; --acc-ink: #0A5B5E; --acc-bg: #E3F1F1;
-    --good: #2F7D4C; --good-bg: #E5F2EA; --warn: #96690A; --warn-bg: #F6EFDC;
-    --code-bg: #EEF2F4;
+    --bg: #F5F8F8; --panel: #FFFFFF; --panel2: #ECF2F2;
+    --ink: #17252C; --mut: #4C5E68; --faint: #7E8E96; --line: #DDE6E7;
+    --acc: #0B6B70; --acc-ink: #095A5E; --acc-bg: #DFF0F0;
+    --good: #2E7C4B; --good-bg: #E3F2E9; --warn: #93660A; --warn-bg: #F7EFDB;
+    --code-bg: #EEF3F3;
+    --shadow: 0 1px 2px rgba(23,37,44,.05), 0 6px 18px rgba(23,37,44,.05);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0F1519; --panel: #161D23; --panel2: #1C242B;
-      --ink: #E4EAEE; --mut: #A2AFB8; --faint: #6F7C86; --line: #29333C;
-      --acc: #47BFC5; --acc-ink: #7DD3D8; --acc-bg: #113237;
-      --good: #5CBF82; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
-      --code-bg: #1C242B;
+      --bg: #0D1418; --panel: #151D22; --panel2: #1B252B;
+      --ink: #E6ECEF; --mut: #AAB8C0; --faint: #71818B; --line: #28343B;
+      --acc: #4EC3C9; --acc-ink: #7FD4D9; --acc-bg: #0F3237;
+      --good: #5FC084; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
+      --code-bg: #1B252B;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.25);
     }
   }
   :root[data-theme="light"] {
-    --bg: #F7F9FA; --panel: #FFFFFF; --panel2: #EFF3F5;
-    --ink: #1A2830; --mut: #55656F; --faint: #86939C; --line: #E1E7EA;
-    --acc: #0D7377; --acc-ink: #0A5B5E; --acc-bg: #E3F1F1;
-    --good: #2F7D4C; --good-bg: #E5F2EA; --warn: #96690A; --warn-bg: #F6EFDC;
-    --code-bg: #EEF2F4;
+    --bg: #F5F8F8; --panel: #FFFFFF; --panel2: #ECF2F2;
+    --ink: #17252C; --mut: #4C5E68; --faint: #7E8E96; --line: #DDE6E7;
+    --acc: #0B6B70; --acc-ink: #095A5E; --acc-bg: #DFF0F0;
+    --good: #2E7C4B; --good-bg: #E3F2E9; --warn: #93660A; --warn-bg: #F7EFDB;
+    --code-bg: #EEF3F3;
+    --shadow: 0 1px 2px rgba(23,37,44,.05), 0 6px 18px rgba(23,37,44,.05);
   }
   :root[data-theme="dark"] {
-    --bg: #0F1519; --panel: #161D23; --panel2: #1C242B;
-    --ink: #E4EAEE; --mut: #A2AFB8; --faint: #6F7C86; --line: #29333C;
-    --acc: #47BFC5; --acc-ink: #7DD3D8; --acc-bg: #113237;
-    --good: #5CBF82; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
-    --code-bg: #1C242B;
+    --bg: #0D1418; --panel: #151D22; --panel2: #1B252B;
+    --ink: #E6ECEF; --mut: #AAB8C0; --faint: #71818B; --line: #28343B;
+    --acc: #4EC3C9; --acc-ink: #7FD4D9; --acc-bg: #0F3237;
+    --good: #5FC084; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
+    --code-bg: #1B252B;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.25);
   }
 
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; scroll-padding-top: 72px; }
-  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body { margin: 0; background: var(--bg); color: var(--ink);
     font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    font-size: 15.5px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+    font-size: 16px; line-height: 1.7; -webkit-font-smoothing: antialiased; }
   code, .mono, .num { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; }
-  code { font-size: .85em; background: var(--code-bg); padding: .12em .35em; border-radius: 4px; }
+  code { font-size: .84em; background: var(--code-bg); padding: .12em .4em; border-radius: 5px; }
   a { color: var(--acc-ink); }
-  :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 4px; }
+  :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 6px; }
   h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
 
-  .wrap { max-width: 850px; margin: 0 auto; padding: 0 24px; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
 
   /* ---------- header ---------- */
-  header { padding: 44px 0 26px; }
-  .eyebrow { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11.5px;
-    letter-spacing: .14em; text-transform: uppercase; color: var(--acc-ink); margin: 0 0 10px; }
-  header h1 { font-size: 27px; font-weight: 700; letter-spacing: -.02em; }
+  header { padding: 48px 0 24px; }
+  .eyebrow { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--acc-ink); margin: 0 0 12px; }
+  header h1 { font-size: clamp(26px, 4vw, 32px); font-weight: 750; letter-spacing: -.025em; }
 
-  /* ---------- sticky nav ---------- */
+  /* ---------- tab bar ---------- */
   nav.bar { position: sticky; top: 0; z-index: 10; background: var(--bg);
     border-bottom: 1px solid var(--line); }
-  nav.bar .row { display: flex; gap: 2px; overflow-x: auto; padding: 8px 0; }
-  nav.bar a { flex: none; display: flex; gap: 7px; align-items: baseline; text-decoration: none;
-    color: var(--mut); font-size: 13.5px; font-weight: 500; padding: 5px 11px; border-radius: 7px; }
-  nav.bar a .num { font-size: 11px; color: var(--faint); }
+  nav.bar .row { display: flex; gap: 6px; overflow-x: auto; padding: 10px 0; }
+  nav.bar a { flex: none; display: flex; gap: 8px; align-items: baseline; text-decoration: none;
+    color: var(--mut); font-size: 14px; font-weight: 550; padding: 7px 15px; border-radius: 999px; }
+  nav.bar a .num { font-size: 11px; color: var(--faint); font-weight: 650; }
   nav.bar a:hover { background: var(--panel2); color: var(--ink); }
-  nav.bar a.on { background: var(--acc-bg); color: var(--acc-ink); font-weight: 600; }
+  nav.bar a.on { background: var(--acc-bg); color: var(--acc-ink); font-weight: 650;
+    box-shadow: inset 0 0 0 1.5px var(--acc); }
   nav.bar a.on .num { color: var(--acc-ink); }
 
-  /* ---------- sections ---------- */
-  main { padding-bottom: 40px; }
-  section { padding: 36px 0 8px; border-bottom: 1px solid var(--line); }
-  section:last-of-type { border-bottom: 0; }
-  h2 { font-size: 20px; font-weight: 700; letter-spacing: -.015em; display: flex; gap: 12px; align-items: baseline; }
-  h2 .num { font-size: 12px; font-weight: 600; color: var(--acc-ink); letter-spacing: .05em; }
-  .lede { color: var(--mut); margin: 8px 0 20px; max-width: 66ch; }
-  h3 { font-size: 12px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase;
-       color: var(--faint); margin: 26px 0 10px; }
+  /* ---------- sections (tab panels) ---------- */
+  main { padding-bottom: 48px; }
+  section { padding: 34px 0 8px; }
+  section[hidden] { display: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    section { animation: rise .22s ease; }
+    @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  }
+  h2 { font-size: 24px; font-weight: 720; letter-spacing: -.02em;
+       display: flex; gap: 12px; align-items: center; }
+  h2 .num { font-size: 12px; font-weight: 650; color: var(--acc-ink); background: var(--acc-bg);
+            padding: 3px 9px; border-radius: 7px; letter-spacing: .05em; }
+  .lede { color: var(--mut); font-size: 17px; margin: 14px 0 20px; }
+  .lede b { color: var(--acc-ink); font-weight: 650; }
+  h3 { font-size: 14px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase;
+       color: var(--ink); margin: 34px 0 14px; display: flex; align-items: center; gap: 10px; }
+  h3::before { content: ""; flex: none; width: 18px; height: 4px; border-radius: 2px; background: var(--acc); }
+  h3::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   p { margin: 0 0 12px; }
-  .note { color: var(--faint); font-size: 13px; max-width: 72ch; margin: 10px 0 16px; }
-  ul.tight { margin: 0 0 16px; padding-left: 20px; display: flex; flex-direction: column; gap: 7px; }
-  ul.tight li::marker { color: var(--faint); }
+  .note { color: var(--mut); font-size: 13.5px; margin: 10px 0 16px; }
+  ul.tight { margin: 0 0 16px; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  ul.tight li::marker { color: var(--acc); }
   .cols2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 12px 32px; margin-bottom: 16px; }
 
-  /* ---------- pipeline strip ---------- */
-  .pipe { display: flex; align-items: stretch; gap: 0; overflow-x: auto; margin: 4px 0 16px;
-          border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
-  .pipe .step { flex: 1 1 0; min-width: 128px; padding: 12px 14px; border-right: 1px solid var(--line); }
+  /* ---------- procedure strip (auto-numbered) ---------- */
+  .pipe { display: flex; align-items: stretch; overflow-x: auto; margin: 6px 0 16px;
+          border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+          box-shadow: var(--shadow); counter-reset: step; }
+  .pipe .step { flex: 1 1 0; min-width: 150px; padding: 14px 16px;
+                border-right: 1px solid var(--line); counter-increment: step; }
   .pipe .step:last-child { border-right: 0; }
-  .pipe .step b { display: block; font-size: 13px; margin-bottom: 3px; }
-  .pipe .step span { display: block; color: var(--mut); font-size: 12.5px; line-height: 1.5; }
-  .pipe .step.hot { background: var(--acc-bg); }
+  .pipe .step b { display: block; font-size: 14.5px; font-weight: 650; margin-bottom: 4px; }
+  .pipe .step b::before { content: counter(step); font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px; font-weight: 700; color: var(--acc-ink); background: var(--acc-bg);
+    border-radius: 6px; padding: 1px 7px; margin-right: 8px; vertical-align: 2px; }
+  .pipe .step span { display: block; color: var(--mut); font-size: 13px; line-height: 1.55; }
+  .pipe .step.hot { background: linear-gradient(180deg, var(--acc-bg), transparent 160%); }
   .pipe .step.hot b { color: var(--acc-ink); }
   .pipe .step .freq { display: block; font-family: ui-monospace, "SF Mono", Consolas, monospace;
-    font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin-bottom: 5px; }
-  .pipe .step.hot .freq { color: var(--acc-ink); opacity: .75; }
-  .pipe .step.open b, .pipe .step.open span { opacity: .62; }
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 7px; }
+  .pipe .step.hot .freq { color: var(--acc-ink); opacity: .8; }
+  .pipe .step.open b, .pipe .step.open span { opacity: .6; }
   .pipe .step.open .freq { color: var(--warn); opacity: 1; }
 
+  /* ---------- lifecycle timeline ---------- */
+  .flow { list-style: none; margin: 10px 0 20px; padding: 0; position: relative;
+          display: flex; flex-direction: column; gap: 14px; }
+  .flow::before { content: ""; position: absolute; left: 20px; top: 14px; bottom: 14px;
+                  width: 2px; background: var(--line); }
+  .flow li { display: flex; gap: 18px; align-items: flex-start; }
+  .flow .dot { position: relative; z-index: 1; flex: none; width: 42px; height: 42px;
+               border-radius: 50%; display: grid; place-items: center;
+               font-family: ui-monospace, Consolas, monospace; font-size: 15px; font-weight: 700;
+               background: var(--panel); color: var(--faint); border: 2px solid var(--line); }
+  .flow li.hot .dot { background: var(--acc-bg); color: var(--acc-ink); border-color: var(--acc); }
+  .flow li.open .dot { border-style: dashed; border-color: var(--warn); color: var(--warn); }
+  .flow .card { flex: 1; background: var(--panel); border: 1px solid var(--line);
+                border-radius: 14px; padding: 14px 18px; box-shadow: var(--shadow); }
+  .flow li.hot .card { border-color: var(--acc); }
+  .flow li.open .card { border-style: dashed; }
+  .flow .card .freq { display: block; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint);
+    margin-bottom: 4px; }
+  .flow li.hot .card .freq { color: var(--acc-ink); }
+  .flow li.open .card .freq { color: var(--warn); }
+  .flow .card b { display: block; font-size: 16px; font-weight: 680; margin-bottom: 4px; }
+  .flow li.hot .card b { color: var(--acc-ink); }
+  .flow .card p { margin: 0; color: var(--mut); font-size: 14px; line-height: 1.6; }
+  .flow li.open .card p, .flow li.open .card b { opacity: .75; }
+
+  /* ---------- fact cards ---------- */
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+           gap: 12px; margin: 0 0 18px; }
+  .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+          padding: 16px 18px; font-size: 14.5px; color: var(--mut); box-shadow: var(--shadow); }
+  .fact b { display: block; color: var(--ink); font-size: 15.5px; margin-bottom: 5px; }
+
   /* ---------- tables ---------- */
-  .twrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px;
-           background: var(--panel); margin: 0 0 16px; }
-  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
-  th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .twrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+           background: var(--panel); margin: 0 0 16px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
   tr:last-child td { border-bottom: 0; }
-  th { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint);
-       background: var(--panel2); font-weight: 650; white-space: nowrap; }
-  td.name { font-weight: 600; white-space: nowrap; }
+  th { font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint);
+       background: var(--panel2); font-weight: 700; white-space: nowrap; }
+  td.name { font-weight: 650; white-space: nowrap; }
   td.t { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--mut); }
 
   /* ---------- code / tree blocks ---------- */
-  .block { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
-           padding: 13px 16px; overflow-x: auto; margin: 0 0 16px;
-           font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12.5px; line-height: 1.75; }
+  .block { background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px;
+           padding: 16px 20px; overflow-x: auto; margin: 0 0 16px; white-space: pre;
+           font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px; line-height: 1.9; }
   .block i { color: var(--mut); font-style: normal; }
   .block b { color: var(--acc-ink); font-weight: 650; }
   .block .x { color: var(--faint); }
 
   /* ---------- pills ---------- */
-  .pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11.5px;
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px;
           font-weight: 650; letter-spacing: .02em; white-space: nowrap; }
   .pill.done { background: var(--good-bg); color: var(--good); }
   .pill.tbd  { background: var(--warn-bg); color: var(--warn); }
   .pill.dim  { background: var(--panel2); color: var(--mut); }
 
   /* ---------- mount map ---------- */
-  .mount { display: grid; grid-template-columns: minmax(0,1fr) 44px minmax(0,1.15fr); gap: 4px 8px;
+  .mount { display: grid; grid-template-columns: minmax(0,1fr) 46px minmax(0,1.15fr); gap: 5px 8px;
            align-items: baseline; font-family: ui-monospace, "SF Mono", Consolas, monospace;
-           font-size: 12.5px; border: 1px solid var(--line); border-radius: 10px;
-           background: var(--panel); padding: 12px 16px; margin: 0 0 16px; overflow-x: auto; }
+           font-size: 13px; border: 1px solid var(--line); border-radius: 12px;
+           background: var(--panel); padding: 14px 18px; margin: 0 0 16px; overflow-x: auto;
+           box-shadow: var(--shadow); }
   .mount .h { text-align: right; color: var(--mut); }
   .mount .a { text-align: center; color: var(--acc-ink); font-weight: 700; }
   .mount .c b { color: var(--acc-ink); }
   .mount .c span { color: var(--mut); }
   .mount .full { grid-column: 1 / -1; color: var(--faint); font-family: system-ui, sans-serif;
-                 font-size: 12px; text-align: center; padding-top: 6px; border-top: 1px dashed var(--line); margin-top: 6px; }
+                 font-size: 12.5px; text-align: center; padding-top: 8px; border-top: 1px dashed var(--line); margin-top: 8px; }
 
-  footer { color: var(--faint); font-size: 12.5px; padding: 26px 0 60px; }
+  footer { color: var(--faint); font-size: 13px; padding: 26px 0 60px; }
 
   @media (max-width: 640px) {
-    header { padding-top: 28px; }
-    header h1 { font-size: 22px; }
+    header { padding-top: 30px; }
     .pipe { flex-direction: column; }
     .pipe .step { border-right: 0; border-bottom: 1px solid var(--line); }
     .pipe .step:last-child { border-bottom: 0; }
@@ -160,10 +210,11 @@
   <div class="wrap">
     <div class="row">
       <a href="#overview"><span class="num">01</span>Overview</a>
-      <a href="#docker"><span class="num">02</span>Docker images</a>
-      <a href="#experiment"><span class="num">03</span>Experiment folder</a>
-      <a href="#run"><span class="num">04</span>Run experiments</a>
-      <a href="#grade"><span class="num">05</span>Auto-grade</a>
+      <a href="#recipes"><span class="num">02</span>Examples</a>
+      <a href="#docker"><span class="num">03</span>Docker images</a>
+      <a href="#experiment"><span class="num">04</span>Experiment folder</a>
+      <a href="#run"><span class="num">05</span>Run experiments</a>
+      <a href="#grade"><span class="num">06</span>Auto-grade</a>
     </div>
   </div>
 </nav>
@@ -174,27 +225,125 @@
     <!-- 01 OVERVIEW ---------------------------------------------------- -->
     <section id="overview">
       <h2><span class="num">01</span>Overview</h2>
-      <p class="lede">A frontier coding agent (Claude Code, Codex, …) is dropped into an isolated container holding exactly three things — a minimal, boot-verified copy of the benchmark, the task, and an empty workspace — and asked to write a program that makes the robot solve the task. Nothing to copy, nothing to tamper with — the only way to succeed is to solve the task.</p>
+      <p class="lede">A coding agent is dropped into an <b>isolated container</b> holding a minimal, boot-verified copy of the benchmark, the task, and an empty workspace — and asked to <b>write a program that makes the robot solve the task</b>.</p>
+      <p>Getting there is four procedures — build the docker images once per machine, build each world once, run any number of agents against it, and grade what they submit. Each has its own tab above; the whole flow:</p>
+      <ol class="flow">
+        <li>
+          <div class="dot">1</div>
+          <div class="card"><span class="freq">once per machine</span><b>Build the docker images</b>
+          <p>The simulator and the agent CLIs, installed into reusable images. The benchmark is never baked in — an image knows nothing about any task.</p></div>
+        </li>
+        <li class="hot">
+          <div class="dot">2</div>
+          <div class="card"><span class="freq">once per world</span><b>Build the world</b>
+          <p>Copy only the benchmark files this task needs. Ablations start here: some functions (e.g. snapshot restore) can be blocked in the copied code. One world serves a whole series of runs; a different ablation is a separate build.</p></div>
+        </li>
+        <li class="hot">
+          <div class="dot">3</div>
+          <div class="card"><span class="freq">once per run</span><b>Run the agent</b>
+          <p>A disposable container: the world read-only, one writable workspace, guarded network. The prompt is assembled here — hints that ease the task, rules that disclose what the build blocked. At the deadline the container dies; the workspace survives.</p></div>
+        </li>
+        <li class="open">
+          <div class="dot">4</div>
+          <div class="card"><span class="freq">per submission · open</span><b>Auto-grade</b>
+          <p>The submitted solution is replayed in a second isolated container — the exact same world, plus the private verifiers. The agent may do anything during its run; only what passes here counts. Details still undecided.</p></div>
+        </li>
+      </ol>
 
-      <h3>The lifecycle</h3>
-      <div class="pipe">
-        <div class="step"><span class="freq">once per machine</span><b>Build the docker images</b><span>the simulator and the agent CLIs, installed into reusable images. The benchmark is never baked in — an image knows nothing about any task.</span></div>
-        <div class="step hot"><span class="freq">once per experiment</span><b>Build the world</b><span>distill a minimal benchmark for one registered task, apply any ablation surgery, boot-prove it, seal it with a receipt.</span></div>
-        <div class="step hot"><span class="freq">once per run</span><b>Run the agent</b><span>a disposable container: the proven world read-only, one writable workspace, guarded network. At the deadline the container dies; the workspace survives.</span></div>
-        <div class="step open"><span class="freq">per submission · open</span><b>Auto-grade</b><span>the submitted solution is replayed in a second isolated container — the exact same world, plus the private verifiers. The agent may do anything during its run; only what passes here counts. Details still undecided.</span></div>
-      </div>
-      <p class="note">Each boundary is also a trust boundary: images know no tasks, worlds are sealed before any agent exists, and the verifiers only ever appear in the grader's container — never the agent's.</p>
+      <h3>Quick start</h3>
+      <div class="block"><i># 0 · host setup, once — two prerequisites:
+#     the repo's .venv (robobench + Isaac Lab installed; used by build_env's boot check)
+#     docker + NVIDIA container toolkit + CDI (eval/docker/INSTALL.md)</i>
+
+<i># 1 · build the images, once
+#     l0 = Isaac baked venv (30–60 min) · warm = shader cache · l1 = agent CLI layer</i>
+make -C eval/docker l0
+make -C eval/docker warm
+make -C eval/docker l1 CC_VERSION=$(npm view @anthropic-ai/claude-code version)
+
+<i># 2 · build a world (~90 s)</i>
+python3 eval/scripts/build_env.py --name bulb_fable --stage bulb:franka
+
+<i># 3 · run one agent in one disposable container (inside tmux)
+#     credential from `claude setup-token` — or export ANTHROPIC_API_KEY instead</i>
+export CLAUDE_CODE_OAUTH_TOKEN=…
+python3 eval/scripts/run_agent.py experiments/bulb_fable --model claude-fable-5 --budget-min 120
+
+<i># 4 · watch live — artifacts land in experiments/bulb_fable/runs/&lt;r&gt;/
+#     deliverable: workspace/solution/solve.py · prompt: task/ · record: run.json</i>
+tail -f experiments/bulb_fable/runs/&lt;r&gt;/workspace/.agent/transcript.jsonl</div>
+      <p>From here, <a href="#recipes"><b>02 · Examples</b></a> is the cookbook: ablation arms, run settings, and model comparisons.</p>
 
       <h3>What keeps it honest</h3>
-      <ul class="tight">
-        <li><b>Tasks come from registered, verified configs.</b> Every registered scene–robot pairing has been solved at least once, so an agent is never handed an impossible world.</li>
-        <li><b>Nothing to cheat with.</b> The container holds no solutions, no verifiers, no demo scripts; the benchmark is read-only and the network reaches only the model API and the package index.</li>
-      </ul>
+      <div class="facts">
+        <div class="fact"><b>Tasks come from registered, verified configs</b> Every registered scene–robot pairing has been solved at least once, so an agent is never handed an impossible world.</div>
+        <div class="fact"><b>Nothing to cheat with</b> The container holds no solutions, no verifiers, no demo scripts; the benchmark is read-only and the network reaches only the model API and the package index.</div>
+      </div>
     </section>
 
-    <!-- 02 DOCKER IMAGES ---------------------------------------------- -->
-    <section id="docker">
-      <h2><span class="num">02</span>Build the docker images</h2>
+    <!-- 02 RUNNING ABLATIONS --------------------------------------------- -->
+    <section id="recipes" hidden>
+      <h2><span class="num">02</span>Examples</h2>
+      <p class="lede">Ablations compose the two procedures: <b>building worlds (§04)</b> for world-level arms and <b>running agents (§05)</b> for prompt-level arms. The pattern is always: build one world per arm, run the same agent and condition N times against each, compare the <code>run.json</code> records — the receipts prove the arms differed in exactly the intended way.</p>
+
+      <h3>Snapshot ablation — does rollback ability matter?</h3>
+      <div class="block"><i># build the two arms: identical except env.set_states() raises in the second</i>
+python3 eval/scripts/build_env.py --name bulb        --stage bulb:franka
+python3 eval/scripts/build_env.py --name bulb_nosnap --stage bulb:franka --no-set-states
+
+<i># run each arm N times (same model, same condition)</i>
+python3 eval/scripts/run_agent.py experiments/bulb        --model claude-fable-5 --run trial1
+python3 eval/scripts/run_agent.py experiments/bulb_nosnap --model claude-fable-5 --run trial1
+<i># … repeat with --run trial2, trial3, …</i>
+
+<i># any difference is attributable to rollback ability alone:
+#   resolved.json differs in one field (set_states) · runs differ in nothing else</i></div>
+
+      <h3>Controller-tier ablation — how much does the controller help?</h3>
+      <div class="block"><i># one world per tier, via the third slot of --stage
+# (a tier must be a registered preset — the feasibility gate)</i>
+python3 eval/scripts/build_env.py --name bulb_osc   --stage bulb:franka:osc
+python3 eval/scripts/build_env.py --name bulb_joint --stage bulb:franka:joint
+
+python3 eval/scripts/run_agent.py experiments/bulb_osc   --model claude-fable-5 --run trial1
+python3 eval/scripts/run_agent.py experiments/bulb_joint --model claude-fable-5 --run trial1
+
+<i># each world is frozen to its own mode (switching raises); gains + strategy stay free</i></div>
+
+      <h3>Prompt ablation — same world, different disclosure</h3>
+      <div class="block"><i># no rebuild: arms differ only in the condition yaml passed to the runner.
+# e.g. default.yaml teaches the snapshot workflow; a bare yaml (hints: []) does not</i>
+python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --run hinted1
+python3 eval/scripts/run_agent.py experiments/bulb --config eval/prompts/configs/&lt;bare&gt;.yaml --run bare1
+
+<i># run.json records hints/rules per run; the world hash proves both arms shared one world</i></div>
+
+      <h3>Same world, different run settings</h3>
+      <div class="block"><i># compare models — no new worlds, no new conditions</i>
+python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --run fable1
+python3 eval/scripts/run_agent.py experiments/bulb --model claude-opus-5  --run opus1
+
+<i># compare agents (credential for each in your shell env)</i>
+python3 eval/scripts/run_agent.py experiments/bulb --agent codex --model &lt;id&gt; --run codex1
+
+<i># budget as a variable, and pinning the GPU on a multi-GPU host</i>
+python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --budget-min 60  --run quick1
+python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --budget-min 240 --gpu 1 --run long1
+
+<i># every run is archived separately: experiments/bulb/runs/&lt;run-name&gt;/</i></div>
+
+      <h3>Transfer — sequence of stages, shared workspace</h3>
+      <div class="block"><i># one experiment, ordered stages; the agent keeps /workspace across stages</i>
+python3 eval/scripts/build_env.py --name screw_transfer --stage bulb:franka --stage nut_thread:franka
+
+<i># the per-stage sequence runner is future work — run_agent runs single-stage worlds only</i></div>
+
+      <p class="note">Arms combine freely — e.g. <code>--stage bulb:franka:joint --no-set-states</code> is a joint-tier world with snapshots blocked. Model ablations need no new worlds at all: rerun the same commands with <code>--agent codex --model &lt;id&gt;</code>.</p>
+    </section>
+
+    <!-- 03 DOCKER IMAGES ---------------------------------------------- -->
+    <section id="docker" hidden>
+      <h2><span class="num">03</span>Build the docker images</h2>
       <p class="lede">Everything an agent run needs except the benchmark itself, baked once into layered images: the Isaac simulator stack in a ready venv, and the agent CLIs on top. Benchmark changes never require a rebuild.</p>
 
       <h3>The images</h3>
@@ -215,22 +364,28 @@
 <i># 1 · sanity checks (small image, GPU passthrough, agent CLI):</i>
 make test-image && make test-gpu && make test-claude
 
-<i># 2 · the real images:</i>
-make l0          <i># 30–60 min, once</i>
-make warm        <i># boots the baked venv once, warms the shader cache</i>
-make l1 CC_VERSION=$(npm view @anthropic-ai/claude-code version)   <i># minutes</i></div>
+<i># 2 · the real images
+#     l0: the Isaac baked venv — 30–60 min, once</i>
+make l0
+<i>#     warm: boots the venv once, warms the shader cache</i>
+make warm
+<i>#     l1: the agent-CLI layer — minutes</i>
+make l1 CC_VERSION=$(npm view @anthropic-ai/claude-code version)</div>
       <p class="note">All make targets live in <code>eval/docker/Makefile</code>. Credentials are never baked into images — they enter later, per run, through environment variables.</p>
     </section>
 
-    <!-- 03 EXPERIMENT FOLDER ------------------------------------------- -->
-    <section id="experiment">
-      <h2><span class="num">03</span>Build the experiment folder</h2>
+    <!-- 04 EXPERIMENT FOLDER ------------------------------------------- -->
+    <section id="experiment" hidden>
+      <h2><span class="num">04</span>Build the experiment folder</h2>
       <p class="lede">One command turns a registered task into a self-contained, boot-proven folder on disk — the world the agent will later be locked into.</p>
 
-      <div class="block">python3 eval/scripts/build_env.py --name bulb_smoke --stage bulb:franka
+      <div class="block"><i># requires the repo's .venv (robobench + Isaac Lab) — but no activation:
+# the script re-execs itself into it</i>
+python3 eval/scripts/build_env.py --name bulb_smoke --stage bulb:franka
 <i>#   --list            show all registered presets</i>
 <i>#   --stage           scene:robot[:controller] — controller defaults osc &gt; impedance &gt; joint</i>
 <i>#   --no-set-states   ablation: disable snapshot-restore; solve from reset() forward</i>
+<i>#   --no-freeze-controller   allow switching control modes (default: frozen to the preset)</i>
 
 <i># transfer test: repeat --stage to build an ordered sequence — e.g. skills carried to a new scene:</i>
 python3 eval/scripts/build_env.py --name screw_transfer --stage bulb:franka --stage nut_thread:franka
@@ -240,7 +395,7 @@ python3 eval/scripts/build_env.py --name screw_transfer --stage bulb:franka --st
       <div class="pipe">
         <div class="step"><b>resolve</b><span>intent → registered preset, else fail with the menu of what exists</span></div>
         <div class="step"><b>extract</b><span>minimal benchmark tree: no other suites, no demo scripts, only the assets this task needs; solve-provenance comments scrubbed</span></div>
-        <div class="step"><b>patch</b><span>ablations rewritten into the tree's code (e.g. <code>--no-set-states</code>)</span></div>
+        <div class="step"><b>patch</b><span>one-time edits to the copied code that block functions the agent could otherwise exploit — control-mode switching (blocked by default), snapshot restore (<code>--no-set-states</code>). The mount is read-only, so a block cannot be undone.</span></div>
         <div class="step hot"><b>boot-prove</b><span>launch the sim from the extracted tree and reset the actual preset — no world ships unbooted</span></div>
         <div class="step"><b>receipt</b><span>content hash + repo revision + argv, so every result is attributable to exact code</span></div>
       </div>
@@ -253,20 +408,26 @@ python3 eval/scripts/build_env.py --name screw_transfer --stage bulb:franka --st
 │   ├─ bench/         <i>minimal benchmark tree, boot-proven (~141 MB for bulb)</i>
 │   └─ describe.md    <i>scene + robot description, harvested at boot</i>
 └─ runs/           <i>created later, one per agent run</i></div>
-      <p class="note">Everything environmental fails here, at build time — unregistered combos, missing assets, broken presets. At agent time, a failure is the agent's. The build produces the <b>world only</b>: the prompt folder is assembled per run (§04), with <code>describe.md</code> as its raw material.</p>
+      <p class="note">Everything environmental fails here, at build time — unregistered combos, missing assets, broken presets. At agent time, a failure is the agent's. The build produces the <b>world only</b>: the prompt folder is assembled per run (§05), with <code>describe.md</code> as its raw material.</p>
     </section>
 
-    <!-- 04 RUN EXPERIMENTS ---------------------------------------------- -->
-    <section id="run">
-      <h2><span class="num">04</span>Run experiments</h2>
+    <!-- 05 RUN EXPERIMENTS ---------------------------------------------- -->
+    <section id="run" hidden>
+      <h2><span class="num">05</span>Run experiments</h2>
       <p class="lede">A run pairs one built world with one prompt condition. The world is fixed; the hints are chosen per run — so a single experiment folder hosts bare runs, hinted runs, and everything between, all against the byte-identical tree. One run = one disposable container, killed at its budget.</p>
 
-      <div class="block">export CLAUDE_CODE_OAUTH_TOKEN=…     <i># or ANTHROPIC_API_KEY / OPENAI_API_KEY — from your shell, never stored</i>
-python3 eval/scripts/run_agent.py experiments/&lt;exp&gt;                               <i># condition: configs/default.yaml</i>
+      <div class="block"><i># credential — from your shell, never stored (or ANTHROPIC_API_KEY / OPENAI_API_KEY)</i>
+export CLAUDE_CODE_OAUTH_TOKEN=…
+
+<i># run with the default condition (eval/prompts/configs/default.yaml) …</i>
+python3 eval/scripts/run_agent.py experiments/&lt;exp&gt;
+
+<i># … or with a chosen condition yaml</i>
 python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/configs/&lt;cond&gt;.yaml
-<i>#   CLI = infrastructure only: --agent claude|codex · --model … · --gpu N · --budget-min … · --dry-run</i>
-<i>#   hints / rules live ONLY in the condition yaml — authored, never ad-hoc flags</i>
-<i>#   run_agent = the default runner: one scene + one task; sequence/transfer runners are future scripts</i></div>
+
+<i># the CLI is infrastructure only: --agent claude|codex · --model … · --gpu N · --budget-min … · --dry-run
+# hints / rules live ONLY in the condition yaml — authored, never ad-hoc flags
+# run_agent = the default runner: one scene + one task; sequence runners are future scripts</i></div>
 
       <h3>The /task folder — assembled fresh for every run</h3>
       <div class="block">runs/&lt;r&gt;/task/           <i>mounted ro at /task; instructions.md is fed to the agent CLI</i>
@@ -288,9 +449,9 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
       <p class="note">The repo, your experiments, solutions, and .git do not exist inside the container. <code>run_agent.py</code> runs open-network for development; results that count go through <code>eval/docker/compose.agent.yaml</code>, whose egress allowlist admits only the model API and the package index (GitHub blocked — the public repo's history cites solve-calibrated configs).</p>
     </section>
 
-    <!-- 05 AUTO-GRADE -------------------------------------------------- -->
-    <section id="grade">
-      <h2><span class="num">05</span>Auto-grade <span class="pill tbd">not built yet</span></h2>
+    <!-- 06 AUTO-GRADE -------------------------------------------------- -->
+    <section id="grade" hidden>
+      <h2><span class="num">06</span>Auto-grade <span class="pill tbd">not built yet</span></h2>
       <p class="lede">The shape is decided; the details are deliberately not. What is fixed: grading replays the submitted solution in a second isolated container — the exact same world as the agent's, plus the private verifiers, which never appear in the agent's container. The agent may do anything during its run; only what passes the replay counts.</p>
       <p class="note">Verifier design, metrics, and scheduling are open. Runs archive everything raw so no option is closed.</p>
     </section>
@@ -302,24 +463,40 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
 
 <script>
   (function () {
+    var row = document.querySelector("nav.bar .row");
+    row.setAttribute("role", "tablist");
     var links = Array.prototype.slice.call(document.querySelectorAll("nav.bar a"));
-    var sections = links.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
-    function mark(id) {
-      links.forEach(function (a) { a.classList.toggle("on", a.getAttribute("href") === "#" + id); });
+    var ids = links.map(function (a) { return a.getAttribute("href").slice(1); });
+    links.forEach(function (a, i) {
+      a.setAttribute("role", "tab");
+      var panel = document.getElementById(ids[i]);
+      if (panel) { panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-label", a.textContent.trim()); }
+    });
+    function show(id, focus) {
+      ids.forEach(function (s) { var el = document.getElementById(s); if (el) el.hidden = (s !== id); });
+      links.forEach(function (a) {
+        var on = a.getAttribute("href") === "#" + id;
+        a.classList.toggle("on", on);
+        a.setAttribute("aria-selected", on ? "true" : "false");
+        a.setAttribute("tabindex", on ? "0" : "-1");
+        if (on && focus) a.focus();
+      });
+      try { history.replaceState(null, "", "#" + id); } catch (e) {}
+      window.scrollTo(0, 0);
     }
-    if ("IntersectionObserver" in window) {
-      var current = sections[0] ? sections[0].id : null;
-      var visible = {};
-      var io = new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
-        for (var i = 0; i < sections.length; i++) {
-          if (sections[i] && visible[sections[i].id]) { current = sections[i].id; break; }
-        }
-        if (current) mark(current);
-      }, { rootMargin: "-64px 0px -60% 0px", threshold: 0 });
-      sections.forEach(function (s) { if (s) io.observe(s); });
-    }
-    mark(sections[0] ? sections[0].id : "");
+    Array.prototype.forEach.call(document.querySelectorAll("main a[href^='#']"), function (a) {
+      var id = a.getAttribute("href").slice(1);
+      if (ids.indexOf(id) >= 0) a.addEventListener("click", function (e) { e.preventDefault(); show(id); });
+    });
+    links.forEach(function (a, i) {
+      a.addEventListener("click", function (e) { e.preventDefault(); show(ids[i]); });
+      a.addEventListener("keydown", function (e) {
+        var d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (d) { e.preventDefault(); show(ids[(i + d + ids.length) % ids.length], true); }
+      });
+    });
+    var initial = (location.hash || "").slice(1);
+    show(ids.indexOf(initial) >= 0 ? initial : ids[0]);
   })();
 </script>
 </html>
