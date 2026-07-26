@@ -1674,43 +1674,66 @@ def main() -> None:
                 else:
                     print("  insert timed out, re-clocking", flush=True)
                     phase, marker = "clock", i
-        elif phase == "cage_convert":  # ALWAYS-HELD protocol: PLUMB, then latch IN PLACE.
-            # PLUMB: the insert weld is still ON — drag the key to EXACT vertical over the
-            # bore (the seat gate tolerates 8deg and roll 167 proved the lean only grows:
-            # nothing downstream ever straightened the key). Then weld off and latch the
-            # verified insert stall RIGHT WHERE IT IS: the pocket already bites the LOWER
-            # THIRD of the post (~mouth+35mm, measured roll 174), and every attempt to slide
-            # it lower hit wrist-infeasibility and dragged the key 15-25deg over (rolls
-            # 172-174: xy drift 19.6mm against an 11mm descent — the arm veers, the post
-            # follows). Weld off, jaws closed: the key spins freely inside the pocket while
-            # the walls hold it plumb over a 42mm lever off the socket. Never unheld again.
+        elif phase == "cage_convert":  # ALWAYS-HELD conversion: PLUMB/BLEED rounds, then hand
+            # the key from the WELD to the PADS with neither loaded.
+            # Weld-off at a force-plumbed key SNAPPED it 0.2deg -> 16.4deg with NOTHING else
+            # commanded (roll 176): the plumb stores elastic preload in the arm-weld-key-
+            # socket loop, and breaking the weld releases it into the pocket (this spring-
+            # back — not the descend — was the 15-25deg drag of rolls 172-175 too). So:
+            # plumb with SLACK jaws (the weld drags, the pads hover clear), BLEED the loop
+            # by re-targeting measured joints while still welded (the arm relaxes, the weld
+            # gives some lean back), and repeat — each round re-stores less. Then weld off
+            # UNLOADED, settle, and close the stall on the standing plumbed post: pads-only
+            # hold (the pocket already bites the lower third, ~mouth+35mm), key spins free.
             act = hold_act(OPEN_C)
+            gslack = grip_c_L + 0.004
             if t_in == 1:
                 stroke_y0[:] = crank_azim()  # freeze the spin: plumbing must not rotate the key
-            if t_in <= 700:
-                kq_pl = kq_flip(stroke_y0)
-                tip_tgt = torch.zeros(n, 3, device=dev)
-                tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
-                tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.001
-                tpP, tqP = tool_for_key_L(root_for_tip(tip_tgt, kq_pl), kq_pl)
-                left_to(tpP, tqP, grip_c_L, rot_w=1.2)
-                if t_in == 620:
-                    print(f"    [plumb] lean {lean_deg():.1f}deg | lat "
+                bleed_qL = artL.data.joint_pos[:, arm_ids_L].clone()
+            if t_in <= 1850:
+                in_bleed = (450 < t_in <= 650) or (1050 < t_in <= 1250) or (1650 < t_in <= 1850)
+                if in_bleed:
+                    if t_in % 5 == 1:
+                        bleed_qL = artL.data.joint_pos[:, arm_ids_L].clone()
+                    left_cmd[:, 0:6] = bleed_qL
+                    left_cmd[:, 6] = _shape_grip("L", gslack)
+                else:
+                    kq_pl = kq_flip(stroke_y0)
+                    tip_tgt = torch.zeros(n, 3, device=dev)
+                    tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+                    tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.001
+                    tpP, tqP = tool_for_key_L(root_for_tip(tip_tgt, kq_pl), kq_pl)
+                    left_to(tpP, tqP, gslack, rot_w=1.2)
+                if t_in in (650, 1250, 1850):
+                    print(f"    [plumb r{(t_in - 50) // 600}] lean {lean_deg():.2f}deg after bleed | lat "
                           f"{float(key_lateral().max()) * 1e3:.1f}mm", flush=True)
+                if t_in == 1850:
                     weld_off_L()
                     wpL_q[:] = toolL_pose()[1]
+            elif t_in <= 1930:  # weld-off settle: arm held relaxed, pads still slack
+                left_cmd[:, 0:6] = bleed_qL
+                left_cmd[:, 6] = _shape_grip("L", gslack)
+                if t_in == 1930:
+                    print(f"    [handover] weld-off settle: lean {lean_deg():.2f}deg", flush=True)
+            elif t_in <= 2230:  # close the stall on the standing post
+                left_cmd[:, 0:6] = bleed_qL
+                left_cmd[:, 6] = _shape_grip("L", 0.004)
             else:
+                prL = jaw_pair(artL, jaw_ids_L)
                 ok_seat = (key_tip_axial() < SOCKET_MOUTH_Z - 0.004) & (key_lateral() < 0.004)
                 upright = (-handle_dir()[:, 2]) > 0.99
-                gpz = float((toolL_pose()[0] + quat_apply(wpL_q, ex1 * tool_to_grip))[0, 2])
+                okb = (prL < 0.020) & (tip_perp("Left") < 0.018)
                 hold_qL[:] = artL.data.joint_pos[:, arm_ids_L]  # RIGID latch (no pushover drift)
                 holder = "L"
-                if bool((ok_seat & upright).all()):
-                    print(f"  STEADY HAND set (plumbed, pocket z {gpz * 1e3:.0f}mm — lower third, "
-                          f"lean {lean_deg():.1f}deg) — key held; R cranks", flush=True)
+                gpz = float((toolL_pose()[0] + quat_apply(wpL_q, ex1 * tool_to_grip))[0, 2])
+                if bool((ok_seat & upright & okb).all()):
+                    grip_c_L = float(prL[0]) * 0.5 + 0.0005
+                    print(f"  STEADY HAND set (plumbed+bled, pocket z {gpz * 1e3:.0f}mm, lean "
+                          f"{lean_deg():.1f}deg, stall {float(prL[0]) * 1e3:.1f}mm) — key held; R cranks", flush=True)
                     phase, marker = "crank_approach", i
                 else:
-                    print(f"  hold convert failed (lean {lean_deg():.1f}deg); ending with the insert result", flush=True)
+                    print(f"  hold convert failed (lean {lean_deg():.1f}deg, pair "
+                          f"{float(prL[0]) * 1e3:.1f}mm); ending with the insert result", flush=True)
                     phase, marker = "admire", i
         elif phase == "crank_approach":  # RIGHT grabs the CRANK end-on (approach along the
             # member, slot across it) with its own scored frame ladder; the caged, seated key
