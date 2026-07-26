@@ -74,7 +74,13 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
     key_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # wxyz; flat
     key_mass: float = info(0.08)  # steel 12.5 mm L-key (kg)
     key_disable_gravity: bool = info(False)  # the force-driven key smoke sets this True (no hand to bear the handle's weight)
-    key_contact_offset: float = info(0.0005)  # must stay well below the 0.75 mm/side socket clearance
+    # Contact offsets add PER PAIR: the key<->socket clearance is 0.75 mm/side, so the key's and the
+    # bolt's authored offsets together must stay well under that, or speculative contacts seal the
+    # socket mouth — a key teleported INTO the recess still works (the force smoke), but a carried
+    # key can never ENTER from outside. The bolt previously had no authored offset at all, and the
+    # engine default on its head SDF sealed the mouth outright.
+    key_contact_offset: float = info(0.0002)
+    bolt_contact_offset: float = info(0.0002)
     bolt_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # wxyz; lying
     # Selectable work surface (same presets as the sibling scenes).
     table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
@@ -177,6 +183,9 @@ class AllenBoltAssemblyScene(BaseScene):
                 spawn=sim_utils.UsdFileCfg(
                     usd_path=c.bolt_usd,
                     activate_contact_sensors=True,
+                    collision_props=sim_utils.CollisionPropertiesCfg(
+                        contact_offset=c.bolt_contact_offset, rest_offset=0.0
+                    ),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
                         solver_position_iteration_count=192,
                         solver_velocity_iteration_count=1,
