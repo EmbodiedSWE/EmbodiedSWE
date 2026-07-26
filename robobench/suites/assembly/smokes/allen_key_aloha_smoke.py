@@ -1734,9 +1734,9 @@ def main() -> None:
                     grip_c_L = float(prL[0]) * 0.5 + 0.0005
                     conv_pending = True
                     print(f"  STEADY HAND armed (welded, plumbed {lean_deg():.2f}deg, pocket z "
-                          f"{gpz * 1e3:.0f}mm, stall {float(prL[0]) * 1e3:.1f}mm) — R props the crank "
-                          f"before the weld lets go", flush=True)
-                    phase, marker = "crank_approach", i
+                          f"{gpz * 1e3:.0f}mm, stall {float(prL[0]) * 1e3:.1f}mm) — clocking the "
+                          f"crank to the R, then the prop handover", flush=True)
+                    phase, marker = "convert_clock", i
                 else:
                     holder = "L"
                     print(f"  hold convert failed (pair {float(prL[0]) * 1e3:.1f}mm); ending "
@@ -1824,6 +1824,36 @@ def main() -> None:
                     else:
                         print("  crank grab exhausted; releasing with the progress", flush=True)
                         phase, marker = "crank_release", i
+        elif phase == "convert_clock":  # welded pre-clock: rotate the crank into the R's grab
+            # sector before the prop handover. Roll 184: every prop-ladder frame parked
+            # 44-67mm out — the crank azimuth pointed into the R's unreachable arc, and no
+            # frame choice fixes geometry. The L still holds the weld, the tip stays pressed
+            # to the floor, and any preload this stores releases into the R's weld, not the
+            # pocket.
+            if t_in == 1:
+                psi_cc0 = crank_azim().clone()
+                psi_want_cc = torch.atan2(base_R_xy[:, 1] - bolt.data.root_pos_w[:, 1],
+                                          base_R_xy[:, 0] - bolt.data.root_pos_w[:, 0])
+                dpsi_cc = _wrap(psi_want_cc - psi_cc0)
+                print(f"    [convert_clock] rotating the crank {float(torch.rad2deg(dpsi_cc)[0]):+.0f}deg "
+                      f"toward the R (welded)", flush=True)
+            frac = min(1.0, t_in / 1100.0)
+            kq_cc = kq_flip(psi_cc0 + dpsi_cc * frac)
+            tip_tgt = torch.zeros(n, 3, device=dev)
+            tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+            tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.001
+            tpC, tqC = tool_for_key_L(root_for_tip(tip_tgt, kq_cc), kq_cc)
+            left_to(tpC, tqC, grip_c_L, rot_w=1.0)
+            act = hold_act(OPEN_C)
+            mL_cc = torch.minimum(artL.data.joint_pos[:, arm_ids_L] - lo_lim_L,
+                                  hi_lim_L - artL.data.joint_pos[:, arm_ids_L])
+            pinched = t_in > 300 and bool((mL_cc.min(dim=-1).values < 0.06).any())
+            if t_in >= 1400 or pinched:
+                hold_qL[:] = artL.data.joint_pos[:, arm_ids_L]  # the L moved: re-latch
+                res = float(torch.rad2deg(_wrap(psi_want_cc - crank_azim())).abs().max())
+                print(f"    [convert_clock] {'joint-pinched, settling' if pinched else 'done'} — "
+                      f"crank {res:.0f}deg from the R's sector | lean {lean_deg():.2f}deg", flush=True)
+                phase, marker = "crank_approach", i
         elif phase == "unweld_L":  # weld-to-weld handover: the R's fresh crank weld now props
             # the top-heavy key, so the L can finally release ITS weld without the topple.
             # The L keeps its rigid stalled pocket as the passive cage.
@@ -2562,7 +2592,8 @@ def main() -> None:
         dd = (depth() - prev_depth).abs()
         if phase in ("pinch_in", "pinch_close", "lift", "carry", "erect", "handoff_carry", "post_pinch",
                      "handoff", "l_clock", "l_insert", "cage_convert", "crank_approach",
-                     "crank_regrip", "crank_approach_L", "crank_regrip_L", "unweld_L", "role_swap_R_holder",
+                     "crank_regrip", "crank_approach_L", "crank_regrip_L", "unweld_L", "convert_clock",
+                     "role_swap_R_holder",
                      "role_swap_L_holder", "role_swap_L_release", "role_swap_R_release",
                      "clock", "insert") and float(dd.max()) > 0.0015:
             kt = key.data.root_pos_w
