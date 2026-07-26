@@ -57,7 +57,7 @@ RUN_DIR=… TASK_DIR=… BENCH_DIR=… AGENT_TAG=<ccver> docker compose -f compo
 The builder behind `/bench` is `eval/scripts/build_env.py` (library:
 `eval/envbuild/`): resolve CLI intent against robobench's registries (only
 registered presets build — the feasibility gate) → extract the minimal tree →
-apply arm patches → **boot-validate** the registered preset from the tree (no
+apply ablation patches → **boot-validate** the registered preset from the tree (no
 bundle ships unbooted; `scene.describe()` is harvested for the prompt) →
 render `/task` → write `resolved.json`, a re-runnable provenance receipt.
 Planned on top (not built): a declarative per-experiment spec layer (e.g.

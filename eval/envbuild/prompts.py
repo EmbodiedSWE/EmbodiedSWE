@@ -5,7 +5,7 @@ prompt conditions. Selection is by presence — the folder contains exactly the
 files this run's condition grants. Hints and rules both live as single-file
 libraries under eval/prompts/; the harness validates a selection against the
 world's receipt so the prompt can never LIE about the world (withholding a
-disclosure is allowed — that's an experimental arm; contradicting is not).
+disclosure is allowed — that's an experimental variant; contradicting is not).
 
     /task/
     ├── instructions.md   the contract (explains this folder; the CLI prompt)
@@ -34,7 +34,7 @@ RULES_NEED = {
 
 _TRANSFER_NOTE = (
     "`/workspace` contains your files from the previous stage of this "
-    "experiment. Reuse whatever helps."
+    "experiment. Reuse whatever helps — start with `HANDOFF.md` if present."
 )
 
 

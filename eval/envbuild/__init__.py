@@ -3,7 +3,7 @@
 Pipeline (build.py is the only module that knows this order):
     resolve CLI intent -> registered presets (the feasibility gate)
     -> extract a minimal benchmark tree per stage
-    -> patch ablation arms into the tree (by construction)
+    -> patch ablations into the tree (by construction)
     -> boot-validate the REGISTERED preset from the tree + harvest describe()
     -> write the resolved receipt (re-runnable provenance)
 

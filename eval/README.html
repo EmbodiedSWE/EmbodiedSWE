@@ -272,7 +272,7 @@ python3 eval/scripts/run_agent.py experiments/bulb_fable --model claude-fable-5 
 <i># 4 · watch live — artifacts land in experiments/bulb_fable/runs/&lt;r&gt;/
 #     deliverable: workspace/solution/solve.py · prompt: task/ · record: run.json</i>
 tail -f experiments/bulb_fable/runs/&lt;r&gt;/workspace/.agent/transcript.jsonl</div>
-      <p>From here, <a href="#recipes"><b>02 · Examples</b></a> is the cookbook: ablation arms, run settings, and model comparisons.</p>
+      <p>From here, <a href="#recipes"><b>02 · Examples</b></a> is the cookbook: ablation variants, run settings, and model comparisons.</p>
 
       <h3>What keeps it honest</h3>
       <div class="facts">
@@ -281,64 +281,101 @@ tail -f experiments/bulb_fable/runs/&lt;r&gt;/workspace/.agent/transcript.jsonl<
       </div>
     </section>
 
-    <!-- 02 RUNNING ABLATIONS --------------------------------------------- -->
+    <!-- 02 EXAMPLES ------------------------------------------------------ -->
     <section id="recipes" hidden>
       <h2><span class="num">02</span>Examples</h2>
-      <p class="lede">Ablations compose the two procedures: <b>building worlds (§04)</b> for world-level arms and <b>running agents (§05)</b> for prompt-level arms. The pattern is always: build one world per arm, run the same agent and condition N times against each, compare the <code>run.json</code> records — the receipts prove the arms differed in exactly the intended way.</p>
+      <p class="lede">Five complete usage patterns. The grammar is always the same: <b>world-level choices are <code>build_env</code> flags</b> (one build per variant), <b>prompt-level choices are condition yamls</b>, and runs repeat N times with everything archived under <code>experiments/&lt;world&gt;/runs/</code>.</p>
 
-      <h3>Snapshot ablation — does rollback ability matter?</h3>
-      <div class="block"><i># build the two arms: identical except env.set_states() raises in the second</i>
+      <h3>1 · Different agents and models</h3>
+      <p class="note">Which agent solves the task, and at what token cost — everything else held fixed.</p>
+      <div class="block"><i># one world, then vary only the agent/model — nothing else changes</i>
+python3 eval/scripts/build_env.py --name bulb --stage bulb:franka
+
+python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --run fable1
+python3 eval/scripts/run_agent.py experiments/bulb --model claude-opus-5  --run opus1
+python3 eval/scripts/run_agent.py experiments/bulb --agent codex --model &lt;id&gt; --run codex1
+
+<i># repeat with --run fable2, fable3, … · budget and GPU are also per-run knobs:</i>
+python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --budget-min 60 --gpu 1 --run quick1</div>
+
+      <h3>2 · Different scene + robot</h3>
+      <p class="note">Coverage: the same harness runs every registered task; nothing is bulb-specific.</p>
+      <div class="block"><i># a world is a REGISTERED scene:robot pairing — the registry is the task menu</i>
+python3 eval/scripts/build_env.py --list
+
+python3 eval/scripts/build_env.py --name bulb_franka --stage bulb:franka
+python3 eval/scripts/build_env.py --name nut_franka  --stage nut_thread:franka
+python3 eval/scripts/run_agent.py experiments/nut_franka --model claude-fable-5
+
+<i># an unregistered pairing refuses to build, printing the menu (feasibility gate):</i>
+python3 eval/scripts/build_env.py --name x --stage bulb:aloha</div>
+
+      <h3>3 · Interactive — work with the agent in its sandbox</h3>
+      <p class="note">A live session you can join and leave. The default condition (<code>configs/interactive.yaml</code>) tells the agent to work as autonomously as possible — a human may occasionally check results and leave feedback, and the agent must never idle waiting for one. Useful for coached solving, debugging a world, or demos.</p>
+      <div class="block"><i># build a world, then open a live session inside its sandbox</i>
+python3 eval/scripts/build_env.py --name bulb --stage bulb:franka
+export CLAUDE_CODE_OAUTH_TOKEN=…
+python3 eval/scripts/run_interactive.py experiments/bulb --model claude-fable-5 --run pair1
+
+<i># join it — from any terminal, any time (the launcher prints this line too)</i>
+docker exec -it rb_bulb_pair1 runuser -u agent -- tmux attach -t agent
+
+<i># leave WITHOUT stopping the agent: Ctrl-b d</i>
+
+<i># SSH dropped / terminal closed? nothing was lost — find the container and re-attach:</i>
+docker ps --filter name=rb_
+docker exec -it rb_bulb_pair1 runuser -u agent -- tmux attach -t agent
+
+<i># finish for good (workspace + run.json stay on the host under experiments/bulb/runs/pair1/)</i>
+docker stop rb_bulb_pair1</div>
+
+      <h3>4 · Controller ablation — tiers, and a custom-controller variant</h3>
+      <p class="note">How much does the controller abstraction help — and can the agent do better with its own?</p>
+      <div class="block"><i># tiers are different registered presets (third slot of --stage);
+# each world is frozen to its own mode — switching raises inside it</i>
+python3 eval/scripts/build_env.py --name bulb_osc   --stage bulb:franka:osc
+python3 eval/scripts/build_env.py --name bulb_joint --stage bulb:franka:joint
+python3 eval/scripts/run_agent.py experiments/bulb_osc   --model claude-fable-5 --run t1
+python3 eval/scripts/run_agent.py experiments/bulb_joint --model claude-fable-5 --run t1
+
+<i># custom-controller variant: unfreeze the world, and (optionally) teach the topic
+# with a condition yaml:  hints: [custom_controller]</i>
+python3 eval/scripts/build_env.py --name bulb_free --stage bulb:franka --no-freeze-controller
+python3 eval/scripts/run_agent.py experiments/bulb_free --config eval/prompts/configs/custom_controller.yaml
+
+<i># gains and strategy are free in EVERY variant — the freeze only gates mode switching</i></div>
+
+      <h3>5 · Snapshot ablation</h3>
+      <p class="note">Does rollback ability change success and cost?</p>
+      <div class="block"><i># two worlds: identical, except env.set_states() raises in the second</i>
 python3 eval/scripts/build_env.py --name bulb        --stage bulb:franka
 python3 eval/scripts/build_env.py --name bulb_nosnap --stage bulb:franka --no-set-states
 
-<i># run each arm N times (same model, same condition)</i>
-python3 eval/scripts/run_agent.py experiments/bulb        --model claude-fable-5 --run trial1
-python3 eval/scripts/run_agent.py experiments/bulb_nosnap --model claude-fable-5 --run trial1
-<i># … repeat with --run trial2, trial3, …</i>
+<i># with snapshots — the default condition ships the save_snapshot hint</i>
+python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --run snap1
 
-<i># any difference is attributable to rollback ability alone:
-#   resolved.json differs in one field (set_states) · runs differ in nothing else</i></div>
+<i># without — the block is disclosed via  rules: [no_set_states, …]
+#   (selecting the snapshot hint against this world refuses to launch)</i>
+python3 eval/scripts/run_agent.py experiments/bulb_nosnap --config eval/prompts/configs/nosnap.yaml --run nosnap1</div>
 
-      <h3>Controller-tier ablation — how much does the controller help?</h3>
-      <div class="block"><i># one world per tier, via the third slot of --stage
-# (a tier must be a registered preset — the feasibility gate)</i>
-python3 eval/scripts/build_env.py --name bulb_osc   --stage bulb:franka:osc
-python3 eval/scripts/build_env.py --name bulb_joint --stage bulb:franka:joint
+      <h3>6 · Transfer — carry skills across scenes or robots</h3>
+      <p class="note">Do success rate and token efficiency improve on a later task, given the earlier task’s artifacts?</p>
+      <div class="block"><i># scene transfer: same robot, new scene — does screwing skill carry?</i>
+python3 eval/scripts/build_env.py --name screw_seq --stage bulb:franka --stage nut_thread:franka
 
-python3 eval/scripts/run_agent.py experiments/bulb_osc   --model claude-fable-5 --run trial1
-python3 eval/scripts/run_agent.py experiments/bulb_joint --model claude-fable-5 --run trial1
+<i># robot transfer: same scene, new embodiment (both pairings must be registered)</i>
+python3 eval/scripts/build_env.py --name embody_seq --stage nut_thread:franka --stage nut_thread:&lt;robot2&gt;
 
-<i># each world is frozen to its own mode (switching raises); gains + strategy stay free</i></div>
+<i># run: one fresh session per stage; stage 02 inherits a COPY of stage 01's
+# workspace (minus .agent/ telemetry) — continuity is files, never context</i>
+python3 eval/scripts/run_sequence.py experiments/screw_seq --model claude-fable-5 --config eval/prompts/configs/transfer.yaml
 
-      <h3>Prompt ablation — same world, different disclosure</h3>
-      <div class="block"><i># no rebuild: arms differ only in the condition yaml passed to the runner.
-# e.g. default.yaml teaches the snapshot workflow; a bare yaml (hints: []) does not</i>
-python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --run hinted1
-python3 eval/scripts/run_agent.py experiments/bulb --config eval/prompts/configs/&lt;bare&gt;.yaml --run bare1
+<i># disclosed variant:   condition selects leave_handoff — early stages write HANDOFF.md
+#                  (auto-dropped on the final stage)
+# undisclosed variant: same command, condition without leave_handoff
+# baseline:        build nut_thread:franka alone and run it cold —
+#                  equal tree hashes prove the worlds matched</i></div>
 
-<i># run.json records hints/rules per run; the world hash proves both arms shared one world</i></div>
-
-      <h3>Same world, different run settings</h3>
-      <div class="block"><i># compare models — no new worlds, no new conditions</i>
-python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --run fable1
-python3 eval/scripts/run_agent.py experiments/bulb --model claude-opus-5  --run opus1
-
-<i># compare agents (credential for each in your shell env)</i>
-python3 eval/scripts/run_agent.py experiments/bulb --agent codex --model &lt;id&gt; --run codex1
-
-<i># budget as a variable, and pinning the GPU on a multi-GPU host</i>
-python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --budget-min 60  --run quick1
-python3 eval/scripts/run_agent.py experiments/bulb --model claude-fable-5 --budget-min 240 --gpu 1 --run long1
-
-<i># every run is archived separately: experiments/bulb/runs/&lt;run-name&gt;/</i></div>
-
-      <h3>Transfer — sequence of stages, shared workspace</h3>
-      <div class="block"><i># one experiment, ordered stages; the agent keeps /workspace across stages</i>
-python3 eval/scripts/build_env.py --name screw_transfer --stage bulb:franka --stage nut_thread:franka
-
-<i># the per-stage sequence runner is future work — run_agent runs single-stage worlds only</i></div>
-
-      <p class="note">Arms combine freely — e.g. <code>--stage bulb:franka:joint --no-set-states</code> is a joint-tier world with snapshots blocked. Model ablations need no new worlds at all: rerun the same commands with <code>--agent codex --model &lt;id&gt;</code>.</p>
     </section>
 
     <!-- 03 DOCKER IMAGES ---------------------------------------------- -->
@@ -357,7 +394,9 @@ python3 eval/scripts/build_env.py --name screw_transfer --stage bulb:franka --st
       </table></div>
 
       <h3>Install</h3>
-      <div class="block"><i># 0 · host prerequisites — docker, NVIDIA container toolkit, CDI spec.</i>
+      <div class="block"><i># all commands below run from eval/docker/
+
+# 0 · host prerequisites — docker, NVIDIA container toolkit, CDI spec.</i>
 <i>#     CDI is mandatory (legacy --gpus breaks Vulkan/RTX): see eval/docker/INSTALL.md</i>
 <i>#     after every NVIDIA driver upgrade: sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml</i>
 
@@ -371,13 +410,12 @@ make l0
 make warm
 <i>#     l1: the agent-CLI layer — minutes</i>
 make l1 CC_VERSION=$(npm view @anthropic-ai/claude-code version)</div>
-      <p class="note">All make targets live in <code>eval/docker/Makefile</code>. Credentials are never baked into images — they enter later, per run, through environment variables.</p>
     </section>
 
     <!-- 04 EXPERIMENT FOLDER ------------------------------------------- -->
     <section id="experiment" hidden>
       <h2><span class="num">04</span>Build the experiment folder</h2>
-      <p class="lede">One command turns a registered task into a self-contained, boot-proven folder on disk — the world the agent will later be locked into.</p>
+      <p class="lede">One command turns a registered task into a self-contained, boot-proven folder on disk — the world the agent will later be locked into. It produces the <b>world only</b> (prompts are assembled per run, §05), and everything environmental fails here, at build time — at agent time, a failure is the agent’s.</p>
 
       <div class="block"><i># requires the repo's .venv (robobench + Isaac Lab) — but no activation:
 # the script re-execs itself into it</i>
@@ -408,13 +446,18 @@ python3 eval/scripts/build_env.py --name screw_transfer --stage bulb:franka --st
 │   ├─ bench/         <i>minimal benchmark tree, boot-proven (~141 MB for bulb)</i>
 │   └─ describe.md    <i>scene + robot description, harvested at boot</i>
 └─ runs/           <i>created later, one per agent run</i></div>
-      <p class="note">Everything environmental fails here, at build time — unregistered combos, missing assets, broken presets. At agent time, a failure is the agent's. The build produces the <b>world only</b>: the prompt folder is assembled per run (§05), with <code>describe.md</code> as its raw material.</p>
+      <h3>The receipt — facts that every run must respect</h3>
+      <div class="block">resolved.json
+├─ name · argv · set_states                <i>what was built, and with which ablations</i>
+└─ stages[]: preset · assets · tree_sha256 <i>world identity — equal hashes = same world</i>
+             control_mode_frozen · boot_checked</div>
+      <p class="note">The receipt is what keeps prompts honest downstream: at launch, a selected rule/hint is checked against these facts — e.g. the <code>no_set_states</code> rule refuses to render against a world whose receipt says snapshots are enabled.</p>
     </section>
 
     <!-- 05 RUN EXPERIMENTS ---------------------------------------------- -->
     <section id="run" hidden>
       <h2><span class="num">05</span>Run experiments</h2>
-      <p class="lede">A run pairs one built world with one prompt condition. The world is fixed; the hints are chosen per run — so a single experiment folder hosts bare runs, hinted runs, and everything between, all against the byte-identical tree. One run = one disposable container, killed at its budget.</p>
+      <p class="lede">A run pairs one built world with one <b>prompt condition</b>. The world is fixed; the condition is chosen per run — so a single experiment folder hosts many runs under different conditions, all against the byte-identical tree. Two runners: <code>run_agent.py</code> for single tasks, <code>run_sequence.py</code> for staged sequences. One run = one disposable container, killed at its budget.</p>
 
       <div class="block"><i># credential — from your shell, never stored (or ANTHROPIC_API_KEY / OPENAI_API_KEY)</i>
 export CLAUDE_CODE_OAUTH_TOKEN=…
@@ -427,16 +470,46 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
 
 <i># the CLI is infrastructure only: --agent claude|codex · --model … · --gpu N · --budget-min … · --dry-run
 # hints / rules live ONLY in the condition yaml — authored, never ad-hoc flags
-# run_agent = the default runner: one scene + one task; sequence runners are future scripts</i></div>
+# run_agent = the default runner (one scene + one task); sequences: run_sequence.py, see §02</i></div>
 
       <h3>The /task folder — assembled fresh for every run</h3>
       <div class="block">runs/&lt;r&gt;/task/           <i>mounted ro at /task; instructions.md is fed to the agent CLI</i>
-├─ instructions.md   <i>contract + index of what exists (+ workspace note on stage 02+)</i>
+├─ instructions.md   <i>the contract verbatim (+ carryover note on stage 02+)</i>
 ├─ task.md           <i>auto-generated: scene + robot description, goal, build snippet</i>
 ├─ rules/…           <i>selected disclosures — never automatic</i>
 └─ hints/…           <i>selected hints; both libraries live in eval/prompts/</i></div>
-      <p class="note">Everything except the auto-generated <code>task.md</code> is hand-authored library content, included only when the yaml/CLI selects it. The prompt may withhold (an unselected rule = undisclosed restriction) but never lie: a rule or hint contradicting the world's receipt refuses to launch. <code>run.json</code> records hints, rules, and a hash per task file. Higher-level orchestration (repeats, agent matrices, stage sequencing) stays future work.</p>
-      <p class="note"><b>Caveat:</b> only the prompt varies per run. Restrictions like <code>--no-set-states</code> are baked into the tree at build time; the runner merely discloses them. Same scene free vs. restricted = two built experiments.</p>
+      <p class="note">Everything except the auto-generated <code>task.md</code> is hand-authored library content, selected by the yaml. The prompt may withhold but never lie: a selection contradicting the world's receipt refuses to launch — restrictions themselves are baked at build time, the runner only discloses them. <code>run.json</code> records the full condition.</p>
+
+      <h3>The prompt libraries (eval/prompts/)</h3>
+      <div class="twrap"><table>
+        <thead><tr><th>where</th><th>what</th><th>current contents</th></tr></thead>
+        <tbody>
+          <tr><td class="name">configs/</td><td>run conditions — which hints/rules a run gets</td><td><code>default</code> · <code>interactive</code> · <code>nosnap</code> · <code>custom_controller</code> · <code>transfer</code></td></tr>
+          <tr><td class="name">rules/</td><td>binding disclosures, one file each</td><td><code>autonomous_operation</code> · <code>leave_handoff</code> · <code>no_set_states</code>* · <code>frozen_controller</code>*</td></tr>
+          <tr><td class="name">hints/</td><td>optional guidance, one file each</td><td><code>save_snapshot</code>* · <code>custom_controller</code>*</td></tr>
+          <tr><td class="name">_contract.md</td><td>the fixed instructions every agent reads first</td><td>environment · /task semantics · solve(env) deliverable</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">* = named placeholder, content pending. A rule/hint that presumes a world fact (e.g. <code>no_set_states</code>) is validated against the receipt at launch.</p>
+
+      <h3>Sequences — run_sequence.py</h3>
+      <div class="block">python3 eval/scripts/run_sequence.py experiments/&lt;multi-stage-exp&gt; --config eval/prompts/configs/transfer.yaml
+
+<i># one FRESH session per stage, strictly in order; budget applies per stage
+# stage N+1's workspace = a COPY of stage N's final workspace, minus .agent/ telemetry
+# the leave_handoff rule (if selected) is dropped automatically on the final stage
+# artifacts: runs/&lt;seq&gt;/&lt;stage&gt;/{task,workspace,container.log,run.json} + sequence.json</i></div>
+
+      <h3>Interactive — pair with the agent inside the sandbox</h3>
+      <div class="block">python3 eval/scripts/run_interactive.py experiments/&lt;exp&gt; [--config …] [--model …]
+<i># default condition: configs/interactive.yaml — run autonomously; a human may check in with feedback</i>
+
+<i># the agent CLI runs interactively in a tmux session inside the container:
+#   attach:  docker exec -it &lt;container&gt; runuser -u agent -- tmux attach -t agent
+#   detach:  Ctrl-b d — the session keeps running; stop: docker stop &lt;container&gt;
+# same world, mounts, and /task as a headless run — but you can watch and type
+# feedback anytime. Note: interactive turns wait for a human, so timings and
+# budgets from these sessions are not comparable with run_agent results.</i></div>
 
       <h3>The container contract — what the agent sees</h3>
       <div class="mount">
@@ -446,7 +519,7 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
         <div class="h">docker volume rb-ovcache</div><div class="a">↔ rw</div><div class="c"><b>/ovcache</b> <span>shared shader cache</span></div>
         <div class="full">baked in the image, not mounted: /opt/venv (Isaac) · agent CLIs — and nothing of the repo</div>
       </div>
-      <p class="note">The repo, your experiments, solutions, and .git do not exist inside the container. <code>run_agent.py</code> runs open-network for development; results that count go through <code>eval/docker/compose.agent.yaml</code>, whose egress allowlist admits only the model API and the package index (GitHub blocked — the public repo's history cites solve-calibrated configs).</p>
+      <p class="note">The repo, your experiments, solutions, and .git do not exist inside the container. <code>run_agent.py</code> is open-network for development; measured runs go through <code>compose.agent.yaml</code>, whose egress allowlist admits only the model API and the package index (GitHub blocked).</p>
     </section>
 
     <!-- 06 AUTO-GRADE -------------------------------------------------- -->
@@ -458,7 +531,6 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
 
   </main>
 
-  <footer>Proven by oracle replay — e.g. the bulb solve, seated in-sandbox on video.</footer>
 </div>
 
 <script>
