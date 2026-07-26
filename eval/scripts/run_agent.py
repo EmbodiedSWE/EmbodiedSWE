@@ -68,6 +68,7 @@ def stage_record(exp: Path, stage: Path) -> dict:
         sys.exit(f"stage {stage.name} not in {exp / 'resolved.json'} — rebuild the experiment")
     record = dict(hits[0])
     record["set_states"] = receipt.get("set_states", True)
+    record.setdefault("control_mode_frozen", False)
     return record
 
 
@@ -106,7 +107,9 @@ def main() -> None:
     exp = Path(exp_arg).resolve()
     stage = single_stage(exp)
     record = stage_record(exp, stage)
-    prompts.check_condition(hints, rules, record["set_states"])  # fail before touching disk
+    facts = {"set_states": record["set_states"],
+             "control_mode_frozen": record["control_mode_frozen"]}
+    prompts.check_condition(hints, rules, facts)  # fail before touching disk
     if not record["set_states"] and not rules:
         print("note: this world restricts set_states and the run discloses nothing (no rules selected)")
 
@@ -124,7 +127,7 @@ def main() -> None:
         scene=record["preset"].split(".")[1],
         preset=record["preset"],
         describe_text=describe_file.read_text(),
-        set_states=record["set_states"],
+        facts=facts,
         hints=hints,
         rules=rules,
     )
@@ -186,7 +189,9 @@ def main() -> None:
 
     record_out = {
         "exp": str(exp), "stage": stage.name, "preset": record["preset"],
-        "set_states": record["set_states"], "hints": hints, "rules": rules,
+        "set_states": record["set_states"],
+        "control_mode_frozen": record["control_mode_frozen"],
+        "hints": hints, "rules": rules,
         "task_files": task_files,
         "config": args.config, "agent": agent, "model": model,
         "image": image, "gpu": gpu, "budget_min": budget_min,

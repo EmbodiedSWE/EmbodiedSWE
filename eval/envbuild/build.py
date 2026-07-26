@@ -41,6 +41,7 @@ def build_experiment(
     name: str,
     stages: list[StageSpec],
     set_states: bool = True,
+    freeze_controller: bool = True,
     out_root: Path = Path("experiments"),
 ) -> Path:
     exp_dir = (out_root / name).resolve()
@@ -56,6 +57,9 @@ def build_experiment(
         bench = stage_dir / "bench"
         print(f"=== stage {stage_dir.name}: {preset} ===")
         assets = extract.minimal_tree(bench, s.suite, s.scene, s.robot)
+        # default on: the preset's controller is part of the task
+        if freeze_controller:
+            patch.freeze_control_mode(bench)
         if not set_states:
             patch.disable_set_states(bench)
         # boot validation is NOT optional: no bundle ships unbooted
@@ -63,7 +67,8 @@ def build_experiment(
         (stage_dir / "describe.md").write_text(describe_text + "\n")
         records.append({
             "dir": stage_dir.name, "preset": preset, "assets": assets,
-            "boot_checked": True, "tree_sha256": manifest.tree_hash(bench),
+            "control_mode_frozen": freeze_controller, "boot_checked": True,
+            "tree_sha256": manifest.tree_hash(bench),
         })
 
     manifest.write_receipt(exp_dir, {

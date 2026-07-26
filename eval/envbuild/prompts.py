@@ -24,12 +24,13 @@ HINTS_DIR = PROMPTS_DIR / "hints"
 RULES_DIR = PROMPTS_DIR / "rules"
 TASKS_DIR = PROMPTS_DIR / "tasks"
 
-# hints that teach an ability a world-level arm can remove — refused when the
-# receipt says the ability is absent
-HINTS_NEED_SET_STATES = {"save_snapshot"}
-
-# rules that state a world fact — refused when the receipt says otherwise
-RULES_NEED_NO_SET_STATES = {"no_set_states"}
+# selection may withhold, never lie: each entry names the receipt fact a
+# hint/rule presumes, and the value that fact must have for it to be true
+HINTS_NEED = {"save_snapshot": ("set_states", True)}
+RULES_NEED = {
+    "no_set_states": ("set_states", False),
+    "frozen_controller": ("control_mode_frozen", True),
+}
 
 _TRANSFER_NOTE = (
     "`/workspace` contains your files from the previous stage of this "
@@ -45,23 +46,26 @@ def list_rules() -> list[str]:
     return sorted(p.stem for p in RULES_DIR.glob("*.md"))
 
 
-def check_condition(hints: list[str], rules: list[str], set_states: bool) -> None:
-    """Fail fast on unknown names and prompt-vs-world contradictions."""
-    lib_h, lib_r = list_hints(), list_rules()
-    for h in hints:
-        if h not in lib_h:
-            raise SystemExit(f"unknown hint '{h}' — library: {', '.join(lib_h) or '(empty)'}")
-        if h in HINTS_NEED_SET_STATES and not set_states:
-            raise SystemExit(
-                f"hint '{h}' teaches set_states, but this world has it disabled "
-                "— the prompt may not contradict the world")
-    for r in rules:
-        if r not in lib_r:
-            raise SystemExit(f"unknown rule '{r}' — library: {', '.join(lib_r) or '(empty)'}")
-        if r in RULES_NEED_NO_SET_STATES and set_states:
-            raise SystemExit(
-                f"rule '{r}' claims set_states is disabled, but this world has "
-                "it enabled — the prompt may not contradict the world")
+def check_condition(hints: list[str], rules: list[str], facts: dict) -> None:
+    """Fail fast on unknown names and prompt-vs-world contradictions.
+
+    `facts` is the world receipt's fact set (e.g. {"set_states": True,
+    "control_mode_frozen": True}); a selected hint/rule whose presumed fact
+    doesn't hold refuses to render."""
+    for names, library, needs, kind in (
+        (hints, list_hints(), HINTS_NEED, "hint"),
+        (rules, list_rules(), RULES_NEED, "rule"),
+    ):
+        for n in names:
+            if n not in library:
+                raise SystemExit(
+                    f"unknown {kind} '{n}' — library: {', '.join(library) or '(empty)'}")
+            if n in needs:
+                fact, wanted = needs[n]
+                if facts.get(fact) != wanted:
+                    raise SystemExit(
+                        f"{kind} '{n}' presumes {fact}={wanted}, but this world has "
+                        f"{fact}={facts.get(fact)} — the prompt may not contradict the world")
 
 
 def render_task_dir(
@@ -70,7 +74,7 @@ def render_task_dir(
     scene: str,
     preset: str,
     describe_text: str,
-    set_states: bool,
+    facts: dict,
     hints: list[str] | tuple[str, ...] = (),
     rules: list[str] | tuple[str, ...] = (),
     carryover: bool = False,
@@ -82,7 +86,7 @@ def render_task_dir(
     unselected rule means the restriction goes undisclosed."""
     hints = list(hints)
     rules = list(rules)
-    check_condition(hints, rules, set_states)
+    check_condition(hints, rules, facts)
     task_dir.mkdir(parents=True, exist_ok=True)
 
     # task.md — auto-generated world + goal, optionally extended per scene

@@ -39,6 +39,8 @@ def main() -> None:
     ap.add_argument("--no-set-states", action="store_true",
                     help="ablation arm: disable env.set_states() in the extracted tree, so the "
                          "agent cannot restore snapshots and must solve from reset() forward")
+    ap.add_argument("--no-freeze-controller", action="store_true",
+                    help="allow the agent to switch control modes (default: frozen to the preset)")
     ap.add_argument("--out", default=str(REPO / "experiments"), help="output root")
     args = ap.parse_args()
 
@@ -53,6 +55,7 @@ def main() -> None:
         name=args.name,
         stages=[StageSpec.parse(s) for s in args.stage],
         set_states=not args.no_set_states,
+        freeze_controller=not args.no_freeze_controller,
         out_root=Path(args.out),
     )
 
