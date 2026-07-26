@@ -25,6 +25,7 @@ from robobench.robots import (
     WxaiRobotCfg,
 )
 from robobench.suites.assembly.scenes import (
+    AllenBoltAssemblySceneCfg,
     BulbAssemblySceneCfg,
     IkeaTableAssemblySceneCfg,
     NutThreadAssemblySceneCfg,
@@ -153,6 +154,40 @@ for _mode in ("osc", "impedance", "joint"):
                 base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x,
                 # the 154 mm rear foot points +x along the strip
             ),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+
+# Franka arm at the allen-bolt scene (base at the origin). Placement follows the solve-verified
+# reach lessons of the sibling franka envs: the platform is pulled from the table preset's 0.50 m
+# to 0.42 m (`platform_slots`) — the screwing happens under a TOP-DOWN hand, and beyond ~0.45 m
+# the gravity-uncompensated arm saturates several mm short (pc_gpu note), more than the socket's
+# 0.75 mm/side clearance; the loose key leaves the stock "+x row" (0.76 m, out of reach) for the
+# proven ~0.36 m pick radius on the +y side (the bulb layout's band). The bolt spawn stays put —
+# the smoke stages it upright over the hole (the robot's job is the KEY). Deterministic spawn
+# (no jitter) so smoke iterations reproduce. bolt_friction 0.3 makes the M16 thread SELF-LOCKING
+# (needs mu > tan(2.5 deg) ~ 0.044): at the scene's slick 0.01 the bolt spins back out whenever
+# the ratcheting key lifts out of the socket between strokes (the force-driven smoke never
+# disengages, so only the robot env needs it). sim dt 1/240 — the depth the force-driven smoke
+# validated for a pressed M16 on the SDF threads (the scene's 1/120 is for parts at rest).
+# Three control modes, switchable by env name:
+#   - "assembly.allen_bolt.franka.osc"       — operational-space control (default)
+#   - "assembly.allen_bolt.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.allen_bolt.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="allen_bolt",
+            scene_cfg=AllenBoltAssemblySceneCfg(
+                platform_slots=((-0.08, 0.0),),
+                key_init_xy=((-0.24, 0.25),),
+                bolt_friction=0.3,
+                reset_pos_jitter=0.0,
+            ),
+            robot="franka",
             control_mode=mode,
             env_spacing=2,
             sim_overrides={"dt": 1.0 / 240.0},
