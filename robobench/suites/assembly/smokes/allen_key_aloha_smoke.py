@@ -2001,7 +2001,11 @@ def main() -> None:
                 cR2 = crank_frames(cl2, sdh2)[0][0]
                 cL2 = crank_frames_L(cl2, sdh2)[0][0]
                 spent = last_sweep < math.radians(30)  # a short sweep = the arc is done, whatever the cost says
-                phase = "crank_approach" if (cR2 <= cL2 and not spent) else "role_swap_R_holder"
+                # RELEASE-FIRST swap: the incumbent re-plumbs + backs out, the key STANDS on
+                # its 7mm seat (proven stable when plumb, runs 141-146), and the incoming
+                # holder grabs an UNOBSTRUCTED post. Every grab-while-held variant collided
+                # with the incumbent's claw or forearm (rolls 186-204).
+                phase = "crank_approach" if (cR2 <= cL2 and not spent) else "role_swap_L_release"
                 print(f"    [swap] costs R {cR2:.2f} / L {cL2:.2f}{' | arc SPENT' if spent else ''} -> "
                       f"{'RIGHT re-grabs' if phase == 'crank_approach' else 'ROLE SWAP (R holds, L cranks)'}", flush=True)
                 marker = i
@@ -2158,7 +2162,7 @@ def main() -> None:
                     cR2 = crank_frames(cl2, sdh2)[0][0]
                     cL2 = crank_frames_L(cl2, sdh2)[0][0]
                     spent = last_sweep < math.radians(30)
-                    phase = "crank_approach_L" if (cL2 <= cR2 and not spent) else "role_swap_L_holder"
+                    phase = "crank_approach_L" if (cL2 <= cR2 and not spent) else "role_swap_R_release"
                     print(f"    [swap] costs R {cR2:.2f} / L {cL2:.2f}{' | arc SPENT' if spent else ''} -> "
                           f"{'LEFT re-grabs' if phase == 'crank_approach_L' else 'ROLE SWAP (L holds, R cranks)'}", flush=True)
                     marker = i
@@ -2185,40 +2189,32 @@ def main() -> None:
             act = act_R_hold(grip_hold_R)
             if t_in >= 850:
                 phase, marker = "admire", i
-        elif phase == "role_swap_R_holder":  # the R takes the steady-hand role: bite the post
-            # MID-HEIGHT (above the L's lower-third pocket, 45mm under the crank orbit) while
-            # the L STILL holds — the key is never free for a single tick. This bite IS the
-            # new anchor; the L backs out horizontally underneath it.
+        elif phase == "role_swap_R_holder":  # RELEASE-FIRST swap, step 2: the L has backed
+            # out and the plumbed key STANDS on its seat — the R grabs the post with nothing
+            # in the way (every grab-while-held variant collided with the incumbent's claw
+            # or forearm, rolls 186-204). This bite becomes the new anchor.
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
             hdn = handle_dir()
-            # bite RELATIVE to the incumbent's actual pocket (the insert grip lands anywhere
-            # z111-184 across rolls): 45mm BELOW it — a fixed station collided claw-on-claw
-            # whenever the incumbent sat low (roll 194: every frame stood off at a constant
-            # ~66mm, the two claw bodies pressing)
-            gpL = toolL_pose()[0] + quat_apply(toolL_pose()[1], ex1 * tool_to_grip)
             mouth_w = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z
-            z_hi = torch.maximum(gpL[:, 2:3] - 0.045, mouth_w + 0.030)
+            z_hi = mouth_w + 0.055  # free post: pick a good mid-lower station outright
             s_p = (elbow[:, 2:3] - z_hi).clamp(0.02, 0.11)
             post_pt = elbow + hdn * s_p
             if t_in == 1:
                 wpR0_p[:], wpR0_q[:] = tool_pose()
                 crank_lock[:] = post_pt
                 crank_near = False
-                _c, _u, _s, _t = post_frames_R(crank_lock, avoid_from=gpL[:, :2])[min(crank_tries, 5)]
+                _c, _u, _s, _t = post_frames_R(crank_lock)[min(crank_tries, 5)]
                 uR_lock[:] = _u
                 cf_spin, cf_tilt = _s, _t
                 print(f"    [roleswap->R] post frame: cost {_c:.2f} spin {_s:+.0f} tilt "
                       f"{math.degrees(_t):.0f}deg", flush=True)
             qR = pinch_q(uR_lock, cf_spin, cf_tilt)
             if t_in < 350:
-                act = act_L_park(OPEN_C)  # un-wedge ramp toward home before the ladder
+                act = act_of(wpR0_p, wpR0_q, OPEN_C, rot_w=1.2)  # hold while the ladder frames
             else:
                 if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     crank_lock[:] = post_pt
-                    crank_near = bool((tip_perp("Right") < 0.040).all())  # swap grab: the
-                    # incumbent's rigid stall holds the key — a press-in from ~33mm cannot
-                    # topple it (roll 203: two frames stalled at exactly 33mm, 3mm outside
-                    # the old gate); the bite gate still rejects bad closes
+                    crank_near = bool((tip_perp("Right") < 0.030).all())
                     if not crank_near and t_in == 1130:
                         print(f"    [roleswap->R] not converged at t1130 (perp "
                               f"{float(tip_perp('Right').max()) * 1e3:.0f}mm) — rechecking to t1370", flush=True)
@@ -2227,8 +2223,9 @@ def main() -> None:
                 vt = crank_lock + uR_lock * off
                 act = act_of(vt - quat_apply(qR, ex1 * tool_to_grip), qR,
                              0.004 if close_now else OPEN_C, rot_w=1.2)
-            left_cmd[:, 0:6] = hold_qL
-            left_cmd[:, 6] = grip_c_L
+            rhL2 = artL.data.joint_pos[:, arm_ids_L]
+            left_cmd[:, 0:6] = rhL2 + (artL.data.default_joint_pos[:, arm_ids_L] - rhL2).clamp(-DQ_STEP, DQ_STEP)
+            left_cmd[:, 6] = _shape_grip("L", OPEN_C)
             if t_in == 1500:
                 pairR_hold[:] = jaw_pair(artR, jaw_ids_R)
             if t_in >= 1600:
@@ -2239,45 +2236,42 @@ def main() -> None:
                     grip_hold_R = float(prR[0]) * 0.5 + 0.001
                     hold_qR[:] = artR.data.joint_pos[:, arm_ids]
                     crank_tries = 0
+                    crank_bounce = 0
+                    last_sweep = 9.9
                     holder = "R"
-                    print(f"  ROLE SWAP: R steady hand set (stall {float(prR[0]) * 1e3:.1f}mm) — L releases", flush=True)
-                    phase, marker = "role_swap_L_release", i
+                    print(f"  ROLE SWAP done: R anchors the post (stall {float(prR[0]) * 1e3:.1f}mm, "
+                          f"lean {lean_deg():.1f}deg) — L cranks", flush=True)
+                    phase, marker = "crank_approach_L", i
                 elif crank_tries < 4:
                     crank_tries += 1
                     print(f"  R post-hold missed (pair {float(prR[0]) * 1e3:.1f}mm, perp "
                           f"{float(tip_perp('Right').max()) * 1e3:.1f}mm), frame {crank_tries + 1}", flush=True)
                     marker = i
                 else:
-                    print("  role swap failed; releasing with the progress", flush=True)
-                    phase, marker = "crank_release", i
-        elif phase == "role_swap_L_release":  # the L hands over: open in place, then back the
-            # slot HORIZONTALLY off the post — a vertical exit from the low anchor would ride
-            # up the post into the R's fresh mid-height bite
+                    print("  role swap failed (free key stands); ending with the progress", flush=True)
+                    phase, marker = "admire", i
+        elif phase == "role_swap_L_release":  # RELEASE-FIRST swap, step 1: the L opens in
+            # place and backs the slot HORIZONTALLY off the post; the plumbed key STANDS on
+            # its 7mm seat (proven, runs 141-146) while the R comes for an unobstructed grab
             if t_in == 1:
+                holder = ""
                 wpL0_p[:] = toolL_pose()[0]
                 wpL_q[:] = toolL_pose()[1]
                 uex = quat_apply(wpL_q, ex1).clone()
                 uex[:, 2] = 0.0
                 uL_lock[:] = uex / uex.norm(dim=-1, keepdim=True).clamp_min(1e-6)
             left_to(wpL0_p - (uL_lock * 0.09 if t_in >= 250 else uL_lock * 0.0), wpL_q, OPEN_C, rot_w=1.2)
-            act = act_R_hold(grip_hold_R)
+            act = act_L_park(OPEN_C)
             if t_in >= 600:
-                # the mid-post bite IS the new anchor (no ride-down: sliding a bite along the
-                # post always veered into wrist-infeasibility and dragged the key, rolls
-                # 172-174; a higher anchor also bounds lean TIGHTER — same pocket clearance
-                # over a longer lever off the socket)
                 crank_tries = 0
-                crank_bounce = 0
-                last_sweep = 9.9
-                print(f"  ROLE SWAP done: R anchors mid-post (lean {lean_deg():.1f}deg) — L cranks", flush=True)
-                phase, marker = "crank_approach_L", i
-        elif phase == "role_swap_L_holder":  # the L takes the steady-hand role back: bite the
-            # post MID-HEIGHT while the R still anchors below — this bite IS the new anchor
+                print(f"  [swap] L released clean (key stands, lean {lean_deg():.1f}deg) — R takes the post", flush=True)
+                phase, marker = "role_swap_R_holder", i
+        elif phase == "role_swap_L_holder":  # RELEASE-FIRST swap, step 2 (mirror): the R has
+            # backed out, the key stands — the L grabs the free post; this bite is the anchor
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
             hdn = handle_dir()
-            gpR = tool_pose()[0] + quat_apply(tool_pose()[1], ex1 * tool_to_grip)
             mouth_w = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z
-            z_hi = torch.maximum(gpR[:, 2:3] - 0.045, mouth_w + 0.030)  # 45mm below the incumbent
+            z_hi = mouth_w + 0.055
             s_p = (elbow[:, 2:3] - z_hi).clamp(0.02, 0.11)
             post_pt = elbow + hdn * s_p
             if t_in == 1:
@@ -2285,21 +2279,18 @@ def main() -> None:
                 wpL_q[:] = toolL_pose()[1]
                 pinch_lock[:] = post_pt
                 crank_near = False
-                _c, _u, _s, _t = post_frames(pinch_lock, topple_bias=True,
-                                             avoid_from=gpR[:, :2])[min(crank_tries, 5)]
+                _c, _u, _s, _t = post_frames(pinch_lock, topple_bias=True)[min(crank_tries, 5)]
                 uL_lock[:] = _u
                 pf_spin, pf_tilt = _s, _t
                 print(f"    [roleswap->L] post frame: cost {_c:.2f} spin {_s:+.0f} tilt "
                       f"{math.degrees(_t):.0f}deg", flush=True)
             qL = pinch_q(uL_lock, pf_spin, pf_tilt)
             if t_in < 350:
-                rhL = artL.data.joint_pos[:, arm_ids_L]
-                left_cmd[:, 0:6] = rhL + (artL.data.default_joint_pos[:, arm_ids_L] - rhL).clamp(-DQ_STEP, DQ_STEP)
-                left_cmd[:, 6] = _shape_grip("L", OPEN_C)
+                left_to(wpL0_p, wpL_q, OPEN_C, rot_w=1.2)
             else:
                 if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     pinch_lock[:] = post_pt
-                    crank_near = bool((tip_perp("Left") < 0.040).all())  # see role_swap_R_holder
+                    crank_near = bool((tip_perp("Left") < 0.030).all())
                     if not crank_near and t_in == 1130:
                         print(f"    [roleswap->L] not converged at t1130 (perp "
                               f"{float(tip_perp('Left').max()) * 1e3:.0f}mm) — rechecking to t1370", flush=True)
@@ -2308,7 +2299,12 @@ def main() -> None:
                 vt = pinch_lock + uL_lock * off
                 left_to(vt - quat_apply(qL, ex1 * tool_to_grip), qL,
                         0.004 if close_now else OPEN_C, rot_w=1.2)
-            act = act_R_hold(grip_hold_R)
+            rhR2 = artR.data.joint_pos[:, arm_ids]
+            a_swp = torch.zeros(n, act_dim, device=dev)
+            a_swp[:, l_s] = left_cmd
+            a_swp[:, r_s.start : r_s.start + 6] = rhR2 + (artR.data.default_joint_pos[:, arm_ids] - rhR2).clamp(-DQ_STEP, DQ_STEP)
+            a_swp[:, r_s.start + 6] = _shape_grip("R", OPEN_C)
+            act = a_swp
             if t_in == 1500:
                 pairR_hold[:] = jaw_pair(artL, jaw_ids_L)
             if t_in >= 1600:
@@ -2319,33 +2315,36 @@ def main() -> None:
                     grip_c_L = float(prL[0]) * 0.5 + 0.001
                     hold_qL[:] = artL.data.joint_pos[:, arm_ids_L]
                     crank_tries = 0
+                    crank_bounce = 0
+                    last_sweep = 9.9
                     holder = "L"
-                    print(f"  ROLE SWAP: L steady hand set (stall {float(prL[0]) * 1e3:.1f}mm) — R releases", flush=True)
-                    phase, marker = "role_swap_R_release", i
+                    print(f"  ROLE SWAP done: L anchors the post (stall {float(prL[0]) * 1e3:.1f}mm, "
+                          f"lean {lean_deg():.1f}deg) — R cranks", flush=True)
+                    phase, marker = "crank_approach", i
                 elif crank_tries < 4:
                     crank_tries += 1
                     print(f"  L post-hold missed (pair {float(prL[0]) * 1e3:.1f}mm, perp "
                           f"{float(tip_perp('Left').max()) * 1e3:.1f}mm), frame {crank_tries + 1}", flush=True)
                     marker = i
                 else:
-                    print("  role swap failed; releasing with the progress", flush=True)
-                    phase, marker = "crank_release_L", i
-        elif phase == "role_swap_R_release":  # the R hands over: open in place, then back the
-            # slot HORIZONTALLY off the post — clear of the L's fresh mid-height bite
+                    print("  role swap failed (free key stands); ending with the progress", flush=True)
+                    phase, marker = "admire", i
+        elif phase == "role_swap_R_release":  # RELEASE-FIRST swap, step 1 (mirror): the R
+            # opens and backs out horizontally; the plumbed key stands for the L's free grab
             if t_in == 1:
+                holder = ""
                 wpR0_p[:], wpR0_q[:] = tool_pose()
                 uex = quat_apply(wpR0_q, ex1).clone()
                 uex[:, 2] = 0.0
                 uR_lock[:] = uex / uex.norm(dim=-1, keepdim=True).clamp_min(1e-6)
             act = act_of(wpR0_p - (uR_lock * 0.09 if t_in >= 250 else uR_lock * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
-            left_cmd[:, 0:6] = hold_qL
-            left_cmd[:, 6] = grip_c_L
+            rhL3 = artL.data.joint_pos[:, arm_ids_L]
+            left_cmd[:, 0:6] = rhL3 + (artL.data.default_joint_pos[:, arm_ids_L] - rhL3).clamp(-DQ_STEP, DQ_STEP)
+            left_cmd[:, 6] = _shape_grip("L", OPEN_C)
             if t_in >= 600:
                 crank_tries = 0
-                crank_bounce = 0
-                last_sweep = 9.9
-                print(f"  ROLE SWAP done: L anchors mid-post (lean {lean_deg():.1f}deg) — R cranks", flush=True)
-                phase, marker = "crank_approach", i
+                print(f"  [swap] R released clean (key stands, lean {lean_deg():.1f}deg) — L takes the post", flush=True)
+                phase, marker = "role_swap_L_holder", i
         elif phase == "crank_release":  # demo end: RE-PLUMB if welded, open, exit along the crank
             if t_in == 1:
                 re_y0 = crank_azim().clone()
@@ -2377,11 +2376,17 @@ def main() -> None:
                 rh2 = artR.data.joint_pos[:, arm_ids]
                 a[:, r_s.start : r_s.start + 6] = rh2 + (artR.data.default_joint_pos[:, arm_ids] - rh2).clamp(-DQ_STEP, DQ_STEP)
                 a[:, r_s.start + 6] = OPEN_C
-            else:
+            elif holder == "R":
                 a[:, r_s.start : r_s.start + 6] = hold_qR
                 a[:, r_s.start + 6] = grip_hold_R
                 a[:, l_s.start : l_s.start + 6] = artL.data.joint_pos[:, arm_ids_L]
                 a[:, l_s.start + 6] = OPEN_C
+            else:  # nobody holds (release-first swap died mid-exchange): freeze both where
+                # they are — the free key stands; never fly a stale latch back at it
+                a[:, l_s.start : l_s.start + 6] = artL.data.joint_pos[:, arm_ids_L]
+                a[:, l_s.start + 6] = OPEN_C
+                a[:, r_s.start : r_s.start + 6] = artR.data.joint_pos[:, arm_ids]
+                a[:, r_s.start + 6] = OPEN_C
             act = a
             if t_in >= 180:
                 phase, marker = "retreat", i
