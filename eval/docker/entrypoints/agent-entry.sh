@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Agent-phase entry. Prepares /workspace as root, then drops to the non-root
 # `agent` user and launches the chosen CLI. The agent never has root.
-# NOTE: ablation-arm patches (e.g. disabling set_states) are applied at
-# extraction time in the mounted /bench tree (eval/extract_bench.py) — the
-# mount is read-only, so nothing is patched here.
+# NOTE: ablation-arm patches (e.g. disabling set_states) are applied at build
+# time in the mounted /bench tree (eval/envbuild) — the mount is read-only,
+# so nothing is patched here. /task holds the per-run prompt folder
+# (instructions + task + rules + hints); instructions.md is the entry point.
 set -euo pipefail
 
 mkdir -p /workspace/solution /workspace/.agent
 chown -R agent:agent /workspace
 
-PROMPT_FILE=/task/task_prompt.md
+PROMPT_FILE=/task/instructions.md
 [ -f "$PROMPT_FILE" ] || { echo "missing $PROMPT_FILE" >&2; exit 64; }
 
 # Transcript lands in the bind-mounted workspace → survives kill.

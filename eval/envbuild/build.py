@@ -4,10 +4,11 @@
     ├── resolved.json  MANIFEST        (provenance receipt)
     └── stages/01_<scene>_<robot>/
         ├── bench/                     (mounts ro at /bench)
-        └── describe.txt               (scene describe() harvested at boot)
+        └── describe.md                (scene/robot/controller, harvested at boot)
 
-Task-prompt rendering is intentionally NOT part of the build (prompt design
-is being revisited); envbuild/prompts.py stays available for when it returns.
+The build produces the WORLD only. The per-run /task folder (instructions,
+task text, rules, hints) is assembled by the run launcher via
+envbuild/prompts.py — one built world hosts many prompt conditions.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ def build_experiment(
             patch.disable_set_states(bench)
         # boot validation is NOT optional: no bundle ships unbooted
         describe_text = validate.boot_preset(bench, preset)
-        (stage_dir / "describe.txt").write_text(describe_text)
+        (stage_dir / "describe.md").write_text(describe_text + "\n")
         records.append({
             "dir": stage_dir.name, "preset": preset, "assets": assets,
             "boot_checked": True, "tree_sha256": manifest.tree_hash(bench),

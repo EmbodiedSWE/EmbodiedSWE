@@ -251,21 +251,36 @@ python3 eval/scripts/build_env.py --name screw_transfer --stage bulb:franka --st
 ├─ MANIFEST        <i>human-readable summary</i>
 ├─ stages/01_bulb_franka/
 │   ├─ bench/         <i>minimal benchmark tree, boot-proven (~141 MB for bulb)</i>
-│   └─ describe.txt   <i>the scene's describe(), harvested during the boot</i>
+│   └─ describe.md    <i>scene + robot description, harvested at boot</i>
 └─ runs/           <i>created later, one per agent run</i></div>
-      <p class="note">Everything environmental fails here, at build time — unregistered combos, missing assets, broken presets. At agent time, a failure is the agent's. Task-prompt rendering is currently unplugged while the prompt design is revisited; <code>describe.txt</code> keeps the raw material.</p>
+      <p class="note">Everything environmental fails here, at build time — unregistered combos, missing assets, broken presets. At agent time, a failure is the agent's. The build produces the <b>world only</b>: the prompt folder is assembled per run (§04), with <code>describe.md</code> as its raw material.</p>
     </section>
 
     <!-- 04 RUN EXPERIMENTS ---------------------------------------------- -->
     <section id="run">
-      <h2><span class="num">04</span>Run experiments <span class="pill tbd">deferred</span></h2>
-      <p class="lede">The experiment runner — which agents, how many repeats, stage sequencing for transfer, what gets measured — is future work, waiting on the prompt design. What is already fixed and proven is the container contract underneath it: one run = one disposable container over a built experiment, killed at its budget.</p>
-      <p class="note"><code>eval/scripts/run_agent.py</code> exists as a reference single-run launcher against that contract (dry-run tested; credentials ride shell env vars, never stored).</p>
+      <h2><span class="num">04</span>Run experiments</h2>
+      <p class="lede">A run pairs one built world with one prompt condition. The world is fixed; the hints are chosen per run — so a single experiment folder hosts bare runs, hinted runs, and everything between, all against the byte-identical tree. One run = one disposable container, killed at its budget.</p>
+
+      <div class="block">export CLAUDE_CODE_OAUTH_TOKEN=…     <i># or ANTHROPIC_API_KEY / OPENAI_API_KEY — from your shell, never stored</i>
+python3 eval/scripts/run_agent.py experiments/&lt;exp&gt;                               <i># condition: configs/default.yaml</i>
+python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/configs/&lt;cond&gt;.yaml
+<i>#   CLI = infrastructure only: --agent claude|codex · --model … · --gpu N · --budget-min … · --dry-run</i>
+<i>#   hints / rules live ONLY in the condition yaml — authored, never ad-hoc flags</i>
+<i>#   run_agent = the default runner: one scene + one task; sequence/transfer runners are future scripts</i></div>
+
+      <h3>The /task folder — assembled fresh for every run</h3>
+      <div class="block">runs/&lt;r&gt;/task/           <i>mounted ro at /task; instructions.md is fed to the agent CLI</i>
+├─ instructions.md   <i>contract + index of what exists (+ workspace note on stage 02+)</i>
+├─ task.md           <i>auto-generated: scene + robot description, goal, build snippet</i>
+├─ rules/…           <i>selected disclosures — never automatic</i>
+└─ hints/…           <i>selected hints; both libraries live in eval/prompts/</i></div>
+      <p class="note">Everything except the auto-generated <code>task.md</code> is hand-authored library content, included only when the yaml/CLI selects it. The prompt may withhold (an unselected rule = undisclosed restriction) but never lie: a rule or hint contradicting the world's receipt refuses to launch. <code>run.json</code> records hints, rules, and a hash per task file. Higher-level orchestration (repeats, agent matrices, stage sequencing) stays future work.</p>
+      <p class="note"><b>Caveat:</b> only the prompt varies per run. Restrictions like <code>--no-set-states</code> are baked into the tree at build time; the runner merely discloses them. Same scene free vs. restricted = two built experiments.</p>
 
       <h3>The container contract — what the agent sees</h3>
       <div class="mount">
         <div class="h">stages/01_…/bench/</div><div class="a">→ ro</div><div class="c"><b>/bench</b> <span>import robobench = this tree, nothing else</span></div>
-        <div class="h">stages/01_…/task/</div><div class="a">→ ro</div><div class="c"><b>/task</b> <span>the task instruction (optional while prompts are redesigned)</span></div>
+        <div class="h">runs/&lt;r&gt;/task/</div><div class="a">→ ro</div><div class="c"><b>/task</b> <span>the per-run prompt folder (instructions · task · rules · hints)</span></div>
         <div class="h">runs/&lt;r&gt;/workspace/</div><div class="a">↔ rw</div><div class="c"><b>/workspace</b> <span>the only writable dir; visible on the host live</span></div>
         <div class="h">docker volume rb-ovcache</div><div class="a">↔ rw</div><div class="c"><b>/ovcache</b> <span>shared shader cache</span></div>
         <div class="full">baked in the image, not mounted: /opt/venv (Isaac) · agent CLIs — and nothing of the repo</div>

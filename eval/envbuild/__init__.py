@@ -7,8 +7,9 @@ Pipeline (build.py is the only module that knows this order):
     -> boot-validate the REGISTERED preset from the tree + harvest describe()
     -> write the resolved receipt (re-runnable provenance)
 
-Task-prompt rendering (prompts.py) is currently unplugged from the pipeline
-while the prompt design is revisited.
+prompts.py is NOT part of this pipeline: it assembles the per-run /task
+folder (instructions + task + rules + hints) and is invoked by the run
+launcher, so one built world can host many prompt conditions.
 
 Every module is data-in/data-out and usable alone. Architecture overview and
 diagrams: eval/README.html.

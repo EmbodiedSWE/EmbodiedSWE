@@ -2,7 +2,8 @@
 
 One headless sim launch proves the code closure AND the asset closure (a
 missing USD only surfaces at env-build time), validates the actual baked
-preset the agent will face, and captures env.describe() for the prompt.
+preset the agent will face, and captures a sectioned markdown description
+(scene / robot, from the live objects) for the prompt.
 Principle: no bundle ships unbooted.
 """
 
@@ -19,20 +20,27 @@ _D0, _D1 = "<<DESCRIBE>>", "<<END_DESCRIBE>>"
 
 
 def boot_preset(tree: Path, preset: str) -> str:
-    """Build + reset the registered env from `tree`; return its describe() text."""
-    code = (
-        "from isaaclab.app import AppLauncher; "
-        "app = AppLauncher(headless=True).app; "
-        "import robobench; "
-        f"assert robobench.__file__.startswith('{tree}'), 'wrong robobench: ' + robobench.__file__; "
-        "robobench.discover(); "
-        "from robobench.core.registries import ENVS; "
-        f"env = ENVS.get('{preset}')().build(num_envs=1); "
-        "env.reset(); "
-        f"print('{_D0}'); print(env.describe()); print('{_D1}'); "
-        "print('BOOT_OK', flush=True); "
-        "import os; os._exit(0)"
-    )
+    """Build + reset the registered env from `tree`; return a sectioned
+    markdown description (scene / robot) from the live objects."""
+    code = f"""
+from isaaclab.app import AppLauncher
+app = AppLauncher(headless=True).app
+import robobench
+assert robobench.__file__.startswith('{tree}'), 'wrong robobench: ' + robobench.__file__
+robobench.discover()
+from robobench.core.registries import ENVS
+env = ENVS.get('{preset}')().build(num_envs=1)
+env.reset()
+print('{_D0}')
+print('## Scene'); print()
+print(env.scene.describe()); print()
+print('## Robot'); print()
+print(env.robot.describe())
+print('{_D1}')
+print('BOOT_OK', flush=True)
+import os
+os._exit(0)
+"""
     py = VENV_PY if VENV_PY.exists() else Path(sys.executable)
     print(f"[validate] booting registered preset '{preset}' from the extracted tree ...")
     r = subprocess.run(
