@@ -609,13 +609,16 @@ def main() -> None:
     def joint_cost_L(tq_a: torch.Tensor, tp: torch.Tensor) -> torch.Tensor:
         return (ik_left(tp, tq_a) - artL.data.joint_pos[:, arm_ids_L]).norm(dim=-1)
 
-    def post_frames(pinch_pt: torch.Tensor, topple_bias: bool = False) -> list:
+    def post_frames(pinch_pt: torch.Tensor, topple_bias: bool = False,
+                    avoid_from: torch.Tensor | None = None) -> list:
         """Ranked (u, spin, tilt_rad) candidates for the L post pinch, cheapest virtual-IK
         step first. Run 134 proved the hardcoded 78-deg comfort frame is wrist-infeasible in
         BOTH spins at some stations (spin -1 pins j3, spin +1 pins j4) — so score a ladder of
-        azimuth modes x tilts x spins and walk it on retries."""
-        u78 = tilt_azimuth(base_L_xy, pinch_pt, tool_to_grip, math.radians(78.0))
-        u58 = tilt_azimuth(base_L_xy, pinch_pt, tool_to_grip, math.radians(58.0))
+        azimuth modes x tilts x spins and walk it on retries. avoid_from (swap holds):
+        incumbent grip xy — diverge the wrist from the incumbent's arm."""
+        away = None if avoid_from is None else (avoid_from - pinch_pt[:, :2])
+        u78 = tilt_azimuth(base_L_xy, pinch_pt, tool_to_grip, math.radians(78.0), away)
+        u58 = tilt_azimuth(base_L_xy, pinch_pt, tool_to_grip, math.radians(58.0), away)
         v = pinch_pt[:, :2] - base_L_xy
         v = v / v.norm(dim=-1, keepdim=True).clamp_min(1e-6)
         u_fwd = torch.cat((v, torch.zeros(n, 1, device=dev)), dim=-1)
@@ -666,10 +669,13 @@ def main() -> None:
         scored.sort(key=lambda e: e[0])
         return scored
 
-    def post_frames_R(pinch_pt: torch.Tensor) -> list:
-        """The RIGHT's post-hold ladder (role swap: R becomes the steady hand)."""
-        u78 = tilt_azimuth(base_R_xy, pinch_pt, tool_to_grip, math.radians(78.0))
-        u58 = tilt_azimuth(base_R_xy, pinch_pt, tool_to_grip, math.radians(58.0))
+    def post_frames_R(pinch_pt: torch.Tensor, avoid_from: torch.Tensor | None = None) -> list:
+        """The RIGHT's post-hold ladder (role swap: R becomes the steady hand).
+        avoid_from: incumbent grip xy — lean the comfort azimuths so the wrist diverges
+        from the incumbent's arm (roll 203: a swap close stalled ON the L's forearm)."""
+        away = None if avoid_from is None else (avoid_from - pinch_pt[:, :2])
+        u78 = tilt_azimuth(base_R_xy, pinch_pt, tool_to_grip, math.radians(78.0), away)
+        u58 = tilt_azimuth(base_R_xy, pinch_pt, tool_to_grip, math.radians(58.0), away)
         v = pinch_pt[:, :2] - base_R_xy
         v = v / v.norm(dim=-1, keepdim=True).clamp_min(1e-6)
         u_fwd = torch.cat((v, torch.zeros(n, 1, device=dev)), dim=-1)
@@ -2189,16 +2195,16 @@ def main() -> None:
             # z111-184 across rolls): 45mm BELOW it — a fixed station collided claw-on-claw
             # whenever the incumbent sat low (roll 194: every frame stood off at a constant
             # ~66mm, the two claw bodies pressing)
-            gpL_z = (toolL_pose()[0] + quat_apply(toolL_pose()[1], ex1 * tool_to_grip))[:, 2:3]
+            gpL = toolL_pose()[0] + quat_apply(toolL_pose()[1], ex1 * tool_to_grip)
             mouth_w = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z
-            z_hi = torch.maximum(gpL_z - 0.045, mouth_w + 0.030)
+            z_hi = torch.maximum(gpL[:, 2:3] - 0.045, mouth_w + 0.030)
             s_p = (elbow[:, 2:3] - z_hi).clamp(0.02, 0.11)
             post_pt = elbow + hdn * s_p
             if t_in == 1:
                 wpR0_p[:], wpR0_q[:] = tool_pose()
                 crank_lock[:] = post_pt
                 crank_near = False
-                _c, _u, _s, _t = post_frames_R(crank_lock)[min(crank_tries, 5)]
+                _c, _u, _s, _t = post_frames_R(crank_lock, avoid_from=gpL[:, :2])[min(crank_tries, 5)]
                 uR_lock[:] = _u
                 cf_spin, cf_tilt = _s, _t
                 print(f"    [roleswap->R] post frame: cost {_c:.2f} spin {_s:+.0f} tilt "
@@ -2269,9 +2275,9 @@ def main() -> None:
             # post MID-HEIGHT while the R still anchors below — this bite IS the new anchor
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
             hdn = handle_dir()
-            gpR_z = (tool_pose()[0] + quat_apply(tool_pose()[1], ex1 * tool_to_grip))[:, 2:3]
+            gpR = tool_pose()[0] + quat_apply(tool_pose()[1], ex1 * tool_to_grip)
             mouth_w = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z
-            z_hi = torch.maximum(gpR_z - 0.045, mouth_w + 0.030)  # 45mm below the incumbent
+            z_hi = torch.maximum(gpR[:, 2:3] - 0.045, mouth_w + 0.030)  # 45mm below the incumbent
             s_p = (elbow[:, 2:3] - z_hi).clamp(0.02, 0.11)
             post_pt = elbow + hdn * s_p
             if t_in == 1:
@@ -2279,7 +2285,8 @@ def main() -> None:
                 wpL_q[:] = toolL_pose()[1]
                 pinch_lock[:] = post_pt
                 crank_near = False
-                _c, _u, _s, _t = post_frames(pinch_lock, topple_bias=True)[min(crank_tries, 5)]
+                _c, _u, _s, _t = post_frames(pinch_lock, topple_bias=True,
+                                             avoid_from=gpR[:, :2])[min(crank_tries, 5)]
                 uL_lock[:] = _u
                 pf_spin, pf_tilt = _s, _t
                 print(f"    [roleswap->L] post frame: cost {_c:.2f} spin {_s:+.0f} tilt "
