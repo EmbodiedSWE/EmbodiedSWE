@@ -1765,13 +1765,14 @@ def main() -> None:
                 left_cmd[:, 0:6] = hold_qL
                 left_cmd[:, 6] = grip_c_L
             else:
-                if t_in == 1130:
-                    crank_lock[:] = crank_live  # one pre-close re-latch
+                if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
+                    crank_lock[:] = crank_live  # pre-close re-latch; ROLLING convergence check —
+                    # slow approaches converge late (roll 184: perp 0.7mm at the gate, never
+                    # closed because the old one-shot t1130 snapshot had already said no)
                     crank_near = bool((crank_perp("Right") < 0.025).all())
-                    if not crank_near:
-                        print(f"    [crank] approach never converged (perp "
-                              f"{float(crank_perp('Right').max()) * 1e3:.0f}mm) — NOT closing (a far"
-                              f" press-in topples the standing key)", flush=True)
+                    if not crank_near and t_in == 1130:
+                        print(f"    [crank] not converged at t1130 (perp "
+                              f"{float(crank_perp('Right').max()) * 1e3:.0f}mm) — rechecking to t1370", flush=True)
                 close_now = t_in > 1150 and crank_near
                 # the FIRST approach starts from the R's park (~0.25m out): long hover leg
                 off = -0.06 if t_in < 800 else (0.006 if close_now else 0.0)
@@ -1991,12 +1992,12 @@ def main() -> None:
             if t_in < 200:
                 left_to(wpL0_p, wpL_q, OPEN_C, rot_w=1.2)
             else:
-                if t_in == 1130:
+                if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     crank_lock[:] = crank_live
                     crank_near = bool((crank_perp("Left") < 0.025).all())
-                    if not crank_near:
-                        print(f"    [crankL] approach never converged (perp "
-                              f"{float(crank_perp('Left').max()) * 1e3:.0f}mm) — NOT closing", flush=True)
+                    if not crank_near and t_in == 1130:
+                        print(f"    [crankL] not converged at t1130 (perp "
+                              f"{float(crank_perp('Left').max()) * 1e3:.0f}mm) — rechecking to t1370", flush=True)
                 close_now = t_in > 1150 and crank_near
                 off = -0.06 if t_in < 800 else (0.006 if close_now else 0.0)
                 vt = crank_lock + uL_lock * off
@@ -2142,12 +2143,12 @@ def main() -> None:
             if t_in < 200:
                 act = act_of(wpR0_p, wpR0_q, OPEN_C, rot_w=1.2)
             else:
-                if t_in == 1130:
+                if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     crank_lock[:] = post_pt
                     crank_near = bool((tip_perp("Right") < 0.030).all())
-                    if not crank_near:
-                        print(f"    [roleswap->R] approach never converged (perp "
-                              f"{float(tip_perp('Right').max()) * 1e3:.0f}mm) — NOT closing", flush=True)
+                    if not crank_near and t_in == 1130:
+                        print(f"    [roleswap->R] not converged at t1130 (perp "
+                              f"{float(tip_perp('Right').max()) * 1e3:.0f}mm) — rechecking to t1370", flush=True)
                 close_now = t_in > 1150 and crank_near
                 off = -0.06 if t_in < 800 else (0.006 if close_now else 0.0)
                 vt = crank_lock + uR_lock * off
@@ -2218,12 +2219,12 @@ def main() -> None:
             if t_in < 200:
                 left_to(wpL0_p, wpL_q, OPEN_C, rot_w=1.2)
             else:
-                if t_in == 1130:
+                if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     pinch_lock[:] = post_pt
                     crank_near = bool((tip_perp("Left") < 0.030).all())
-                    if not crank_near:
-                        print(f"    [roleswap->L] approach never converged (perp "
-                              f"{float(tip_perp('Left').max()) * 1e3:.0f}mm) — NOT closing", flush=True)
+                    if not crank_near and t_in == 1130:
+                        print(f"    [roleswap->L] not converged at t1130 (perp "
+                              f"{float(tip_perp('Left').max()) * 1e3:.0f}mm) — rechecking to t1370", flush=True)
                 close_now = t_in > 1150 and crank_near
                 off = -0.06 if t_in < 800 else (0.006 if close_now else 0.0)
                 vt = pinch_lock + uL_lock * off
