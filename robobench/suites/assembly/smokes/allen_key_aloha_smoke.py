@@ -171,14 +171,12 @@ CAGE_C = 0.0060          # STAGE 2 steady-rest: L carriage command for the passi
                          # inside, tip bounded); the closed-bite pocket already wraps the post
 CAGE_SLIDE = 0.035       # cage slides this far DOWN the post so the orbiting crank clears the claw
 CRANK_GRIP_D = 0.012     # R's stroke grip: 12mm inboard of the crank tip (end-on grab)
-POST_HOLD_DZ = 0.024     # the steady hand bites HERE above the socket mouth — the LOWER END
-                         # of the post: the anchor sits beside the bolt head where the lean is
-                         # born, and the whole post above stays clear for the cranking arm
-                         # (roll 167: high/mid holds let the key lean ~20deg on camera and
-                         # shadowed every swap corridor)
-SWAP_GRAB_DZ = 0.068     # role swap: the incoming holder first bites MID-POST — above the
-                         # incumbent's low pocket, under the crank orbit — and rides down to
-                         # POST_HOLD_DZ only after the incumbent has backed clear
+SWAP_GRAB_DZ = 0.068     # role swap: the incoming holder bites the post HERE above the mouth —
+                         # above the incumbent's lower-third pocket (~+35mm), 45mm under the
+                         # crank orbit — and that bite IS the new anchor. (No station is ever
+                         # slid to: rolls 172-174 proved a pocket riding along the post veers
+                         # into wrist-infeasibility and drags the key 15-25deg over; and a
+                         # higher anchor bounds lean TIGHTER — same clearance, longer lever.)
 CRANK_W = 0.0025         # crank rate (rad/tick): 120deg in ~840 ticks — watchable
 MAX_CRANK_CYCLES = 10    # stroke budget for the demo (release honestly with measured revs)
 STROKE_W = 1.0           # commanded crank rate (rad/s)
@@ -1676,19 +1674,20 @@ def main() -> None:
                 else:
                     print("  insert timed out, re-clocking", flush=True)
                     phase, marker = "clock", i
-        elif phase == "cage_convert":  # ALWAYS-HELD protocol, two moves before any cranking.
-            # (1) PLUMB: the insert weld is still ON — drag the key to EXACT vertical over the
-            #     bore. The seat gate tolerates 8deg of lean and roll 167 proved it only grows
-            #     from there: nothing downstream ever straightened the key.
-            # (2) LOWER: slide the closed pocket DOWN the post to just above the bolt head —
-            #     hold the LOWER END so the whole post is clear for the cranking arm and the
-            #     anchor sits beside the socket, where the lean is born. Weld off, jaws stay
-            #     closed: the pocket cavity is larger than the hex, so the key spins freely
-            #     inside the bite while the walls hold it plumb. Never unheld again.
+        elif phase == "cage_convert":  # ALWAYS-HELD protocol: PLUMB, then latch IN PLACE.
+            # PLUMB: the insert weld is still ON — drag the key to EXACT vertical over the
+            # bore (the seat gate tolerates 8deg and roll 167 proved the lean only grows:
+            # nothing downstream ever straightened the key). Then weld off and latch the
+            # verified insert stall RIGHT WHERE IT IS: the pocket already bites the LOWER
+            # THIRD of the post (~mouth+35mm, measured roll 174), and every attempt to slide
+            # it lower hit wrist-infeasibility and dragged the key 15-25deg over (rolls
+            # 172-174: xy drift 19.6mm against an 11mm descent — the arm veers, the post
+            # follows). Weld off, jaws closed: the key spins freely inside the pocket while
+            # the walls hold it plumb over a 42mm lever off the socket. Never unheld again.
             act = hold_act(OPEN_C)
             if t_in == 1:
                 stroke_y0[:] = crank_azim()  # freeze the spin: plumbing must not rotate the key
-            if t_in <= 620:
+            if t_in <= 700:
                 kq_pl = kq_flip(stroke_y0)
                 tip_tgt = torch.zeros(n, 3, device=dev)
                 tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
@@ -1701,27 +1700,18 @@ def main() -> None:
                     weld_off_L()
                     wpL_q[:] = toolL_pose()[1]
             else:
-                z_low = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z + POST_HOLD_DZ
-                vt = torch.zeros(n, 3, device=dev)
-                vt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
-                vt[:, 2:3] = z_low
-                left_to(vt - quat_apply(wpL_q, ex1 * tool_to_grip), wpL_q, grip_c_L, rot_w=1.2)
-                pzL = float((toolL_pose()[0] + quat_apply(wpL_q, ex1 * tool_to_grip))[0, 2])
-                if t_in % 300 == 0:
-                    print(f"    [lower] pocket z {pzL * 1e3:.0f}mm -> {float(z_low[0, 0]) * 1e3:.0f}mm "
-                          f"| lean {lean_deg():4.1f}deg", flush=True)
-                if (t_in > 1000 and abs(pzL - float(z_low[0, 0])) < 0.005) or t_in >= 2000:
-                    ok_seat = (key_tip_axial() < SOCKET_MOUTH_Z - 0.004) & (key_lateral() < 0.004)
-                    upright = (-handle_dir()[:, 2]) > 0.99
-                    if bool((ok_seat & upright).all()):
-                        holder = "L"
-                        hold_qL[:] = artL.data.joint_pos[:, arm_ids_L]  # RIGID latch (no pushover drift)
-                        print(f"  STEADY HAND set LOW (plumbed, pocket {pzL * 1e3:.0f}mm, lean "
-                              f"{lean_deg():.1f}deg) — key held; R cranks", flush=True)
-                        phase, marker = "crank_approach", i
-                    else:
-                        print("  hold convert lost the seat/plumb; ending with the insert result", flush=True)
-                        phase, marker = "admire", i
+                ok_seat = (key_tip_axial() < SOCKET_MOUTH_Z - 0.004) & (key_lateral() < 0.004)
+                upright = (-handle_dir()[:, 2]) > 0.99
+                gpz = float((toolL_pose()[0] + quat_apply(wpL_q, ex1 * tool_to_grip))[0, 2])
+                hold_qL[:] = artL.data.joint_pos[:, arm_ids_L]  # RIGID latch (no pushover drift)
+                holder = "L"
+                if bool((ok_seat & upright).all()):
+                    print(f"  STEADY HAND set (plumbed, pocket z {gpz * 1e3:.0f}mm — lower third, "
+                          f"lean {lean_deg():.1f}deg) — key held; R cranks", flush=True)
+                    phase, marker = "crank_approach", i
+                else:
+                    print(f"  hold convert failed (lean {lean_deg():.1f}deg); ending with the insert result", flush=True)
+                    phase, marker = "admire", i
         elif phase == "crank_approach":  # RIGHT grabs the CRANK end-on (approach along the
             # member, slot across it) with its own scored frame ladder; the caged, seated key
             # is backed at both ends so the close cannot push it away
@@ -2042,9 +2032,9 @@ def main() -> None:
             if t_in >= 600:
                 phase, marker = "admire", i
         elif phase == "role_swap_R_holder":  # the R takes the steady-hand role: bite the post
-            # MID-HEIGHT (above the L's low anchor, under the crank orbit) while the L STILL
-            # holds — the key is never free for a single tick. The R rides down to the low
-            # anchor in swap_lower_R once the L has backed clear.
+            # MID-HEIGHT (above the L's lower-third pocket, 45mm under the crank orbit) while
+            # the L STILL holds — the key is never free for a single tick. This bite IS the
+            # new anchor; the L backs out horizontally underneath it.
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
             hdn = handle_dir()
             z_hi = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z + SWAP_GRAB_DZ
@@ -2081,7 +2071,7 @@ def main() -> None:
             if t_in >= 1600:
                 prR = jaw_pair(artR, jaw_ids_R)
                 stH = (prR - pairR_hold).abs() < 0.002
-                okH = (prR < 0.033) & (tip_perp("Right") < 0.018) & stH
+                okH = (prR < 0.024) & (tip_perp("Right") < 0.018) & stH  # anchor-grade bite
                 if bool(okH.all()):
                     grip_hold_R = float(prR[0]) * 0.5 + 0.001
                     hold_qR[:] = artR.data.joint_pos[:, arm_ids]
@@ -2109,31 +2099,17 @@ def main() -> None:
             left_to(wpL0_p - (uL_lock * 0.09 if t_in >= 250 else uL_lock * 0.0), wpL_q, OPEN_C, rot_w=1.2)
             act = act_R_hold(grip_hold_R)
             if t_in >= 600:
-                crank_tries = 0
-                phase, marker = "swap_lower_R", i
-        elif phase == "swap_lower_R":  # the new steady hand rides its pocket DOWN the post to
-            # the low anchor (the incumbent backed clear; the cavity stays around the member
-            # the whole slide — the key is never unheld)
-            if t_in == 1:
-                wpR0_p[:], wpR0_q[:] = tool_pose()
-                left_cmd[:, 0:6] = artL.data.joint_pos[:, arm_ids_L]
-                left_cmd[:, 6] = OPEN_C
-            z_low = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z + POST_HOLD_DZ
-            vt = torch.zeros(n, 3, device=dev)
-            vt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
-            vt[:, 2:3] = z_low
-            act = act_of(vt - quat_apply(wpR0_q, ex1 * tool_to_grip), wpR0_q, grip_hold_R, rot_w=1.2)
-            pzR = float((tool_pose()[0] + quat_apply(wpR0_q, ex1 * tool_to_grip))[0, 2])
-            if (t_in > 700 and abs(pzR - float(z_low[0, 0])) < 0.005) or t_in >= 1600:
-                hold_qR[:] = artR.data.joint_pos[:, arm_ids]
+                # the mid-post bite IS the new anchor (no ride-down: sliding a bite along the
+                # post always veered into wrist-infeasibility and dragged the key, rolls
+                # 172-174; a higher anchor also bounds lean TIGHTER — same pocket clearance
+                # over a longer lever off the socket)
                 crank_tries = 0
                 crank_bounce = 0
                 last_sweep = 9.9
-                print(f"  ROLE SWAP done: R anchors LOW (pocket {pzR * 1e3:.0f}mm, lean "
-                      f"{lean_deg():.1f}deg) — L cranks", flush=True)
+                print(f"  ROLE SWAP done: R anchors mid-post (lean {lean_deg():.1f}deg) — L cranks", flush=True)
                 phase, marker = "crank_approach_L", i
         elif phase == "role_swap_L_holder":  # the L takes the steady-hand role back: bite the
-            # post MID-HEIGHT while the R still anchors LOW, ride down after the R backs clear
+            # post MID-HEIGHT while the R still anchors below — this bite IS the new anchor
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
             hdn = handle_dir()
             z_hi = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z + SWAP_GRAB_DZ
@@ -2170,7 +2146,7 @@ def main() -> None:
             if t_in >= 1600:
                 prL = jaw_pair(artL, jaw_ids_L)
                 stH = (prL - pairR_hold).abs() < 0.002
-                okH = (prL < 0.033) & (tip_perp("Left") < 0.018) & stH
+                okH = (prL < 0.024) & (tip_perp("Left") < 0.018) & stH  # anchor-grade bite
                 if bool(okH.all()):
                     grip_c_L = float(prL[0]) * 0.5 + 0.001
                     hold_qL[:] = artL.data.joint_pos[:, arm_ids_L]
@@ -2198,25 +2174,9 @@ def main() -> None:
             left_cmd[:, 6] = grip_c_L
             if t_in >= 600:
                 crank_tries = 0
-                phase, marker = "swap_lower_L", i
-        elif phase == "swap_lower_L":  # the L rides its pocket down the post to the low anchor
-            if t_in == 1:
-                wpL0_p[:] = toolL_pose()[0]
-                wpL_q[:] = toolL_pose()[1]
-            z_low = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z + POST_HOLD_DZ
-            vt = torch.zeros(n, 3, device=dev)
-            vt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
-            vt[:, 2:3] = z_low
-            left_to(vt - quat_apply(wpL_q, ex1 * tool_to_grip), wpL_q, grip_c_L, rot_w=1.2)
-            act = act_L_park(OPEN_C)
-            pzL2 = float((toolL_pose()[0] + quat_apply(wpL_q, ex1 * tool_to_grip))[0, 2])
-            if (t_in > 700 and abs(pzL2 - float(z_low[0, 0])) < 0.005) or t_in >= 1600:
-                hold_qL[:] = artL.data.joint_pos[:, arm_ids_L]
-                crank_tries = 0
                 crank_bounce = 0
                 last_sweep = 9.9
-                print(f"  ROLE SWAP done: L anchors LOW (pocket {pzL2 * 1e3:.0f}mm, lean "
-                      f"{lean_deg():.1f}deg) — R cranks", flush=True)
+                print(f"  ROLE SWAP done: L anchors mid-post (lean {lean_deg():.1f}deg) — R cranks", flush=True)
                 phase, marker = "crank_approach", i
         elif phase == "crank_release":  # demo end: open in place, exit along the crank axis
             if t_in == 1:
@@ -2545,7 +2505,6 @@ def main() -> None:
                      "handoff", "l_clock", "l_insert", "cage_convert", "crank_approach",
                      "crank_regrip", "crank_approach_L", "crank_regrip_L", "role_swap_R_holder",
                      "role_swap_L_holder", "role_swap_L_release", "role_swap_R_release",
-                     "swap_lower_R", "swap_lower_L",
                      "clock", "insert") and float(dd.max()) > 0.0015:
             kt = key.data.root_pos_w
             print(f"    [watchdog] ctrl {i} {phase}: bolt depth jumped {float(dd.max()) * 1e3:+.1f}mm | "
