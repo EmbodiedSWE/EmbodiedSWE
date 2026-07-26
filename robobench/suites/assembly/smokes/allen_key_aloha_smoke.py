@@ -171,12 +171,11 @@ CAGE_C = 0.0060          # STAGE 2 steady-rest: L carriage command for the passi
                          # inside, tip bounded); the closed-bite pocket already wraps the post
 CAGE_SLIDE = 0.035       # cage slides this far DOWN the post so the orbiting crank clears the claw
 CRANK_GRIP_D = 0.012     # R's stroke grip: 12mm inboard of the crank tip (end-on grab)
-SWAP_GRAB_DZ = 0.068     # role swap: the incoming holder bites the post HERE above the mouth —
-                         # above the incumbent's lower-third pocket (~+35mm), 45mm under the
-                         # crank orbit — and that bite IS the new anchor. (No station is ever
-                         # slid to: rolls 172-174 proved a pocket riding along the post veers
-                         # into wrist-infeasibility and drags the key 15-25deg over; and a
-                         # higher anchor bounds lean TIGHTER — same clearance, longer lever.)
+# Role-swap bite: 45mm BELOW the incumbent's ACTUAL pocket (computed live — the insert
+# grip lands anywhere z111-184 across rolls, and a fixed station collided claw-on-claw,
+# roll 194). That bite IS the new anchor: no station is ever slid to (rolls 172-174
+# proved a pocket riding along the post veers into wrist-infeasibility and drags the
+# key 15-25deg over), and a higher anchor bounds lean tighter (longer lever).
 CRANK_W = 0.0025         # crank rate (rad/tick): 120deg in ~840 ticks — watchable
 MAX_CRANK_CYCLES = 10    # stroke budget for the demo (release honestly with measured revs)
 STROKE_W = 1.0           # commanded crank rate (rad/s)
@@ -2186,7 +2185,13 @@ def main() -> None:
             # new anchor; the L backs out horizontally underneath it.
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
             hdn = handle_dir()
-            z_hi = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z + SWAP_GRAB_DZ
+            # bite RELATIVE to the incumbent's actual pocket (the insert grip lands anywhere
+            # z111-184 across rolls): 45mm BELOW it — a fixed station collided claw-on-claw
+            # whenever the incumbent sat low (roll 194: every frame stood off at a constant
+            # ~66mm, the two claw bodies pressing)
+            gpL_z = (toolL_pose()[0] + quat_apply(toolL_pose()[1], ex1 * tool_to_grip))[:, 2:3]
+            mouth_w = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z
+            z_hi = torch.maximum(gpL_z - 0.045, mouth_w + 0.030)
             s_p = (elbow[:, 2:3] - z_hi).clamp(0.02, 0.11)
             post_pt = elbow + hdn * s_p
             if t_in == 1:
@@ -2261,7 +2266,9 @@ def main() -> None:
             # post MID-HEIGHT while the R still anchors below — this bite IS the new anchor
             elbow = key.data.root_pos_w + up_axis_of(key.data.root_quat_w) * ARM_LEN
             hdn = handle_dir()
-            z_hi = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z + SWAP_GRAB_DZ
+            gpR_z = (tool_pose()[0] + quat_apply(tool_pose()[1], ex1 * tool_to_grip))[:, 2:3]
+            mouth_w = bolt.data.root_pos_w[:, 2:3] + SOCKET_MOUTH_Z
+            z_hi = torch.maximum(gpR_z - 0.045, mouth_w + 0.030)  # 45mm below the incumbent
             s_p = (elbow[:, 2:3] - z_hi).clamp(0.02, 0.11)
             post_pt = elbow + hdn * s_p
             if t_in == 1:
