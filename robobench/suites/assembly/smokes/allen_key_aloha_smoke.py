@@ -631,8 +631,11 @@ def main() -> None:
             # cross-slot bonus (SWAP HOLDS ONLY — the handoff pinch frame feeds the tuned
             # clock/insert pipeline and must stay pure-reachability; roll 181 re-clocked
             # forever on a shuffled frame): a slot ALONG the topple direction cannot
-            # restrain the top-heavy key; prefer feasible frames whose slot lies ACROSS it
-            pen = (0.8 * float((u[:, :2] * sd_ov).sum(-1).abs().max())) if topple_bias else 0.0
+            # restrain the top-heavy key; prefer feasible frames whose slot lies ACROSS it.
+            # TIEBREAKER scale only: near-converged ladders score ~0.02, and a 0.8 weight
+            # dictated cross-slot over reachable (roll 192: every swap frame parked
+            # 150-220mm out with the crank pointing at the R)
+            pen = (0.05 * float((u[:, :2] * sd_ov).sum(-1).abs().max())) if topple_bias else 0.0
             scored.append((float(joint_cost_L(q, tp).max()) + pen, u, s, tr))
         scored.sort(key=lambda e: e[0])
         return scored
@@ -679,7 +682,7 @@ def main() -> None:
             tr = math.radians(t)
             q = pinch_q(u, s, tr)
             tp = pinch_pt - quat_apply(q, ex1 * tool_to_grip)
-            pen = 0.8 * float((u[:, :2] * sd_ov).sum(-1).abs().max())
+            pen = 0.05 * float((u[:, :2] * sd_ov).sum(-1).abs().max())  # tiebreaker scale (see post_frames)
             scored.append((float(joint_cost(q, tp).max()) + pen, u, s, tr))
         scored.sort(key=lambda e: e[0])
         return scored
