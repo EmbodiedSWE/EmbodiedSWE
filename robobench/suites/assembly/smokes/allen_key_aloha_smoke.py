@@ -610,7 +610,7 @@ def main() -> None:
     def joint_cost_L(tq_a: torch.Tensor, tp: torch.Tensor) -> torch.Tensor:
         return (ik_left(tp, tq_a) - artL.data.joint_pos[:, arm_ids_L]).norm(dim=-1)
 
-    def post_frames(pinch_pt: torch.Tensor) -> list:
+    def post_frames(pinch_pt: torch.Tensor, topple_bias: bool = False) -> list:
         """Ranked (u, spin, tilt_rad) candidates for the L post pinch, cheapest virtual-IK
         step first. Run 134 proved the hardcoded 78-deg comfort frame is wrist-infeasible in
         BOTH spins at some stations (spin -1 pins j3, spin +1 pins j4) — so score a ladder of
@@ -628,10 +628,11 @@ def main() -> None:
             tr = math.radians(t)
             q = pinch_q(u, s, tr)
             tp = pinch_pt - quat_apply(q, ex1 * tool_to_grip)
-            # cross-slot bonus: a slot ALONG the topple direction cannot restrain the
-            # top-heavy key (the post slides the groove to the hook, ~16deg); prefer
-            # feasible frames whose slot lies ACROSS it
-            pen = 0.8 * float((u[:, :2] * sd_ov).sum(-1).abs().max())
+            # cross-slot bonus (SWAP HOLDS ONLY — the handoff pinch frame feeds the tuned
+            # clock/insert pipeline and must stay pure-reachability; roll 181 re-clocked
+            # forever on a shuffled frame): a slot ALONG the topple direction cannot
+            # restrain the top-heavy key; prefer feasible frames whose slot lies ACROSS it
+            pen = (0.8 * float((u[:, :2] * sd_ov).sum(-1).abs().max())) if topple_bias else 0.0
             scored.append((float(joint_cost_L(q, tp).max()) + pen, u, s, tr))
         scored.sort(key=lambda e: e[0])
         return scored
@@ -2178,7 +2179,7 @@ def main() -> None:
                 wpL_q[:] = toolL_pose()[1]
                 pinch_lock[:] = post_pt
                 crank_near = False
-                _c, _u, _s, _t = post_frames(pinch_lock)[min(crank_tries, 5)]
+                _c, _u, _s, _t = post_frames(pinch_lock, topple_bias=True)[min(crank_tries, 5)]
                 uL_lock[:] = _u
                 pf_spin, pf_tilt = _s, _t
                 print(f"    [roleswap->L] post frame: cost {_c:.2f} spin {_s:+.0f} tilt "
