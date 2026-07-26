@@ -1759,11 +1759,13 @@ def main() -> None:
                 print(f"    [crank] frame locked: cost {_c:.2f} spin {cf_spin:+.0f} tilt "
                       f"{math.degrees(cf_tilt):.0f}deg (cycle {crank_cycles + 1})", flush=True)
             qR = pinch_q(uR_lock, cf_spin, cf_tilt)
-            if t_in < 200:
-                # open-in-place dwell (matters on retries, harmless on entry)
-                act = act_of(wpR0_p, wpR0_q, OPEN_C, rot_w=1.2)
+            if t_in < 350:
+                # UN-WEDGE dwell: ramp toward home before the ladder — an arm that exhausted
+                # its arc re-scores every frame from a pinned posture and parks 170-280mm out
+                # (roll 186's failed role swap died this way)
                 left_cmd[:, 0:6] = hold_qL
                 left_cmd[:, 6] = grip_c_L
+                act = act_L_park(OPEN_C)
             else:
                 if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     crank_lock[:] = crank_live  # pre-close re-latch; ROLLING convergence check —
@@ -1878,6 +1880,7 @@ def main() -> None:
             if t_in == 1:
                 stroke_psi.zero_()
                 stroke_y0[:] = crank_azim()
+                stroke_kt0 = key_turn.clone()
                 crank_press_hold = 0
                 if bool((key_tip_axial() > SOCKET_MOUTH_Z + 0.004).any()) or bool((key.data.root_pos_w[:, 2] < 0.10).any()):
                     print("  [crank] key NOT seated at stroke start (fell during a swap) — releasing honestly", flush=True)
@@ -1896,7 +1899,13 @@ def main() -> None:
                     print("  [crank] re-press failed — regripping", flush=True)
                     phase, marker = "crank_regrip", i
             else:
-                stroke_psi += CRANK_W * min(t_in / 200.0, 1.0)  # rate ramp: no start jerk
+                # RUBBER-BAND: advance the commanded orbit only while the MEASURED key
+                # rotation keeps up (roll 186: the integrator wound to 213deg while a
+                # pinned arm delivered ~5deg — every guard and router then reasoned from
+                # phantom sweep). The command never leads the key by more than 12deg.
+                delivered = crank_sign * (key_turn - stroke_kt0)
+                lead_ok = (stroke_psi - delivered) < math.radians(12.0)
+                stroke_psi = torch.where(lead_ok, stroke_psi + CRANK_W * min(t_in / 200.0, 1.0), stroke_psi)
                 stroke_psi.clamp_(max=STROKE_RAD)
             kq = kq_flip(stroke_y0 - crank_sign * stroke_psi)
             tip_tgt = torch.zeros(n, 3, device=dev)
@@ -1908,7 +1917,8 @@ def main() -> None:
             left_cmd[:, 0:6] = hold_qL
             left_cmd[:, 6] = grip_c_L
             if t_in % 300 == 0:
-                print(f"    [stroke t{t_in:4d}] lean {lean_deg():4.1f}deg", flush=True)
+                dl = math.degrees(float((crank_sign * (key_turn - stroke_kt0)).max()))
+                print(f"    [stroke t{t_in:4d}] lean {lean_deg():4.1f}deg | delivered {dl:5.0f}deg", flush=True)
             if not crank_dir_checked and t_in == 500:
                 crank_dir_checked = True
                 if float(torch.rad2deg(bolt_turn).mean()) < -3.0:
@@ -1989,8 +1999,10 @@ def main() -> None:
                 print(f"    [crankL] frame locked: cost {_c:.2f} spin {pf_spin:+.0f} tilt "
                       f"{math.degrees(pf_tilt):.0f}deg (cycle {crank_cycles + 1})", flush=True)
             qL = pinch_q(uL_lock, pf_spin, pf_tilt)
-            if t_in < 200:
-                left_to(wpL0_p, wpL_q, OPEN_C, rot_w=1.2)
+            if t_in < 350:
+                rhL = artL.data.joint_pos[:, arm_ids_L]
+                left_cmd[:, 0:6] = rhL + (artL.data.default_joint_pos[:, arm_ids_L] - rhL).clamp(-DQ_STEP, DQ_STEP)
+                left_cmd[:, 6] = _shape_grip("L", OPEN_C)
             else:
                 if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     crank_lock[:] = crank_live
@@ -2037,6 +2049,7 @@ def main() -> None:
             if t_in == 1:
                 stroke_psi.zero_()
                 stroke_y0[:] = crank_azim()
+                stroke_kt0 = key_turn.clone()
                 crank_press_hold = 0
                 if bool((key_tip_axial() > SOCKET_MOUTH_Z + 0.004).any()) or bool((key.data.root_pos_w[:, 2] < 0.10).any()):
                     print("  [crankL] key NOT seated at stroke start (fell during a swap) — releasing honestly", flush=True)
@@ -2053,7 +2066,9 @@ def main() -> None:
                     print("  [crankL] re-press failed — swapping back", flush=True)
                     phase, marker = "crank_regrip_L", i
             else:
-                stroke_psi += CRANK_W * min(t_in / 200.0, 1.0)
+                delivered = crank_sign * (key_turn - stroke_kt0)
+                lead_ok = (stroke_psi - delivered) < math.radians(12.0)
+                stroke_psi = torch.where(lead_ok, stroke_psi + CRANK_W * min(t_in / 200.0, 1.0), stroke_psi)
                 stroke_psi.clamp_(max=STROKE_RAD)
             kq = kq_flip(stroke_y0 - crank_sign * stroke_psi)
             tip_tgt = torch.zeros(n, 3, device=dev)
@@ -2063,7 +2078,8 @@ def main() -> None:
             left_to(tpL2, tqL2, grip_c_L, rot_w=0.8)
             act = act_R_hold(grip_hold_R)
             if t_in % 300 == 0:
-                print(f"    [strokeL t{t_in:4d}] lean {lean_deg():4.1f}deg", flush=True)
+                dl = math.degrees(float((crank_sign * (key_turn - stroke_kt0)).max()))
+                print(f"    [strokeL t{t_in:4d}] lean {lean_deg():4.1f}deg | delivered {dl:5.0f}deg", flush=True)
             if not bool(bolt_ok(say=True).all()):
                 print("  ABORT: bolt left its nest mid-stroke (L)", flush=True)
                 phase, marker = "retreat", i
@@ -2140,8 +2156,8 @@ def main() -> None:
                 print(f"    [roleswap->R] post frame: cost {_c:.2f} spin {_s:+.0f} tilt "
                       f"{math.degrees(_t):.0f}deg", flush=True)
             qR = pinch_q(uR_lock, cf_spin, cf_tilt)
-            if t_in < 200:
-                act = act_of(wpR0_p, wpR0_q, OPEN_C, rot_w=1.2)
+            if t_in < 350:
+                act = act_L_park(OPEN_C)  # un-wedge ramp toward home before the ladder
             else:
                 if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     crank_lock[:] = post_pt
@@ -2216,8 +2232,10 @@ def main() -> None:
                 print(f"    [roleswap->L] post frame: cost {_c:.2f} spin {_s:+.0f} tilt "
                       f"{math.degrees(_t):.0f}deg", flush=True)
             qL = pinch_q(uL_lock, pf_spin, pf_tilt)
-            if t_in < 200:
-                left_to(wpL0_p, wpL_q, OPEN_C, rot_w=1.2)
+            if t_in < 350:
+                rhL = artL.data.joint_pos[:, arm_ids_L]
+                left_cmd[:, 0:6] = rhL + (artL.data.default_joint_pos[:, arm_ids_L] - rhL).clamp(-DQ_STEP, DQ_STEP)
+                left_cmd[:, 6] = _shape_grip("L", OPEN_C)
             else:
                 if 1130 <= t_in <= 1370 and t_in % 40 == 10 and not crank_near:
                     pinch_lock[:] = post_pt
