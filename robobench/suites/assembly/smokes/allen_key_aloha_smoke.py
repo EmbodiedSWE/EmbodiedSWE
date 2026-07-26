@@ -621,12 +621,18 @@ def main() -> None:
         v = v / v.norm(dim=-1, keepdim=True).clamp_min(1e-6)
         u_fwd = torch.cat((v, torch.zeros(n, 1, device=dev)), dim=-1)
         scored = []
+        sd_ov = -up_axis_of(key.data.root_quat_w)  # short-arm overhang: the topple direction
+        sd_ov = sd_ov[:, :2] / sd_ov[:, :2].norm(dim=-1, keepdim=True).clamp_min(1e-6)
         for u, s, t in ((u78, -1.0, 78.0), (u78, 1.0, 78.0), (u58, -1.0, 58.0),
                         (u58, 1.0, 58.0), (u_fwd, -1.0, 65.0), (u_fwd, 1.0, 65.0)):
             tr = math.radians(t)
             q = pinch_q(u, s, tr)
             tp = pinch_pt - quat_apply(q, ex1 * tool_to_grip)
-            scored.append((float(joint_cost_L(q, tp).max()), u, s, tr))
+            # cross-slot bonus: a slot ALONG the topple direction cannot restrain the
+            # top-heavy key (the post slides the groove to the hook, ~16deg); prefer
+            # feasible frames whose slot lies ACROSS it
+            pen = 0.8 * float((u[:, :2] * sd_ov).sum(-1).abs().max())
+            scored.append((float(joint_cost_L(q, tp).max()) + pen, u, s, tr))
         scored.sort(key=lambda e: e[0])
         return scored
 
@@ -665,12 +671,15 @@ def main() -> None:
         v = v / v.norm(dim=-1, keepdim=True).clamp_min(1e-6)
         u_fwd = torch.cat((v, torch.zeros(n, 1, device=dev)), dim=-1)
         scored = []
+        sd_ov = -up_axis_of(key.data.root_quat_w)  # cross-slot bonus (see post_frames)
+        sd_ov = sd_ov[:, :2] / sd_ov[:, :2].norm(dim=-1, keepdim=True).clamp_min(1e-6)
         for u, s, t in ((u78, -1.0, 78.0), (u78, 1.0, 78.0), (u58, -1.0, 58.0),
                         (u58, 1.0, 58.0), (u_fwd, -1.0, 65.0), (u_fwd, 1.0, 65.0)):
             tr = math.radians(t)
             q = pinch_q(u, s, tr)
             tp = pinch_pt - quat_apply(q, ex1 * tool_to_grip)
-            scored.append((float(joint_cost(q, tp).max()), u, s, tr))
+            pen = 0.8 * float((u[:, :2] * sd_ov).sum(-1).abs().max())
+            scored.append((float(joint_cost(q, tp).max()) + pen, u, s, tr))
         scored.sort(key=lambda e: e[0])
         return scored
 
@@ -961,6 +970,7 @@ def main() -> None:
     cage_q0 = torch.zeros(n, 4, device=dev)
     pairR_hold = torch.zeros(n, device=dev)     # stability sample for the crank-grab gate
     crank_tries, crank_cycles, crank_bounce = 0, 0, 0
+    conv_pending = False  # conversion armed: L still welded, first R crank grab routes to unweld_L
     grip_hold_R: float | torch.Tensor = CLOSE_C  # the R's steady-hand bite command
     holder = "L"  # which arm is the steady hand (admire/retreat must not yank it)
     last_sweep = 9.9  # last stroke's swept angle (rad) — a short sweep means the arc is SPENT
@@ -1674,17 +1684,14 @@ def main() -> None:
                 else:
                     print("  insert timed out, re-clocking", flush=True)
                     phase, marker = "clock", i
-        elif phase == "cage_convert":  # ALWAYS-HELD conversion: PLUMB/BLEED rounds, then hand
-            # the key from the WELD to the PADS with neither loaded.
-            # Weld-off at a force-plumbed key SNAPPED it 0.2deg -> 16.4deg with NOTHING else
-            # commanded (roll 176): the plumb stores elastic preload in the arm-weld-key-
-            # socket loop, and breaking the weld releases it into the pocket (this spring-
-            # back — not the descend — was the 15-25deg drag of rolls 172-175 too). So:
-            # plumb with SLACK jaws (the weld drags, the pads hover clear), BLEED the loop
-            # by re-targeting measured joints while still welded (the arm relaxes, the weld
-            # gives some lean back), and repeat — each round re-stores less. Then weld off
-            # UNLOADED, settle, and close the stall on the standing plumbed post: pads-only
-            # hold (the pocket already bites the lower third, ~mouth+35mm), key spins free.
+        elif phase == "cage_convert":  # ALWAYS-HELD conversion: PLUMB/BLEED, stall, then ARM
+            # the weld-to-weld handover (the L keeps its weld until the R has the crank).
+            # History: weld-off at a plumbed key snapped it 0.2 -> ~16deg EVERY time, pads
+            # stalled or slack, bled or not (rolls 172-179). Not stored elastic energy — the
+            # bleed rounds prove the arm holds 0.27deg fully relaxed — but GRAVITY: the
+            # flipped key is top-heavy (CoM overhangs toward the short-arm root) and topples
+            # about its seated tip, the post escaping ALONG the pocket slot to the hook
+            # catch at atan(~12mm/42mm) ~= 16deg. An unwelded key must always be propped.
             act = hold_act(OPEN_C)
             gslack = grip_c_L + 0.004
             if t_in == 1:
@@ -1708,32 +1715,31 @@ def main() -> None:
                     print(f"    [plumb r{(t_in - 50) // 600}] lean {lean_deg():.2f}deg after bleed | lat "
                           f"{float(key_lateral().max()) * 1e3:.1f}mm", flush=True)
                 if t_in == 1850:
-                    weld_off_L()
                     wpL_q[:] = toolL_pose()[1]
-            elif t_in <= 1930:  # weld-off settle: arm held relaxed, pads still slack
-                left_cmd[:, 0:6] = bleed_qL
-                left_cmd[:, 6] = _shape_grip("L", gslack)
-                if t_in == 1930:
-                    print(f"    [handover] weld-off settle: lean {lean_deg():.2f}deg", flush=True)
-            elif t_in <= 2230:  # close the stall on the standing post
+            elif t_in <= 2150:  # close the stall around the WELDED post (zero drag risk)
                 left_cmd[:, 0:6] = bleed_qL
                 left_cmd[:, 6] = _shape_grip("L", 0.004)
             else:
+                # DO NOT weld off yet: the flipped key is top-heavy (CoM overhangs toward
+                # the short-arm root) and topples ~16deg about its seated tip the moment
+                # nothing rigid holds it — the post escapes ALONG the pocket slot until the
+                # hook catches (rolls 176/179: bleed changed nothing, snap was instant).
+                # The R must take the crank and WELD first; the L unwelds in unweld_L.
                 prL = jaw_pair(artL, jaw_ids_L)
-                ok_seat = (key_tip_axial() < SOCKET_MOUTH_Z - 0.004) & (key_lateral() < 0.004)
-                upright = (-handle_dir()[:, 2]) > 0.99
                 okb = (prL < 0.020) & (tip_perp("Left") < 0.018)
                 hold_qL[:] = artL.data.joint_pos[:, arm_ids_L]  # RIGID latch (no pushover drift)
-                holder = "L"
                 gpz = float((toolL_pose()[0] + quat_apply(wpL_q, ex1 * tool_to_grip))[0, 2])
-                if bool((ok_seat & upright & okb).all()):
+                if bool(okb.all()):
                     grip_c_L = float(prL[0]) * 0.5 + 0.0005
-                    print(f"  STEADY HAND set (plumbed+bled, pocket z {gpz * 1e3:.0f}mm, lean "
-                          f"{lean_deg():.1f}deg, stall {float(prL[0]) * 1e3:.1f}mm) — key held; R cranks", flush=True)
+                    conv_pending = True
+                    print(f"  STEADY HAND armed (welded, plumbed {lean_deg():.2f}deg, pocket z "
+                          f"{gpz * 1e3:.0f}mm, stall {float(prL[0]) * 1e3:.1f}mm) — R props the crank "
+                          f"before the weld lets go", flush=True)
                     phase, marker = "crank_approach", i
                 else:
-                    print(f"  hold convert failed (lean {lean_deg():.1f}deg, pair "
-                          f"{float(prL[0]) * 1e3:.1f}mm); ending with the insert result", flush=True)
+                    holder = "L"
+                    print(f"  hold convert failed (pair {float(prL[0]) * 1e3:.1f}mm); ending "
+                          f"held+welded with the insert result", flush=True)
                     phase, marker = "admire", i
         elif phase == "crank_approach":  # RIGHT grabs the CRANK end-on (approach along the
             # member, slot across it) with its own scored frame ladder; the caged, seated key
@@ -1791,8 +1797,9 @@ def main() -> None:
                     weld_on()
                     crank_tries = 0
                     crank_bounce = 0
-                    print(f"  CRANK GRAB: R stall {float(prR[0]) * 1e3:.1f}mm — stroking", flush=True)
-                    phase, marker = "crank_stroke", i
+                    print(f"  CRANK GRAB: R stall {float(prR[0]) * 1e3:.1f}mm — "
+                          f"{'unwelding the L' if conv_pending else 'stroking'}", flush=True)
+                    phase, marker = ("unweld_L" if conv_pending else "crank_stroke"), i
                 elif crank_tries < 4:
                     crank_tries += 1
                     print(f"  crank grab missed (pair {float(prR[0]) * 1e3:.1f}mm, perp "
@@ -1801,10 +1808,38 @@ def main() -> None:
                 elif crank_bounce < 1:
                     crank_bounce += 1
                     crank_tries = 0
-                    print("  R grab arc exhausted — ROLE SWAP (R holds, L cranks)", flush=True)
-                    phase, marker = "role_swap_R_holder", i
+                    if conv_pending:
+                        print("  R grab arc exhausted — re-running the prop ladder (L still welded)", flush=True)
+                        marker = i
+                    else:
+                        print("  R grab arc exhausted — ROLE SWAP (R holds, L cranks)", flush=True)
+                        phase, marker = "role_swap_R_holder", i
                 else:
-                    print("  crank grab exhausted; releasing with the progress", flush=True)
+                    if conv_pending:
+                        conv_pending = False
+                        holder = "L"
+                        print("  convert prop failed (no crank grab); ending held+welded", flush=True)
+                        phase, marker = "admire", i
+                    else:
+                        print("  crank grab exhausted; releasing with the progress", flush=True)
+                        phase, marker = "crank_release", i
+        elif phase == "unweld_L":  # weld-to-weld handover: the R's fresh crank weld now props
+            # the top-heavy key, so the L can finally release ITS weld without the topple.
+            # The L keeps its rigid stalled pocket as the passive cage.
+            if t_in == 1:
+                weld_off_L()
+            left_cmd[:, 0:6] = hold_qL
+            left_cmd[:, 6] = grip_c_L
+            act = hold_act(grip_c)
+            if t_in >= 220:
+                conv_pending = False
+                holder = "L"
+                ok_seat = (key_tip_axial() < SOCKET_MOUTH_Z - 0.004) & (key_lateral() < 0.004)
+                if bool(ok_seat.all()) and lean_deg() < 6.0:
+                    print(f"  STEADY HAND set (weld-to-weld handover, lean {lean_deg():.2f}deg) — stroking", flush=True)
+                    phase, marker = "crank_stroke", i
+                else:
+                    print(f"  unweld handover failed (lean {lean_deg():.1f}deg); releasing honestly", flush=True)
                     phase, marker = "crank_release", i
         elif phase == "crank_stroke":  # the small-orbit screw stroke: rotate the key about the
             # bore axis (helical floor press), the L cage holding the post vertical
@@ -2526,7 +2561,7 @@ def main() -> None:
         dd = (depth() - prev_depth).abs()
         if phase in ("pinch_in", "pinch_close", "lift", "carry", "erect", "handoff_carry", "post_pinch",
                      "handoff", "l_clock", "l_insert", "cage_convert", "crank_approach",
-                     "crank_regrip", "crank_approach_L", "crank_regrip_L", "role_swap_R_holder",
+                     "crank_regrip", "crank_approach_L", "crank_regrip_L", "unweld_L", "role_swap_R_holder",
                      "role_swap_L_holder", "role_swap_L_release", "role_swap_R_release",
                      "clock", "insert") and float(dd.max()) > 0.0015:
             kt = key.data.root_pos_w
