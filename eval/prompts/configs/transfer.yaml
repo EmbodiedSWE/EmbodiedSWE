@@ -1,0 +1,5 @@
+# Disclosed-transfer variant for run_sequence.py: early stages are told a successor
+# inherits their workspace (leave_handoff is auto-dropped on the final stage).
+# Remove leave_handoff for the undisclosed variant.
+hints: [save_snapshot]
+rules: [autonomous_operation, leave_handoff]

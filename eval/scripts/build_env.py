@@ -37,7 +37,7 @@ def main() -> None:
     ap.add_argument("--name", help="experiment name (output: <out>/<name>/)")
     ap.add_argument("--stage", action="append", default=[], metavar="scene:robot[:controller]")
     ap.add_argument("--no-set-states", action="store_true",
-                    help="ablation arm: disable env.set_states() in the extracted tree, so the "
+                    help="ablation: disable env.set_states() in the extracted tree, so the "
                          "agent cannot restore snapshots and must solve from reset() forward")
     ap.add_argument("--no-freeze-controller", action="store_true",
                     help="allow the agent to switch control modes (default: frozen to the preset)")

@@ -9,7 +9,7 @@ FROM ${L0_IMAGE}
 ARG CLAUDE_CODE_VERSION
 ARG CODEX_VERSION=
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/* && \
+    apt-get install -y --no-install-recommends nodejs tmux && rm -rf /var/lib/apt/lists/* && \
     npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?pin the agent version}" && \
     if [ -n "$CODEX_VERSION" ]; then npm install -g "@openai/codex@${CODEX_VERSION}"; fi
 
