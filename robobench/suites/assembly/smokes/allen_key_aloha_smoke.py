@@ -1959,18 +1959,32 @@ def main() -> None:
                     phase, marker = "crank_release", i
                 else:
                     phase, marker = "crank_regrip", i
-        elif phase == "crank_regrip":  # release discipline, then re-approach the advanced crank.
-            # EXIT ALONG THE CRANK AXIS, not vertically: the hooks scoop UNDER the horizontal
-            # member — a rising exit lifts the key out of the socket and the falling key
-            # unscrews the bolt (runs 148/150: +54deg wound back to +21deg). Slide the open
-            # pocket OFF the member's end instead (the way it came in).
+        elif phase == "crank_regrip":  # RE-PLUMB, then release discipline, then re-approach.
+            # The tilt-guard ends strokes at ~10deg and a weld-off there hands the topple
+            # straight to the cage hook (~16deg rest, roll 191's endgame) — the cranker is
+            # still WELDED at stroke end, so stand the key back up first. Then EXIT ALONG
+            # THE CRANK AXIS, not vertically: the hooks scoop UNDER the horizontal member —
+            # a rising exit lifts the key out and the falling key unscrews the bolt.
             if t_in == 1:
-                wpR0_p[:], wpR0_q[:] = tool_pose()
-                weld_off()
-            act = act_of(wpR0_p - (uR_lock * 0.08 if t_in >= 250 else uR_lock * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
+                re_y0 = crank_azim().clone()
+            if t_in <= 250 and bool(welded.any()):
+                kq_rp = kq_flip(re_y0)
+                tip_tgt = torch.zeros(n, 3, device=dev)
+                tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+                tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.001
+                tp_rp, tq_rp = tool_for_key(root_for_tip(tip_tgt, kq_rp), kq_rp)
+                act = act_of(tp_rp, tq_rp, grip_c, rot_w=1.0)
+                if t_in == 250:
+                    print(f"    [regrip] re-plumbed to {lean_deg():.1f}deg before release", flush=True)
+                    wpR0_p[:], wpR0_q[:] = tool_pose()
+                    weld_off()
+            else:
+                if t_in == 1:
+                    wpR0_p[:], wpR0_q[:] = tool_pose()
+                act = act_of(wpR0_p - (uR_lock * 0.08 if t_in >= 500 else uR_lock * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
             left_cmd[:, 0:6] = hold_qL
             left_cmd[:, 6] = grip_c_L
-            if t_in >= 600:
+            if t_in >= 850:
                 crank_tries = 0
                 # ADAPTIVE HAND: whichever arm's best frame is cheaper takes the next stroke
                 # (strides differ, so the crank isn't alternately in each arc — run 153: the
@@ -2106,15 +2120,28 @@ def main() -> None:
                     phase, marker = "crank_release_L", i
                 else:
                     phase, marker = "crank_regrip_L", i
-        elif phase == "crank_regrip_L":  # L releases along the member axis, hand back to the R
+        elif phase == "crank_regrip_L":  # RE-PLUMB (still welded), then release along the member
             if t_in == 1:
-                wpL0_p[:] = toolL_pose()[0]
-                wpL_q[:] = toolL_pose()[1]
-                if bool(welded_L.any()):
+                re_y0 = crank_azim().clone()
+            if t_in <= 250 and bool(welded_L.any()):
+                kq_rp = kq_flip(re_y0)
+                tip_tgt = torch.zeros(n, 3, device=dev)
+                tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+                tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.001
+                tpL_rp, tqL_rp = tool_for_key_L(root_for_tip(tip_tgt, kq_rp), kq_rp)
+                left_to(tpL_rp, tqL_rp, grip_c_L, rot_w=1.0)
+                if t_in == 250:
+                    print(f"    [regripL] re-plumbed to {lean_deg():.1f}deg before release", flush=True)
+                    wpL0_p[:] = toolL_pose()[0]
+                    wpL_q[:] = toolL_pose()[1]
                     weld_off_L()
-            left_to(wpL0_p - (uL_lock * 0.08 if t_in >= 250 else uL_lock * 0.0), wpL_q, OPEN_C, rot_w=1.2)
+            else:
+                if t_in == 1:
+                    wpL0_p[:] = toolL_pose()[0]
+                    wpL_q[:] = toolL_pose()[1]
+                left_to(wpL0_p - (uL_lock * 0.08 if t_in >= 500 else uL_lock * 0.0), wpL_q, OPEN_C, rot_w=1.2)
             act = act_R_hold(grip_hold_R)
-            if t_in >= 600:
+            if t_in >= 850:
                 crank_tries = 0
                 if crank_cycles >= MAX_CRANK_CYCLES or float(bolt_turn.mean()) >= 2.0 * math.pi * args.demo_revs:
                     phase, marker = "admire", i
@@ -2130,15 +2157,28 @@ def main() -> None:
                     print(f"    [swap] costs R {cR2:.2f} / L {cL2:.2f}{' | arc SPENT' if spent else ''} -> "
                           f"{'LEFT re-grabs' if phase == 'crank_approach_L' else 'ROLE SWAP (L holds, R cranks)'}", flush=True)
                     marker = i
-        elif phase == "crank_release_L":  # demo end from an L-held stroke
+        elif phase == "crank_release_L":  # demo end from an L-held stroke (re-plumb if welded)
             if t_in == 1:
-                wpL0_p[:] = toolL_pose()[0]
-                wpL_q[:] = toolL_pose()[1]
-                if bool(welded_L.any()):
+                re_y0 = crank_azim().clone()
+            if t_in <= 250 and bool(welded_L.any()):
+                kq_rp = kq_flip(re_y0)
+                tip_tgt = torch.zeros(n, 3, device=dev)
+                tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+                tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.001
+                tpL_rp, tqL_rp = tool_for_key_L(root_for_tip(tip_tgt, kq_rp), kq_rp)
+                left_to(tpL_rp, tqL_rp, grip_c_L, rot_w=1.0)
+                if t_in == 250:
+                    print(f"    [releaseL] re-plumbed to {lean_deg():.1f}deg", flush=True)
+                    wpL0_p[:] = toolL_pose()[0]
+                    wpL_q[:] = toolL_pose()[1]
                     weld_off_L()
-            left_to(wpL0_p - (uL_lock * 0.08 if t_in >= 250 else uL_lock * 0.0), wpL_q, OPEN_C, rot_w=1.2)
+            else:
+                if t_in == 1:
+                    wpL0_p[:] = toolL_pose()[0]
+                    wpL_q[:] = toolL_pose()[1]
+                left_to(wpL0_p - (uL_lock * 0.08 if t_in >= 500 else uL_lock * 0.0), wpL_q, OPEN_C, rot_w=1.2)
             act = act_R_hold(grip_hold_R)
-            if t_in >= 600:
+            if t_in >= 850:
                 phase, marker = "admire", i
         elif phase == "role_swap_R_holder":  # the R takes the steady-hand role: bite the post
             # MID-HEIGHT (above the L's lower-third pocket, 45mm under the crank orbit) while
@@ -2289,15 +2329,27 @@ def main() -> None:
                 last_sweep = 9.9
                 print(f"  ROLE SWAP done: L anchors mid-post (lean {lean_deg():.1f}deg) — R cranks", flush=True)
                 phase, marker = "crank_approach", i
-        elif phase == "crank_release":  # demo end: open in place, exit along the crank axis
+        elif phase == "crank_release":  # demo end: RE-PLUMB if welded, open, exit along the crank
             if t_in == 1:
-                wpR0_p[:], wpR0_q[:] = tool_pose()
-                if bool(welded.any()):
+                re_y0 = crank_azim().clone()
+            if t_in <= 250 and bool(welded.any()):
+                kq_rp = kq_flip(re_y0)
+                tip_tgt = torch.zeros(n, 3, device=dev)
+                tip_tgt[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
+                tip_tgt[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z - 0.001
+                tp_rp, tq_rp = tool_for_key(root_for_tip(tip_tgt, kq_rp), kq_rp)
+                act = act_of(tp_rp, tq_rp, grip_c, rot_w=1.0)
+                if t_in == 250:
+                    print(f"    [release] re-plumbed to {lean_deg():.1f}deg", flush=True)
+                    wpR0_p[:], wpR0_q[:] = tool_pose()
                     weld_off()
-            act = act_of(wpR0_p - (uR_lock * 0.08 if t_in >= 250 else uR_lock * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
+            else:
+                if t_in == 1:
+                    wpR0_p[:], wpR0_q[:] = tool_pose()
+                act = act_of(wpR0_p - (uR_lock * 0.08 if t_in >= 500 else uR_lock * 0.0), wpR0_q, OPEN_C, rot_w=1.2)
             left_cmd[:, 0:6] = hold_qL
             left_cmd[:, 6] = grip_c_L
-            if t_in >= 600:
+            if t_in >= 850:
                 phase, marker = "admire", i
         elif phase == "admire":  # demo ending: hold the seated key for the camera. The
             # STEADY HAND keeps its bite (holder-aware — never yank the holding arm home).
