@@ -183,7 +183,14 @@ for _mode in ("osc", "impedance", "joint"):
             scene="allen_bolt",
             scene_cfg=AllenBoltAssemblySceneCfg(
                 platform_slots=((-0.08, 0.0),),
-                key_init_xy=((-0.24, 0.25),),
+                # The key inserts by its LONG arm (the 50 mm short arm then cranks at half the
+                # swept diameter, and the grip rides a long vertical shaft instead of a low one).
+                # Spawned yawed +90 deg — handle along +y, short arm along +x — so the erection
+                # about the short-arm axis lands the hand in the proven -y-approach insertion
+                # configuration; spawn pulled to y 0.18 so the 120 mm handle's far end (the
+                # inserting tip, 0.43 m out) stays inside the arm's accurate pick band.
+                key_init_xy=((-0.24, 0.18),),
+                key_init_quat=(0.5, 0.5, 0.5, 0.5),
                 bolt_friction=0.3,
                 reset_pos_jitter=0.0,
             ),
