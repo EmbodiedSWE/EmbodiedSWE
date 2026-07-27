@@ -571,9 +571,11 @@ def main() -> None:
             s = smoothstep(t_in / WP_TIMEOUT)
             wp_q[:] = q_down(glide_yaw0 + _wrap(grip_yaw - glide_yaw0) * s)
             if s >= 1.0:  # arrived, free air: learn the pad-centre bias for the descent
+                # (gain SMALL: the servo answers an offset ~5 ticks late, and a hot integrator
+                # limit-cycles against that lag — the arm visibly hunts instead of settling)
                 want = grip_pt.clone()
                 want[:, 2] += HOVER_CLEAR
-                pos_off[:] = (pos_off + 0.3 * (want - pad_centre())).clamp(-0.12, 0.12)
+                pos_off[:] = (pos_off + 0.12 * (want - pad_centre())).clamp(-0.12, 0.12)
             goal = wp_p + pos_off
             act = servo(glide_from_p + (goal - glide_from_p) * s, wp_q, STRADDLE_W)
             pad_err = (pad_centre()[:, 0:2] - grip_pt[:, 0:2]).norm(dim=-1)
@@ -586,7 +588,7 @@ def main() -> None:
             wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + HOVER_CLEAR * (1.0 - s)
             if s >= 1.0:
                 want = grip_pt.clone()
-                pos_off[:] = (pos_off + 0.25 * (want - pad_centre())).clamp(-0.12, 0.12)
+                pos_off[:] = (pos_off + 0.12 * (want - pad_centre())).clamp(-0.12, 0.12)
             act = servo(wp_p + pos_off, wp_q, STRADDLE_W)
             pad_on = (pad_centre() - grip_pt).norm(dim=-1) < 0.003
             if (t_in >= 68 and bool(pad_on.all())) or t_in >= 2 * WP_TIMEOUT:
@@ -668,9 +670,10 @@ def main() -> None:
             goal[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + INSERT_HOVER
             s = smoothstep(t_in / CARRY_STEPS)
             kp = glide_from_p + (goal - glide_from_p) * s
-            if s >= 1.0:
-                pos_off[:] = (pos_off + 0.25 * (goal - tip_pos())).clamp(-0.12, 0.12)
-                learn_tilt()
+            if s >= 1.0:  # small gains: two integrators (offset + lean) share this plant,
+                # and either one run hot swings the whole arm around the hover (see pick_hover)
+                pos_off[:] = (pos_off + 0.1 * (goal - tip_pos())).clamp(-0.12, 0.12)
+                learn_tilt(0.05)
             psi_cmd[:] = spin_of(key.data.root_quat_w) + clock_err()  # live trim: the staged
             # bolt's yaw is whatever the helix left; the trim is <= 30 deg by construction
             tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
@@ -700,8 +703,8 @@ def main() -> None:
             if free and t_in % 2 == 0:  # still contact-free: keep trimming xy + lean on the way
                 # down, so the tip crosses the mouth with the descent's freshest bias
                 pos_off[:, 0:2] = (pos_off[:, 0:2]
-                                   + 0.12 * (kp[:, 0:2] - tip_pos()[:, 0:2])).clamp(-0.12, 0.12)
-                learn_tilt(0.05)
+                                   + 0.08 * (kp[:, 0:2] - tip_pos()[:, 0:2])).clamp(-0.12, 0.12)
+                learn_tilt(0.03)
             tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, PICK_W)
             # "in far enough": ~5 mm of hex engagement stands through the handoff — the first
@@ -732,8 +735,8 @@ def main() -> None:
             goal[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + 0.006
             settled = (goal - tip_pos()).norm(dim=-1) < 0.0008
             if t_in > 10:
-                pos_off[:] = (pos_off + 0.25 * (goal - tip_pos())).clamp(-0.12, 0.12)
-                learn_tilt(0.1)
+                pos_off[:] = (pos_off + 0.1 * (goal - tip_pos())).clamp(-0.12, 0.12)
+                learn_tilt(0.05)
             psi_cmd[:] = spin_of(key.data.root_quat_w) + clock_err()
             tp, tq = hand_for_tip(goal + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, PICK_W)
@@ -822,7 +825,7 @@ def main() -> None:
             if s >= 1.0:
                 want = grip_pt.clone()
                 want[:, 2] += HOVER_CLEAR
-                pos_off[:] = (pos_off + 0.3 * (want - pad_centre())).clamp(-0.12, 0.12)
+                pos_off[:] = (pos_off + 0.12 * (want - pad_centre())).clamp(-0.12, 0.12)
             goal = wp_p + pos_off
             act = servo(glide_from_p + (goal - glide_from_p) * s, wp_q, STRADDLE_W)
             pad_err = (pad_centre()[:, 0:2] - grip_pt[:, 0:2]).norm(dim=-1)
@@ -835,7 +838,7 @@ def main() -> None:
             wp_p[:] = grip_pt
             wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + HOVER_CLEAR * (1.0 - s)
             if s >= 1.0:
-                pos_off[:] = (pos_off + 0.25 * (grip_pt - pad_centre())).clamp(-0.12, 0.12)
+                pos_off[:] = (pos_off + 0.12 * (grip_pt - pad_centre())).clamp(-0.12, 0.12)
             act = servo(wp_p + pos_off, wp_q, STRADDLE_W)
             pad_on = (pad_centre() - grip_pt).norm(dim=-1) < 0.003
             if (t_in >= 68 and bool(pad_on.all())) or t_in >= 2 * WP_TIMEOUT:
@@ -966,8 +969,8 @@ def main() -> None:
             ub = up_axis_of(bolt.data.root_quat_w)
             kp = bolt.data.root_pos_w + ub * (SOCKET_MOUTH_Z + LIFT_CLEAR)
             if bool(rw_arrived.all()) and t_in % 2 == 0:  # settled free air: re-learn tip bias
-                pos_off[:] = (pos_off + 0.2 * ((kp - tip_pos()))).clamp(-0.12, 0.12)
-                learn_tilt(0.1)
+                pos_off[:] = (pos_off + 0.1 * ((kp - tip_pos()))).clamp(-0.12, 0.12)
+                learn_tilt(0.05)
             tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, SCREW_W)
             # the reinsert only gets a sub-clearance start: xy on the bore axis to half the
