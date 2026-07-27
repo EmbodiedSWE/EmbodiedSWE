@@ -241,12 +241,12 @@
         <li class="hot">
           <div class="dot">3</div>
           <div class="card"><span class="freq">once per run</span><b>Run the agent</b>
-          <p>A disposable container: the world read-only, one writable workspace, guarded network. The prompt is assembled here — hints that ease the task, rules that disclose what the build blocked. At the deadline the container dies; the workspace survives.</p></div>
+          <p>A disposable container: the world read-only, one writable workspace, guarded network. The prompt is assembled here — hints that ease the task, rules that disclose what the build blocked; the agent is told its wall-clock budget. Along the way it runs <code>submit</code> to freeze progress snapshots (the harness can also auto-snapshot on a timer); each is stamped with the tokens and wall clock spent so far. At the deadline the container dies; the workspace and submissions survive.</p></div>
         </li>
         <li class="hot">
           <div class="dot">4</div>
-          <div class="card"><span class="freq">once per delivery</span><b>Grade</b>
-          <p>The delivered <code>solve.py</code> is replayed in a second isolated container — the same world (its restrictions still bind), plus the private grader, no network. The agent may do anything during its run; only what passes here counts.</p></div>
+          <div class="card"><span class="freq">once per submission</span><b>Grade</b>
+          <p>Each frozen submission — and the final <code>solution/</code> — replays in a fresh grading container: the same world the agent had (its restrictions still bind) plus the suite's private grader, which no agent ever sees. Every grade pairs the score with the spend pinned when that snapshot was frozen, so a run becomes a <b>score-vs-cost curve</b> — graded whenever the GPU is free.</p></div>
         </li>
       </ol>
 
@@ -268,6 +268,9 @@ python3 eval/scripts/build_env.py --name bulb_fable --stage bulb:franka
 #     credential from `claude setup-token` — or export ANTHROPIC_API_KEY instead</i>
 export CLAUDE_CODE_OAUTH_TOKEN=…
 python3 eval/scripts/run_agent.py experiments/bulb_fable --model claude-fable-5 --budget-min 120
+<i># the agent is told its budget; `submit` freezes graded-later snapshots into
+# runs/&lt;run&gt;/submissions/ — add --auto-submit-min 20 to also snapshot on a timer
+# (and once at the end); each is cost-pinned for score-vs-token curves</i>
 
 <i># 4 · watch live — artifacts land in experiments/bulb_fable/runs/&lt;r&gt;/
 #     deliverable: workspace/solution/solve.py · prompt: task/ · record: run.json</i>
@@ -511,11 +514,24 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
 # feedback anytime. Note: interactive turns wait for a human, so timings and
 # budgets from these sessions are not comparable with run_agent results.</i></div>
 
+      <h3>Submissions — the score-vs-cost curve</h3>
+      <p>The agent is told its wall-clock budget in its instructions, and freezes progress snapshots with <code>submit</code> whenever the solution is worth grading (auto-numbered into <code>/submissions</code>, outside the workspace). The launcher stamps each snapshot with the wall clock and transcript position at that moment — pinning what it <em>cost</em> — and <code>--auto-submit-min N</code> adds harness-side snapshots on a timer plus one at the end, skipped when nothing changed. Grade them later, one by one, without touching a live run's GPU: the pinned spend makes the curve identical whenever you grade.</p>
+
+      <h3>Anatomy of a finished run</h3>
+      <div class="block">runs/&lt;r&gt;/
+├─ task/            <i>the assembled prompt (mounted ro at /task)</i>
+├─ workspace/       <i>everything the agent made; solution/ = the final delivery</i>
+├─ submissions/     <i>frozen snapshots, each stamped with submitted.json (wall clock · transcript position)</i>
+├─ grades/&lt;name&gt;/   <i>one folder per grade — verdict, curve, frames (§06)</i>
+├─ curve.json       <i>written by run_grade --all: (spend, score) across all grades</i>
+└─ run.json         <i>the launch record; container.log = raw agent output</i></div>
+
       <h3>The container contract — what the agent sees</h3>
       <div class="mount">
         <div class="h">stages/01_…/bench/</div><div class="a">→ ro</div><div class="c"><b>/bench</b> <span>import robobench = this tree, nothing else</span></div>
         <div class="h">runs/&lt;r&gt;/task/</div><div class="a">→ ro</div><div class="c"><b>/task</b> <span>the per-run prompt folder (instructions · task · rules · hints)</span></div>
-        <div class="h">runs/&lt;r&gt;/workspace/</div><div class="a">↔ rw</div><div class="c"><b>/workspace</b> <span>the only writable dir; visible on the host live</span></div>
+        <div class="h">runs/&lt;r&gt;/workspace/</div><div class="a">↔ rw</div><div class="c"><b>/workspace</b> <span>the agent's working dir; visible on the host live</span></div>
+        <div class="h">runs/&lt;r&gt;/submissions/</div><div class="a">↔ rw</div><div class="c"><b>/submissions</b> <span>progress snapshots frozen by <code>submit</code>, graded later</span></div>
         <div class="h">docker volume rb-ovcache</div><div class="a">↔ rw</div><div class="c"><b>/ovcache</b> <span>shared shader cache</span></div>
         <div class="full">baked in the image, not mounted: /opt/venv (Isaac) · agent CLIs — and nothing of the repo</div>
       </div>
@@ -531,6 +547,14 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
       <div class="block">python3 eval/scripts/run_grade.py experiments/&lt;exp&gt; --run &lt;run&gt; [--grade &lt;name&gt;]
 <i># grades runs/&lt;run&gt;/workspace/solution/solve.py → runs/&lt;run&gt;/grades/&lt;name&gt;/
 # a run can be graded many times; the name defaults to a timestamp</i>
+
+python3 eval/scripts/run_grade.py experiments/&lt;exp&gt; --run &lt;run&gt; --submission &lt;snap&gt;
+<i># grade one interim snapshot the agent froze with `submit` — its wall clock and
+# token usage at submission time land in grade.json</i>
+
+python3 eval/scripts/run_grade.py experiments/&lt;exp&gt; --run &lt;run&gt; --all
+<i># the curve: grade every UNgraded submission + the final solution, one container
+# at a time (already-graded are skipped — rerun to resume), then runs/&lt;run&gt;/curve.json</i>
 
 python3 eval/scripts/run_grade.py experiments/&lt;exp&gt; --solution &lt;dir&gt; --out &lt;dir&gt;
 <i># any explicit delivery
@@ -552,7 +576,7 @@ python3 eval/scripts/run_grade.py experiments/&lt;exp&gt; --solution &lt;dir&gt;
 <i># builds viewer.html into the grade folder — frames on one side, the score
 # curve + live rubric bars on the other, synced on sim time</i></div>
 
-      <p class="note">Graders live in <code>robobench/suites/&lt;suite&gt;/grader/</code>, one module per scene in its <code>GRADERS</code> dict. A new grader = a docstring + a weighted <code>RUBRIC</code> + one method per stage. Session cost/tokens come from <code>collect_metrics.py</code>, not the grade.</p>
+      <p class="note">Graders live in <code>robobench/suites/&lt;suite&gt;/grader/</code>, one module per scene in its <code>GRADERS</code> dict. A new grader = a docstring + a weighted <code>RUBRIC</code> + one method per stage. The spend behind each delivery (<code>eval/grader/collect_spend.py</code>) lands in its <code>grade.json</code>.</p>
     </section>
 
   </main>

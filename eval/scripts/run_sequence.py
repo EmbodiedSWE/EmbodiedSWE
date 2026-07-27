@@ -121,6 +121,7 @@ def main() -> None:
     for i, (r, stage) in enumerate(zip(records, stages)):
         stage_run = seq_dir / r["dir"]
         workspace = stage_run / "workspace"
+        submissions = stage_run / "submissions"
         stage_rules = list(rules)  # transfer_experience applies to every stage (it reads AND writes)
         facts = {"set_states": r["set_states"], "control_mode_frozen": r["control_mode_frozen"]}
 
@@ -132,6 +133,7 @@ def main() -> None:
             facts=facts,
             hints=hints,
             rules=stage_rules,
+            budget_min=budget_min,
             carryover=i > 0,
         )
         task_files = {
@@ -146,6 +148,7 @@ def main() -> None:
             "-v", f"{stage / 'bench'}:/bench:ro",
             "-v", f"{task_dir}:/task:ro",
             "-v", f"{workspace}:/workspace",
+            "-v", f"{submissions}:/submissions",
             "-v", "rb-ovcache:/ovcache",
             "-e", f"AGENT={agent}",
         ]
@@ -163,6 +166,7 @@ def main() -> None:
             continue
 
         seed_workspace(workspace, prev_ws)
+        submissions.mkdir(parents=True)
         started = datetime.now(timezone.utc)
         subprocess.run(cmd, check=True)
         print(f"[{r['dir']}] running: {cname}  (budget {budget_min} min)"
