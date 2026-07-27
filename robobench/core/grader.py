@@ -104,9 +104,9 @@ class BaseGrader(ABC):
         return rec
 
     def verdict(self) -> tuple[bool, float]:
-        """(success, score) — no stepping; the harness settles first.
-        success = the authoritative test on the final, settled state;
-        score = the highest progress recorded over the run."""
+        """(success, score) — a pure read, no stepping. success = the
+        authoritative test on the final state; score = the highest progress
+        recorded over the run."""
         peak = max((r["progress"] for r in self.history), default=self.progress())
         return self.check_success(), peak
 

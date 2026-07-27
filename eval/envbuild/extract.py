@@ -40,6 +40,9 @@ def minimal_tree(dst: Path, suite: str, scene: str, robot: str, keep_smokes: boo
             skip |= {n for n in names if (d / n).is_dir() and n != suite}
         if d.name == suite and d.parent == SRC / "suites" and not keep_smokes:
             skip |= {n for n in names if n == "smokes"}
+        # graders are privileged: never in an agent-facing tree, no opt-out
+        if d.parent == SRC / "suites":
+            skip |= {n for n in names if n == "grader"}
         if d == SRC / "robots" and "assets" in names:
             skip.add("assets")
         if d == SRC / "suites" / suite and "assets" in names:
