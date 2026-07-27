@@ -269,16 +269,17 @@ def main() -> None:
     table_z = board_z - sc.cfg.case_lift
 
     # ----- camera: a two-anchor shot blended by the key's trip toward the case. Both anchors sit
-    # SOUTH-WEST of the work, looking back over it toward the east base — the gripper is always
-    # the nearest arm segment to the camera — and high enough to see over the case walls.
+    # SOUTH-EAST of the work, looking back over it toward the WEST base — the gripper is always
+    # the nearest arm segment to the camera, never occluded by the arm's own body — and high
+    # enough to see over the case walls and keep the crank in frame at the far holes.
     cam_pose = None
     if cam is not None:
         p0 = case_pos[0]
         k0 = key.data.root_pos_w[0]
-        pick_eye = torch.tensor([float(k0[0]) - 0.42, float(k0[1]) - 0.28, float(p0[2]) + 0.42], device=dev)
-        pick_tgt = torch.tensor([float(k0[0]), float(k0[1]) + 0.10, float(p0[2]) + 0.10], device=dev)
-        ins_eye = torch.tensor([float(p0[0]) - 0.48, float(p0[1]) - 0.42, float(p0[2]) + 0.62], device=dev)
-        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]), float(p0[2]) + 0.12], device=dev)
+        pick_eye = torch.tensor([float(k0[0]) + 0.44, float(k0[1]) - 0.30, float(p0[2]) + 0.36], device=dev)
+        pick_tgt = torch.tensor([float(k0[0]), float(k0[1]) + 0.02, float(p0[2]) + 0.10], device=dev)
+        ins_eye = torch.tensor([float(p0[0]) + 0.42, float(p0[1]) - 0.46, float(p0[2]) + 0.66], device=dev)
+        ins_tgt = torch.tensor([float(p0[0]) - 0.04, float(p0[1]), float(p0[2]) + 0.10], device=dev)
         trip = float((k0[0:2] - p0[0:2]).norm())
         cam_s = 0.0
 
