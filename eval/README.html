@@ -214,7 +214,7 @@
       <a href="#docker"><span class="num">03</span>Docker images</a>
       <a href="#experiment"><span class="num">04</span>Experiment folder</a>
       <a href="#run"><span class="num">05</span>Run experiments</a>
-      <a href="#grade"><span class="num">06</span>Auto-grade</a>
+      <a href="#grade"><span class="num">06</span>Grade</a>
     </div>
   </div>
 </nav>
@@ -243,10 +243,10 @@
           <div class="card"><span class="freq">once per run</span><b>Run the agent</b>
           <p>A disposable container: the world read-only, one writable workspace, guarded network. The prompt is assembled here — hints that ease the task, rules that disclose what the build blocked. At the deadline the container dies; the workspace survives.</p></div>
         </li>
-        <li class="open">
+        <li class="hot">
           <div class="dot">4</div>
-          <div class="card"><span class="freq">per submission · open</span><b>Auto-grade</b>
-          <p>The submitted solution is replayed in a second isolated container — the exact same world, plus the private verifiers. The agent may do anything during its run; only what passes here counts. Details still undecided.</p></div>
+          <div class="card"><span class="freq">once per delivery</span><b>Grade</b>
+          <p>The delivered <code>solve.py</code> is replayed in a second isolated container — the same world (its restrictions still bind), plus the private grader, no network. The agent may do anything during its run; only what passes here counts.</p></div>
         </li>
       </ol>
 
@@ -277,7 +277,7 @@ tail -f experiments/bulb_fable/runs/&lt;r&gt;/workspace/.agent/transcript.jsonl<
       <h3>What keeps it honest</h3>
       <div class="facts">
         <div class="fact"><b>Tasks come from registered, verified configs</b> Every registered scene–robot pairing has been solved at least once, so an agent is never handed an impossible world.</div>
-        <div class="fact"><b>Nothing to cheat with</b> The container holds no solutions, no verifiers, no demo scripts; the benchmark is read-only and the network reaches only the model API and the package index.</div>
+        <div class="fact"><b>Nothing to cheat with</b> The container holds no solutions, no graders, no demo scripts; the benchmark is read-only and the network reaches only the model API and the package index.</div>
       </div>
     </section>
 
@@ -522,11 +522,30 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
       <p class="note">The repo, your experiments, solutions, and .git do not exist inside the container. <code>run_agent.py</code> is open-network for development; measured runs go through <code>compose.agent.yaml</code>, whose egress allowlist admits only the model API and the package index (GitHub blocked).</p>
     </section>
 
-    <!-- 06 AUTO-GRADE -------------------------------------------------- -->
+    <!-- 06 GRADE -------------------------------------------------- -->
     <section id="grade" hidden>
-      <h2><span class="num">06</span>Auto-grade <span class="pill tbd">not built yet</span></h2>
-      <p class="lede">The shape is decided; the details are deliberately not. What is fixed: grading replays the submitted solution in a second isolated container — the exact same world as the agent's, plus the private verifiers, which never appear in the agent's container. The agent may do anything during its run; only what passes the replay counts.</p>
-      <p class="note">Verifier design, metrics, and scheduling are open. Runs archive everything raw so no option is closed.</p>
+      <h2><span class="num">06</span>Grade</h2>
+      <p class="lede">The delivered <code>solve.py</code> replays in a second isolated container: the <b>same image and read-only world</b> the agent had, plus the suite's private grader — never in any agent-facing tree. No credentials; <code>--network none</code> grades fully offline. One trajectory per grade for now.</p>
+
+      <h3>Grade a delivery</h3>
+      <div class="block">python3 eval/scripts/run_grade.py experiments/&lt;exp&gt; --run &lt;run&gt;
+<i># grades runs/&lt;run&gt;/workspace/solution/solve.py → runs/&lt;run&gt;/grade/</i>
+
+python3 eval/scripts/run_grade.py experiments/&lt;exp&gt; --solution &lt;dir&gt; --out &lt;dir&gt;
+<i># any explicit delivery
+# flags: --gpu · --network · --budget-min · --dry-run</i></div>
+
+      <h3>The graded run</h3>
+      <p>Fresh env, <b>the grader's</b> reset — <code>solve()</code> gets a <code>GradedEnv</code>: same surface, but every step is scored into the curve, and <code>reset</code> / <code>set_states</code> raise. When it returns, the verdict reads the final state.</p>
+
+      <h3>Artifacts — &lt;out&gt;/</h3>
+      <div class="mount">
+        <div class="h">verdict.json</div><div class="a">→</div><div class="c"><b>the verdict</b> <span>success · score (peak progress) · solve wall/sim time</span></div>
+        <div class="h">progress.jsonl</div><div class="a">→</div><div class="c"><b>the curve</b> <span>one record per step: sim_time_s · wall_s · progress · per-stage values</span></div>
+        <div class="h">grade.json · container.log</div><div class="a">→</div><div class="c"><b>the record</b> <span>launch parameters + raw output</span></div>
+      </div>
+
+      <p class="note">Graders live in <code>robobench/suites/&lt;suite&gt;/grader/</code>, one module per scene in its <code>GRADERS</code> dict. A new grader = a docstring + a weighted <code>RUBRIC</code> + one method per stage. Session cost/tokens come from <code>collect_metrics.py</code>, not the grade.</p>
     </section>
 
   </main>

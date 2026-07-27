@@ -1,4 +1,4 @@
-"""Grader for the bulb scene: every bulb seated, and it must hold hands-off.
+"""Grader for the bulb scene: every bulb seated.
 
 Rubric stages (weights and modes live in RUBRIC):
     picked    fraction of bulbs ever held aloft — lifted AND quasi-static,
@@ -7,7 +7,7 @@ Rubric stages (weights and modes live in RUBRIC):
     engaged   fraction of bulbs on/in a socket bore
     threaded  mean thread depth from free-rest to seat (the scene's own
               glow band); unengaged bulbs count 0
-Success is the scene's `seated()`, read after the harness's settle window.
+Success is the scene's `seated()`, read when the delivery finishes.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from robobench.suites.assembly.scenes.bulb_assembly import BulbAssemblyScene
 
 
 class BulbAssemblyGrader(BaseGrader):
-    """Every bulb seated (threaded to depth, on axis) and holding hands-off."""
+    """Every bulb seated — threaded to depth, on the socket axis."""
 
     SCENE = BulbAssemblyScene
     RUBRIC = (("picked", 0.2, "once"), ("engaged", 0.2), ("threaded", 0.6))
