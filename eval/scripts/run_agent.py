@@ -81,6 +81,9 @@ def main() -> None:
     ap.add_argument("--agent", default=None, choices=["claude", "codex"])
     ap.add_argument("--model", default=None, help="model override (MODEL env for the agent CLI)")
     ap.add_argument("--budget-min", type=float, default=None, help="wall-clock kill budget (minutes)")
+    ap.add_argument("--auto-submit-min", type=float, default=None,
+                    help="also snapshot solution/ as a submission every N minutes (skipped when "
+                         "unchanged) — uniform curve sampling even if the agent never submits")
     ap.add_argument("--gpu", default=None)
     ap.add_argument("--run", default=None, help="run name (default: <agent>_<timestamp>)")
     ap.add_argument("--dry-run", action="store_true",
@@ -103,6 +106,7 @@ def main() -> None:
     hints = list(cfg.get("hints") or [])   # condition only — no CLI override
     rules = list(cfg.get("rules") or [])
     budget_min = float(pick(args.budget_min, "budget_min") or 240)
+    auto_submit_min = pick(args.auto_submit_min, "auto_submit_min")
 
     exp = Path(exp_arg).resolve()
     stage = single_stage(exp)
@@ -130,12 +134,14 @@ def main() -> None:
         facts=facts,
         hints=hints,
         rules=rules,
+        budget_min=budget_min,
     )
     task_files = {
         str(p.relative_to(task_dir)): hashlib.sha256(p.read_bytes()).hexdigest()
         for p in sorted(task_dir.rglob("*")) if p.is_file()
     }
     workspace = run_dir / "workspace"
+    submissions = run_dir / "submissions"
 
     model = pick(args.model, "model")
     gpu = pick(args.gpu, "gpu", "0")
@@ -148,6 +154,7 @@ def main() -> None:
         "-v", f"{stage / 'bench'}:/bench:ro",
         "-v", f"{task_dir}:/task:ro",
         "-v", f"{workspace}:/workspace",
+        "-v", f"{submissions}:/submissions",
         "-v", "rb-ovcache:/ovcache",
         "-e", f"AGENT={agent}",
     ]
@@ -168,20 +175,94 @@ def main() -> None:
         sys.exit(f"no credential in env — set one of {CRED_VARS}")
 
     workspace.mkdir(parents=True)
+    submissions.mkdir(parents=True)
     started = datetime.now(timezone.utc)
     subprocess.run(cmd, check=True)
     print(f"running: container {cname}\n  watch:  tail -f {workspace}/.agent/transcript.jsonl"
           f"\n  peek:   docker exec -it {cname} bash\n  budget: {budget_min} min")
 
+    import shutil
+    import time
+
+    t0 = time.time()
+
+    def transcript_lines() -> int:
+        transcript = workspace / ".agent" / "transcript.jsonl"
+        return sum(1 for _ in transcript.open()) if transcript.exists() else 0
+
+    auto_state = {"last": t0, "hash": None}
+
+    def auto_submit() -> None:
+        """Snapshot solution/ on the harness's clock — one curve point every
+        --auto-submit-min even if the agent never submits. Skips unchanged
+        solutions; stamps submitted.json itself (with auto: true)."""
+        sol = workspace / "solution"
+        if not (sol / "solve.py").exists():
+            return
+        h = hashlib.sha256()
+        for p in sorted(sol.rglob("*")):
+            if p.is_file():
+                h.update(str(p.relative_to(sol)).encode())
+                h.update(p.read_bytes())
+        digest = h.hexdigest()
+        if digest == auto_state["hash"]:
+            return
+        nums = [int(d.name) for d in submissions.iterdir() if d.is_dir() and d.name.isdigit()]
+        name = f"{max(nums, default=0) + 1:02d}"
+        tmp = submissions / f".tmp_{name}"
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.copytree(sol, tmp)
+        (tmp / "submitted.json").write_text(json.dumps({
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "wall_s": round(time.time() - t0, 1),
+            "transcript_lines": transcript_lines(),
+            "auto": True,
+        }, indent=2) + "\n")
+        tmp.rename(submissions / name)
+        auto_state["hash"] = digest
+        print(f"auto-submission: {name}  (wall {round(time.time() - t0)}s)", flush=True)
+
+    def scan_submissions() -> None:
+        """Stamp new submission snapshots with wall clock + transcript position
+        — the pointers that later price each one in tokens (submissions are
+        atomic: `submit` mv's completed copies into place)."""
+        if not submissions.is_dir():
+            return
+        for d in sorted(submissions.iterdir()):
+            if not d.is_dir() or d.name.startswith(".") or (d / "submitted.json").exists():
+                continue
+            lines = transcript_lines()
+            (d / "submitted.json").write_text(json.dumps({
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "wall_s": round(time.time() - t0, 1),
+                "transcript_lines": lines,
+            }, indent=2) + "\n")
+            print(f"submission: {d.name}  (wall {round(time.time() - t0)}s, "
+                  f"{lines} transcript lines)", flush=True)
+
     status, exit_code = "completed", None
-    try:
-        r = subprocess.run(["docker", "wait", cname], capture_output=True, text=True,
-                           timeout=budget_min * 60, check=True)
-        exit_code = int(r.stdout.strip())
-    except subprocess.TimeoutExpired:
-        status = "timeout"
-        print(f"budget reached — stopping {cname}")
-        subprocess.run(["docker", "stop", "-t", "30", cname], check=False)
+    while True:
+        r = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}},{{.State.ExitCode}}",
+                            cname], capture_output=True, text=True)
+        scan_submissions()
+        if r.returncode != 0:
+            break  # container vanished
+        running, _, code = r.stdout.strip().partition(",")
+        if running != "true":
+            exit_code = int(code)
+            break
+        if auto_submit_min and time.time() - auto_state["last"] >= float(auto_submit_min) * 60:
+            auto_state["last"] = time.time()
+            auto_submit()
+        if time.time() - t0 > budget_min * 60:
+            status = "timeout"
+            print(f"budget reached — stopping {cname}")
+            subprocess.run(["docker", "stop", "-t", "30", cname], check=False)
+            break
+        time.sleep(5)
+    scan_submissions()  # catch a submission from the final seconds
+    if auto_submit_min:
+        auto_submit()  # the final state, cost-pinned — the curve's last point
 
     logs = subprocess.run(["docker", "logs", cname], capture_output=True)
     (run_dir / "container.log").write_bytes(logs.stdout + logs.stderr)

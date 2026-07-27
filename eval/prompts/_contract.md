@@ -49,6 +49,14 @@ task by stepping forward. During grading, `env.reset()`, `env.set_states(...)`,
 and any other shortcut that writes sim state directly are blocked — a graded
 run is: reset (not yours) → your `solve` steps → verification.
 
+Whenever your solution reaches a state worth grading — a first working
+grasp, any measurable improvement — run `submit`: it freezes a numbered
+snapshot of `solution/` under `/submissions/` (its own folder, outside
+your workspace) and returns immediately; keep working. Each submission is graded and becomes one point
+on your score-versus-cost curve, so submit early and often — an unsubmitted
+improvement earns nothing if the session ends before the next one. Your
+final `solution/` always counts as the last submission.
+
 - Keep module level import-safe: do not launch the app or build an env at
   import time (the grader imports your file inside its own running app).
 - For your own iteration, a `if __name__ == "__main__":` block that builds an

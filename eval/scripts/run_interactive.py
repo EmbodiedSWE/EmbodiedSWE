@@ -86,6 +86,8 @@ def main() -> None:
     )
     workspace = run_dir / "workspace"
     workspace.mkdir(parents=True)
+    submissions = run_dir / "submissions"
+    submissions.mkdir(parents=True)
 
     cname = f"rb_{exp.name}_{run_name}"
     cmd = [
@@ -94,6 +96,7 @@ def main() -> None:
         "-v", f"{stage / 'bench'}:/bench:ro",
         "-v", f"{task_dir}:/task:ro",
         "-v", f"{workspace}:/workspace",
+        "-v", f"{submissions}:/submissions",
         "-v", "rb-ovcache:/ovcache",
     ]
     if args.model:

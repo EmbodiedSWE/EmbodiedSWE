@@ -37,6 +37,12 @@ _TRANSFER_NOTE = (
     "experiment. Reuse whatever helps — start with `experiences/` if present."
 )
 
+_BUDGET_NOTE = (
+    "This session has a hard wall-clock budget of {minutes:g} minutes — at the "
+    "deadline the container is stopped, keeping only your files. Budget your "
+    "time; submit progress before it runs out."
+)
+
 
 def list_hints() -> list[str]:
     return sorted(p.stem for p in HINTS_DIR.glob("*.md"))
@@ -78,6 +84,7 @@ def render_task_dir(
     hints: list[str] | tuple[str, ...] = (),
     rules: list[str] | tuple[str, ...] = (),
     carryover: bool = False,
+    budget_min: float | None = None,
 ) -> Path:
     """Write the complete /task folder for one run.
 
@@ -116,6 +123,8 @@ def render_task_dir(
     # instructions.md — the contract verbatim (it explains the /task folder
     # semantics generically), plus the transfer note when a workspace carries over
     contract = (PROMPTS_DIR / "_contract.md").read_text().strip() + "\n"
+    if budget_min:
+        contract += "\n" + _BUDGET_NOTE.format(minutes=budget_min) + "\n"
     if carryover:
         contract += "\n" + _TRANSFER_NOTE + "\n"
     (task_dir / "instructions.md").write_text(contract)
