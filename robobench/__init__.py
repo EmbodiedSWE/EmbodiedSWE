@@ -1,10 +1,10 @@
 """robobench — a long-horizon robot benchmark for code-generating agents (Isaac Lab / PhysX).
 
 A collection of robot task-family **suites** that probe whether an agent can few-shot solve
-multi-step problems. Each suite (the first is `robobench.suites.assembly` — IKEA-style furniture
-screw-assembly) supplies its own scenes / assets and composes the shared `robobench.core` machinery
+multi-step problems. Each suite (the first is `robobench.suites.assembly` — everyday assembly
+tasks on real threaded contact) supplies its own scenes / assets and composes the shared `robobench.core` machinery
 + `robobench.robots` embodiments into an open, GPU-batched env. There is no task layer — each scene
-*is* one task (goal + optional verifier). See ../CLAUDE.md.
+*is* one task (goal + optional grader). See ../CLAUDE.md.
 
 Import order: create `AppLauncher` FIRST; only then import anything that touches `isaaclab.sim`.
 `robobench.core.registries` and the base interfaces are import-light (safe without the app).

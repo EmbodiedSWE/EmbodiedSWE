@@ -6,7 +6,7 @@ never edits the other. Import-light on purpose (no isaaclab), so it's safe to im
 without `AppLauncher` (e.g. to list what's available, or in tests).
 
 There is deliberately no `TASKS` registry: there is no task layer. Each scene *is* one task — it
-carries its own goal (`scene.describe()`); success criteria live in an optional, hidden Verifier.
+carries its own goal (`scene.describe()`); success criteria live in an optional, hidden Grader.
 """
 
 from __future__ import annotations

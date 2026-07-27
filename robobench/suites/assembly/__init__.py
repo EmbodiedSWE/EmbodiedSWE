@@ -1,10 +1,11 @@
-"""assembly suite — IKEA-style furniture screw-assembly (a table + four threaded legs).
+"""assembly suite — everyday assembly tasks built on real threaded/fastened contact.
 
-The first robobench suite. Holds its `scenes/` (each scene *is* a task — it carries its own goal
-and an optional verifier; e.g. `assemble_table`, `screw_one_leg`), the furniture `assets/`, and
-concrete `configs/`; it reuses `robobench.core` + `robobench.robots`. Built by lifting working
-components out of `../../../legacy/four_leg_env.py` (the weld lifecycle) and `build_assets.py` /
-`table.usd`.
+The first robobench suite: screwing a light bulb into its socket, threading a nut
+onto a bolt, driving an allen bolt, assembling an IKEA-style table (four threaded
+legs), seating a GPU / populating a PC motherboard, and fastening an SO101 robot
+arm together. Each scene under `scenes/` *is* a task — it carries its own goal
+(`describe()`); `assets/` holds the parts, `configs/` the registered presets.
+Reuses `robobench.core` + `robobench.robots`.
 """
 
 from . import scenes  # noqa: F401  (registers the suite's scenes into robobench.core.SCENES)
