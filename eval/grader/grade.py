@@ -38,9 +38,12 @@ def load_graders(grader_dir: Path) -> dict:
 
 
 def load_solve(path: str):
-    """Import the delivery and hand back its solve(env)."""
+    """Import the delivery's entry point and hand back its solve(env). The
+    whole solution folder is the deliverable: its dir goes on sys.path so
+    solve.py's sibling modules import normally."""
     import importlib.util
 
+    sys.path.insert(0, str(Path(path).parent))
     spec = importlib.util.spec_from_file_location("solve", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

@@ -370,9 +370,9 @@ python3 eval/scripts/build_env.py --name embody_seq --stage nut_thread:franka --
 # workspace (minus .agent/ telemetry) — continuity is files, never context</i>
 python3 eval/scripts/run_sequence.py experiments/screw_seq --model claude-fable-5 --config eval/prompts/configs/transfer.yaml
 
-<i># disclosed variant:   condition selects leave_handoff — early stages write HANDOFF.md
+<i># disclosed variant:   condition selects transfer_experience — stages share /workspace/experiences/
 #                  (auto-dropped on the final stage)
-# undisclosed variant: same command, condition without leave_handoff
+# undisclosed variant: same command, condition without transfer_experience
 # baseline:        build nut_thread:franka alone and run it cold —
 #                  equal tree hashes prove the worlds matched</i></div>
 
@@ -485,7 +485,7 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
         <thead><tr><th>where</th><th>what</th><th>current contents</th></tr></thead>
         <tbody>
           <tr><td class="name">configs/</td><td>run conditions — which hints/rules a run gets</td><td><code>default</code> · <code>interactive</code> · <code>nosnap</code> · <code>custom_controller</code> · <code>transfer</code></td></tr>
-          <tr><td class="name">rules/</td><td>binding disclosures, one file each</td><td><code>autonomous_operation</code> · <code>leave_handoff</code> · <code>no_set_states</code>* · <code>frozen_controller</code>*</td></tr>
+          <tr><td class="name">rules/</td><td>binding disclosures, one file each</td><td><code>autonomous_operation</code> · <code>transfer_experience</code> · <code>no_set_states</code>* · <code>frozen_controller</code>*</td></tr>
           <tr><td class="name">hints/</td><td>optional guidance, one file each</td><td><code>save_snapshot</code>* · <code>custom_controller</code>*</td></tr>
           <tr><td class="name">_contract.md</td><td>the fixed instructions every agent reads first</td><td>environment · /task semantics · solve(env) deliverable</td></tr>
         </tbody>
@@ -497,7 +497,7 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
 
 <i># one FRESH session per stage, strictly in order; budget applies per stage
 # stage N+1's workspace = a COPY of stage N's final workspace, minus .agent/ telemetry
-# the leave_handoff rule (if selected) is dropped automatically on the final stage
+# the transfer_experience rule (if selected) applies to every stage: read + write experiences/
 # artifacts: runs/&lt;seq&gt;/&lt;stage&gt;/{task,workspace,container.log,run.json} + sequence.json</i></div>
 
       <h3>Interactive — pair with the agent inside the sandbox</h3>
@@ -525,7 +525,7 @@ python3 eval/scripts/run_agent.py experiments/&lt;exp&gt; --config eval/prompts/
     <!-- 06 GRADE -------------------------------------------------- -->
     <section id="grade" hidden>
       <h2><span class="num">06</span>Grade</h2>
-      <p class="lede">The delivered <code>solve.py</code> replays in a second isolated container: the <b>same image and read-only world</b> the agent had, plus the suite's private grader — never in any agent-facing tree. No credentials; <code>--network none</code> grades fully offline. One trajectory per grade for now.</p>
+      <p class="lede">The delivered <code>solution/</code> (entry: <code>solve.py</code>) replays in a second isolated container: the <b>same image and read-only world</b> the agent had, plus the suite's private grader — never in any agent-facing tree. No credentials; <code>--network none</code> grades fully offline. One trajectory per grade for now.</p>
 
       <h3>Grade a delivery</h3>
       <div class="block">python3 eval/scripts/run_grade.py experiments/&lt;exp&gt; --run &lt;run&gt; [--grade &lt;name&gt;]
@@ -547,7 +547,11 @@ python3 eval/scripts/run_grade.py experiments/&lt;exp&gt; --solution &lt;dir&gt;
         <div class="h">grade.json · container.log</div><div class="a">→</div><div class="c"><b>the record</b> <span>launch parameters + raw output</span></div>
       </div>
 
-      <p class="note"><code>view_grade.py &lt;grade-dir&gt; --serve 8110</code> builds an interactive viewer into the grade folder — frames on one side, the score curve + live rubric bars on the other, synced on sim time.</p>
+      <h3>View a grade</h3>
+      <div class="block">python3 eval/scripts/view_grade.py experiments/&lt;exp&gt;/runs/&lt;run&gt;/grades/&lt;name&gt; --serve 8110
+<i># builds viewer.html into the grade folder — frames on one side, the score
+# curve + live rubric bars on the other, synced on sim time</i></div>
+
       <p class="note">Graders live in <code>robobench/suites/&lt;suite&gt;/grader/</code>, one module per scene in its <code>GRADERS</code> dict. A new grader = a docstring + a weighted <code>RUBRIC</code> + one method per stage. Session cost/tokens come from <code>collect_metrics.py</code>, not the grade.</p>
     </section>
 

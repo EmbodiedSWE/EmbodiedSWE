@@ -15,12 +15,13 @@ files, never by the agent's conversation):
              the stage's instructions carry the carryover note
 
 Every stage always runs — success is not machine-detectable until grading,
-and how partial artifacts transfer is part of the study. The 'leave_handoff'
-rule (if selected in the condition) is dropped on the final stage, where it
-would be a lie. Per-stage artifacts mirror run_agent's; sequence.json is the
-rollup. The no-transfer baseline needs no support here: build the later
-scene as its own single-stage world and run it cold — equal tree hashes
-prove the comparison fair.
+and how partial artifacts transfer is part of the study. The
+'transfer_experience' rule (if selected in the condition) applies to every
+stage: read /workspace/experiences/, maintain your own note there. Per-stage
+artifacts mirror run_agent's; sequence.json is the rollup. The no-transfer
+baseline needs no support here: build the later scene as its own
+single-stage world and run it cold — equal tree hashes prove the
+comparison fair.
 """
 
 from __future__ import annotations
@@ -40,7 +41,6 @@ from envbuild import prompts  # noqa: E402
 
 DEFAULT_IMAGE = "rb-l1-agent:2.1.216"
 CRED_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_API_KEY")
-HANDOFF_RULE = "leave_handoff"
 
 
 def stage_records(exp: Path) -> list[dict]:
@@ -118,11 +118,10 @@ def main() -> None:
 
     rollup = []
     prev_ws: Path | None = None
-    last = len(records) - 1
     for i, (r, stage) in enumerate(zip(records, stages)):
         stage_run = seq_dir / r["dir"]
         workspace = stage_run / "workspace"
-        stage_rules = [x for x in rules if not (i == last and x == HANDOFF_RULE)]
+        stage_rules = list(rules)  # transfer_experience applies to every stage (it reads AND writes)
         facts = {"set_states": r["set_states"], "control_mode_frozen": r["control_mode_frozen"]}
 
         task_dir = prompts.render_task_dir(

@@ -34,7 +34,7 @@ RULES_NEED = {
 
 _TRANSFER_NOTE = (
     "`/workspace` contains your files from the previous stage of this "
-    "experiment. Reuse whatever helps — start with `HANDOFF.md` if present."
+    "experiment. Reuse whatever helps — start with `experiences/` if present."
 )
 
 

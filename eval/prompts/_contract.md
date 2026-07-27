@@ -29,12 +29,19 @@ hints apply to this run.
 
 ## Deliverable
 
-Leave `/workspace/solution/solve.py` exposing:
+The deliverable is the whole `/workspace/solution/` folder. Its entry point
+is `solution/solve.py`, exposing:
 
 ```python
 def solve(env) -> None:
     ...
 ```
+
+Everything else in the folder ships with it — helper modules, calibration
+data, whatever `solve` needs. At grading time the folder is mounted
+read-only with `solve.py`'s directory on the import path, so plain sibling
+imports (`import helpers`) and data files read relative to `__file__` work;
+nothing outside `solution/` comes along.
 
 It will be graded separately: a fresh environment for the same task is built
 and reset elsewhere, then handed to your `solve`, which must complete the
@@ -48,8 +55,8 @@ run is: reset (not yours) → your `solve` steps → verification.
   env and calls `solve(env)` is a good pattern — during development anything
   goes; only the graded run has the restrictions above.
 
-Iterate as much as you need in `/workspace` — only `solution/solve.py` is
-the deliverable.
+Iterate as much as you need in `/workspace` — only `solution/` is the
+deliverable.
 
 ## Practical notes
 
