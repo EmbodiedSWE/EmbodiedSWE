@@ -33,9 +33,9 @@ The choreography works around two hard constraints:
 The bolt itself is staged HAND-STARTED, the way a person finger-spins a bolt two turns before
 reaching for the key: teleported upright over the hole, dropped to nest on the thread crests
 (which measures a valid depth<->yaw helix registration), then advanced along its own helix to
-2.5 turns deep — a thread-true pose by construction (a wrench-driven start strips crests under
-any misalignment) that must then HOLD unaided through a settle. A merely crest-nested bolt is
-pried loose by any insertion tap; the captured one holds against them. The robot's job — and
+2.5 turns deep — a thread-true pose by construction — and must then HOLD unaided through a
+settle. A merely crest-nested bolt is pried loose by any insertion tap; the captured one holds
+against them. The robot's job — and
 the verdict's measure — is everything from the key pick onward.
 
 Phases: show -> stage(drop/nest -> helix-set -> hold) -> pick(hover/down/close) -> lift -> erect -> carry ->
@@ -487,7 +487,9 @@ def main() -> None:
     cycles, picks, drops, insert_pecks = 0, 0, 0, 0
     pos_off = torch.zeros(n, 3, device=dev)   # INTEGRATED bias (desired - achieved, free air): the
     # OSC has no gravity compensation, so its realized pose sags configuration-dependently by
-    # several mm — commands near contact add this learned offset so the achieved pose lands true
+    # several mm — commands near contact add this learned offset so the achieved pose lands true.
+    # Every learning gain stays <= 0.12/step: the servo answers an offset ~5 ticks late, and a
+    # hotter integrator limit-cycles against that lag.
     tilt_bias = torch.zeros(n, 2, device=dev)  # the same for the shaft's LEAN (axis-angle xy)
     grip_freeze = torch.zeros(n, 2, device=dev)  # finger targets latched at release: freezing the
     # PD at the MEASURED positions decays the squeeze before the pads separate
@@ -535,10 +537,8 @@ def main() -> None:
                 prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
                 phase, marker = "stage_drop", i
         elif phase == "stage_drop":  # hands off: the bolt falls the 1.5 mm gap and nests on the
-            # crests, which MEASURES a valid (depth, yaw) helix registration — then advance it
-            # ALONG ITS OWN HELIX to the stage depth, a thread-true pose by construction (the
-            # sibling smoke's staging teleport, extended down the helix; a wrench-driven start
-            # strips crests under any misalignment — a 3 N press walked the bolt clean through).
+            # crests, which measures a valid (depth, yaw) helix registration — then advance it
+            # ALONG ITS OWN HELIX to the stage depth, a thread-true pose by construction.
             if t_in >= STAGE_SETTLE:
                 nest_depth[:] = depth()
                 dyaw = -2 * math.pi * (STAGE_DEPTH - nest_depth) / (PITCH_MM * 1e-3)
@@ -571,8 +571,6 @@ def main() -> None:
             s = smoothstep(t_in / WP_TIMEOUT)
             wp_q[:] = q_down(glide_yaw0 + _wrap(grip_yaw - glide_yaw0) * s)
             if s >= 1.0:  # arrived, free air: learn the pad-centre bias for the descent
-                # (gain SMALL: the servo answers an offset ~5 ticks late, and a hot integrator
-                # limit-cycles against that lag — the arm visibly hunts instead of settling)
                 want = grip_pt.clone()
                 want[:, 2] += HOVER_CLEAR
                 pos_off[:] = (pos_off + 0.12 * (want - pad_centre())).clamp(-0.12, 0.12)
@@ -670,8 +668,7 @@ def main() -> None:
             goal[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + INSERT_HOVER
             s = smoothstep(t_in / CARRY_STEPS)
             kp = glide_from_p + (goal - glide_from_p) * s
-            if s >= 1.0:  # small gains: two integrators (offset + lean) share this plant,
-                # and either one run hot swings the whole arm around the hover (see pick_hover)
+            if s >= 1.0:  # arrived, free air: learn the tip's pose bias + lean
                 pos_off[:] = (pos_off + 0.1 * (goal - tip_pos())).clamp(-0.12, 0.12)
                 learn_tilt(0.05)
             psi_cmd[:] = spin_of(key.data.root_quat_w) + clock_err()  # live trim: the staged
@@ -749,9 +746,9 @@ def main() -> None:
             # binds — a stable tip+wall+rim tripod — and the pads flank the shaft exactly along
             # that lean line (fixed at the pick, rigid through the weld) — so the key settles
             # ONTO a pad. The release therefore: unloads the press + torsion while still welded,
-            # then GLIDES the fingers open so the pad lowers the leaning key gently onto its bind
-            # instead of whipping it past (a step-open ejected it), dwells, and only then backs
-            # the hand straight out of the grip corridor and rises.
+            # then GLIDES the fingers open so the pad lowers the leaning key gently onto its
+            # bind, dwells, and only then backs the hand straight out of the grip corridor and
+            # rises.
             if t_in == 1:
                 grip_freeze[:] = art.data.joint_pos[:, fingers]
                 back_axis[:] = -quat_apply(hq, ez)  # -approach: straight back out of the grip
@@ -776,10 +773,6 @@ def main() -> None:
                     s3 = smoothstep((t_in - 95) / 35.0)
                     wp2[:, 2] = release_p[:, 2] + s3 * 0.10
                 act = servo(wp2, release_q, w)
-            if t_in % 10 == 0:
-                print(f"    [handoff {t_in:3d}] tip {float((tip_axial() - SOCKET_FLOOR_Z).mean()) * 1e3:+5.2f}mm "
-                      f"| lat {float(tip_lateral().max()) * 1e3:4.2f}mm | up {float(shaft_up().min()):+.3f} "
-                      f"| gap {float((art.data.joint_pos[:, fingers].sum(dim=-1)).mean()) * 1e3:4.1f}mm", flush=True)
             if t_in >= 135:
                 if bool(in_socket(0.0015).all()) and bool((shaft_up() > 0.90).all()):
                     if handoff_depth is None:
@@ -891,8 +884,8 @@ def main() -> None:
                 slip_armed[:] = False
                 peck_tries = 0
                 cycles += 1
-            # arm the slip watch only once the shaft reads vertical: righting a leaned key changes
-            # its READ spin without any true hex slip, which tripped the guard as a phantom
+            # arm the slip watch only once the shaft reads vertical: righting a leaned key
+            # changes its READ spin without any true hex slip
             newly_up = (shaft_up() > 0.995) & ~slip_armed
             stroke_slip0[:] = torch.where(newly_up, key_turn - bolt_turn, stroke_slip0)
             slip_armed |= newly_up
@@ -957,8 +950,8 @@ def main() -> None:
                 phase, marker = "retreat", i
         elif phase == "recock_rewind":  # swept, monotone spin glide the LONG way round — a plain
             # quat target would take the short path and wind joint 7 THROUGH its stop. Arrival is
-            # LATCHED; the hex-slip correction is a ONE-SHOT at arrival plus a gentle trickle —
-            # a fat per-step trim servo limit-cycles around the +-30 deg sector boundary.
+            # LATCHED; the hex-slip correction is a ONE-SHOT at arrival plus a gentle trickle
+            # (a per-step trim servo would limit-cycle around the +-30 deg sector boundary).
             if t_in == 1:
                 rw_arrived[:] = False
             newly_arr = ((rewind_tgt - psi_cmd) < 1e-6) & ~rw_arrived
