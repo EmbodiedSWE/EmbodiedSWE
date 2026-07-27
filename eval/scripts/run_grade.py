@@ -39,13 +39,17 @@ def single_stage(exp: Path) -> Path:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("exp", help="built experiment dir (from build_env.py)")
-    ap.add_argument("--run", help="grade this run's workspace/solution (out: runs/<run>/grade)")
+    ap.add_argument("--run", help="grade this run's workspace/solution (out: runs/<run>/grades/<grade>)")
+    ap.add_argument("--grade", default=None,
+                    help="name for this grade — a run can be graded many times (default: timestamped)")
     ap.add_argument("--solution", help="explicit solution dir containing solve.py (needs --out)")
-    ap.add_argument("--out", help="output dir (default: <exp>/runs/<run>/grade)")
+    ap.add_argument("--out", help="output dir (default: <exp>/runs/<run>/grades/<grade>)")
     ap.add_argument("--gpu", default="0")
     ap.add_argument("--network", default="bridge",
                     help="container network (assets are vendored, so --network none also works)")
     ap.add_argument("--budget-min", type=float, default=30, help="wall-clock kill budget (minutes)")
+    ap.add_argument("--render", action="store_true",
+                    help="render the run: <out>/frames/*.jpg + frames.jsonl + render.json")
     ap.add_argument("--dry-run", action="store_true", help="print the docker command and exit")
     args = ap.parse_args()
 
@@ -73,12 +77,13 @@ def main() -> None:
     if not (solution / "solve.py").is_file():
         sys.exit(f"no solve.py in {solution}")
 
-    out = Path(args.out).resolve() if args.out else exp / "runs" / args.run / "grade"
+    gname = args.grade or f"g_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    out = Path(args.out).resolve() if args.out else exp / "runs" / args.run / "grades" / gname
     if out.exists():
         sys.exit(f"refusing to overwrite existing {out}")
 
     name = args.run or solution.parent.name
-    cname = f"rb_grade_{exp.name}_{name}"
+    cname = f"rb_grade_{exp.name}_{name}_{gname}"
     cmd = [
         "docker", "run", "-d", "--name", cname,
         "--device", f"nvidia.com/gpu={args.gpu}", "--shm-size", "2g",
@@ -92,7 +97,7 @@ def main() -> None:
         "-v", "rb-ovcache:/ovcache",
         DEFAULT_IMAGE, "python", "/grader/grade.py",
         "--preset", preset, "--scene", scene,
-    ]
+    ] + (["--render"] if args.render else [])
 
     if args.dry_run:
         import shlex
@@ -119,7 +124,7 @@ def main() -> None:
     subprocess.run(["docker", "rm", "-f", cname], capture_output=True, check=False)
 
     (out / "grade.json").write_text(json.dumps({
-        "exp": str(exp), "stage": stage.name, "preset": preset,
+        "exp": str(exp), "stage": stage.name, "preset": preset, "grade": gname,
         "solution": str(solution), "image": DEFAULT_IMAGE, "gpu": args.gpu,
         "network": args.network, "budget_min": args.budget_min,
         "started": started.isoformat(timespec="seconds"),
