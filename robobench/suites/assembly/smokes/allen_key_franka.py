@@ -142,8 +142,8 @@ PRESS_LEAD = 0.004         # stroke press: command the tip this far below the li
 LIFT_CLEAR = 0.004         # recock lift: tip this far above the socket mouth (out of the hex)
 J7_GUARD = 2.6             # end a stroke when joint 7 exceeds this (limit 2.897 rad)
 J7_START = -2.1            # rewind aims joint 7 back here (leaves ~270 deg of stroke)
-STROKE_W = 1.2             # commanded stroke spin rate (rad/s), under the 1.455 rad/s action cap
-REWIND_W = 1.8             # rewind spin rate (rad/s), free air
+STROKE_W = 1.0             # commanded stroke spin rate (rad/s), under the 1.455 rad/s action cap
+REWIND_W = 1.4             # rewind spin rate (rad/s), free air
 SLIP_ABORT = math.radians(45.0)  # end a stroke early if the key slips this far over the hex
 MAX_CYCLES = 30            # ratchet cycle budget (a clean run needs ~13)
 PICK_RETRIES = 3
@@ -151,12 +151,15 @@ INSERT_RETRIES = 8         # peck re-tries per insertion (rise, re-trim, drop ag
 DROP_BUDGET = 3
 
 # Waypoint tolerances and per-phase step budgets, in CONTROL steps (15 Hz -> 16 substeps each).
+# Every long move GLIDES its commanded target (smoothstep); budgets are deliberately UNHURRIED —
+# a rushed glide saturates the norm-clamped servo, the gravity-uncompensated arm swings wide, and
+# an insertion that arrives with residual error pecks where a settled one drops straight in.
 TOL_P, TOL_R = 0.004, 0.06
 SHOW_END, STAGE_SETTLE = 20, 25
-WP_TIMEOUT, CLOSE_STEPS, SETTLE_STEPS = 75, 18, 45
-LIFT_STEPS, ERECT_STEPS, CARRY_STEPS, INSERT_STEPS, RETREAT_STEPS = 55, 75, 90, 45, 50
-STROKE_TIMEOUT, REWIND_TIMEOUT, REINSERT_TIMEOUT = 90, 60, 60
-HARD_CAP = 6000
+WP_TIMEOUT, CLOSE_STEPS, SETTLE_STEPS = 100, 24, 45
+LIFT_STEPS, ERECT_STEPS, CARRY_STEPS, INSERT_STEPS, RETREAT_STEPS = 80, 110, 130, 85, 70
+STROKE_TIMEOUT, REWIND_TIMEOUT, REINSERT_TIMEOUT = 110, 70, 75
+HARD_CAP = 8000
 LOG_EVERY = 45
 
 
@@ -235,7 +238,7 @@ def main() -> None:
         import imageio.v2 as imageio
         from isaaclab.sensors import Camera, CameraCfg
         cam = Camera(CameraCfg(prim_path="/World/cam", update_period=0.0, height=720, width=1280, data_types=["rgb"],
-                               spawn=sim_utils.PinholeCameraCfg(focal_length=24.0, clipping_range=(0.01, 100.0))))
+                               spawn=sim_utils.PinholeCameraCfg(focal_length=20.0, clipping_range=(0.01, 100.0))))
         Path(args.video).parent.mkdir(parents=True, exist_ok=True)
         writer = imageio.get_writer(args.video, fps=30)
 
@@ -254,15 +257,18 @@ def main() -> None:
     plat_z = plat.data.root_pos_w[:, 2].clone()
     table_z = plat_z.clone()  # platform origin sits ON the table top
 
-    # ----- camera: a two-anchor shot blended by the key's own trip toward the bolt ---------------
+    # ----- camera: a two-anchor shot blended by the key's own trip toward the bolt. Both anchors
+    # sit EAST-SOUTH of the work, looking back over it toward the base — the gripper is then
+    # always the nearest arm segment to the camera, so the Franka's own body never occludes it —
+    # and high enough to keep the hand in frame through the ratchet's rewinds (hand z ~0.29).
     cam_pose = None
     if cam is not None:
         p0 = plat.data.root_pos_w[0]
         k0 = key.data.root_pos_w[0]
-        pick_eye = torch.tensor([float(k0[0]) - 0.28, float(k0[1]) - 0.38, float(p0[2]) + 0.40], device=dev)
-        pick_tgt = torch.tensor([float(k0[0]), float(k0[1]), float(p0[2]) + 0.05], device=dev)
-        ins_eye = torch.tensor([float(p0[0]) + 0.16, float(p0[1]) - 0.30, float(p0[2]) + 0.24], device=dev)
-        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]), float(p0[2]) + 0.10], device=dev)
+        pick_eye = torch.tensor([float(k0[0]) + 0.34, float(k0[1]) - 0.26, float(p0[2]) + 0.34], device=dev)
+        pick_tgt = torch.tensor([float(k0[0]) + 0.02, float(k0[1]), float(p0[2]) + 0.06], device=dev)
+        ins_eye = torch.tensor([float(p0[0]) + 0.34, float(p0[1]) - 0.34, float(p0[2]) + 0.38], device=dev)
+        ins_tgt = torch.tensor([float(p0[0]) - 0.02, float(p0[1]), float(p0[2]) + 0.15], device=dev)
         trip = float((k0[0:2] - p0[0:2]).norm())
         cam_s = 0.0
 
@@ -575,7 +581,7 @@ def main() -> None:
                     or t_in >= 3 * WP_TIMEOUT:
                 phase, marker = "pick_down", i
         elif phase == "pick_down":  # descend AROUND the handle: open fingers pass it on both sides
-            s = smoothstep(t_in / 40.0)
+            s = smoothstep(t_in / 60.0)
             wp_p[:] = grip_pt
             wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + HOVER_CLEAR * (1.0 - s)
             if s >= 1.0:
@@ -583,7 +589,7 @@ def main() -> None:
                 pos_off[:] = (pos_off + 0.25 * (want - pad_centre())).clamp(-0.12, 0.12)
             act = servo(wp_p + pos_off, wp_q, STRADDLE_W)
             pad_on = (pad_centre() - grip_pt).norm(dim=-1) < 0.003
-            if (t_in >= 48 and bool(pad_on.all())) or t_in >= 2 * WP_TIMEOUT:
+            if (t_in >= 68 and bool(pad_on.all())) or t_in >= 2 * WP_TIMEOUT:
                 close_ok.zero_()
                 phase, marker = "pick_close", i
         elif phase == "pick_close":  # close to the handle's width; verify geometrically, then weld
@@ -656,6 +662,7 @@ def main() -> None:
             if t_in == 1:
                 glide_from_p[:] = tip_pos()
                 pos_off.zero_()
+                seat_ok.zero_()  # doubles as the settle streak here
             goal = torch.zeros(n, 3, device=dev)
             goal[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
             goal[:, 2] = bolt.data.root_pos_w[:, 2] + SOCKET_MOUTH_Z + INSERT_HOVER
@@ -668,9 +675,12 @@ def main() -> None:
             # bolt's yaw is whatever the helix left; the trim is <= 30 deg by construction
             tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, PICK_W)
-            settled = (goal - tip_pos()).norm(dim=-1) < 0.0008
-            clocked = clock_err().abs() < math.radians(3.0)
-            if (t_in >= CARRY_STEPS + 15 and bool((settled & clocked).all())) or t_in >= CARRY_STEPS + 3 * WP_TIMEOUT:
+            # the descent only gets a settled, sub-clearance start: xy to half the 0.75 mm/side
+            # play, clocked, and STAYING so — a streak, not a lucky sample
+            settled = ((goal - tip_pos())[:, 0:2].norm(dim=-1) < 0.0005) \
+                & ((goal - tip_pos())[:, 2].abs() < 0.0012) & (clock_err().abs() < math.radians(2.5))
+            seat_ok[:] = torch.where(settled, seat_ok + 1, torch.zeros_like(seat_ok))
+            if (t_in >= CARRY_STEPS + 15 and bool((seat_ok >= 8).all())) or t_in >= CARRY_STEPS + 3 * WP_TIMEOUT:
                 if not bool(bolt_ok().all()):
                     print(f"  ABORT: bolt left its stage before insertion ({bolt_state()})", flush=True)
                     phase, marker = "retreat", i
@@ -686,13 +696,19 @@ def main() -> None:
             kp = torch.zeros(n, 3, device=dev)
             kp[:, 0:2] = bolt.data.root_pos_w[:, 0:2]
             kp[:, 2] = bolt.data.root_pos_w[:, 2] + glide_from_z + s * (SOCKET_FLOOR_Z - glide_from_z)
+            free = bool((tip_axial() > SOCKET_MOUTH_Z + 0.002).all())
+            if free and t_in % 2 == 0:  # still contact-free: keep trimming xy + lean on the way
+                # down, so the tip crosses the mouth with the descent's freshest bias
+                pos_off[:, 0:2] = (pos_off[:, 0:2]
+                                   + 0.12 * (kp[:, 0:2] - tip_pos()[:, 0:2])).clamp(-0.12, 0.12)
+                learn_tilt(0.05)
             tp, tq = hand_for_tip(kp + pos_off, flip_cmd(psi_cmd))
             act = servo(tp, tq, PICK_W)
             # "in far enough": ~5 mm of hex engagement stands through the handoff — the first
             # top-down stroke presses the last bit home anyway
             seated = (tip_axial() < SOCKET_FLOOR_Z + 0.0022) & (tip_lateral() < 0.002) & (shaft_up() > 0.99)
             seat_ok[:] = torch.where(seated & bolt_ok(), seat_ok + 1, torch.zeros_like(seat_ok))
-            stalled = t_in >= INSERT_STEPS + 12 and bool((tip_axial() > SOCKET_MOUTH_Z - 0.0015).any())
+            stalled = t_in >= INSERT_STEPS + 15 and bool((tip_axial() > SOCKET_MOUTH_Z - 0.0015).any())
             if not bool(bolt_ok().all()):
                 print(f"  ABORT: bolt knocked out of its stage during insertion ({bolt_state()})", flush=True)
                 phase, marker = "retreat", i
@@ -748,20 +764,20 @@ def main() -> None:
             else:
                 if welded.any():
                     weld_off()
-                w = grip_freeze + (OPEN_W - grip_freeze) * smoothstep((t_in - 10) / 20.0)
+                w = grip_freeze + (OPEN_W - grip_freeze) * smoothstep((t_in - 10) / 25.0)
                 wp2 = release_p.clone()
-                if t_in > 50:  # the fingers had 1.3 s to spread clear before the hand moves
-                    s2 = smoothstep((t_in - 50) / 25.0)
+                if t_in > 60:  # the fingers had 1.7 s to spread clear before the hand moves
+                    s2 = smoothstep((t_in - 60) / 35.0)
                     wp2 += back_axis * (0.06 * s2)
-                if t_in > 75:
-                    s3 = smoothstep((t_in - 75) / 25.0)
+                if t_in > 95:
+                    s3 = smoothstep((t_in - 95) / 35.0)
                     wp2[:, 2] = release_p[:, 2] + s3 * 0.10
                 act = servo(wp2, release_q, w)
-            if t_in % 8 == 0:
+            if t_in % 10 == 0:
                 print(f"    [handoff {t_in:3d}] tip {float((tip_axial() - SOCKET_FLOOR_Z).mean()) * 1e3:+5.2f}mm "
                       f"| lat {float(tip_lateral().max()) * 1e3:4.2f}mm | up {float(shaft_up().min()):+.3f} "
                       f"| gap {float((art.data.joint_pos[:, fingers].sum(dim=-1)).mean()) * 1e3:4.1f}mm", flush=True)
-            if t_in >= 105:
+            if t_in >= 135:
                 if bool(in_socket(0.0015).all()) and bool((shaft_up() > 0.90).all()):
                     if handoff_depth is None:
                         handoff_depth = depth().clone()
@@ -814,7 +830,7 @@ def main() -> None:
                     or t_in >= 3 * WP_TIMEOUT:
                 phase, marker = "regrasp_down", i
         elif phase == "regrasp_down":  # descend around the crank to its axis height
-            s = smoothstep(t_in / 40.0)
+            s = smoothstep(t_in / 60.0)
             grip_pt[:] = key.data.root_pos_w + quat_apply(key.data.root_quat_w, crank_grip_local)
             wp_p[:] = grip_pt
             wp_p[:, 2] = grip_pt[:, 2] + hand_to_pad + HOVER_CLEAR * (1.0 - s)
@@ -822,7 +838,7 @@ def main() -> None:
                 pos_off[:] = (pos_off + 0.25 * (grip_pt - pad_centre())).clamp(-0.12, 0.12)
             act = servo(wp_p + pos_off, wp_q, STRADDLE_W)
             pad_on = (pad_centre() - grip_pt).norm(dim=-1) < 0.003
-            if (t_in >= 48 and bool(pad_on.all())) or t_in >= 2 * WP_TIMEOUT:
+            if (t_in >= 68 and bool(pad_on.all())) or t_in >= 2 * WP_TIMEOUT:
                 close_ok.zero_()
                 phase, marker = "regrasp_close", i
         elif phase == "regrasp_close":
@@ -918,14 +934,14 @@ def main() -> None:
                     phase, marker = "recock_lift", i
         elif phase == "recock_lift":  # lift the tip just clear of the socket, spin held; the glide
             # starts from the PRESSED command depth so the stored press bleeds smoothly
-            s = smoothstep(t_in / 20.0)
+            s = smoothstep(t_in / 30.0)
             zt = (SOCKET_FLOOR_Z - PRESS_LEAD) + s * (SOCKET_MOUTH_Z + LIFT_CLEAR - SOCKET_FLOOR_Z + PRESS_LEAD)
             ub = up_axis_of(bolt.data.root_quat_w)
             kp = bolt.data.root_pos_w + ub * zt
             tp, tq = hand_for_tip(kp + pos_off, quat_mul(quat_from_angle_axis(psi_cmd, ez), q0_flip))
             act = servo(tp, tq, SCREW_W)
             cleared = bool((tip_axial() > SOCKET_MOUTH_Z + 0.002).all())
-            if t_in >= 24 and cleared:
+            if t_in >= 34 and cleared:
                 # rewind by a MULTIPLE OF 60 DEG (hex symmetry: clocking is preserved exactly),
                 # sized to re-arm the wrist near J7_START; the flipped top-down hand maps a
                 # positive key spin to a negative joint-7 move
@@ -968,7 +984,7 @@ def main() -> None:
                       f"{float(torch.rad2deg(clock_err().abs().max())):.1f}deg)", flush=True)
                 phase, marker = "retreat", i
         elif phase == "reinsert":  # drop the tip back into the socket and press to the floor
-            s = smoothstep(t_in / 25.0)
+            s = smoothstep(t_in / 35.0)
             zt = glide_from_z + s * ((SOCKET_FLOOR_Z - PRESS_LEAD) - glide_from_z)
             ub = up_axis_of(bolt.data.root_quat_w)
             kp = bolt.data.root_pos_w + ub * zt
@@ -976,7 +992,7 @@ def main() -> None:
             act = servo(tp, tq, SCREW_W)
             entered = (tip_axial() < SOCKET_FLOOR_Z + 0.0015) & (tip_lateral() < 0.002)
             seat_ok[:] = torch.where(entered & bolt_ok(), seat_ok + 1, torch.zeros_like(seat_ok))
-            stalled = t_in >= 35 and bool((tip_axial() > SOCKET_MOUTH_Z - 0.0015).any())
+            stalled = t_in >= 45 and bool((tip_axial() > SOCKET_MOUTH_Z - 0.0015).any())
             if not bool(bolt_ok().all()):
                 print(f"  ABORT: bolt left the hole during a reinsert ({bolt_state()})", flush=True)
                 phase, marker = "retreat", i
@@ -1003,11 +1019,11 @@ def main() -> None:
                 if welded.any():
                     weld_off()
                 wp2 = release_p.clone()
-                if t_in > 22:  # open FIRST, then rise: rising frozen pads would drag the key up
-                    s2 = smoothstep((t_in - 22) / 30.0)
+                if t_in > 26:  # open FIRST, then rise: rising frozen pads would drag the key up
+                    s2 = smoothstep((t_in - 26) / 40.0)
                     wp2[:, 2] = release_p[:, 2] + s2 * 0.12
                 act = servo(wp2, release_q, STRADDLE_W if t_in > 10 else grip_freeze)
-            if t_in >= 60:
+            if t_in >= 75:
                 phase, marker = "retreat", i
         elif phase == "retreat":  # glide home — position AND orientation
             if t_in == 1:
