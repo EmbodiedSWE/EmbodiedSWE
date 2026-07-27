@@ -25,4 +25,10 @@ ENV PYTHONPATH=/bench
 COPY entrypoints/ /opt/entrypoints/
 RUN chmod 755 /opt/entrypoints/*.sh
 
+# Kit creates cache/ + data/ inside the (root-owned) isaacsim install at first
+# run; as the non-root agent that fails and breaks RTX camera capture (the
+# annotator's overscan params stay None — measured 2026-07-27). Pre-create them.
+RUN KIT=/opt/venv/lib/python3.11/site-packages/isaacsim/kit && \
+    mkdir -p "$KIT/cache" "$KIT/data" && chmod -R 777 "$KIT/cache" "$KIT/data"
+
 ENTRYPOINT ["tini", "--"]

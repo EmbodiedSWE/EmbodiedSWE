@@ -49,17 +49,84 @@ def load_solve(path: str):
     return mod.solve
 
 
+def start_renderer(env, out: Path, fps: float = 10.0, size: tuple = (1280, 720),
+                   eye: tuple = (0.9, -1.1, 0.65), target_at: tuple = (0.30, -0.05, 0.10)):
+    """Frame renderer: patch env.step to grab a JPEG into out/frames/ every
+    1/fps of SIM time — frame timestamps (out/frames.jsonl) align with
+    progress.jsonl, so a video or synced progress GUI can be assembled later.
+    out/render.json records the camera/rendering args. Call after build,
+    BEFORE the graded reset (the camera needs a sim re-parse). Returns
+    flush() -> frame count."""
+    import imageio.v2 as imageio
+    import isaaclab.sim as sim_utils
+    import torch
+    from isaaclab.sensors import Camera, CameraCfg
+
+    cam = Camera(CameraCfg(prim_path="/World/cam", update_period=0.0,
+                           height=size[1], width=size[0], data_types=["rgb"],
+                           spawn=sim_utils.PinholeCameraCfg(focal_length=24.0,
+                                                            clipping_range=(0.01, 100.0))))
+    env.sim.reset()  # re-parse so the camera is picked up
+    anchor = env.iscene.env_origins[0].tolist()  # 3/4 view over the work surface
+    anchor[2] += float(getattr(env.scene.cfg, "surface_z", 0.0) or 0.0)
+    eye_w = [anchor[i] + eye[i] for i in range(3)]
+    target_w = [anchor[i] + target_at[i] for i in range(3)]
+    dev = env.device
+    cam.set_world_poses_from_view(torch.tensor([eye_w], device=dev),
+                                  torch.tensor([target_w], device=dev))
+
+    frames = out / "frames"
+    frames.mkdir(exist_ok=True)
+    (out / "render.json").write_text(json.dumps({
+        "fps_sim": fps, "size": list(size),
+        "camera_eye_world": eye_w, "camera_target_world": target_w,
+        "focal_length": 24.0,
+        "frames": "frames/<idx>.jpg; frames.jsonl maps each to sim_time_s/wall_s "
+                  "(join with progress.jsonl on sim_time_s)",
+    }, indent=2) + "\n")
+
+    state = {"t": 0.0, "next": 0.0, "idx": 0, "t0": time.monotonic()}
+    real_step = env.step
+
+    def step(action, render: bool = False):
+        state["t"] += env.dt * env.robot.control_period  # live: solves may retune decimation
+        grab = state["t"] >= state["next"]
+        real_step(action, render=render or grab)
+        if grab:
+            state["next"] += 1.0 / fps
+            cam.update(env.dt)
+            frame = cam.data.output["rgb"][0].detach().cpu().numpy()
+            if frame.size and frame.any():  # warm-up frames come back empty
+                name = f"{state['idx']:05d}.jpg"
+                imageio.imwrite(frames / name, frame[..., :3], quality=90)
+                with (out / "frames.jsonl").open("a") as f:
+                    f.write(json.dumps({"frame": state["idx"], "file": f"frames/{name}",
+                                        "sim_time_s": round(state["t"], 4),
+                                        "wall_s": round(time.monotonic() - state["t0"], 3)}) + "\n")
+                state["idx"] += 1
+
+    env.step = step
+
+    def flush() -> int:
+        print(f"[render] {state['idx']} frames in {frames}", flush=True)
+        return state["idx"]
+
+    return flush
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--preset", required=True)
     ap.add_argument("--scene", required=True)
+    ap.add_argument("--render", action="store_true",
+                    help="render the run: /out/frames/*.jpg + frames.jsonl + render.json")
     args = ap.parse_args()
     out = OUT
     out.mkdir(parents=True, exist_ok=True)
 
     from isaaclab.app import AppLauncher
 
-    app = AppLauncher(headless=True).app  # noqa: F841 — before any isaaclab.sim import
+    app = AppLauncher(headless=True, enable_cameras=args.render).app  # noqa: F841 — before isaaclab.sim
 
     import robobench
 
@@ -69,6 +136,7 @@ def main() -> None:
 
     grader_cls = load_graders(GRADERS_DIR)[args.scene]
     env = ENVS.get(args.preset)().build(num_envs=1)
+    flush = start_renderer(env, out) if args.render else None  # re-parses sim: before the graded reset
     env.reset()
     grader = grader_cls(env)  # one grader instance = this trajectory
 
@@ -92,6 +160,8 @@ def main() -> None:
     except Exception:
         result.update(success=False, score=0.0, error=traceback.format_exc())
 
+    if flush is not None:
+        result["frames"] = flush()  # also on a crashed solve — partial frames show what happened
     (out / "verdict.json").write_text(json.dumps(result, indent=2) + "\n")
     print(f"GRADE_DONE success={result['success']} score={result['score']}", flush=True)
     os._exit(0)  # Kit sometimes hangs on close; the verdict is on disk
