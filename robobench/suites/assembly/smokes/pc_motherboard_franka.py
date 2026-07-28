@@ -252,19 +252,22 @@ def main() -> None:
     stand_xy = key.data.root_pos_w[:, 0:2].clone()  # the stand pocket = the key's spawn axis
 
     # ----- camera: a two-anchor shot blended by the key's trip toward the case, panned per hole.
-    # The insert anchor hangs HIGH and DUE SOUTH, looking steeply down into the open box (the
-    # case's tall rear section hides the east holes from any east viewpoint, cf. the scene
-    # smoke's camera note; the west arm body looms from the west), and its framing PANS onto the
-    # ACTIVE hole so every socket stays centred through its twisting. The trip blend also eases
-    # the shot back to the stand as the key returns home.
+    # The insert anchor hangs HIGH and DUE NORTH, looking steeply down into the open box, and its
+    # framing PANS onto the ACTIVE hole so every socket stays centred through its twisting. North
+    # is the probed all-holes viewpoint: the south-row holes sit only 65 mm behind the south wall
+    # (plus an interior shelf), so any south view loses them; the tall rear section hides the
+    # east holes from the east (cf. the scene smoke's camera note); the arm looms from the west —
+    # while from the north every hole cleared in rendered stills, north row included (those holes
+    # have twice the wall clearance). The trip blend also eases the shot back to the stand as the
+    # key returns home.
     cam_pose = None
     if cam is not None:
         p0 = case_pos[0]
         k0 = key.data.root_pos_w[0]
         pick_eye = torch.tensor([float(k0[0]) + 0.36, float(k0[1]) - 0.34, float(p0[2]) + 0.44], device=dev)
         pick_tgt = torch.tensor([float(k0[0]), float(k0[1]), float(p0[2]) + 0.14], device=dev)
-        ins_eye = torch.tensor([float(p0[0]) + 0.02, float(p0[1]) - 0.62, float(p0[2]) + 0.78], device=dev)
-        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]) + 0.02, float(p0[2]) + 0.16], device=dev)
+        ins_eye = torch.tensor([float(p0[0]) + 0.02, float(p0[1]) + 0.62, float(p0[2]) + 0.78], device=dev)
+        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]) - 0.02, float(p0[2]) + 0.16], device=dev)
         trip = float((k0[0:2] - p0[0:2]).norm())
         cam_s = 0.0
         cam_pan = torch.zeros(3, device=dev)
