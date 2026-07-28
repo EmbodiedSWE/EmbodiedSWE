@@ -279,8 +279,8 @@ def main() -> None:
         k0 = key.data.root_pos_w[0]
         pick_eye = torch.tensor([float(k0[0]) + 0.36, float(k0[1]) - 0.34, float(p0[2]) + 0.40], device=dev)
         pick_tgt = torch.tensor([float(k0[0]), float(k0[1]) + 0.02, float(p0[2]) + 0.06], device=dev)
-        ins_eye = torch.tensor([float(p0[0]) + 0.02, float(p0[1]) - 0.54, float(p0[2]) + 0.82], device=dev)
-        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]) + 0.02, float(p0[2]) + 0.04], device=dev)
+        ins_eye = torch.tensor([float(p0[0]) + 0.02, float(p0[1]) - 0.62, float(p0[2]) + 0.78], device=dev)
+        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]) + 0.02, float(p0[2]) + 0.16], device=dev)
         trip = float((k0[0:2] - p0[0:2]).norm())
         cam_s = 0.0
 
