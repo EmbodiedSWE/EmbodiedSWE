@@ -7,6 +7,7 @@ Tasks:
     the brief: the crate interior is derived from the reference packing times an
     `oversize` dial, so required precision is a knob, not an accident; the manifest
     only fits LAYERED — a flat single-layer footprint exceeds the floor.)
+  - `pen_holder` (PenHolderScene) — collect scattered pens into the holder cup.
 
 Structure mirrors the assembly suite: `scenes/` (each scene IS one task), `configs/`
 (named ENVS bindings), `smokes/` (NullRobot smoke/oracle runs).
