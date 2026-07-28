@@ -252,22 +252,23 @@ def main() -> None:
     stand_xy = key.data.root_pos_w[:, 0:2].clone()  # the stand pocket = the key's spawn axis
 
     # ----- camera: a two-anchor shot blended by the key's trip toward the case, panned per hole.
-    # The insert anchor hangs HIGH and DUE NORTH, looking steeply down into the open box, and its
-    # framing PANS onto the ACTIVE hole so every socket stays centred through its twisting. North
-    # is the probed all-holes viewpoint: the south-row holes sit only 65 mm behind the south wall
-    # (plus an interior shelf), so any south view loses them; the tall rear section hides the
-    # east holes from the east (cf. the scene smoke's camera note); the arm looms from the west —
-    # while from the north every hole cleared in rendered stills, north row included (those holes
-    # have twice the wall clearance). The trip blend also eases the shot back to the stand as the
-    # key returns home.
+    # The insert anchor hangs NEAR-OVERHEAD, a step south of the case (elevation ~73 deg), and
+    # its framing PANS onto the ACTIVE hole. Overhead is the only viewpoint that holds every
+    # socket through its twisting: the south-row holes sit 65 mm behind the south wall (a south
+    # view loses their sockets), the tall rear section hides the east holes from the east (cf.
+    # the scene smoke's camera note), and the arm reaches every hole with its forearm arcing
+    # through the NORTH airspace (a north view hides the work behind the arm). From above the
+    # open box hides nothing, the crank's ratchet sweep plays out in plan view, and the south
+    # offset makes the hand and forearm project NORTH of the socket instead of onto it. The
+    # trip blend eases the shot back to the stand as the key returns home.
     cam_pose = None
     if cam is not None:
         p0 = case_pos[0]
         k0 = key.data.root_pos_w[0]
         pick_eye = torch.tensor([float(k0[0]) + 0.36, float(k0[1]) - 0.34, float(p0[2]) + 0.44], device=dev)
         pick_tgt = torch.tensor([float(k0[0]), float(k0[1]), float(p0[2]) + 0.14], device=dev)
-        ins_eye = torch.tensor([float(p0[0]) + 0.02, float(p0[1]) + 0.62, float(p0[2]) + 0.78], device=dev)
-        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]) - 0.02, float(p0[2]) + 0.16], device=dev)
+        ins_eye = torch.tensor([float(p0[0]) + 0.02, float(p0[1]) - 0.30, float(p0[2]) + 1.00], device=dev)
+        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]), float(p0[2]) + 0.02], device=dev)
         trip = float((k0[0:2] - p0[0:2]).norm())
         cam_s = 0.0
         cam_pan = torch.zeros(3, device=dev)
@@ -280,8 +281,8 @@ def main() -> None:
             hole = holes_w[0, active]
             pan_t = torch.tensor([float(hole[0] - p0[0]), float(hole[1] - p0[1]), 0.0], device=dev)
             cam_pan[:] = cam_pan + 0.03 * (pan_t - cam_pan)
-            eye = pick_eye + (ins_eye + 0.4 * cam_pan - pick_eye) * cam_s
-            tgt = pick_tgt + (ins_tgt + 0.8 * cam_pan - pick_tgt) * cam_s
+            eye = pick_eye + (ins_eye + 0.5 * cam_pan - pick_eye) * cam_s
+            tgt = pick_tgt + (ins_tgt + 0.85 * cam_pan - pick_tgt) * cam_s
             return eye.unsqueeze(0), tgt.unsqueeze(0)
 
     print(env.describe(), flush=True)
