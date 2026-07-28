@@ -268,18 +268,19 @@ def main() -> None:
     holes_w = case_pos[:, None, :2] + torch.tensor(sc.cfg.hole_xy, device=dev)[None]  # (n, 7, 2)
     table_z = board_z - sc.cfg.case_lift
 
-    # ----- camera: a two-anchor shot blended by the key's trip toward the case. Both anchors sit
-    # SOUTH-EAST of the work, looking back over it toward the WEST base — the gripper is always
-    # the nearest arm segment to the camera, never occluded by the arm's own body — and high
-    # enough to see over the case walls and keep the crank in frame at the far holes.
+    # ----- camera: a two-anchor shot blended by the key's trip toward the case. The insert
+    # anchor hangs HIGH and DUE SOUTH, looking steeply down into the open box: the case's tall
+    # rear section hides the east holes from any east viewpoint (cf. the scene smoke's camera
+    # note) and the west arm body looms from the west — from south-high every hole, the key,
+    # and the crank stay in sight, with the hand the nearest arm segment to the camera.
     cam_pose = None
     if cam is not None:
         p0 = case_pos[0]
         k0 = key.data.root_pos_w[0]
-        pick_eye = torch.tensor([float(k0[0]) + 0.44, float(k0[1]) - 0.30, float(p0[2]) + 0.36], device=dev)
-        pick_tgt = torch.tensor([float(k0[0]), float(k0[1]) + 0.02, float(p0[2]) + 0.10], device=dev)
-        ins_eye = torch.tensor([float(p0[0]) + 0.42, float(p0[1]) - 0.46, float(p0[2]) + 0.66], device=dev)
-        ins_tgt = torch.tensor([float(p0[0]) - 0.04, float(p0[1]), float(p0[2]) + 0.10], device=dev)
+        pick_eye = torch.tensor([float(k0[0]) + 0.36, float(k0[1]) - 0.34, float(p0[2]) + 0.40], device=dev)
+        pick_tgt = torch.tensor([float(k0[0]), float(k0[1]) + 0.02, float(p0[2]) + 0.06], device=dev)
+        ins_eye = torch.tensor([float(p0[0]) + 0.02, float(p0[1]) - 0.54, float(p0[2]) + 0.82], device=dev)
+        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]) + 0.02, float(p0[2]) + 0.04], device=dev)
         trip = float((k0[0:2] - p0[0:2]).norm())
         cam_s = 0.0
 
