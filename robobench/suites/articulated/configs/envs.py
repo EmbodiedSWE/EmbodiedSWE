@@ -13,10 +13,16 @@ from robobench.robots import (
     FrankaRobotCfg,
     G1RobotCfg,
     GR1T2RobotCfg,
+    MultiRobotCfg,
     PiperRobotCfg,
     WxaiRobotCfg,
 )
-from robobench.suites.articulated.scenes import BalanceScaleSceneCfg, CombinationSafeSceneCfg
+from robobench.suites.articulated.scenes import (
+    BalanceScaleSceneCfg,
+    CombinationSafeSceneCfg,
+    MicrowaveMealSceneCfg,
+    PouringSceneCfg,
+)
 
 SUITE = "articulated"
 
@@ -192,8 +198,8 @@ for _mode in ("osc", "joint"):
                 robot="bimanual_franka",
                 control_mode=mode,
                 robot_cfg=BimanualFrankaCfg(robots={
-                    "left": ("franka", FrankaRobotCfg(base_pos=(-0.26, -0.42, 0.0), base_rot=_FRANKA_ROT)),
-                    "right": ("franka", FrankaRobotCfg(base_pos=(0.26, -0.42, 0.0), base_rot=_FRANKA_ROT)),
+                    "left": ("franka", FrankaRobotCfg(base_pos=(-0.26, -0.50, 0.0), base_rot=_FRANKA_ROT)),
+                    "right": ("franka", FrankaRobotCfg(base_pos=(0.26, -0.50, 0.0), base_rot=_FRANKA_ROT)),
                 }),
                 env_spacing=3,
             )
@@ -229,6 +235,218 @@ for _mode in ("osc", "joint", "impedance"):
                 robot="wxai",
                 control_mode=mode,
                 robot_cfg=WxaiRobotCfg(base_pos=(0.14, -0.36, 0.20), base_rot=_FRANKA_ROT),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# ---- robocasa microwave meal (appliance state machine + keypad) ----
+# Scene physics only (NullRobot oracle/smoke). -> "articulated.microwave"
+register_env(SUITE, lambda: EnvCfg(scene="microwave", robot="null", env_spacing=3))
+
+
+# Robot bindings. Placements are STARTING guesses scaled from the safe/scale measured
+# reach values at the same bench — re-verify with the per-binding stress smoke before
+# any agent run (only the null smoke validates the scene itself). The microwave faces
+# the robot (-y), bowls scatter front-left, the serving mat sits front-right; bowls are
+# grasped by the 7 mm rim (pinch) or palmed — both hand classes work.
+def _mw_g1_cfg() -> MicrowaveMealSceneCfg:
+    """G1 (short ~0.55 m arms): bench work pulled close; the deep reach to the
+    turntable axis (~0.6 m) is the tight spot to verify."""
+    return MicrowaveMealSceneCfg(
+        surface_z=0.7,
+        mw_pos=(0.0, 0.14),
+        mat_pos=(0.30, -0.14),
+        bowl_slots=((-0.26, -0.10), (-0.14, -0.20)),
+    )
+
+
+def _mw_gr1t2_cfg() -> MicrowaveMealSceneCfg:
+    """GR1-T2 (primary embodiment: door + keypad + carry): same bench, wider layout."""
+    return MicrowaveMealSceneCfg(
+        surface_z=0.7,
+        mw_pos=(0.0, 0.20),
+        mat_pos=(0.34, -0.10),
+        bowl_slots=((-0.30, -0.06), (-0.16, -0.18)),
+    )
+
+
+def _mw_franka_cfg() -> MicrowaveMealSceneCfg:
+    """Franka ablation: ground-level work in front of the base, everything inside the
+    ~0.75 m reach; bowls pinch-grasped by the rim (the 8 cm jaw cannot palm 110 mm)."""
+    return MicrowaveMealSceneCfg(
+        mw_pos=(0.0, 0.16),
+        mat_pos=(0.32, -0.12),
+        bowl_slots=((-0.26, -0.06), (-0.14, -0.18)),
+    )
+
+
+# -> "articulated.microwave.g1.{joint,pink_ik}" / ".gr1t2.{joint,pink_ik}"
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="microwave",
+                scene_cfg=_mw_g1_cfg(),
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="microwave",
+                scene_cfg=_mw_gr1t2_cfg(),
+                robot="gr1t2",
+                control_mode=mode,
+                robot_cfg=GR1T2RobotCfg(base_pos=(0.0, -0.48, 0.95),
+                                        base_rot=(0.7071, 0.0, 0.0, 0.7071)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# -> "articulated.microwave.franka.{osc,joint}"
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="microwave",
+                scene_cfg=_mw_franka_cfg(),
+                robot="franka",
+                control_mode=mode,
+                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.45, 0.0), base_rot=_FRANKA_ROT),
+                env_spacing=3,
+            )
+        ),
+    )
+
+
+# ---- dexmimicgen pouring (metered granular split-pour) ----
+# Scene physics only (NullRobot oracle/smoke). -> "articulated.pouring"
+register_env(SUITE, lambda: EnvCfg(scene="pouring", robot="null", env_spacing=3))
+
+
+# Robot bindings. Placements are STARTING guesses scaled from the safe/scale/microwave
+# measured reach values at the same bench — re-verify with the per-binding stress smoke
+# before any agent run. The cup spawns nearest the robot (-y), the two pad-seated bowls
+# behind it; the humanoid cup (outer dia 78 mm) is palmed by the dex hands, the franka
+# binding shrinks it (outer dia 70 mm) under the 8 cm parallel jaw.
+def _pour_g1_cfg() -> PouringSceneCfg:
+    """G1 (short ~0.55 m arms): everything pulled close; the far bowl at ~0.6 m reach
+    is the tight spot to verify."""
+    return PouringSceneCfg(
+        surface_z=0.7,
+        cup_pos=(0.0, -0.16),
+        bowl_slots=((-0.16, 0.06), (0.16, 0.06)),
+        park_pos=(-0.34, -0.20),
+    )
+
+
+def _pour_gr1t2_cfg() -> PouringSceneCfg:
+    """GR1-T2 (primary embodiment — the source runs this exact robot class): same
+    bench, slightly wider layout."""
+    return PouringSceneCfg(
+        surface_z=0.7,
+        cup_pos=(0.0, -0.16),
+        bowl_slots=((-0.18, 0.10), (0.18, 0.10)),
+        park_pos=(-0.38, -0.20),
+    )
+
+
+def _pour_franka_cfg() -> PouringSceneCfg:
+    """Franka ablation: ground-level work inside the ~0.75 m reach; cup shrunk so the
+    8 cm jaw can wrap it (outer dia 70 mm), bowls pinch-grasped by the 7 mm rim."""
+    return PouringSceneCfg(
+        cup_pos=(0.0, -0.14),
+        bowl_slots=((-0.16, 0.10), (0.16, 0.10)),
+        park_pos=(-0.34, -0.18),
+        cup_inner_r=0.030,
+        cup_h=0.10,
+    )
+
+
+def _pour_multi_cfg() -> PouringSceneCfg:
+    """Dual Franka flanking the work (the honestly bimanual binding — the source is a
+    two-handed pour): cup on the left arm's side, bowls centred between the bases."""
+    return PouringSceneCfg(
+        cup_pos=(-0.16, 0.0),
+        bowl_slots=((0.12, 0.16), (0.12, -0.16)),
+        park_pos=(-0.30, -0.24),
+        cup_inner_r=0.030,
+        cup_h=0.10,
+        reserve_pos=(0.0, 1.05),
+    )
+
+
+# -> "articulated.pouring.g1.{joint,pink_ik}" / ".gr1t2.{joint,pink_ik}"
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="pouring",
+                scene_cfg=_pour_g1_cfg(),
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="pouring",
+                scene_cfg=_pour_gr1t2_cfg(),
+                robot="gr1t2",
+                control_mode=mode,
+                robot_cfg=GR1T2RobotCfg(base_pos=(0.0, -0.48, 0.95),
+                                        base_rot=(0.7071, 0.0, 0.0, 0.7071)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# -> "articulated.pouring.franka.{osc,joint}"
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="pouring",
+                scene_cfg=_pour_franka_cfg(),
+                robot="franka",
+                control_mode=mode,
+                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.45, 0.0), base_rot=_FRANKA_ROT),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# -> "articulated.pouring.multi.{osc,joint}" — two Frankas facing each other across the
+# work (the pen-holder dual-arm pattern): left at -x facing +x (default), right turned 180 deg.
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="pouring",
+                scene_cfg=_pour_multi_cfg(),
+                robot="multi",
+                control_mode=mode,
+                robot_cfg=MultiRobotCfg(robots={
+                    "left": ("franka", FrankaRobotCfg(base_pos=(-0.55, 0.0, 0.0))),
+                    "right": ("franka", FrankaRobotCfg(base_pos=(0.55, 0.0, 0.0),
+                                                       base_rot=(0.0, 0.0, 0.0, 1.0))),
+                }),
                 env_spacing=3,
             )
         ),
