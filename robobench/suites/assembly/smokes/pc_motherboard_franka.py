@@ -51,6 +51,7 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--holes", type=int, default=0, help="fasten only the first N holes of the drive order (0 = all)")
+parser.add_argument("--order", type=str, default="", help="comma-separated hole indices overriding the drive order")
 parser.add_argument("--video", type=str, default="", help="save an mp4 here (needs --headless --enable_cameras)")
 parser.add_argument("--cap", type=int, default=2, help="with --video: capture one frame every N control steps")
 AppLauncher.add_app_launcher_args(parser)
@@ -178,8 +179,9 @@ def main() -> None:
     dev = device
     ids = torch.arange(n, device=dev)
     bolts, key, case = sc.bolts, sc.key, sc.case
-    B = len(DRIVE_ORDER) if args.holes <= 0 else min(args.holes, len(DRIVE_ORDER))
-    order = DRIVE_ORDER[:B]
+    drive = tuple(int(t) for t in args.order.split(",")) if args.order else DRIVE_ORDER
+    B = len(drive) if args.holes <= 0 else min(args.holes, len(drive))
+    order = drive[:B]
     art = env.robot.articulation
     hand_idx = art.body_names.index("panda_hand")
     j7 = art.joint_names.index("panda_joint7")
@@ -251,38 +253,45 @@ def main() -> None:
     table_z = board_z - sc.cfg.case_lift
     stand_xy = key.data.root_pos_w[:, 0:2].clone()  # the stand pocket = the key's spawn axis
 
-    # ----- camera: a two-anchor shot blended by the key's trip toward the case, panned per hole.
-    # The insert anchor hangs NEAR-OVERHEAD, a step south of the case (elevation ~73 deg), and
-    # its framing PANS onto the ACTIVE hole. Overhead is the only viewpoint that holds every
-    # socket through its twisting: the south-row holes sit 65 mm behind the south wall (a south
-    # view loses their sockets), the tall rear section hides the east holes from the east (cf.
-    # the scene smoke's camera note), and the arm reaches every hole with its forearm arcing
-    # through the NORTH airspace (a north view hides the work behind the arm). From above the
-    # open box hides nothing, the crank's ratchet sweep plays out in plan view, and the south
-    # offset makes the hand and forearm project NORTH of the socket instead of onto it. The
-    # trip blend eases the shot back to the stand as the key returns home.
+    # ----- camera: a two-anchor shot — a stand view for the pick and the return, and an insert
+    # anchor riding a CONSTANT offset from the ACTIVE hole, ~40 deg east of south at ~64 deg
+    # elevation and 0.71 m out, so every socket is filmed with the same verified geometry. The blend is
+    # PHASE-driven and saturates while the key works (a key-position blend never saturates —
+    # the far holes stand 0.17 m from case centre, which left ~40% of the pick anchor mixed
+    # into every insert shot). The elevation window is squeezed from every side: the south-row
+    # sockets sit ~174 mm below a wall top only 65 mm away, so a southern eye needs ~69 deg for
+    # its sightline to cross the wall plane above the rim; past ~73 deg the gripper itself
+    # swallows the socket (near-zenith rays pass inside the hand's silhouette); the wrist mass
+    # hangs WEST of the hand when the arm stretches to the east holes (a south-WEST eye stares
+    # straight into it); and the tall rear section kills eastern azimuths below ~74 deg (cf.
+    # the scene smoke's camera note). Due-south-slightly-east at ~69 deg threads all four: the
+    # wall crossing lands just above the rim, the ray passes ~11 cm south of the socket at hand
+    # height (the hand sweeps to ~11 cm at its worst crank yaw), the west-side wrist never
+    # crosses a southern ray, and the east bias is free: the wall bound caps only the eye's
+    # SOUTHWARD component, so easting the azimuth grows the miss distance to ~13.5 cm without
+    # lowering the wall crossing or approaching the shroud (the ray enters over the LOW
+    # south-east corner).
     cam_pose = None
     if cam is not None:
         p0 = case_pos[0]
         k0 = key.data.root_pos_w[0]
         pick_eye = torch.tensor([float(k0[0]) + 0.36, float(k0[1]) - 0.34, float(p0[2]) + 0.44], device=dev)
         pick_tgt = torch.tensor([float(k0[0]), float(k0[1]), float(p0[2]) + 0.14], device=dev)
-        ins_eye = torch.tensor([float(p0[0]) + 0.02, float(p0[1]) - 0.30, float(p0[2]) + 1.00], device=dev)
+        ins_eye = torch.tensor([float(p0[0]) + 0.225, float(p0[1]) - 0.27, float(p0[2]) + 0.75], device=dev)
         ins_tgt = torch.tensor([float(p0[0]), float(p0[1]), float(p0[2]) + 0.02], device=dev)
-        trip = float((k0[0:2] - p0[0:2]).norm())
         cam_s = 0.0
         cam_pan = torch.zeros(3, device=dev)
+        cam_home = {"show", "stage_hold", "pick_hover", "pick_down", "pick_close", "lift_out",
+                    "return_travel", "return_drop", "release", "retreat", "settle"}
 
         def cam_pose() -> tuple[torch.Tensor, torch.Tensor]:
             nonlocal cam_s
-            u = 1.0 - float((key.data.root_pos_w[0, 0:2] - p0[0:2]).norm()) / max(trip, 1e-6)
-            s = smoothstep(u)
-            cam_s += 0.06 * (s - cam_s)
+            cam_s += 0.02 * ((0.0 if phase in cam_home else 1.0) - cam_s)
             hole = holes_w[0, active]
             pan_t = torch.tensor([float(hole[0] - p0[0]), float(hole[1] - p0[1]), 0.0], device=dev)
-            cam_pan[:] = cam_pan + 0.03 * (pan_t - cam_pan)
-            eye = pick_eye + (ins_eye + 0.5 * cam_pan - pick_eye) * cam_s
-            tgt = pick_tgt + (ins_tgt + 0.85 * cam_pan - pick_tgt) * cam_s
+            cam_pan[:] = cam_pan + 0.04 * (pan_t - cam_pan)
+            eye = pick_eye + (ins_eye + cam_pan - pick_eye) * cam_s
+            tgt = pick_tgt + (ins_tgt + cam_pan - pick_tgt) * cam_s
             return eye.unsqueeze(0), tgt.unsqueeze(0)
 
     print(env.describe(), flush=True)
