@@ -35,9 +35,8 @@ def main() -> None:
 
     gdir = Path(args.grade).resolve()
     verdict_file = gdir / "verdict.json"
-    if not verdict_file.exists():
-        sys.exit(f"no verdict.json in {gdir} — is this a grade folder?")
-    verdict = json.loads(verdict_file.read_text())
+    # a budget-killed grade has no verdict — still viewable (frames + partial curve)
+    verdict = json.loads(verdict_file.read_text()) if verdict_file.exists() else {}
     grade_meta = json.loads((gdir / "grade.json").read_text()) if (gdir / "grade.json").exists() else {}
 
     progress = load_jsonl(gdir / "progress.jsonl")
@@ -98,6 +97,7 @@ TEMPLATE = r"""<!doctype html>
   .badge { font-weight:700; padding:2px 10px; border-radius:999px; font-size:13px; }
   .ok  { background:color-mix(in srgb, var(--good) 18%, transparent); color:var(--good); }
   .bad { background:color-mix(in srgb, var(--bad) 18%, transparent);  color:var(--bad); }
+  .na  { background:color-mix(in srgb, var(--line) 55%, transparent); color:var(--mut); }
   .crit { color:var(--mut); font-size:12.5px; }
   main { display:flex; gap:16px; padding:16px 20px; flex-wrap:wrap; }
   #left { flex:3 1 560px; min-width:340px; }
@@ -155,9 +155,9 @@ const colors = ["#E0A93E","#7FB4E0","#B07FE0","#6FCF8F","#E07F9E"];
 document.getElementById("title").textContent = D.title;
 const ok = D.verdict.success;
 const badge = document.getElementById("badge");
-badge.textContent = ok ? "success" : "failed";
-badge.className = "badge " + (ok ? "ok" : "bad");
-document.getElementById("score").textContent = "score " + D.verdict.score;
+badge.textContent = ok === true ? "success" : ok === false ? "failed" : "no verdict";
+badge.className = "badge " + (ok === true ? "ok" : ok === false ? "bad" : "na");
+document.getElementById("score").textContent = D.verdict.score == null ? "" : "score " + D.verdict.score;
 document.getElementById("crit").textContent = D.verdict.criteria || "";
 
 const stagesDiv = document.getElementById("stages");

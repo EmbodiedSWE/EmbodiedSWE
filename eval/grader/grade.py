@@ -5,8 +5,9 @@ Builds the registered preset from /bench (the same read-only tree the agent
 had), wraps it in GradedEnv with the scene's grader from /graders, runs the
 delivery's solve(env), writes verdict.json + progress.jsonl to /out. One
 trajectory, no seeds yet. verdict.json is always written — success False
-with the traceback if solve raises; a hang is the host launcher's budget
-to kill.
+with the traceback if solve raises, and on the host's budget kill (SIGTERM,
+30 s grace) the verdict is taken from the state at that moment
+(timed_out: true). Only a hard hang inside the sim dies verdict-less.
 """
 
 from __future__ import annotations
@@ -143,9 +144,20 @@ def main() -> None:
     env.reset()
     grader = grader_cls(env)  # one grader instance = this trajectory
 
+    import signal
+
+    stop = {"flag": False}
+    signal.signal(signal.SIGTERM, lambda *_: stop.update(flag=True))
+    # docker stop = SIGTERM + 30 s grace. The handler only sets a flag: raising
+    # inside it can land in a Kit C++ callback frame and never reach our try.
+    # The raise happens below, from our own per-step hook — always inside
+    # solve's Python call chain.
+
     def on_record(rec: dict) -> None:
         with (out / "progress.jsonl").open("a") as f:
             f.write(json.dumps(rec) + "\n")
+        if stop["flag"]:
+            raise TimeoutError("grading budget reached")
 
     genv = GradedEnv(env, grader, on_record=on_record)
 
@@ -160,6 +172,10 @@ def main() -> None:
 
         success, score = genv.verdict()
         result.update(success=success, score=score)
+    except TimeoutError:  # verdict from the state at kill — peak score is already real
+        success, score = genv.verdict()
+        result.update(success=success, score=score, timed_out=True,
+                      solve_sim_steps=grader.steps)
     except Exception:
         result.update(success=False, score=0.0, error=traceback.format_exc())
 
