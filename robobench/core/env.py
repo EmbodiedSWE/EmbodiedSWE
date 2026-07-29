@@ -1,9 +1,9 @@
-"""BaseEnv — the open, GPU-batched env: Sim + BaseScene + BaseRobot (+ optional BaseVerifier).
+"""BaseEnv — the open, GPU-batched env: Sim + BaseScene + BaseRobot.
 
-Open object (not a sealed gym box): the agent reaches `.sim .scene .robot .iscene .stage .cfg
-.verifier`, raw asset handles, `.data` tensors, and `pxr`, and may patch/replace parts in place.
+Open object (not a sealed gym box): the agent reaches `.sim .scene .robot .iscene .stage .cfg`,
+raw asset handles, `.data` tensors, and `pxr`, and may patch/replace parts in place.
 `step()` dispatches through `self.scene` / `self.robot` (late binding), so patches/swaps take
-effect immediately. Goal-agnostic: success is the optional, hidden verifier's call.
+effect immediately. Goal-agnostic: success is the hidden, harness-side grader's call.
 
 Composition by injection: pass built `scene`/`robot` (+ a `sim_cfg`); switching embodiment = a new
 env with a different robot. Constructing this needs `AppLauncher` running (isaaclab imported
@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 
     from .robot import BaseRobot
     from .scene import BaseScene
-    from .verifier import BaseVerifier
 
 
 class BaseEnv:
@@ -33,14 +32,13 @@ class BaseEnv:
         num_envs: int = 1,
         env_spacing: float = 2.0,
         device: str = "cuda:0",
-        verifier: BaseVerifier | None = None,
     ) -> None:
         from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
         from isaaclab.sim import SimulationContext  # lazy: requires AppLauncher
 
         self.cfg = sim_cfg
         self.num_envs, self.device, self.dt = num_envs, device, sim_cfg.dt
-        self.scene, self.robot, self.verifier = scene, robot, verifier
+        self.scene, self.robot = scene, robot
 
         self.sim = SimulationContext(sim_cfg)
         iscene_cfg = InteractiveSceneCfg(num_envs=num_envs, env_spacing=env_spacing)
@@ -116,11 +114,6 @@ class BaseEnv:
 
         root = root or "/World/envs/env_0"
         return usd_text(self.stage, root) if raw else _describe_stage(self.stage, root)
-
-    def verify(self) -> Any:
-        """Privileged: score the delivery if a verifier is attached, else None. Not for the agent.
-        Return type is free-form for now (verifier result type to be refined)."""
-        return self.verifier.verify(self) if self.verifier is not None else None
 
     def close(self) -> None:
         self.sim.stop()

@@ -1,0 +1,43 @@
+# Tiny test image — validates the docker plumbing BEFORE the 25 GB Isaac bake:
+#   1. GPU passthrough (nvidia-smi inside a container)
+#   2. Claude Code running headless inside a container
+#   3. (later) egress through the squid allowlist
+# Build: make test-image     (~2-4 min, ~1 GB)
+# Tag confirmed on Docker Hub 2026-07-21. 24.04: newest ubuntu with full 12.8.x
+# coverage (26.04 only has cuda 13.3, which exceeds the host driver 580 = CUDA 13.0).
+FROM nvidia/cuda:12.8.1-base-ubuntu24.04
+
+# GL/Vulkan runtime libs included so this image doubles as the `make dev` shell
+# (bind-mounted host .venv running Isaac headless). VERIFY: sufficient for Kit.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl python3 python3-venv tini \
+      libglvnd0 libgl1 libglx0 libegl1 libgles2 libvulkan1 \
+      libx11-6 libxt6 libxrandr2 libgomp1 libglu1-mesa \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node 22 + Claude Code (unpinned here — this image is a plumbing test, not an eval)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/* && \
+    npm install -g @anthropic-ai/claude-code @openai/codex
+
+# Same user model as the real L1: non-root agent, writable /workspace only.
+# ubuntu24.04 images ship a default 'ubuntu' user squatting uid 1000 — remove it
+# so agent gets uid 1000 (= the host user, keeps bind-mount ownership clean).
+# cuda images default to compute,utility — graphics injects libGLX_nvidia (the
+# Vulkan driver) but NOT its ICD manifest (measured 2026-07-21: boot 3 hit
+# ERROR_INCOMPATIBLE_DRIVER; libGLX_nvidia.so.0 present, /etc/vulkan/icd.d empty).
+# Bake the 3-line manifest ourselves — library_path is host-generic. Must run
+# as root, i.e. before USER agent.
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+RUN mkdir -p /etc/vulkan/icd.d && printf '%s\n' \
+  '{ "file_format_version": "1.0.1",' \
+  '  "ICD": { "library_path": "libGLX_nvidia.so.0", "api_version": "1.4.312" } }' \
+  > /etc/vulkan/icd.d/nvidia_icd.json
+
+RUN userdel -r ubuntu 2>/dev/null || true; \
+    useradd -m -u 1000 agent && mkdir -p /workspace && chown agent:agent /workspace
+WORKDIR /workspace
+USER agent
+
+ENTRYPOINT ["tini", "--"]
+CMD ["bash"]

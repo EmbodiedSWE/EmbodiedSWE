@@ -1,0 +1,59 @@
+# Agent phase for one trial: proxy sidecar + agent container on an internal network.
+# The internal network has NO route out — the only path to the internet is squid,
+# and squid only allows the allowlist. The firewall lives outside the agent's
+# container: the non-root agent cannot touch it.
+#
+#   RUN_DIR=<exp>/workspace-parent TASK_DIR=<exp>/task BENCH_DIR=<exp>/bench \
+#   AGENT_TAG=<cc-version> GPU=0 \
+#     docker compose -f compose.agent.yaml up --abort-on-container-exit
+#
+# Harness kills at deadline with: docker compose -f compose.agent.yaml stop -t 30
+
+networks:
+  rb-internal:
+    internal: true
+  rb-egress: {}
+
+volumes:
+  rb-ovcache: # warm shader/JIT cache, shared across trials (see `make warm`)
+    external: true
+
+services:
+  proxy:
+    image: ubuntu/squid:latest
+    networks: [rb-internal, rb-egress]
+    volumes:
+      - ./proxy/squid-allowlist.conf:/etc/squid/conf.d/allowlist.conf:ro
+
+  agent:
+    image: rb-l1-agent:${AGENT_TAG:?}
+    entrypoint: ["tini", "--", "/opt/entrypoints/agent-entry.sh"]
+    networks: [rb-internal]
+    shm_size: 2g
+    # CDI injection (nvidia-ctk cdi generate) — NOT legacy driver:nvidia. Legacy
+    # --gpus misses the graphics pieces (dev/char symlinks, app profiles, rtcore,
+    # vulkan layer) and Vulkan fails with ERROR_INCOMPATIBLE_DRIVER (measured
+    # 2026-07-21; CDI fixed it).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: cdi
+              device_ids: ["nvidia.com/gpu=${GPU:-0}"]
+    environment:
+      HTTP_PROXY: http://proxy:3128
+      HTTPS_PROXY: http://proxy:3128
+      NO_PROXY: localhost,127.0.0.1
+      AGENT: ${AGENT:-claude}      # adapter: claude | codex
+      MODEL: ${MODEL:-}            # optional model override for the chosen agent
+      # credentials from host env; never in image or task files
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}   # subscription token (claude setup-token)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}                     # for AGENT=codex
+      MAX_TURNS: ${MAX_TURNS:-}
+    volumes:
+      - ${RUN_DIR:?}/workspace:/workspace
+      - ${TASK_DIR:?}/public:/task:ro
+      - ${BENCH_DIR:?}:/bench:ro          # minimal tree from eval/extract_bench.py
+      - rb-ovcache:/ovcache
+    depends_on: [proxy]
