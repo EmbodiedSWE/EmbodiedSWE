@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# submit ["message"] — freeze the current /workspace/solution as a numbered
+# snapshot under /submissions/ (its own mount, outside the workspace), to be
+# graded later. The message — one line on what this version achieves — is
+# saved as note.txt inside the snapshot. Prints the path and returns.
+set -euo pipefail
+
+SOL=/workspace/solution
+SUB=/submissions
+[ -f "$SOL/solve.py" ] || { echo "submit: no $SOL/solve.py yet" >&2; exit 1; }
+
+mkdir -p "$SUB"
+last=$(find "$SUB" -maxdepth 1 -mindepth 1 -type d -name '[0-9]*' -printf '%f\n' \
+       | sed 's/[^0-9].*//' | sort -n | tail -1)
+name=$(printf "%02d" $(( ${last:-0} + 1 )))
+
+tmp="$SUB/.tmp_$name"
+rm -rf "$tmp"
+cp -r "$SOL" "$tmp"
+msg="$*"
+[ -n "$msg" ] && printf '%s\n' "$msg" > "$tmp/note.txt"
+mv "$tmp" "$SUB/$name"   # atomic: watchers only ever see complete snapshots
+echo "submitted: $SUB/$name"

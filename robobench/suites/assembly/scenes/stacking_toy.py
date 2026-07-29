@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -286,7 +287,8 @@ class StackingToyScene(BaseScene):
         out: dict[str, Any] = {
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
-                spawn=sim_utils.GroundPlaneCfg(),
+                spawn=sim_utils.GroundPlaneCfg(usd_path=str(
+                    Path(__file__).resolve().parents[1] / "assets" / "props" / "ground" / "default_ground.usd")),
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
             ),
             "light": AssetBaseCfg(

@@ -11,7 +11,7 @@ needs AppLauncher):
     the requirements), patchable per binding.
   - `EnvCfg` (+ `register_env`) — the one struct that **binds a runnable env** (scene + robot + control
     mode + sim) and is loaded by name from the `ENVS` registry. Mirrors CaP-X's `CodeExecEnvConfig`:
-    orthogonal Sim/Scene/Robot/Verifier knobs, copy-and-override derivations.
+    orthogonal Sim/Scene/Robot/Grader knobs, copy-and-override derivations.
 """
 
 from __future__ import annotations
@@ -103,7 +103,6 @@ class EnvCfg:
     control_mode: str = ""  # applied to the robot cfg ("" -> the robot's first mode)
     scene_cfg: Any = None  # a scene BaseCfg instance, or None -> the scene's default
     robot_cfg: Any = None  # a BaseRobotCfg instance, or None -> the robot's default
-    verifier: Any = None  # an optional BaseVerifier instance (no verifier registry yet)
     num_envs: int = 1
     env_spacing: float = 2.0
     device: str = "cuda:0"
@@ -165,7 +164,6 @@ class EnvCfg:
             num_envs=cfg.num_envs,
             env_spacing=cfg.env_spacing,
             device=cfg.device,
-            verifier=cfg.verifier,
         )
 
 

@@ -1,7 +1,7 @@
 """Core machinery shared across all robobench suites.
 
 Base abstractions (import-light — safe without AppLauncher):
-  BaseScene · BaseRobot · BaseController · BaseVerifier   (contracts concrete suites/robots implement)
+  BaseScene · BaseRobot · BaseController · BaseGrader      (contracts concrete suites/robots implement)
   BaseRobotCfg                     (thin robot-cfg base carrying `control_mode`)
   BaseEnv                          (the open env shell; its build needs AppLauncher)
   config.py — the whole config layer (one module):
@@ -11,8 +11,7 @@ Base abstractions (import-light — safe without AppLauncher):
   describe_stage · usd_text        (generic USD introspection — works on any stage)
   SCENES · ROBOTS · CONTROLLERS · ENVS  (string→factory registries; no TASKS — a scene *is* a task)
 
-Still TODO (filled later): a structured verifier result type (verify() returns Any for now),
-a Sim wrapper, sensors, gym_wrapper, a verifier registry.
+Still TODO (filled later): a Sim wrapper, sensors, gym_wrapper, a grader registry.
 """
 
 from .config import BaseCfg, EnvCfg, SimCfg, info, register_env, tunable
@@ -22,7 +21,7 @@ from .introspection import describe_stage, usd_text
 from .registries import CONTROLLERS, ENVS, ROBOTS, SCENES
 from .robot import BaseRobot, BaseRobotCfg
 from .scene import BaseScene
-from .verifier import BaseVerifier
+from .grader import BaseGrader, GradedEnv
 
 __all__ = [
     "BaseScene",
@@ -30,7 +29,8 @@ __all__ = [
     "BaseRobotCfg",
     "BaseController",
     "BaseControllerCfg",
-    "BaseVerifier",
+    "BaseGrader",
+    "GradedEnv",
     "BaseEnv",
     "EnvCfg",
     "register_env",

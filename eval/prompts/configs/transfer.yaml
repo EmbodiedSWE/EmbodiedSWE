@@ -1,0 +1,5 @@
+# Disclosed-transfer variant for run_sequence.py: every stage is told the series
+# shares /workspace/experiences/ — read earlier notes, maintain your own.
+# Remove transfer_experience for the undisclosed variant.
+hints: [save_snapshot]
+rules: [autonomous_operation, transfer_experience]
