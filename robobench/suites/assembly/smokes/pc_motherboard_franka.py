@@ -254,44 +254,45 @@ def main() -> None:
     stand_xy = key.data.root_pos_w[:, 0:2].clone()  # the stand pocket = the key's spawn axis
 
     # ----- camera: a two-anchor shot — a stand view for the pick and the return, and an insert
-    # anchor riding a CONSTANT offset from the ACTIVE hole, ~40 deg east of south at ~64 deg
-    # elevation and 0.71 m out, so every socket is filmed with the same verified geometry. The blend is
-    # PHASE-driven and saturates while the key works (a key-position blend never saturates —
-    # the far holes stand 0.17 m from case centre, which left ~40% of the pick anchor mixed
-    # into every insert shot). The elevation window is squeezed from every side: the south-row
-    # sockets sit ~174 mm below a wall top only 65 mm away, so a southern eye needs ~69 deg for
-    # its sightline to cross the wall plane above the rim; past ~73 deg the gripper itself
-    # swallows the socket (near-zenith rays pass inside the hand's silhouette); the wrist mass
-    # hangs WEST of the hand when the arm stretches to the east holes (a south-WEST eye stares
-    # straight into it); and the tall rear section kills eastern azimuths below ~74 deg (cf.
-    # the scene smoke's camera note). Due-south-slightly-east at ~69 deg threads all four: the
-    # wall crossing lands just above the rim, the ray passes ~11 cm south of the socket at hand
-    # height (the hand sweeps to ~11 cm at its worst crank yaw), the west-side wrist never
-    # crosses a southern ray, and the east bias is free: the wall bound caps only the eye's
-    # SOUTHWARD component, so easting the azimuth grows the miss distance to ~13.5 cm without
-    # lowering the wall crossing or approaching the shroud (the ray enters over the LOW
-    # south-east corner).
+    # anchor riding a PER-HOLE eye offset with a phase-driven blend that saturates while the key
+    # works (a key-position blend never saturates — the far holes stand 0.17 m from case centre,
+    # which left ~40% of the pick anchor mixed into every insert shot). The offsets are MEASURED,
+    # not modelled: a probe build of this smoke labels each bolt with a semantic class, renders a
+    # candidate-eye grid through the real strokes, and counts the active bolt's visible pixels.
+    # Verdicts: the box rim hides south-row sockets from any southern eye below ~72 deg (memory
+    # said ~69 — the pixels said otherwise); near-zenith trades the rim for the gripper's own
+    # silhouette; the wrist rides WEST of the hand on east reaches, so south-WEST eyes stare into
+    # it; and the tool+hand necessarily envelop the bolt head for moments of every stroke from
+    # ANY angle — between strokes the bolt always stands clear. The default eye (steep, ~50 deg
+    # east of south) kept the bolt visible through ~87% of probed stroke seconds on the hardest
+    # ordinary hole; hole 0 — the recessed east-trench corner, tool-shadowed from everywhere —
+    # gets a near-zenith override that maximizes its measured mid-stroke visibility.
     cam_pose = None
     if cam is not None:
         p0 = case_pos[0]
         k0 = key.data.root_pos_w[0]
         pick_eye = torch.tensor([float(k0[0]) + 0.36, float(k0[1]) - 0.34, float(p0[2]) + 0.44], device=dev)
         pick_tgt = torch.tensor([float(k0[0]), float(k0[1]), float(p0[2]) + 0.14], device=dev)
-        ins_eye = torch.tensor([float(p0[0]) + 0.225, float(p0[1]) - 0.27, float(p0[2]) + 0.75], device=dev)
-        ins_tgt = torch.tensor([float(p0[0]), float(p0[1]), float(p0[2]) + 0.02], device=dev)
+        INS_OFF = {0: (0.10, -0.14, 1.10)}  # hole-relative eye offsets; keyed overrides below
+        INS_OFF_DEFAULT = (0.28, -0.18, 1.00)
         cam_s = 0.0
-        cam_pan = torch.zeros(3, device=dev)
+        cam_eye = cam_tgt = None
         cam_home = {"show", "stage_hold", "pick_hover", "pick_down", "pick_close", "lift_out",
                     "return_travel", "return_drop", "release", "retreat", "settle"}
 
         def cam_pose() -> tuple[torch.Tensor, torch.Tensor]:
-            nonlocal cam_s
+            nonlocal cam_s, cam_eye, cam_tgt
             cam_s += 0.02 * ((0.0 if phase in cam_home else 1.0) - cam_s)
             hole = holes_w[0, active]
-            pan_t = torch.tensor([float(hole[0] - p0[0]), float(hole[1] - p0[1]), 0.0], device=dev)
-            cam_pan[:] = cam_pan + 0.04 * (pan_t - cam_pan)
-            eye = pick_eye + (ins_eye + cam_pan - pick_eye) * cam_s
-            tgt = pick_tgt + (ins_tgt + cam_pan - pick_tgt) * cam_s
+            ox, oy, oz = INS_OFF.get(int(active), INS_OFF_DEFAULT)
+            te = torch.tensor([float(hole[0]) + ox, float(hole[1]) + oy, float(p0[2]) + oz], device=dev)
+            tt = torch.tensor([float(hole[0]), float(hole[1]), float(p0[2]) + 0.02], device=dev)
+            if cam_eye is None:
+                cam_eye, cam_tgt = te.clone(), tt.clone()
+            cam_eye += 0.04 * (te - cam_eye)
+            cam_tgt += 0.04 * (tt - cam_tgt)
+            eye = pick_eye + (cam_eye - pick_eye) * cam_s
+            tgt = pick_tgt + (cam_tgt - pick_tgt) * cam_s
             return eye.unsqueeze(0), tgt.unsqueeze(0)
 
     print(env.describe(), flush=True)
