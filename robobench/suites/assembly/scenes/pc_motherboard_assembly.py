@@ -54,15 +54,19 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     num_holes: int = info(7)  # motherboard case-mount screw holes (= number of bolts)
     # Hole axes in the case's local frame (xy on the z=0 board face), serpentine drive order.
-    # Baked into the committed case USD (keep in sync if the asset changes).
+    # Baked into the committed case USD (keep in sync if the asset changes). The board (and its
+    # holes) sits 50 mm WEST of the donor case's layout — pc_case_assembly_mb.usd overrides the
+    # motherboard group's transforms so a hex key cranking in any hole keeps its gripper and
+    # fingers clear of the IO-panel wall; only the outer tip of the 120 mm handle still sweeps
+    # over the east rim, with 20-43 mm of air. (The GPU scenes reference the unshifted base.)
     hole_xy: tuple[tuple[float, float], ...] = info((
-        (+0.0876, -0.1448),  # top_left
-        (-0.1150, -0.1444),  # top_right
-        (-0.1151, +0.0109),  # mid_right
-        (+0.1114, +0.0108),  # mid_left
-        (+0.1119, +0.1345),  # bot_left
-        (-0.0431, +0.1347),  # bot_mid
-        (-0.1148, +0.1343),  # bot_right
+        (+0.0376, -0.1448),  # top_left
+        (-0.1650, -0.1444),  # top_right
+        (-0.1651, +0.0109),  # mid_right
+        (+0.0614, +0.0108),  # mid_left
+        (+0.0619, +0.1345),  # bot_left
+        (-0.0931, +0.1347),  # bot_mid
+        (-0.1648, +0.1343),  # bot_right
     ))
     board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
     case_lift: float = info(0.0289)  # board face above the side panel the case lies on
@@ -115,7 +119,7 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
             )
         assets = Path(__file__).resolve().parents[1] / "assets"
         self.asset_dir = self.asset_dir or str(assets)
-        self.case_usd = self.case_usd or str(Path(self.asset_dir) / "pc" / "pc_case_assembly.usd")
+        self.case_usd = self.case_usd or str(Path(self.asset_dir) / "pc" / "pc_case_assembly_mb.usd")
         self.bolt_usd = self.bolt_usd or str(Path(self.asset_dir) / "allen_bolt" / "allen_bolt_m8.usd")
         self.key_usd = self.key_usd or str(Path(self.asset_dir) / "allen_key" / "allen_key_m8_long.usd")
         preset = self.TABLES[self.table]
