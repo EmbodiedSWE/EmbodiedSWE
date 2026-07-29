@@ -109,6 +109,10 @@ class G1Robot(BaseRobot):
     control_modes: tuple[str, ...] = ("joint", "pink_ik")
     cfg: G1RobotCfg
 
+    # End-effector bodies (left, right): the wrist links the pink_ik frames track and
+    # generic tooling (robot_binding_smoke) reads.
+    EE_BODIES: tuple[str, str] = ("left_wrist_yaw_link", "right_wrist_yaw_link")
+
     # Upper-body control period (s): ~50 Hz (Isaac `Isaac-PickPlace-FixedBaseUpperBodyIK-G1`, decim 4 @
     # 200 Hz). `bind` rounds to the nearest sim-step multiple -> period 2 (60 Hz) at the 120 Hz table.
     CONTROL_DT: float = 0.02
