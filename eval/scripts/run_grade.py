@@ -40,6 +40,8 @@ def grade_one(*, args, exp: Path, stage: Path, preset: str, scene: str, grader_d
     """One delivery -> one grading container -> one grade folder."""
     spend = compute_spend(exp / "runs" / run if run else None,
                           solution if submission else None)
+    note_file = solution / "note.txt"
+    note = note_file.read_text().strip() if note_file.exists() else None
     cname = f"rb_grade_{exp.name}_{run or solution.parent.name}_{gname}"
     cmd = [
         "docker", "run", "-d", "--name", cname,
@@ -83,6 +85,7 @@ def grade_one(*, args, exp: Path, stage: Path, preset: str, scene: str, grader_d
     (out / "grade.json").write_text(json.dumps({
         "exp": str(exp), "stage": stage.name, "preset": preset, "grade": gname,
         **({"submission": submission} if submission else {}),
+        **({"note": note} if note else {}),
         **({"spend": spend} if spend else {}),
         "solution": str(solution), "image": DEFAULT_IMAGE, "gpu": args.gpu,
         "network": args.network, "budget_min": args.budget_min,
@@ -109,17 +112,21 @@ def write_curve(run_dir: Path) -> None:
             continue
         g, v = json.loads(gj.read_text()), json.loads(vj.read_text())
         rows.append({"grade": gdir.name, "submission": g.get("submission"),
+                     "auto": bool((g.get("spend") or {}).get("auto")),
+                     "note": g.get("note"),
                      "success": v.get("success"), "score": v.get("score"),
                      "spend": g.get("spend", {})})
     rows.sort(key=lambda r: (r["grade"] == "final", r["grade"]))
     (run_dir / "curve.json").write_text(json.dumps(rows, indent=2) + "\n")
     print(f"\ncurve -> {run_dir / 'curve.json'}")
-    print(f"{'grade':<14}{'wall_s':>9}{'out_tokens':>12}{'score':>8}  success")
+    print(f"{'grade':<14}{'origin':<7}{'wall_s':>9}{'out_tokens':>12}{'score':>8}  success  note")
     for r in rows:
         u = (r["spend"] or {}).get("usage") or {}
         wall = (r["spend"] or {}).get("wall_s")
-        print(f"{r['grade']:<14}{wall if wall is not None else '-':>9}"
-              f"{u.get('output_tokens', '-'):>12}{r['score']:>8}  {r['success']}")
+        origin = "auto" if r["auto"] else ("agent" if r["submission"] else "-")
+        print(f"{r['grade']:<14}{origin:<7}{wall if wall is not None else '-':>9}"
+              f"{u.get('output_tokens', '-'):>12}{r['score']:>8}  {str(r['success']):<7}  "
+              f"{(r['note'] or '')[:48]}")
 
 
 def single_stage(exp: Path) -> Path:

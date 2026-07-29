@@ -55,6 +55,8 @@ def main() -> None:
         "title": "/".join(p for p in (grade_meta.get("exp", gdir.parent.parent.parent.name).split("/")[-1],
                                       gdir.parent.parent.name, gdir.name) if p),
         "verdict": {k: verdict.get(k) for k in ("success", "score", "criteria", "solve_wall_s", "solve_sim_steps")},
+        "note": grade_meta.get("note"),
+        "auto": bool((grade_meta.get("spend") or {}).get("auto")),
         "stages": stages,
         "weights": weights,
         "progress": [{"t": r["sim_time_s"], "p": r["progress"],
@@ -129,6 +131,7 @@ TEMPLATE = r"""<!doctype html>
   <span id="badge" class="badge"></span>
   <span id="score"></span>
   <span class="crit" id="crit"></span>
+  <span class="crit" id="note"></span>
 </header>
 <main>
   <div id="left">
@@ -159,6 +162,8 @@ badge.textContent = ok === true ? "success" : ok === false ? "failed" : "no verd
 badge.className = "badge " + (ok === true ? "ok" : ok === false ? "bad" : "na");
 document.getElementById("score").textContent = D.verdict.score == null ? "" : "score " + D.verdict.score;
 document.getElementById("crit").textContent = D.verdict.criteria || "";
+document.getElementById("note").textContent =
+  (D.auto ? "[auto snapshot] " : "") + (D.note ? "“" + D.note + "”" : "");
 
 const stagesDiv = document.getElementById("stages");
 const bars = [];

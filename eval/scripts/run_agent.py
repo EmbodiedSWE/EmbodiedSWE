@@ -212,6 +212,7 @@ def main() -> None:
         tmp = submissions / f".tmp_{name}"
         shutil.rmtree(tmp, ignore_errors=True)
         shutil.copytree(sol, tmp)
+        (tmp / "note.txt").write_text("auto snapshot\n")
         (tmp / "submitted.json").write_text(json.dumps({
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "wall_s": round(time.time() - t0, 1),

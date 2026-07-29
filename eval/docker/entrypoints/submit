@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# submit — freeze the current /workspace/solution as a numbered snapshot under
-# /submissions/ (its own mount, outside the workspace), to be graded later.
-# Prints the snapshot path and returns; keep working afterwards.
+# submit ["message"] — freeze the current /workspace/solution as a numbered
+# snapshot under /submissions/ (its own mount, outside the workspace), to be
+# graded later. The message — one line on what this version achieves — is
+# saved as note.txt inside the snapshot. Prints the path and returns.
 set -euo pipefail
 
 SOL=/workspace/solution
@@ -16,5 +17,7 @@ name=$(printf "%02d" $(( ${last:-0} + 1 )))
 tmp="$SUB/.tmp_$name"
 rm -rf "$tmp"
 cp -r "$SOL" "$tmp"
+msg="$*"
+[ -n "$msg" ] && printf '%s\n' "$msg" > "$tmp/note.txt"
 mv "$tmp" "$SUB/$name"   # atomic: watchers only ever see complete snapshots
 echo "submitted: $SUB/$name"
