@@ -22,6 +22,18 @@ if TYPE_CHECKING:
     from .scene import BaseScene
 
 
+def seed_rngs(seed: int) -> None:
+    """Seed `random`, `np.random`, and torch (CPU + all CUDA devices)."""
+    import random
+
+    import numpy as np
+    import torch
+
+    random.seed(seed)
+    np.random.seed(seed % 2**32)
+    torch.manual_seed(seed)
+
+
 class BaseEnv:
     def __init__(
         self,
@@ -32,6 +44,7 @@ class BaseEnv:
         num_envs: int = 1,
         env_spacing: float = 2.0,
         device: str = "cuda:0",
+        seed: int | None = None,
     ) -> None:
         from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
         from isaaclab.sim import SimulationContext  # lazy: requires AppLauncher
@@ -39,6 +52,9 @@ class BaseEnv:
         self.cfg = sim_cfg
         self.num_envs, self.device, self.dt = num_envs, device, sim_cfg.dt
         self.scene, self.robot = scene, robot
+        self.seed = seed
+        if seed is not None:
+            seed_rngs(seed)
 
         self.sim = SimulationContext(sim_cfg)
         iscene_cfg = InteractiveSceneCfg(num_envs=num_envs, env_spacing=env_spacing)
@@ -74,9 +90,11 @@ class BaseEnv:
         self.robot.set_state(states["robot"], env_ids)
         self.iscene.write_data_to_sim()
 
-    def reset(self, env_ids: torch.Tensor | None = None) -> None:
+    def reset(self, env_ids: torch.Tensor | None = None, *, seed: int | None = None) -> None:
         """Advance to the start state for `env_ids`. Read state with `get_states()`; observations
         (if any) come from a gym wrapper, not the raw env."""
+        if seed is not None:
+            seed_rngs(seed)
         env_ids = self._env_ids(env_ids)
         self.scene.reset(env_ids)
         self.robot.reset(env_ids)

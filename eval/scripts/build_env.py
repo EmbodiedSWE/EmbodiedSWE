@@ -41,6 +41,7 @@ def main() -> None:
                          "agent cannot restore snapshots and must solve from reset() forward")
     ap.add_argument("--no-freeze-controller", action="store_true",
                     help="allow the agent to switch control modes (default: frozen to the preset)")
+    ap.add_argument("--seed", type=int, default=0, help="seed for the boot check")
     ap.add_argument("--out", default=str(REPO / "experiments"), help="output root")
     args = ap.parse_args()
 
@@ -57,6 +58,7 @@ def main() -> None:
         set_states=not args.no_set_states,
         freeze_controller=not args.no_freeze_controller,
         out_root=Path(args.out),
+        seed=args.seed,
     )
 
 

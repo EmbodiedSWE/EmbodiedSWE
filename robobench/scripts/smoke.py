@@ -71,9 +71,8 @@ def main() -> None:
     app = AppLauncher(args).app
     import torch
 
-    torch.manual_seed(args.seed)
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    env = cfg.build(num_envs=args.num_envs, device=device)
+    env = cfg.build(num_envs=args.num_envs, device=device, seed=args.seed)
     robot = env.robot
     n, dim = env.num_envs, robot.action_dim
 

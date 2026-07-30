@@ -19,7 +19,7 @@ VENV_PY = REPO / ".venv" / "bin" / "python"
 _D0, _D1 = "<<DESCRIBE>>", "<<END_DESCRIBE>>"
 
 
-def boot_preset(tree: Path, preset: str) -> str:
+def boot_preset(tree: Path, preset: str, seed: int = 0) -> str:
     """Build + reset the registered env from `tree`; return a sectioned
     markdown description (scene / robot) from the live objects."""
     code = f"""
@@ -29,8 +29,8 @@ import robobench
 assert robobench.__file__.startswith('{tree}'), 'wrong robobench: ' + robobench.__file__
 robobench.discover()
 from robobench.core.registries import ENVS
-env = ENVS.get('{preset}')().build(num_envs=1)
-env.reset()
+env = ENVS.get('{preset}')().build(num_envs=1, seed={seed})
+env.reset(seed={seed})
 print('{_D0}')
 print('## Scene'); print()
 print(env.scene.describe()); print()

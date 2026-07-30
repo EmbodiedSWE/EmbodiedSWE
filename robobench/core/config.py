@@ -106,6 +106,7 @@ class EnvCfg:
     num_envs: int = 1
     env_spacing: float = 2.0
     device: str = "cuda:0"
+    seed: int | None = 0  # None -> unseeded (RNGs left alone)
     # Sim defaults come from the SCENE (`scene.sim_cfg()` — its contact geometry drives the
     # requirements). These patch them for THIS binding (e.g. an embodiment that needs more solver
     # iters). Keys: "dt" / "gravity", and "physx" (merged into the scene's PhysX kwargs, not replaced).
@@ -164,6 +165,7 @@ class EnvCfg:
             num_envs=cfg.num_envs,
             env_spacing=cfg.env_spacing,
             device=cfg.device,
+            seed=cfg.seed,
         )
 
 
