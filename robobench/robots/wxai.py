@@ -187,6 +187,7 @@ class WxaiRobot(BaseRobot):
         jv = art.data.default_joint_vel[env_ids].clone()
         art.write_joint_state_to_sim(jp, jv, env_ids=env_ids)
         art.set_joint_position_target(jp, env_ids=env_ids)
+        art.set_joint_effort_target(torch.zeros_like(jp), env_ids=env_ids)
         root = art.data.default_root_state[env_ids].clone()
         root[:, 0:3] += self.env.iscene.env_origins[env_ids]
         art.write_root_state_to_sim(root, env_ids)

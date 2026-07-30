@@ -43,6 +43,7 @@ def build_experiment(
     set_states: bool = True,
     freeze_controller: bool = True,
     out_root: Path = Path("experiments"),
+    seed: int = 0,
 ) -> Path:
     exp_dir = (out_root / name).resolve()
     if exp_dir.exists():
@@ -63,7 +64,7 @@ def build_experiment(
         if not set_states:
             patch.disable_set_states(bench)
         # boot validation is NOT optional: no bundle ships unbooted
-        describe_text = validate.boot_preset(bench, preset)
+        describe_text = validate.boot_preset(bench, preset, seed=seed)
         (stage_dir / "describe.md").write_text(describe_text + "\n")
         records.append({
             "dir": stage_dir.name, "preset": preset, "assets": assets,
@@ -72,7 +73,8 @@ def build_experiment(
         })
 
     manifest.write_receipt(exp_dir, {
-        "name": name, "argv": sys.argv, "set_states": set_states, "stages": records,
+        "name": name, "argv": sys.argv, "set_states": set_states, "boot_seed": seed,
+        "stages": records,
     })
     print(f"built: {exp_dir}")
     return exp_dir
