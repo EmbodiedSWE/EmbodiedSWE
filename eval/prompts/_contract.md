@@ -69,6 +69,12 @@ deliverable.
 
 ## Practical notes
 
+- The environment builds with a fixed seed, so every fresh build starts from
+  the same initial condition; plain `env.reset()` draws a new one,
+  `env.reset(seed=0)` returns to it. Test against this seed first — grading
+  uses it too — then make the solution robust where you can: grading also
+  tests other initial conditions, and GPU physics is not bit-deterministic
+  (small errors compound), so closed-loop corrections beat open-loop replay.
 - Running simulations headless saves time: `AppLauncher(headless=True)` —
   create it BEFORE importing anything that touches `isaaclab.sim`. The first
   sim launch takes ~1 minute; later launches are faster.
