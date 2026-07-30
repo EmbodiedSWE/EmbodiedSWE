@@ -14,8 +14,8 @@ same read-only /bench tree the agent had, plus the suite's grader/ at
 credentials; --network none grades fully offline. The in-container driver is
 eval/grader/grade.py. Artifacts land in <out>/: verdict.json, progress.jsonl,
 container.log, grade.json — every grade of a run also carries the spend
-(wall clock + tokens) behind its delivery. One trajectory per grade; seeds
-later.
+(wall clock + tokens) behind its delivery. One seeded trajectory per grade;
+across seeds, name each grade (e.g. --grade final_s1 --seed 1).
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def grade_one(*, args, exp: Path, stage: Path, preset: str, scene: str, grader_d
         "-v", f"{out}:/out",
         "-v", "rb-ovcache:/ovcache",
         DEFAULT_IMAGE, "python", "/grader/grade.py",
-        "--preset", preset, "--scene", scene,
+        "--preset", preset, "--scene", scene, "--seed", str(args.seed),
     ] + (["--render"] if args.render else [])
 
     if args.dry_run:
@@ -84,6 +84,7 @@ def grade_one(*, args, exp: Path, stage: Path, preset: str, scene: str, grader_d
 
     (out / "grade.json").write_text(json.dumps({
         "exp": str(exp), "stage": stage.name, "preset": preset, "grade": gname,
+        "seed": args.seed,
         **({"submission": submission} if submission else {}),
         **({"note": note} if note else {}),
         **({"spend": spend} if spend else {}),
@@ -113,18 +114,19 @@ def write_curve(run_dir: Path) -> None:
         g, v = json.loads(gj.read_text()), json.loads(vj.read_text())
         rows.append({"grade": gdir.name, "submission": g.get("submission"),
                      "auto": bool((g.get("spend") or {}).get("auto")),
-                     "note": g.get("note"),
+                     "note": g.get("note"), "seed": g.get("seed"),
                      "success": v.get("success"), "score": v.get("score"),
                      "spend": g.get("spend", {})})
     rows.sort(key=lambda r: (r["grade"] == "final", r["grade"]))
     (run_dir / "curve.json").write_text(json.dumps(rows, indent=2) + "\n")
     print(f"\ncurve -> {run_dir / 'curve.json'}")
-    print(f"{'grade':<14}{'origin':<7}{'wall_s':>9}{'out_tokens':>12}{'score':>8}  success  note")
+    print(f"{'grade':<14}{'origin':<7}{'seed':>5}{'wall_s':>9}{'out_tokens':>12}{'score':>8}  success  note")
     for r in rows:
         u = (r["spend"] or {}).get("usage") or {}
         wall = (r["spend"] or {}).get("wall_s")
         origin = "auto" if r["auto"] else ("agent" if r["submission"] else "-")
-        print(f"{r['grade']:<14}{origin:<7}{wall if wall is not None else '-':>9}"
+        seed = r["seed"] if r["seed"] is not None else "-"
+        print(f"{r['grade']:<14}{origin:<7}{seed:>5}{wall if wall is not None else '-':>9}"
               f"{u.get('output_tokens', '-'):>12}{r['score']:>8}  {str(r['success']):<7}  "
               f"{(r['note'] or '')[:48]}")
 
@@ -154,6 +156,7 @@ def main() -> None:
                          "(default: the submission name, else timestamped)")
     ap.add_argument("--solution", help="explicit solution dir containing solve.py (needs --out)")
     ap.add_argument("--out", help="output dir (default: <exp>/runs/<run>/grades/<grade>)")
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--gpu", default="0")
     ap.add_argument("--network", default="bridge",
                     help="container network (assets are vendored, so --network none also works)")

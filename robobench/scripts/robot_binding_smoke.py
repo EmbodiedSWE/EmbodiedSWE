@@ -36,6 +36,7 @@ parser.add_argument("--via", type=str, default="",
 parser.add_argument("--hover", type=str, default="0,0,0.10",
                     help="approach offset dx,dy,dz from the body (m); e.g. the safe dial "
                          "needs 0,-0.12,0 — a hover ABOVE it is inside the door")
+parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--record_every", type=int, default=4)
 parser.add_argument("--reach_steps", type=int, default=350)
 parser.add_argument("--max_step", type=float, default=0.008)
@@ -71,7 +72,7 @@ def main() -> None:
     robobench.discover()
     parts = args.env.split(".")
     robot_name, mode = parts[2], parts[3]
-    env = ENVS.get(args.env)().build(num_envs=1)
+    env = ENVS.get(args.env)().build(num_envs=1, seed=args.seed)
     art = env.robot.articulation
     # End-effector body from the robot class: EE_BODIES = (left, right) on the
     # humanoids (take the right), EE_BODY on the single-arm grippers.

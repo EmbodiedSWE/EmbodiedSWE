@@ -4,7 +4,7 @@
 Builds the registered preset from /bench (the same read-only tree the agent
 had), wraps it in GradedEnv with the scene's grader from /graders, runs the
 delivery's solve(env), writes verdict.json + progress.jsonl to /out. One
-trajectory, no seeds yet. verdict.json is always written — success False
+seeded trajectory per invocation. verdict.json is always written — success False
 with the traceback if solve raises, and on the host's budget kill (SIGTERM,
 30 s grace) the verdict is taken from the state at that moment
 (timed_out: true). Only a hard hang inside the sim dies verdict-less.
@@ -122,6 +122,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--preset", required=True)
     ap.add_argument("--scene", required=True)
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--render", action="store_true",
                     help="render the run: /out/frames/*.jpg + frames.jsonl + render.json")
     args = ap.parse_args()
@@ -139,9 +140,9 @@ def main() -> None:
     from robobench.core.registries import ENVS
 
     grader_cls = load_graders(GRADERS_DIR)[args.scene]
-    env = ENVS.get(args.preset)().build(num_envs=1)
+    env = ENVS.get(args.preset)().build(num_envs=1, seed=args.seed)
     flush = start_renderer(env, out) if args.render else None  # re-parses sim: before the graded reset
-    env.reset()
+    env.reset(seed=args.seed)
     grader = grader_cls(env)  # one grader instance = this trajectory
 
     import signal
@@ -161,7 +162,8 @@ def main() -> None:
 
     genv = GradedEnv(env, grader, on_record=on_record)
 
-    result = {"preset": args.preset, "scene": args.scene, "criteria": grader.describe()}
+    result = {"preset": args.preset, "scene": args.scene, "seed": args.seed,
+              "criteria": grader.describe()}
     try:
         solve = load_solve(SOLUTION)  # the delivery
 
