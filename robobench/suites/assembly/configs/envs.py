@@ -33,6 +33,7 @@ from robobench.suites.assembly.scenes import (
     NutThreadAssemblySceneCfg,
     PcGpuAssemblySceneCfg,
     PcGpuRamAssemblySceneCfg,
+    PcMotherboardAssemblySceneCfg,
     PcRamAssemblySceneCfg,
     StackingToySceneCfg,
 )
@@ -58,6 +59,45 @@ register_env(SUITE, lambda: EnvCfg(scene="allen_bolt", robot="null", env_spacing
 # one allen key that drives each bolt down into its hole, scene physics only for now.
 # -> "assembly.pc_motherboard"
 register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spacing=2))
+
+# Franka arm at the pc-motherboard scene: one key fastens all 7 board bolts. The base stands
+# WEST of the case at (0.07, 0), facing +x, and the whole table (case included) slides 40 mm
+# east (`workbench_pos`) so the arm's foot clears the case's west edge by 5 cm — the 7 holes
+# then span the arm's 0.36-0.60 m top-down band, where a reach probe (yaw 0 / +-120 deg,
+# z 0.28-0.40) tracks to a few mm; an east base instead put the nearest holes at 0.19-0.26 m,
+# inside the folded arm's close-in cliff, and the reinsert plunge saturated ~1 cm short. The
+# key stands UPRIGHT in a four-wall stand in the south-west strip (`key_stand`), tip down and
+# handle 210 mm up — the very grip the ratchet cranks with, so the arm lifts it out and screws
+# with a single grasp (a flat-lying key instead demands a low pinch, a 90 deg in-hand
+# reorientation, and a release+regrasp in the first socket). The bolt row lies along the SOUTH
+# table edge (the smoke stages bolts kinematically in their holes, so the row is scenery).
+# Deterministic spawn; sim dt 1/240 (no SDF threads here — the smoke drives the scene's
+# kinematic screw joints, cf. pc_motherboard_smoke).
+# Three control modes, switchable by env name:
+#   - "assembly.pc_motherboard.franka.osc"       — operational-space control (default)
+#   - "assembly.pc_motherboard.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_motherboard.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_motherboard",
+            scene_cfg=PcMotherboardAssemblySceneCfg(
+                workbench_pos=(0.54, 0.0),
+                bolt_init_xy=tuple((-0.24 + k * 0.075, -0.42) for k in range(7)),
+                key_init_xy=(-0.24, -0.30),
+                key_init_z=0.001,
+                key_init_quat=(1.0, 0.0, 0.0, 0.0),
+                key_stand=True,
+                reset_pos_jitter=0.0,
+            ),
+            robot="franka",
+            robot_cfg=FrankaRobotCfg(base_pos=(0.07, 0.0, 0.0)),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
 
 # The same PC case with its primary PCIe x16 slot empty and a loose graphics card beside it, to be
 # stood upright and pressed straight down into the slot, scene physics only for now.
