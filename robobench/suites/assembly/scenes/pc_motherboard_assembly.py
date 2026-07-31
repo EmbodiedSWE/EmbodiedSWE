@@ -54,15 +54,16 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     num_holes: int = info(7)  # motherboard case-mount screw holes (= number of bolts)
     # Hole axes in the case's local frame (xy on the z=0 board face), serpentine drive order.
-    # Baked into the committed case USD (keep in sync if the asset changes).
+    # Baked into the committed case USD (keep in sync if the asset changes). The board's
+    # position keeps a hex key cranking in any hole clear of the IO-panel wall.
     hole_xy: tuple[tuple[float, float], ...] = info((
-        (+0.0876, -0.1448),  # top_left
-        (-0.1150, -0.1444),  # top_right
-        (-0.1151, +0.0109),  # mid_right
-        (+0.1114, +0.0108),  # mid_left
-        (+0.1119, +0.1345),  # bot_left
-        (-0.0431, +0.1347),  # bot_mid
-        (-0.1148, +0.1343),  # bot_right
+        (+0.0376, -0.1448),  # top_left
+        (-0.1650, -0.1444),  # top_right
+        (-0.1651, +0.0109),  # mid_right
+        (+0.0614, +0.0108),  # mid_left
+        (+0.0619, +0.1345),  # bot_left
+        (-0.0931, +0.1347),  # bot_mid
+        (-0.1648, +0.1343),  # bot_right
     ))
     board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
     case_lift: float = info(0.0289)  # board face above the side panel the case lies on
@@ -81,6 +82,12 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
     key_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
     key_mass: float = info(0.10)  # steel 6.25 mm long-series L-key, 210 mm arm (kg)
     key_disable_gravity: bool = info(False)  # the force-driven key smoke sets this True (no hand to bear the handle's weight)
+    # Optional upright stand (a four-wall pocket) that presents the key standing tip-down, its
+    # handle 210 mm up as a ready top-down grip — a gripper env sets key_stand=True (and an
+    # upright key_init_quat), because the flat-lying key demands a low pinch and a 90 deg
+    # in-hand reorientation before it can screw anything.
+    key_stand: bool = info(False)
+    key_stand_gap: float = info(0.0022)  # pocket clearance per side around the arm's 7.2 mm corners
     key_contact_offset: float = info(0.00025)  # well below the 0.375 mm/side socket clearance
     bolt_contact_offset: float = info(0.00025)  # ditto for the bolt's socket walls
     # Selectable work surface (same presets as the sibling scenes).
@@ -109,7 +116,7 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
             )
         assets = Path(__file__).resolve().parents[1] / "assets"
         self.asset_dir = self.asset_dir or str(assets)
-        self.case_usd = self.case_usd or str(Path(self.asset_dir) / "pc" / "pc_case_assembly.usd")
+        self.case_usd = self.case_usd or str(Path(self.asset_dir) / "pc" / "pc_case_assembly_mb.usd")
         self.bolt_usd = self.bolt_usd or str(Path(self.asset_dir) / "allen_bolt" / "allen_bolt_m8.usd")
         self.key_usd = self.key_usd or str(Path(self.asset_dir) / "allen_key" / "allen_key_m8_long.usd")
         preset = self.TABLES[self.table]
@@ -200,6 +207,33 @@ class PcMotherboardAssemblyScene(BaseScene):
                     pos=(wx + bx, wy + by, c.surface_z + c.bolt_init_z), rot=c.bolt_init_quat
                 ),
             )
+        if c.key_stand:
+            # Upright key stand for a gripper env: four STATIC walls (no rigid body) forming a
+            # square pocket at the key spawn — the arm stands tip-down inside, its lean capped at
+            # ~3 deg. Wall tops stay 160+ mm below the handle, far from any descending finger.
+            kx, ky = c.key_init_xy
+            inner = 0.0072 + 2 * c.key_stand_gap
+            wall_h, wall_t = 0.045, 0.006
+            foam = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.17, 0.17, 0.2), roughness=0.9)
+            for name, size, (dx, dy) in (
+                ("key_stand_n", (inner + 2 * wall_t, wall_t, wall_h), (0.0, +(inner + wall_t) / 2)),
+                ("key_stand_s", (inner + 2 * wall_t, wall_t, wall_h), (0.0, -(inner + wall_t) / 2)),
+                ("key_stand_e", (wall_t, inner, wall_h), (+(inner + wall_t) / 2, 0.0)),
+                ("key_stand_w", (wall_t, inner, wall_h), (-(inner + wall_t) / 2, 0.0)),
+            ):
+                out[name] = AssetBaseCfg(
+                    prim_path="{ENV_REGEX_NS}/" + "".join(p_.capitalize() for p_ in name.split("_")),
+                    spawn=sim_utils.CuboidCfg(
+                        size=size,
+                        collision_props=sim_utils.CollisionPropertiesCfg(
+                            contact_offset=0.001, rest_offset=0.0
+                        ),
+                        visual_material=foam,
+                    ),
+                    init_state=AssetBaseCfg.InitialStateCfg(
+                        pos=(wx + kx + dx, wy + ky + dy, c.surface_z + 0.5 * wall_h)
+                    ),
+                )
         # Key contact offset must stay well below the key<->socket clearance (0.375 mm/side) or
         # speculative contacts choke the fit.
         kx, ky = c.key_init_xy

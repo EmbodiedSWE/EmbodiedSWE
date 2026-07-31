@@ -62,7 +62,7 @@ class PcGpuAssemblySceneCfg(BaseCfg):
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     # Seated card origin (its PCB-tab bottom centre) in the case's local frame; orientation seated
     # = the case's own axes (identity). Baked into the committed USDs (keep in sync if they change).
-    seat_pos: tuple[float, float, float] = info((0.03405, 0.0293, 0.0035))
+    seat_pos: tuple[float, float, float] = info((-0.01595, 0.0293, 0.0035))
     slot_mouth_z: float = info(0.0085)  # slot top in the case frame: depth datum (5 mm at full seat)
     board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
     case_lift: float = info(0.0289)  # board face above the side panel the case lies on
@@ -105,7 +105,7 @@ class PcGpuAssemblySceneCfg(BaseCfg):
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parents[1] / "assets"
         self.asset_dir = self.asset_dir or str(assets)
-        self.case_usd = self.case_usd or str(Path(self.asset_dir) / "pc" / "pc_case_gpu_assembly.usd")
+        self.case_usd = self.case_usd or str(Path(self.asset_dir) / "pc" / "pc_case_gpu_assembly_mb.usd")
         self.card_usd = self.card_usd or str(Path(self.asset_dir) / "pc" / "gpu_rtx2060.usd")
         preset = self.TABLES[self.table]
         if self.surface_z is None:
