@@ -129,12 +129,18 @@ Notes:
 ### 3. The folding suite
 
 The `folding` suite (`robobench/suites/folding/`) folds a T-shirt (VBD cloth) on the coupled
-MJWarp+VBD substrate. The scene and its registered envs live in-tree; the demonstration
-scripts and the Franka folding solution are kept out of the benchmark tree (the solution under
-gitignored `experiments/2026-07-16_tshirt_franka_joint/`). Runs use the Newton venv from the
-repo root, `OMNI_KIT_ACCEPT_EULA=YES` skips isaacsim 6's first-run EULA prompt in headless
-runs, and on isaaclab develop a run is headless unless a kit visualizer is requested (pass
-`--viz kit`; do NOT combine with `--headless`, which force-disables visualizers).
+MJWarp+VBD substrate. The in-tree smoke is a simulation CAPABILITY CHECK, not a solution: on
+the benchmark env the Franka pinches the shirt with its real fingers and lifts it clear of the
+table (cloth-rise verdict). The Franka folding solution is kept out of the benchmark tree
+(gitignored `experiments/2026-07-16_tshirt_franka_joint/`).
+
+```bash
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --headless
+```
+
+`OMNI_KIT_ACCEPT_EULA=YES` skips isaacsim 6's first-run EULA prompt in headless runs; on
+isaaclab develop a run is headless unless a kit visualizer is requested (pass `--viz kit`; do
+NOT combine with `--headless`, which force-disables visualizers).
 
 ### 4. The pouring suite (same venv)
 
@@ -142,9 +148,15 @@ The `pouring` suite (`robobench/suites/pouring/`) runs particle liquids (implici
 coupled with MJWarp rigid dynamics: two dynamic Frankas grasp both vessels and pour milk into
 coffee. ONE registered env on ONE registered scene: `pouring.latte.bimanual_franka.joint` (the
 benchmark: dynamic arms + dynamic vessels + auto-weld grasp contract + 1.5-way liquid
-feedback). Demonstration scripts and the bimanual-Franka solution are kept out of the
-benchmark tree (the solution under gitignored
+feedback). The in-tree smoke is a simulation CAPABILITY CHECK, not a solution: both Frankas
+grasp the vessels through the scene's auto-weld contract and lift them (rise/upright/spill
+verdicts). The bimanual-Franka solution is kept out of the benchmark tree (gitignored
 `experiments/2026-07-20_latte_bimanual_franka_joint/`).
+
+```bash
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
+  -m robobench.suites.pouring.scripts.latte_pour_smoke --headless
+```
 
 Note: do **not** record COUPLED-substrate pouring runs with `scripts/record_video.py` live —
 live rendering corrupts the coupled MPM physics on this stack. Record via `--dump_states`
