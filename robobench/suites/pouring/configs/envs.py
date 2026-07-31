@@ -1,9 +1,10 @@
-"""Canonical runnable env config for the pouring suite — registered in `ENVS` by name.
+"""Canonical runnable env configs for the pouring suite — registered in `ENVS` by name.
 
-ONE env: `pouring.latte.bimanual_franka.joint` — the full-physics latte benchmark. Runs
-ONLY under the Newton venv (`env_newton`) — building it needs isaaclab develop's Newton
-backend; registration itself stays app-free in any venv. Single-env only: the MPM solver uses
-one fixed grid spanning the scene, so keep `num_envs=1` when building.
+One env, one scene, one cfg: `pouring.latte.bimanual_franka.joint` — the full-physics latte
+benchmark on the single registered `latte` scene; every run shares that one scene cfg. Runs
+ONLY under the Newton venv (`env_newton`) — building needs isaaclab develop's Newton backend;
+registration itself stays app-free in any venv. Single-env only: the MPM solver uses one fixed
+grid spanning the scene, so keep `num_envs=1` when building.
 """
 
 from __future__ import annotations
@@ -59,3 +60,6 @@ register_env(
         ),
     ),
 )
+
+# There is deliberately no second env / scene tier: every run builds this same `latte`
+# scene, so exactly one scene registration and one scene cfg are ever in play.
