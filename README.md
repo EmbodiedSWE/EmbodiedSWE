@@ -126,39 +126,27 @@ Notes:
   not needed by the folding suite:
   `uv pip install --python "$PY" "${NV[@]}" -e "$SRC/isaaclab_tasks" -e "$SRC/isaaclab_rl" -e "$SRC/isaaclab_ov"`
 
-### 3. Run the folding suite
+### 3. The folding suite
 
-From the CoSiGen repo root (`OMNI_KIT_ACCEPT_EULA=YES` skips isaacsim 6's first-run EULA prompt
-in headless runs):
+The `folding` suite (`robobench/suites/folding/`) folds a T-shirt (VBD cloth) on the coupled
+MJWarp+VBD substrate. The scene and its registered envs live in-tree; the demonstration
+scripts and the Franka folding solution are kept out of the benchmark tree (the solution under
+gitignored `experiments/2026-07-16_tshirt_franka_joint/`). Runs use the Newton venv from the
+repo root, `OMNI_KIT_ACCEPT_EULA=YES` skips isaacsim 6's first-run EULA prompt in headless
+runs, and on isaaclab develop a run is headless unless a kit visualizer is requested (pass
+`--viz kit`; do NOT combine with `--headless`, which force-disables visualizers).
 
-```bash
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --headless
-
-# watch it live in the Isaac Sim GUI: isaaclab develop runs headless unless a kit visualizer is
-# requested — pass --viz kit (and do NOT pass --headless, which force-disables visualizers)
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --viz kit
-
-# record a video (the folding smoke auto-enables the kit visualizer when cameras are on —
-# isaaclab develop pumps rendering through visualizers, else the capture stays empty)
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python scripts/record_video.py \
-  robobench.suites.folding.scripts.tshirt_fold_smoke \
-  --video robobench/suites/folding/videos/tshirt_fold.mp4 \
-  --eye 0.9 -1.6 0.9 --target-at 0.0 -0.5 0.2
-```
-
-### 4. Run the pouring suite (same venv)
+### 4. The pouring suite (same venv)
 
 The `pouring` suite (`robobench/suites/pouring/`) runs particle liquids (implicit **MPM**)
 coupled with MJWarp rigid dynamics: two dynamic Frankas grasp both vessels and pour milk into
-coffee. ONE registered env — `pouring.latte.bimanual_franka.joint` (dynamic arms + dynamic
-vessels + auto-weld grasp contract + 1.5-way liquid feedback) — and one smoke that drives it:
+coffee. ONE registered env on ONE registered scene: `pouring.latte.bimanual_franka.joint` (the
+benchmark: dynamic arms + dynamic vessels + auto-weld grasp contract + 1.5-way liquid
+feedback). Demonstration scripts and the bimanual-Franka solution are kept out of the
+benchmark tree (the solution under gitignored
+`experiments/2026-07-20_latte_bimanual_franka_joint/`).
 
-```bash
-HEADLESS=1 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
-  -m robobench.suites.pouring.scripts.latte_bimanual_weld_smoke
-```
-
-Note: do **not** record pouring videos with `scripts/record_video.py` — live rendering corrupts
-the coupled MPM physics on this stack. The smoke's `--dump_states` records the trajectory
-(poses + particles) to an `.npz` for offline rendering instead (a replay renderer last exists
-at `f8c101d`: `scripts/replay_render.py`).
+Note: do **not** record COUPLED-substrate pouring runs with `scripts/record_video.py` live —
+live rendering corrupts the coupled MPM physics on this stack. Record via `--dump_states`
+(poses + particles to an `.npz`) plus offline replay (a replay renderer last exists at
+`f8c101d`: `scripts/replay_render.py`).

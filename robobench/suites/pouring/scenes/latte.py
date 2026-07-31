@@ -1,20 +1,30 @@
-"""LatteScene — coffee cup + milk cup on a table; pour the milk into the coffee (Newton MPM).
+"""LatteScene — THE latte benchmark scene (registered `latte`); pour the milk into the coffee.
 
-Runs on IsaacLab develop's **Newton backend** with the implicit MPM solver: both liquids are
-`MPMObject`s (explicit particle lattices seeded inside the cups), the cups are open-cylinder
-trimesh colliders (exact meshes, no convex approximation), and the table a collidable box. The
-milk cup is a *kinematic* rigid object so a script (or later a robot hand) can lift and tip it —
-the MPM solver treats rigid geometry as colliders and follows their motion.
+ONE scene class, one cfg, one registration — every run (agent benchmark, verified Franka
+solution, local demonstration scripts) builds this same scene. It composes, in one place:
 
-Layout (env-local meters): table top at z=0.04; the coffee cup stands at (0, 0), pre-filled with
-brown "coffee" particles; the milk pitcher stands at `pitcher_pos` (default (0.16, 0)), pre-filled
-with white "milk" particles. Goal: pour the milk into the coffee cup — `transfer_fraction()`
-(milk inside the coffee cup) is the success proxy, with `retention_fraction()` (coffee still in
-its cup) and `spilled_fraction()` (milk on the table) as guards.
+  - Newton implicit **MPM liquids**: both liquids are `MPMObject`s (particle lattices seeded
+    inside the vessels); the vessels' interiors are exact open-cup trimesh colliders.
+  - the COUPLED MJWarp+MPM substrate: robots get real dynamics (gravity, actuator PD, MuJoCo
+    rigid contacts) while the liquids follow the post-rigid body poses.
+  - DYNAMIC vessels: free rigid bodies (authored mass, real gravity) on concave rigid-proxy
+    shells (ring + floor slab + handle bar); vessel-table and vessel-vessel contacts are real.
+  - the AUTO-WELD grasp contract: move a gripper's pinch point within `auto_weld_dist` of a
+    handle bar with the fingers closed to the bar's width and the vessel welds on at the
+    measured pose; open past `auto_weld_release` to let go. No scripted attach calls anywhere.
+  - 1.5-WAY LIQUID FEEDBACK: MPM collider impulses are applied back onto the rigid bodies, so
+    vessels weigh what they hold and lighten as they pour (`cfg.liquid_feedback`; the offline
+    replay renderer builds with it OFF — that build path spins under the kit-visualizer app —
+    which is scenery-only and never steps physics).
 
-Requires the Newton venv (`env_newton`, see the README) to build; single-env only for now (the
-MPM fixed grid spans the whole scene). Heavy imports are deferred so importing this module stays
-app-free.
+Layout (env-local meters): table top at z=0.04; the coffee mug at (0, 0) pre-filled with brown
+"coffee"; the milk pitcher at `pitcher_pos` (default (0.16, 0)) pre-filled with white "milk".
+Goal: pour the milk into the coffee — `transfer_fraction()` is the success proxy, with
+`retention_fraction()` and `spilled_fraction()` as guards; metrics track the vessels' ACTUAL
+poses, so a dropped vessel scores honestly.
+
+Requires the Newton venv (`env_newton`, see the README) to build; single-env only (the MPM
+fixed grid spans the whole scene). Heavy imports are deferred so importing stays app-free.
 """
 
 from __future__ import annotations
@@ -183,13 +193,16 @@ class LatteSceneCfg(BaseCfg):
     table_size: tuple[float, float, float] = info((0.7, 0.7, TABLE_TOP_Z), doc="table box extents [m]; top at z=0.04")
     table_friction: float = tunable(0.5)
     light_intensity: float = tunable(2500.0)
-    # --- dynamic vessels + rigid proxies (latte_weld/latte_auto flip this on) ---
-    dynamic_vessels: bool = info(False, doc="vessels get free-joint dynamics, authored mass, and rigidproxy colliders")
+    # --- dynamic vessels + rigid proxies ---
     mug_mass: float = tunable(0.30)  # authored total mass [kg]; inertia computed from geometry
     pitcher_mass: float = tunable(0.25)
     proxy_segments: int = info(10, doc="boxes per rigid-proxy ring")
     proxy_thickness: float = tunable(0.005)  # ring box radial thickness [m]
-    # --- agent auto-grasp (latte_auto): weld engages on proximity + closure ---
+    # 1.5-way liquid feedback (vessels weigh what they hold). ALWAYS on for physics runs; the
+    # OFFLINE replay renderer builds scenery with it off (that build spins under the
+    # kit-visualizer app) — scenery builds never step physics, so nothing behavioral differs.
+    liquid_feedback: bool = info(True, doc="apply MPM collider impulses back onto the vessels")
+    # --- agent auto-grasp: weld engages on proximity + closure ---
     auto_weld_dist: float = tunable(0.03)  # pinch-point-to-bar-center engage radius [m]
     auto_weld_close_margin: float = tunable(0.003)  # engage when aperture < bar half-width + this [m]
     auto_weld_release: float = tunable(0.02)  # release when aperture opens past this [m] (hysteresis)
@@ -209,11 +222,22 @@ class LatteSceneCfg(BaseCfg):
         self.pitcher_usd = self.pitcher_usd or str(assets / "Pitcher" / "pitcher_zup.usd")
 
 
+@SCENES.register("latte")
 class LatteScene(BaseScene):
-    """Coffee cup (brown MPM liquid) + kinematic milk cup (white MPM liquid) on a table. Goal:
-    pour the milk into the coffee cup. Handles after bind: `self.coffee` / `self.milk`
-    (MPMObjects) and `self.pitcher` / `self.mug` (kinematic RigidObjects); `transfer_fraction()` is the
-    success proxy."""
+    """THE latte benchmark scene — see the module docstring for the full mechanic stack (MPM
+    liquids, coupled substrate, dynamic vessels, auto-weld grasping, liquid feedback). Handles
+    after bind: `self.coffee` / `self.milk` (MPMObjects) and `self.pitcher` / `self.mug`
+    (dynamic RigidObjects); `transfer_fraction()` is the success proxy. The ONLY scene in the
+    pouring suite: the benchmark env and every demonstration script build it, so exactly one
+    scene cfg is ever in play."""
+
+    # (hand prim, vessel) -> weld label; all four combinations exist in the model.
+    AUTO_PAIRS = {
+        ("Left", "mug"): "weld_mug",
+        ("Right", "pitcher"): "weld_pitcher",
+        ("Right", "mug"): "weld_mug_r",
+        ("Left", "pitcher"): "weld_pitcher_l",
+    }
 
     cfg: LatteSceneCfg
 
@@ -259,41 +283,29 @@ class LatteScene(BaseScene):
         def cup_spawn(
             r_inner: float,
             height: float,
-            kinematic: bool,
             color: tuple | None,
             wall: float,
             bottom: float,
             visible: bool = True,
             r_inner_top: float | None = None,
             visual_usd_ref: str | None = None,
-            dynamic: bool = False,
             mass: float | None = None,
             proxy: dict | None = None,
         ) -> CupMeshCfg:
             vertices, faces = cup_mesh(
                 r_inner, r_inner_top if r_inner_top is not None else r_inner, height, wall, bottom
             )
-            if dynamic:  # free-joint vessel under real gravity, carried by welds
-                rigid_props = sim_utils.NewtonRigidBodyPropertiesCfg(
-                    rigid_body_enabled=True, kinematic_enabled=False, disable_gravity=False
-                )
-            elif kinematic:
-                rigid_props = sim_utils.NewtonRigidBodyPropertiesCfg(
-                    rigid_body_enabled=True, kinematic_enabled=True, disable_gravity=True
-                )
-            else:
-                rigid_props = None
+            # Free-joint vessel under real gravity, carried by the auto-welds.
+            rigid_props = sim_utils.NewtonRigidBodyPropertiesCfg(
+                rigid_body_enabled=True, kinematic_enabled=False, disable_gravity=False
+            )
             return CupMeshCfg(
                 hide_collider_geometry=not visible,
                 visual_usd_ref=visual_usd_ref,
-                mass=mass if dynamic else None,
-                rigidproxy=proxy if dynamic else None,
-                proxy_physics_material=(
-                    sim_utils.NewtonMaterialPropertiesCfg(
-                        static_friction=c.proxy_friction, dynamic_friction=c.proxy_friction
-                    )
-                    if dynamic
-                    else None
+                mass=mass,
+                rigidproxy=proxy,
+                proxy_physics_material=sim_utils.NewtonMaterialPropertiesCfg(
+                    static_friction=c.proxy_friction, dynamic_friction=c.proxy_friction
                 ),
                 vertices=vertices.tolist(),
                 faces=faces.tolist(),
@@ -398,45 +410,39 @@ class LatteScene(BaseScene):
                     visual_material_path="visualMaterial",
                 ),
             ),
-            # The coffee mug: ONE kinematic rigid object carrying (a) the invisible watertight
+            # The coffee mug: ONE dynamic rigid body carrying (a) the invisible watertight
             # tapered collider matched to the visual mug's cavity (its baked convex-decomposition
-            # collision leaks MPM particles, so it is never used), and (b) the textured mug USD
-            # referenced as a visual-only child (physics APIs disabled) that rides the body's pose
-            # in the renderer. Kinematic so a robot hand can carry it: write its root pose.
+            # collision leaks MPM particles, so it is never used), (b) the concave rigid-proxy
+            # shell (MuJoCo-facing), and (c) the textured mug USD referenced as a visual-only
+            # child (physics APIs disabled) that rides the body's pose in the renderer.
             "coffee_cup": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/CoffeeCup",
                 init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, TABLE_TOP_Z)),
                 spawn=cup_spawn(
                     c.coffee_cup_r_floor,
                     c.coffee_cup_h,
-                    kinematic=not c.dynamic_vessels,
                     color=None,
                     wall=0.005,
                     bottom=c.coffee_floor_z,
                     visible=False,
                     r_inner_top=c.coffee_cup_r,
                     visual_usd_ref=c.mug_usd,
-                    dynamic=c.dynamic_vessels,
                     mass=c.mug_mass,
                     proxy={**MUG_PROXY, "segments": c.proxy_segments, "thickness": c.proxy_thickness},
                 ),
             ),
-            # The milk pitcher: same pattern as the mug — kinematic rigid carrying the invisible
-            # straight collider matched to the interior plus the textured pitcher USD as a
-            # visual-only child (handle toward +x, the grasp side).
+            # The milk pitcher: same pattern as the mug (handle toward +x, the grasp side).
             "pitcher": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Pitcher",
                 init_state=RigidObjectCfg.InitialStateCfg(pos=(px, py, TABLE_TOP_Z)),
                 spawn=cup_spawn(
                     c.pitcher_r,
                     c.pitcher_h,
-                    kinematic=not c.dynamic_vessels,
                     color=None,
                     wall=c.pitcher_wall,
                     bottom=c.pitcher_floor_z,
                     visible=False,
                     visual_usd_ref=c.pitcher_usd,
-                    dynamic=c.dynamic_vessels,
                     mass=c.pitcher_mass,
                     proxy={**PITCHER_PROXY, "segments": c.proxy_segments, "thickness": c.proxy_thickness},
                 ),
@@ -458,7 +464,18 @@ class LatteScene(BaseScene):
         }
 
     def sim_cfg(self) -> MpmSimCfg:
-        return MpmSimCfg(voxel_size=self.cfg.voxel_size)
+        return MpmSimCfg(
+            voxel_size=self.cfg.voxel_size,
+            coupled=True,
+            liquid_feedback=self.cfg.liquid_feedback,
+            # Builder-time weld rows (disabled until grasp): (label, body1 suffix, body2 suffix).
+            welds=[
+                ("weld_mug", "Left/panda_hand", "CoffeeCup"),
+                ("weld_pitcher", "Right/panda_hand", "Pitcher"),
+                ("weld_mug_r", "Right/panda_hand", "CoffeeCup"),
+                ("weld_pitcher_l", "Left/panda_hand", "Pitcher"),
+            ],
+        )
 
     # ----- lifecycle ------------------------------------------------------------------------------
     def bind(self, env: BaseEnv) -> None:
@@ -487,19 +504,113 @@ class LatteScene(BaseScene):
         self.mug_pose_w = self._default_mug_pose.clone()
         self.pitcher_pose_w = self._default_pitcher_pose.clone()
         self._fabric_particle_attrs: list[tuple[Any, Any]] = []
+        self._auto_state: dict[str, bool] = {}
+        self._auto_ready = False
+        self._auto_dead = False
 
-    def write_mug_pose(self, pose: torch.Tensor, twist: torch.Tensor) -> None:
-        """Kinematically place the mug (collider + visual child ride the same rigid body) and
-        remember the pose for the mug-relative metrics."""
-        self.mug.write_root_link_pose_to_sim_index(root_pose=pose)
-        self.mug.write_root_link_velocity_to_sim_index(root_velocity=twist)
-        self.mug_pose_w = pose.clone()
+    # ----- auto-weld grasp contract + actual-pose tracking ----------------------------------------
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        """Track the DYNAMIC vessels' actual poses for the pose-relative metrics, then run the
+        auto-weld grasp state machine.
 
-    def write_pitcher_pose(self, pose: torch.Tensor, twist: torch.Tensor) -> None:
-        """Kinematically place the pitcher and remember the pose for pitcher-relative metrics."""
-        self.pitcher.write_root_link_pose_to_sim_index(root_pose=pose)
-        self.pitcher.write_root_link_velocity_to_sim_index(root_velocity=twist)
-        self.pitcher_pose_w = pose.clone()
+        NOTE: root_link_quat_w of a free trimesh body carries a per-body YAW offset vs the prim
+        frame; the cylinder metrics and tilt readouts are yaw-invariant, but never mix these
+        poses with prim-frame scripted targets."""
+        import torch
+
+        self.mug_pose_w = torch.cat(
+            [self.mug.data.root_link_pos_w.torch, self.mug.data.root_link_quat_w.torch], dim=-1
+        )
+        self.pitcher_pose_w = torch.cat(
+            [self.pitcher.data.root_link_pos_w.torch, self.pitcher.data.root_link_quat_w.torch], dim=-1
+        )
+        if self._auto_dead:
+            return
+        try:
+            if not self._auto_ready:
+                self._auto_setup()
+            self._auto_tick()
+        except Exception as e:  # noqa: BLE001 — a broken grasp mechanic must be loud, not fatal
+            print(f"[auto-weld] DISABLED after error: {e!r}", flush=True)
+            self._auto_dead = True
+
+    def _auto_setup(self) -> None:
+        """Resolve body indices, handle-bar local centers (mean of the bar segments'
+        shape_transforms — composed with body_q per tick, so frame conventions cancel), finger
+        joints, and per-vessel bar half-widths. Runs once, lazily (the model exists post-build)."""
+        import numpy as np
+        import torch
+
+        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
+
+        model = Mgr._model
+        device = self.env.device
+        body_labels = [str(b or "") for b in model.body_label]
+
+        def body_idx(suffix: str) -> int:
+            matches = [i for i, b in enumerate(body_labels) if b.endswith(suffix)]
+            assert len(matches) == 1, (suffix, matches)
+            return matches[0]
+
+        shape_labels = [str(s or "") for s in model.shape_label]
+        shape_tf = model.shape_transform.numpy()
+        shape_body = model.shape_body.numpy()
+        self._auto_vessels: dict[str, tuple] = {}
+        for vessel, suffix, proxy in (("mug", "CoffeeCup", MUG_PROXY), ("pitcher", "Pitcher", PITCHER_PROXY)):
+            b = body_idx(suffix)
+            segs = [i for i, s in enumerate(shape_labels) if "/rigidproxy/handle" in s and int(shape_body[i]) == b]
+            assert segs, f"no handle segments found for {vessel}"
+            bar_local = torch.tensor(
+                np.stack([shape_tf[i][:3] for i in segs]).mean(axis=0), device=device, dtype=torch.float32
+            )
+            half_width = float(proxy["handle"].get("grip_w", 2.0 * proxy["handle"]["r"])) / 2.0
+            self._auto_vessels[vessel] = (b, bar_local, half_width)
+        self._auto_hands: dict[str, tuple] = {}
+        for name, robot in self.env.robot.robots.items():
+            prim = name[:1].upper() + name[1:]
+            art = robot.articulation
+            self._auto_hands[prim] = (body_idx(f"{prim}/panda_hand"), art, art.find_joints(["panda_finger.*"])[0])
+        self._auto_ready = True
+
+    def _auto_tick(self) -> None:
+        import warp as wp
+        import torch
+
+        import isaaclab.utils.math as math_utils
+
+        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
+
+        body_q = wp.to_torch(Mgr._state_0.body_q)
+        held_vessels = {v for (h, v), lbl in self.AUTO_PAIRS.items() if self._auto_state.get(lbl)}
+        busy_hands = {h for (h, v), lbl in self.AUTO_PAIRS.items() if self._auto_state.get(lbl)}
+        tip_local = torch.tensor([[0.0, 0.0, 0.113]], device=body_q.device)
+        for (hand, vessel), label in self.AUTO_PAIRS.items():
+            hb, art, fids = self._auto_hands[hand]
+            aperture = float(art.data.joint_pos.torch[0, fids].mean())
+            if self._auto_state.get(label, False):
+                if aperture > self.cfg.auto_weld_release:
+                    Mgr.set_weld(label, False)
+                    self._auto_state[label] = False
+                    print(f"  [auto-weld] {hand} RELEASED the {vessel} (aperture {aperture * 1000:.1f} mm)", flush=True)
+                continue
+            if hand in busy_hands or vessel in held_vessels:
+                continue
+            vb, bar_local, half_width = self._auto_vessels[vessel]
+            if aperture >= half_width + self.cfg.auto_weld_close_margin:
+                continue  # fingers not squeezing — cheap early-out before any pose math
+            pinch = body_q[hb, :3] + math_utils.quat_apply(body_q[hb, 3:][None], tip_local)[0]
+            bar_w = body_q[vb, :3] + math_utils.quat_apply(body_q[vb, 3:][None], bar_local[None])[0]
+            dist = float((pinch - bar_w).norm())
+            if dist < self.cfg.auto_weld_dist:
+                Mgr.set_weld(label, True)
+                self._auto_state[label] = True
+                busy_hands.add(hand)
+                held_vessels.add(vessel)
+                print(
+                    f"  [auto-weld] {hand} GRIPPED the {vessel} (dist {dist * 100:.1f} cm,"
+                    f" aperture {aperture * 1000:.1f} mm)",
+                    flush=True,
+                )
 
     # ----- Kit particle visuals ---------------------------------------------------------------
     # The Newton backend creates a UsdGeom.Points prim per MPM object for Kit rendering, but its
@@ -565,6 +676,13 @@ class LatteScene(BaseScene):
     def reset(self, env_ids: torch.Tensor) -> None:
         import torch
 
+        # Welds off FIRST: the vessel teleports home while the hands still hold their last pose —
+        # an active weld would read that as a violent constraint violation.
+        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
+
+        for label in self.AUTO_PAIRS.values():
+            Mgr.set_weld(label, False)
+        self._auto_state = {}
         for obj, (pos, vel) in ((self.coffee, self._default_state["coffee"]), (self.milk, self._default_state["milk"])):
             obj.write_nodal_pos_to_sim_index(pos[env_ids].contiguous(), env_ids=env_ids)
             obj.write_nodal_velocity_to_sim_index(vel[env_ids].contiguous(), env_ids=env_ids)
@@ -690,276 +808,15 @@ class LatteScene(BaseScene):
         return (
             f"A black ceramic mug (cavity radius {c.coffee_cup_r:.3f} m at the rim, {c.coffee_cup_h:.3f} m tall) stands at"
             f" (0, 0) on a table (top at z={TABLE_TOP_Z}) holding brown coffee (liquid particles,"
-            f" ~{c.coffee_depth * 1e3:.0f} mm deep). A smaller steel milk cup at"
-            f" ({c.pitcher_pos[0]}, {c.pitcher_pos[1]}) holds white milk. Both vessels are kinematic: write their"
-            " root pose to move it. Goal: pour the milk into the coffee cup — lift the milk cup, carry it over"
-            " the coffee cup, and tip it so the milk streams in, without spilling on the table. Success: >= 70%"
-            " of milk particles inside the coffee cup, >= 90% of coffee retained, <= 5% of milk spilled."
-        )
-
-
-class LatteDynScene(LatteScene):
-    """The latte scene on the COUPLED MJWarp+MPM substrate: robots get real dynamics
-    (gravity, actuator PD, MuJoCo rigid contacts) while the liquids run the same implicit-MPM
-    recipe one-way-coupled to the post-rigid body poses. The vessels stay kinematic scripted
-    ghosts (MPM colliders, invisible to MuJoCo). Scene content is identical to `LatteScene`."""
-
-    def sim_cfg(self) -> MpmSimCfg:
-        return MpmSimCfg(voxel_size=self.cfg.voxel_size, coupled=True)
-
-
-class LatteWeldScene(LatteDynScene):
-    """The coupled substrate with DYNAMIC vessels. Both vessels are free rigid bodies
-    (authored mass, real gravity) resting on their rigid-proxy floor slabs; MuJoCo collides their
-    concave proxy shells (ring + slab + handle capsule) while the interior trimeshes stay
-    MPM-only. Carrying works by WELD-at-grasp: builder-time MuJoCo equality welds (hand <->
-    vessel, disabled at spawn) that a script activates at the measured grasp pose via
-    `weld_vessel(...)` — the arm then feels the real carried mass. Metrics track the vessels'
-    ACTUAL poses (refreshed every physics tick in `post_step`), so a dropped vessel scores
-    honestly."""
-
-    WELD_LABELS = {"mug": "weld_mug", "pitcher": "weld_pitcher"}
-
-    def __init__(self, cfg: LatteSceneCfg | None = None) -> None:
-        cfg = cfg or LatteSceneCfg()
-        cfg.dynamic_vessels = True  # this scene IS the dynamic-vessel substrate — not optional
-        super().__init__(cfg)
-
-    def sim_cfg(self) -> MpmSimCfg:
-        return MpmSimCfg(
-            voxel_size=self.cfg.voxel_size,
-            coupled=True,
-            # Builder-time weld rows (disabled until grasp): (label, body1 suffix, body2 suffix).
-            welds=[
-                ("weld_mug", "Left/panda_hand", "CoffeeCup"),
-                ("weld_pitcher", "Right/panda_hand", "Pitcher"),
-            ],
-        )
-
-    # ----- weld control ---------------------------------------------------------------------------
-    def weld_vessel(self, vessel: str, active: bool) -> None:
-        """Activate/deactivate the hand<->vessel weld. On activation the CURRENT relative pose is
-        measured and written as the weld target, so there is no snap — call it exactly when the
-        fingers visually close on the handle."""
-        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager
-
-        NewtonCoupledMJWarpMPMManager.set_weld(self.WELD_LABELS[vessel], active)
-
-    # ----- lifecycle ------------------------------------------------------------------------------
-    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
-        """Track the DYNAMIC vessels' actual poses for the pose-relative metrics (the kinematic
-        scenes update these on write instead).
-
-        NOTE: root_link_quat_w of a free trimesh body carries a per-body YAW offset vs the prim
-        frame; the cylinder metrics and tilt readouts are yaw-invariant, but
-        never mix these poses with prim-frame scripted targets."""
-        import torch
-
-        self.mug_pose_w = torch.cat(
-            [self.mug.data.root_link_pos_w.torch, self.mug.data.root_link_quat_w.torch], dim=-1
-        )
-        self.pitcher_pose_w = torch.cat(
-            [self.pitcher.data.root_link_pos_w.torch, self.pitcher.data.root_link_quat_w.torch], dim=-1
-        )
-
-    def reset(self, env_ids: torch.Tensor) -> None:
-        # Welds off FIRST: scene.reset teleports the vessels home while the arms still hold their
-        # last pose — an active weld would read that as a violent constraint violation. The caller
-        # still owns `resync_collider_history()` after the FULL env.reset (scene + robot), per the
-        # teleport-hygiene contract.
-        for vessel in self.WELD_LABELS:
-            self.weld_vessel(vessel, False)
-        super().reset(env_ids)
-
-    def describe(self) -> str:
-        base = super().describe()
-        return base.replace(
-            "Both vessels are kinematic: write their root pose to move it.",
-            "Both vessels are DYNAMIC rigid bodies resting on the table; a hand-vessel weld"
-            " engages at grasp (weld_vessel) and the arm carries the real mass.",
-        )
-
-
-class LatteAutoScene(LatteWeldScene):
-    """The AGENT-BENCHMARK grasp mechanic: welds engage AUTOMATICALLY from gripper state — no
-    scripted weld calls. Every physics tick (`post_step`), for each (gripper, handle) pair: if
-    the pinch point is within `auto_weld_dist` of that handle's bar AND the fingers are closed
-    to the bar's width (+ `auto_weld_close_margin`), the weld engages at the measured pose;
-    opening the gripper past `auto_weld_release` releases it (hysteresis prevents chatter).
-    Either gripper can grab either handle (all four weld rows are built); one hand holds at
-    most one vessel and vice versa. The agent's contract is exactly a real gripper's: reach the
-    handle, squeeze to grab, open to release — WHEN it grabs is physics-of-state, not script."""
-
-    # (hand prim, vessel) -> weld label; all four combinations exist in the model.
-    AUTO_PAIRS = {
-        ("Left", "mug"): "weld_mug",
-        ("Right", "pitcher"): "weld_pitcher",
-        ("Right", "mug"): "weld_mug_r",
-        ("Left", "pitcher"): "weld_pitcher_l",
-    }
-
-    def sim_cfg(self) -> MpmSimCfg:
-        return MpmSimCfg(
-            voxel_size=self.cfg.voxel_size,
-            coupled=True,
-            welds=[
-                ("weld_mug", "Left/panda_hand", "CoffeeCup"),
-                ("weld_pitcher", "Right/panda_hand", "Pitcher"),
-                ("weld_mug_r", "Right/panda_hand", "CoffeeCup"),
-                ("weld_pitcher_l", "Left/panda_hand", "Pitcher"),
-            ],
-        )
-
-    def bind(self, env: BaseEnv) -> None:
-        super().bind(env)
-        self._auto_state: dict[str, bool] = {}
-        self._auto_ready = False
-        self._auto_dead = False
-
-    def _auto_setup(self) -> None:
-        """Resolve body indices, handle-bar local centers (mean of the bar segments'
-        shape_transforms — composed with body_q per tick, so frame conventions cancel), finger
-        joints, and per-vessel bar half-widths. Runs once, lazily (the model exists post-build)."""
-        import numpy as np
-        import torch
-
-        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
-
-        model = Mgr._model
-        device = self.env.device
-        body_labels = [str(b or "") for b in model.body_label]
-
-        def body_idx(suffix: str) -> int:
-            matches = [i for i, b in enumerate(body_labels) if b.endswith(suffix)]
-            assert len(matches) == 1, (suffix, matches)
-            return matches[0]
-
-        shape_labels = [str(s or "") for s in model.shape_label]
-        shape_tf = model.shape_transform.numpy()
-        shape_body = model.shape_body.numpy()
-        self._auto_vessels: dict[str, tuple] = {}
-        for vessel, suffix, proxy in (("mug", "CoffeeCup", MUG_PROXY), ("pitcher", "Pitcher", PITCHER_PROXY)):
-            b = body_idx(suffix)
-            segs = [i for i, s in enumerate(shape_labels) if "/rigidproxy/handle" in s and int(shape_body[i]) == b]
-            assert segs, f"no handle segments found for {vessel}"
-            bar_local = torch.tensor(np.stack([shape_tf[i][:3] for i in segs]).mean(axis=0), device=device, dtype=torch.float32)
-            half_width = float(proxy["handle"].get("grip_w", 2.0 * proxy["handle"]["r"])) / 2.0
-            self._auto_vessels[vessel] = (b, bar_local, half_width)
-        self._auto_hands: dict[str, tuple] = {}
-        for name, robot in self.env.robot.robots.items():
-            prim = name[:1].upper() + name[1:]
-            art = robot.articulation
-            self._auto_hands[prim] = (body_idx(f"{prim}/panda_hand"), art, art.find_joints(["panda_finger.*"])[0])
-        self._auto_ready = True
-
-    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
-        super().post_step(env_ids)
-        if self._auto_dead:
-            return
-        try:
-            if not self._auto_ready:
-                self._auto_setup()
-            self._auto_tick()
-        except Exception as e:  # noqa: BLE001 — a broken grasp mechanic must be loud, not fatal
-            print(f"[auto-weld] DISABLED after error: {e!r}", flush=True)
-            self._auto_dead = True
-
-    def _auto_tick(self) -> None:
-        import warp as wp
-        import torch
-
-        import isaaclab.utils.math as math_utils
-
-        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
-
-        body_q = wp.to_torch(Mgr._state_0.body_q)
-        held_vessels = {v for (h, v), lbl in self.AUTO_PAIRS.items() if self._auto_state.get(lbl)}
-        busy_hands = {h for (h, v), lbl in self.AUTO_PAIRS.items() if self._auto_state.get(lbl)}
-        tip_local = torch.tensor([[0.0, 0.0, 0.113]], device=body_q.device)
-        for (hand, vessel), label in self.AUTO_PAIRS.items():
-            hb, art, fids = self._auto_hands[hand]
-            aperture = float(art.data.joint_pos.torch[0, fids].mean())
-            if self._auto_state.get(label, False):
-                if aperture > self.cfg.auto_weld_release:
-                    Mgr.set_weld(label, False)
-                    self._auto_state[label] = False
-                    print(f"  [auto-weld] {hand} RELEASED the {vessel} (aperture {aperture * 1000:.1f} mm)", flush=True)
-                continue
-            if hand in busy_hands or vessel in held_vessels:
-                continue
-            vb, bar_local, half_width = self._auto_vessels[vessel]
-            if aperture >= half_width + self.cfg.auto_weld_close_margin:
-                continue  # fingers not squeezing — cheap early-out before any pose math
-            pinch = body_q[hb, :3] + math_utils.quat_apply(body_q[hb, 3:][None], tip_local)[0]
-            bar_w = body_q[vb, :3] + math_utils.quat_apply(body_q[vb, 3:][None], bar_local[None])[0]
-            dist = float((pinch - bar_w).norm())
-            if dist < self.cfg.auto_weld_dist:
-                Mgr.set_weld(label, True)
-                self._auto_state[label] = True
-                busy_hands.add(hand)
-                held_vessels.add(vessel)
-                print(
-                    f"  [auto-weld] {hand} GRIPPED the {vessel} (dist {dist * 100:.1f} cm,"
-                    f" aperture {aperture * 1000:.1f} mm)",
-                    flush=True,
-                )
-
-    def reset(self, env_ids: torch.Tensor) -> None:
-        from robobench.suites.pouring.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
-
-        for label in self.AUTO_PAIRS.values():
-            Mgr.set_weld(label, False)
-        self._auto_state = {}
-        LatteScene.reset(self, env_ids)  # skip LatteWeldScene's two-label loop
-
-    def describe(self) -> str:
-        base = LatteDynScene.describe(self)
-        return base.replace(
-            "Both vessels are kinematic: write their root pose to move it.",
-            "Both vessels are DYNAMIC rigid bodies resting on the table. GRASPING: move a"
-            f" gripper's pinch point within {self.cfg.auto_weld_dist * 100:.0f} cm of a handle"
-            " bar and CLOSE the fingers onto it — the vessel then attaches rigidly and the arm"
-            " carries its real mass; OPEN the gripper to release it. Either gripper can grab"
-            " either handle.",
-        )
-
-
-@SCENES.register("latte")
-class LatteFeedScene(LatteAutoScene):
-    """THE benchmark scene (registered `latte`): auto-weld grasping plus 1.5-WAY LIQUID
-    FEEDBACK — the MPM collider impulses are
-    applied back onto the rigid bodies each tick, so the vessels weigh what they hold, lighten
-    as they pour, and slosh loads the wrist through the grasp. The MPM solve itself stays
-    one-way (infinite-mass colliders); see the coupled manager."""
-
-    def sim_cfg(self) -> MpmSimCfg:
-        cfg = super().sim_cfg()
-        cfg.liquid_feedback = True
-        return cfg
-
-    def describe(self) -> str:
-        return super().describe() + " The liquids have real weight: a full vessel is heavier."
-
-
-class LatteGripScene(LatteWeldScene):
-    """UNREGISTERED force-closure variant of the dynamic-vessel substrate, kept for the
-    upstream-unblock path (mjwarp pinch-friction creep). Scripts on this scene carry the vessels by a real friction pinch on the
-    handle-bar boxes; slip, re-grasp, and drops are physically possible and score honestly
-    through the actual-pose metrics. NO weld rows are built — force closure needs none (and
-    `weld_vessel` is invalid here)."""
-
-    def sim_cfg(self) -> MpmSimCfg:
-        return MpmSimCfg(voxel_size=self.cfg.voxel_size, coupled=True, finger_pads=True)
-
-    def reset(self, env_ids: torch.Tensor) -> None:
-        LatteScene.reset(self, env_ids)  # no welds to deactivate
-
-    def describe(self) -> str:
-        base = super().describe()
-        return base.replace(
-            "a hand-vessel weld engages at grasp (weld_vessel) and the arm carries the real mass.",
-            "the arms carry them by REAL force closure — pinching the handle bars with friction;"
-            " squeeze too little and the vessel slips, too eccentric and it pivots.",
+            f" ~{c.coffee_depth * 1e3:.0f} mm deep). A smaller steel milk pitcher at"
+            f" ({c.pitcher_pos[0]}, {c.pitcher_pos[1]}) holds white milk. Both vessels are DYNAMIC rigid bodies"
+            " resting on the table. GRASPING: move a gripper's pinch point within"
+            f" {c.auto_weld_dist * 100:.0f} cm of a handle bar and CLOSE the fingers onto it — the vessel then"
+            " attaches rigidly and the arm carries its real mass; OPEN the gripper to release it. Either gripper"
+            " can grab either handle. The liquids have real weight: a full vessel is heavier. Goal: pour the"
+            " milk into the coffee cup — lift the pitcher, carry it over the coffee cup, and tip it so the milk"
+            " streams in, without spilling on the table. Success: >= 70% of milk particles inside the coffee"
+            " cup, >= 90% of coffee retained, <= 5% of milk spilled."
         )
 
 

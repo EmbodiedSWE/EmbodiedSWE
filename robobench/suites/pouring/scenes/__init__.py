@@ -5,10 +5,9 @@ modules defer isaaclab imports, so registration is safe without a running app (a
 the Newton venv — building the env is what needs `env_newton`).
 """
 
-from .latte import LatteDynScene, LatteScene, LatteSceneCfg
+from .latte import LatteScene, LatteSceneCfg
 
 __all__ = [
-    "LatteDynScene",
     "LatteScene",
     "LatteSceneCfg",
 ]
