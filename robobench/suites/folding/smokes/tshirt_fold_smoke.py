@@ -13,8 +13,8 @@ Verdict: during the hold the cloth's highest point must rise >= 60 mm above its 
 
 Runs ONLY under the Newton venv (isaaclab develop runs headless unless a kit visualizer is
 requested; an explicit --headless force-disables visualizers, so don't combine it with --viz):
-  env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --headless
-  env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --viz kit
+  env_newton/bin/python -m robobench.suites.folding.smokes.tshirt_fold_smoke --headless
+  env_newton/bin/python -m robobench.suites.folding.smokes.tshirt_fold_smoke --viz kit
 """
 
 from __future__ import annotations
