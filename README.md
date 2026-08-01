@@ -135,7 +135,7 @@ table (cloth-rise verdict). The Franka folding solution is kept out of the bench
 (gitignored `experiments/2026-07-16_tshirt_franka_joint/`).
 
 ```bash
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.folding.scripts.tshirt_fold_smoke --headless
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.folding.smokes.tshirt_fold_smoke --headless
 ```
 
 `OMNI_KIT_ACCEPT_EULA=YES` skips isaacsim 6's first-run EULA prompt in headless runs; on
@@ -155,7 +155,7 @@ verdicts). The bimanual-Franka solution is kept out of the benchmark tree (gitig
 
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
-  -m robobench.suites.pouring.scripts.latte_pour_smoke --headless
+  -m robobench.suites.pouring.smokes.latte_pour_smoke --headless
 ```
 
 Note: do **not** record COUPLED-substrate pouring runs with `scripts/record_video.py` live —

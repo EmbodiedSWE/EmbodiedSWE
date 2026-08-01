@@ -14,7 +14,7 @@ upright (tilt <= 5 deg) with the coffee retained (>= 0.99) and nothing spilled (
 
 Runs ONLY under the Newton venv. Do NOT record live (live rendering corrupts the coupled MPM
 physics) — use `--dump_states` + the offline replay renderer:
-  env_newton/bin/python -m robobench.suites.pouring.scripts.latte_pour_smoke --headless
+  env_newton/bin/python -m robobench.suites.pouring.smokes.latte_pour_smoke --headless
 """
 
 from __future__ import annotations
