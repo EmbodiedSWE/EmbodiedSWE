@@ -35,6 +35,8 @@ import torch
 
 from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
+from ._grasp_weld import GraspSite, GraspWeldMixin
+
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
 
@@ -64,6 +66,12 @@ class PcGpuRamAssemblySceneCfg(BaseCfg):
     card_friction: float = tunable(0.3)
     ram_friction: float = tunable(0.3)
     case_friction: float = tunable(0.75)
+    # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX form — `_grasp_weld.py`):
+    # close the fingers squarely across the card's body slab or flat across a stick's faces,
+    # near the part's top edge, and it welds to the hand; open wide to release. Gripper envs
+    # only (no-op under robot="null").
+    grasp_weld: bool = tunable(True)
+    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
 
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     # Seated part origins (PCB-edge bottom centres) in the case's local frame; seated orientation =
@@ -141,7 +149,7 @@ class PcGpuRamAssemblySceneCfg(BaseCfg):
 
 
 @SCENES.register("pc_gpu_ram")
-class PcGpuRamAssemblyScene(BaseScene):
+class PcGpuRamAssemblyScene(GraspWeldMixin, BaseScene):
     cfg: PcGpuRamAssemblySceneCfg
 
     # Part-local extents of the body collision slabs (they match the visual shells): the card's
@@ -347,6 +355,23 @@ class PcGpuRamAssemblyScene(BaseScene):
         self._set_friction(self.card, self.cfg.card_friction)
         for ram in self.rams:
             self._set_friction(ram, self.cfg.ram_friction)
+        self._grasp_weld_bind()
+
+    def grasp_sites(self) -> list[GraspSite]:
+        """One grip band per part — the card across its body slab (CARD_BODY_Y, 34.8 mm) high
+        on its length, each stick across its blade (STICK_BODY_X, 7.3 mm) at the top edge."""
+        cy = 0.5 * (self.CARD_BODY_Y[0] + self.CARD_BODY_Y[1])
+        rx = 0.5 * (self.STICK_BODY_X[0] + self.STICK_BODY_X[1])
+        sites = [GraspSite("card", self.card, (-0.045, cy, 0.1005), (0.045, cy, 0.1005), (0.030, 0.039))]
+        sites += [
+            GraspSite(f"ram{k}", ram, (rx, -0.055, 0.0401), (rx, 0.055, 0.0401), (0.005, 0.010))
+            for k, ram in enumerate(self.rams)
+        ]
+        return sites
+
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        """Reconcile the weld-on-closure grasp contract every physics substep."""
+        self._grasp_weld_step()
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
@@ -371,6 +396,7 @@ class PcGpuRamAssemblyScene(BaseScene):
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 3:7] = torch.tensor(quat, device=dev)
             part.write_root_state_to_sim(st, env_ids)
+        self._grasp_weld_release_all(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -381,6 +407,7 @@ class PcGpuRamAssemblyScene(BaseScene):
         }
         for k, ram in enumerate(self.rams):
             out[f"ram_{k}"] = ram.data.root_state_w[env_ids].clone()
+        out.update(self._grasp_weld_state(env_ids))
         return out
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
@@ -390,6 +417,7 @@ class PcGpuRamAssemblyScene(BaseScene):
         self.card.write_root_state_to_sim(state["card"], env_ids)
         for k, ram in enumerate(self.rams):
             ram.write_root_state_to_sim(state[f"ram_{k}"], env_ids)
+        self._grasp_weld_restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
@@ -416,6 +444,13 @@ class PcGpuRamAssemblyScene(BaseScene):
             "alternating pair a dual-channel kit fills), and press it straight down until it "
             "clicks fully home. Every seated part stays put on its own. The task is complete "
             "once the card and both sticks are fully seated."
+            + (
+                " A part holds in a firm pinch: close the fingers squarely across the card's "
+                "body slab or a stick's faces, near the top edge, and the grip locks; open "
+                "wide to release."
+                if self.cfg.grasp_weld
+                else ""
+            )
         )
 
     # ----- progress (public: seated()/engaged(); reads how far the assembly has got) -------------

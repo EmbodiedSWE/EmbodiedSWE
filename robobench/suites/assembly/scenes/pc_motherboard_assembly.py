@@ -26,6 +26,8 @@ import torch
 
 from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
+from ._grasp_weld import GraspSite, GraspWeldMixin
+
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
 
@@ -49,6 +51,11 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
     # slick (0.01) against a grippier fixed part (0.75).
     bolt_friction: float = tunable(0.01)
     case_friction: float = tunable(0.75)
+    # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX form — `_grasp_weld.py`):
+    # close the fingers across the key handle's hex and the key welds to the hand; open wide
+    # to release. Gripper envs only (no-op under robot="null").
+    grasp_weld: bool = tunable(True)
+    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
     key_friction: float = tunable(0.6)
 
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
@@ -128,7 +135,7 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
 
 
 @SCENES.register("pc_motherboard")
-class PcMotherboardAssemblyScene(BaseScene):
+class PcMotherboardAssemblyScene(GraspWeldMixin, BaseScene):
     cfg: PcMotherboardAssemblySceneCfg
 
     def __init__(self, cfg: PcMotherboardAssemblySceneCfg | None = None) -> None:
@@ -286,6 +293,17 @@ class PcMotherboardAssemblyScene(BaseScene):
         self._set_friction(self.key, self.cfg.key_friction)
         for bolt in self.bolts:
             self._set_friction(bolt, self.cfg.bolt_friction)
+        self._grasp_weld_bind()
+
+    def grasp_sites(self) -> list[GraspSite]:
+        """One grip band: the key's HANDLE (local +x off the elbow at the working arm's top,
+        z 0.210), across its hex — 6.2 mm flats / 7.2 mm corners. The key USD's origin is the
+        working arm's tip, arm up local +z."""
+        return [GraspSite("key", self.key, (0.005, 0.0, 0.210), (0.115, 0.0, 0.210), (0.004, 0.010))]
+
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        """Reconcile the weld-on-closure grasp contract every physics substep."""
+        self._grasp_weld_step()
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
@@ -310,6 +328,7 @@ class PcMotherboardAssemblyScene(BaseScene):
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 3:7] = torch.tensor(init_quat, device=dev)
             part.write_root_state_to_sim(st, env_ids)
+        self._grasp_weld_release_all(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -318,6 +337,7 @@ class PcMotherboardAssemblyScene(BaseScene):
             "case": self.case.data.root_state_w[env_ids].clone(),
             "bolts": torch.stack([b.data.root_state_w[env_ids].clone() for b in self.bolts], dim=1),
             "key": self.key.data.root_state_w[env_ids].clone(),
+            **self._grasp_weld_state(env_ids),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
@@ -327,6 +347,7 @@ class PcMotherboardAssemblyScene(BaseScene):
         for i, bolt in enumerate(self.bolts):
             bolt.write_root_state_to_sim(state["bolts"][:, i], env_ids)
         self.key.write_root_state_to_sim(state["key"], env_ids)
+        self._grasp_weld_restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
@@ -341,6 +362,12 @@ class PcMotherboardAssemblyScene(BaseScene):
             f"drive it down (turn clockwise while pressing) until it seats — then move on to the "
             f"next hole. A seated bolt locks in place. The task is complete once all {n} bolts "
             f"are seated."
+            + (
+                " The key holds in a firm pinch: close the fingers across its handle's hex and "
+                "the grip locks; open wide to release."
+                if self.cfg.grasp_weld
+                else ""
+            )
         )
 
     # ----- progress (public: seated()/engaged(); reads how far the assembly has got) -------------
