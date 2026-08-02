@@ -3,10 +3,13 @@
 
 Builds the registered preset from /bench (the same read-only tree the agent
 had), wraps it in GradedEnv with the scene's grader from /graders, runs the
-delivery's solve(env), writes verdict.json + progress.jsonl to /out. One
-seeded trajectory per invocation. verdict.json is always written — success False
-with the traceback if solve raises, and on the host's budget kill (SIGTERM,
-30 s grace) the verdict is taken from the state at that moment
+delivery's solve(env). Grading is PER TRAJECTORY: a grade writes
+/out/traj_000 ... traj_NNN — one complete single-trajectory grade per env
+(verdict.json + progress.jsonl) — and /out itself holds the meta:
+verdict.json with statistics over the batch, progress.jsonl with the
+per-step mean curve. The meta verdict.json is always written — success
+False with the traceback if solve raises, and on the host's budget kill
+(SIGTERM, 30 s grace) the verdict is taken from the state at that moment
 (timed_out: true). Only a hard hang inside the sim dies verdict-less.
 """
 
@@ -36,6 +39,22 @@ def load_graders(grader_dir: Path) -> dict:
     sys.modules["suite_grader"] = mod  # registered first so its relative imports resolve
     spec.loader.exec_module(mod)
     return mod.GRADERS
+
+
+def batch_stats(per: list[dict]) -> dict:
+    """Statistics over per-trajectory verdicts. Degenerate sizes are
+    explicit: empty raises, a single trajectory gets std 0.0."""
+    if not per:
+        raise ValueError("batch_stats: no trajectory verdicts to aggregate")
+    scores = [v["score"] for v in per]
+    n = sum(v["success"] for v in per)
+    mean = sum(scores) / len(scores)
+    std = 0.0 if len(scores) == 1 else \
+        (sum((s - mean) ** 2 for s in scores) / len(scores)) ** 0.5
+    return {"num_envs": len(per), "successes": int(n),
+            "success_rate": round(n / len(per), 4),
+            "score_mean": round(mean, 4), "score_std": round(std, 4),
+            "score_min": round(min(scores), 4), "score_max": round(max(scores), 4)}
 
 
 def load_solve(path: str):
@@ -123,6 +142,9 @@ def main() -> None:
     ap.add_argument("--preset", required=True)
     ap.add_argument("--scene", required=True)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--num-envs", type=int, default=1,
+                    help="envs graded together, each with independently randomized "
+                         "spawns; each env's trajectory is scored and judged separately")
     ap.add_argument("--render", action="store_true",
                     help="render the run: /out/frames/*.jpg + frames.jsonl + render.json")
     args = ap.parse_args()
@@ -140,10 +162,10 @@ def main() -> None:
     from robobench.core.registries import ENVS
 
     grader_cls = load_graders(GRADERS_DIR)[args.scene]
-    env = ENVS.get(args.preset)().build(num_envs=1, seed=args.seed)
+    env = ENVS.get(args.preset)().build(num_envs=args.num_envs, seed=args.seed)
     flush = start_renderer(env, out) if args.render else None  # re-parses sim: before the graded reset
     env.reset(seed=args.seed)
-    grader = grader_cls(env)  # one grader instance = this trajectory
+    grader = grader_cls(env)  # one grader instance = this rollout (per-trajectory inside)
 
     import signal
 
@@ -154,16 +176,45 @@ def main() -> None:
     # The raise happens below, from our own per-step hook — always inside
     # solve's Python call chain.
 
-    def on_record(rec: dict) -> None:
+    # One folder per trajectory; /out holds the meta (statistics, mean curve).
+    E = args.num_envs
+    traj_dirs = [out / f"traj_{e:03d}" for e in range(E)]
+    for d in traj_dirs:
+        d.mkdir(exist_ok=True)
+
+    def on_record(recs: list) -> None:
+        for e, rec in enumerate(recs):
+            with (traj_dirs[e] / "progress.jsonl").open("a") as f:
+                f.write(json.dumps(rec) + "\n")
+        # meta curve: per-step mean over trajectories
+        mean = {"sim_time_s": recs[0]["sim_time_s"], "wall_s": recs[0]["wall_s"],
+                "progress": round(sum(r["progress"] for r in recs) / E, 4),
+                "stages": {k: round(sum(r["stages"][k] for r in recs) / E, 4)
+                           for k in recs[0]["stages"]}}
         with (out / "progress.jsonl").open("a") as f:
-            f.write(json.dumps(rec) + "\n")
+            f.write(json.dumps(mean) + "\n")
         if stop["flag"]:
             raise TimeoutError("grading budget reached")
 
     genv = GradedEnv(env, grader, on_record=on_record)
 
     result = {"preset": args.preset, "scene": args.scene, "seed": args.seed,
-              "criteria": grader.describe()}
+              "num_envs": E, "criteria": grader.describe()}
+
+    def finalize() -> None:
+        """Each traj folder gets its verdict.json; the meta result gets the
+        batch statistics."""
+        per = genv.verdict()
+        for e, v in enumerate(per):
+            (traj_dirs[e] / "verdict.json").write_text(json.dumps({
+                "preset": args.preset, "scene": args.scene, "seed": args.seed,
+                "traj": e, "criteria": result["criteria"],
+                "success": v["success"], "score": v["score"],
+            }, indent=2) + "\n")
+        s = batch_stats(per)
+        result.update(success=s["success_rate"], score=s["score_mean"],
+                      summary=s, per_traj=per)
+
     try:
         solve = load_solve(SOLUTION)  # the delivery
 
@@ -171,20 +222,23 @@ def main() -> None:
         solve(genv)
         result["solve_wall_s"] = round(time.monotonic() - t0, 3)
         result["solve_sim_steps"] = grader.steps
-
-        success, score = genv.verdict()
-        result.update(success=success, score=score)
+        finalize()
     except TimeoutError:  # verdict from the state at kill — peak score is already real
-        success, score = genv.verdict()
-        result.update(success=success, score=score, timed_out=True,
-                      solve_sim_steps=grader.steps)
+        result.update(timed_out=True, solve_sim_steps=grader.steps)
+        finalize()
     except Exception:
         result.update(success=False, score=0.0, error=traceback.format_exc())
+        try:
+            finalize()  # the per-trajectory state up to the crash is still real
+        except Exception:
+            pass
 
     if flush is not None:
         result["frames"] = flush()  # also on a crashed solve — partial frames show what happened
     (out / "verdict.json").write_text(json.dumps(result, indent=2) + "\n")
-    print(f"GRADE_DONE success={result['success']} score={result['score']}", flush=True)
+    s = result.get("summary")
+    print(f"GRADE_DONE success={result['success']} score={result['score']}"
+          + (f" ({s['successes']}/{s['num_envs']} envs)" if s else ""), flush=True)
     os._exit(0)  # Kit sometimes hangs on close; the verdict is on disk
 
 

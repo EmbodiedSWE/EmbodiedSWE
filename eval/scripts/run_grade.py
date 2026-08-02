@@ -14,8 +14,11 @@ same read-only /bench tree the agent had, plus the suite's grader/ at
 credentials; --network none grades fully offline. The in-container driver is
 eval/grader/grade.py. Artifacts land in <out>/: verdict.json, progress.jsonl,
 container.log, grade.json — every grade of a run also carries the spend
-(wall clock + tokens) behind its delivery. One seeded trajectory per grade;
-across seeds, name each grade (e.g. --grade final_s1 --seed 1).
+(wall clock + tokens) behind its delivery. One seeded rollout per grade
+over --num-envs independently randomized envs; grading is PER TRAJECTORY:
+<out>/traj_000 ... each hold one trajectory's grade, <out> itself the
+batch statistics + mean curve. Across seeds, name each grade
+(e.g. --grade final_s1 --seed 1).
 """
 
 from __future__ import annotations
@@ -56,6 +59,7 @@ def grade_one(*, args, exp: Path, stage: Path, preset: str, scene: str, grader_d
         "-v", "rb-ovcache:/ovcache",
         DEFAULT_IMAGE, "python", "/grader/grade.py",
         "--preset", preset, "--scene", scene, "--seed", str(args.seed),
+        "--num-envs", str(args.num_envs),
     ] + (["--render"] if args.render else [])
 
     if args.dry_run:
@@ -84,7 +88,7 @@ def grade_one(*, args, exp: Path, stage: Path, preset: str, scene: str, grader_d
 
     (out / "grade.json").write_text(json.dumps({
         "exp": str(exp), "stage": stage.name, "preset": preset, "grade": gname,
-        "seed": args.seed,
+        "seed": args.seed, "num_envs": args.num_envs,
         **({"submission": submission} if submission else {}),
         **({"note": note} if note else {}),
         **({"spend": spend} if spend else {}),
@@ -98,7 +102,9 @@ def grade_one(*, args, exp: Path, stage: Path, preset: str, scene: str, grader_d
     verdict_file = out / "verdict.json"
     if verdict_file.exists():
         v = json.loads(verdict_file.read_text())
+        s = v.get("summary")
         print(f"verdict [{gname}]: success={v.get('success')} score={v.get('score')}"
+              + (f" ({s['successes']}/{s['num_envs']} envs)" if s else "")
               + (f"\n  error: {v['error'].strip().splitlines()[-1]}" if v.get("error") else ""))
     else:
         print(f"{status}: no verdict.json — see {out / 'container.log'}")
@@ -157,6 +163,9 @@ def main() -> None:
     ap.add_argument("--solution", help="explicit solution dir containing solve.py (needs --out)")
     ap.add_argument("--out", help="output dir (default: <exp>/runs/<run>/grades/<grade>)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--num-envs", type=int, default=1,
+                    help="envs graded together, each with independently randomized spawns; "
+                         "each env's trajectory is scored and judged separately")
     ap.add_argument("--gpu", default="0")
     ap.add_argument("--network", default="bridge",
                     help="container network (assets are vendored, so --network none also works)")

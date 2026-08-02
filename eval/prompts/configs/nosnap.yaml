@@ -1,4 +1,4 @@
 # For worlds built with --no-set-states: the block is disclosed, nothing is taught.
 # Launching this against a world with set_states enabled refuses (prompts may not lie).
 hints: []
-rules: [no_set_states, autonomous_operation]
+rules: [no_set_states, autonomous_operation, batch_solve]
