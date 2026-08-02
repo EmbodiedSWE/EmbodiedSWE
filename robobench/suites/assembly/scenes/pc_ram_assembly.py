@@ -71,7 +71,7 @@ class PcRamAssemblySceneCfg(BaseCfg):
     # slot; seated orientation = the case's own axes (identity). Baked into the committed USDs
     # (keep in sync if they change). Slot 0 is the outermost (farthest from the CPU socket).
     seat_pos: tuple[tuple[float, float, float], ...] = info(
-        ((-0.0926893, -0.0678899, 0.0002058), (-0.0737320, -0.0678899, 0.0002058))
+        ((-0.1426893, -0.0678899, 0.0002058), (-0.1237320, -0.0678899, 0.0002058))
     )
     slot_mouth_z: float = info(0.0046456)  # channel wall top in the case frame: depth datum
     board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
@@ -116,7 +116,7 @@ class PcRamAssemblySceneCfg(BaseCfg):
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parents[1] / "assets"
         self.asset_dir = self.asset_dir or str(assets)
-        self.case_usd = self.case_usd or str(Path(self.asset_dir) / "pc" / "pc_case_ram_assembly.usd")
+        self.case_usd = self.case_usd or str(Path(self.asset_dir) / "pc" / "pc_case_ram_assembly_mb.usd")
         self.ram_usd = self.ram_usd or str(Path(self.asset_dir) / "pc" / "ram_tridentz.usd")
         preset = self.TABLES[self.table]
         if self.surface_z is None:
