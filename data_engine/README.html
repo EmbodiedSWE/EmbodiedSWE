@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>data_engine — README</title>
+<style>
+  :root {
+    --bg: #F5F8F8; --panel: #FFFFFF; --panel2: #ECF2F2;
+    --ink: #17252C; --mut: #4C5E68; --faint: #7E8E96; --line: #DDE6E7;
+    --acc: #0B6B70; --acc-ink: #095A5E; --acc-bg: #DFF0F0;
+    --good: #2E7C4B; --good-bg: #E3F2E9; --warn: #93660A; --warn-bg: #F7EFDB;
+    --code-bg: #EEF3F3;
+    --shadow: 0 1px 2px rgba(23,37,44,.05), 0 6px 18px rgba(23,37,44,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0D1418; --panel: #151D22; --panel2: #1B252B;
+      --ink: #E6ECEF; --mut: #AAB8C0; --faint: #71818B; --line: #28343B;
+      --acc: #4EC3C9; --acc-ink: #7FD4D9; --acc-bg: #0F3237;
+      --good: #5FC084; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
+      --code-bg: #1B252B;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F5F8F8; --panel: #FFFFFF; --panel2: #ECF2F2;
+    --ink: #17252C; --mut: #4C5E68; --faint: #7E8E96; --line: #DDE6E7;
+    --acc: #0B6B70; --acc-ink: #095A5E; --acc-bg: #DFF0F0;
+    --good: #2E7C4B; --good-bg: #E3F2E9; --warn: #93660A; --warn-bg: #F7EFDB;
+    --code-bg: #EEF3F3;
+    --shadow: 0 1px 2px rgba(23,37,44,.05), 0 6px 18px rgba(23,37,44,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0D1418; --panel: #151D22; --panel2: #1B252B;
+    --ink: #E6ECEF; --mut: #AAB8C0; --faint: #71818B; --line: #28343B;
+    --acc: #4EC3C9; --acc-ink: #7FD4D9; --acc-bg: #0F3237;
+    --good: #5FC084; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
+    --code-bg: #1B252B;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.25);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px; line-height: 1.7; -webkit-font-smoothing: antialiased; }
+  code, .mono, .num { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; }
+  code { font-size: .84em; background: var(--code-bg); padding: .12em .4em; border-radius: 5px; }
+  a { color: var(--acc-ink); }
+  :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 6px; }
+  h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- header ---------- */
+  header { padding: 48px 0 24px; }
+  .eyebrow { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--acc-ink); margin: 0 0 12px; }
+  header h1 { font-size: clamp(26px, 4vw, 32px); font-weight: 750; letter-spacing: -.025em; }
+
+  /* ---------- tab bar ---------- */
+  nav.bar { position: sticky; top: 0; z-index: 10; background: var(--bg);
+    border-bottom: 1px solid var(--line); }
+  nav.bar .row { display: flex; gap: 6px; overflow-x: auto; padding: 10px 0; }
+  nav.bar a { flex: none; display: flex; gap: 8px; align-items: baseline; text-decoration: none;
+    color: var(--mut); font-size: 14px; font-weight: 550; padding: 7px 15px; border-radius: 999px; }
+  nav.bar a .num { font-size: 11px; color: var(--faint); font-weight: 650; }
+  nav.bar a:hover { background: var(--panel2); color: var(--ink); }
+  nav.bar a.on { background: var(--acc-bg); color: var(--acc-ink); font-weight: 650;
+    box-shadow: inset 0 0 0 1.5px var(--acc); }
+  nav.bar a.on .num { color: var(--acc-ink); }
+
+  /* ---------- sections (tab panels) ---------- */
+  main { padding-bottom: 48px; }
+  section { padding: 34px 0 8px; }
+  section[hidden] { display: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    section { animation: rise .22s ease; }
+    @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  }
+  h2 { font-size: 24px; font-weight: 720; letter-spacing: -.02em;
+       display: flex; gap: 12px; align-items: center; }
+  h2 .num { font-size: 12px; font-weight: 650; color: var(--acc-ink); background: var(--acc-bg);
+            padding: 3px 9px; border-radius: 7px; letter-spacing: .05em; }
+  .lede { color: var(--mut); font-size: 17px; margin: 14px 0 20px; }
+  .lede b { color: var(--acc-ink); font-weight: 650; }
+  h3 { font-size: 14px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase;
+       color: var(--ink); margin: 34px 0 14px; display: flex; align-items: center; gap: 10px; }
+  h3::before { content: ""; flex: none; width: 18px; height: 4px; border-radius: 2px; background: var(--acc); }
+  h3::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  h4 { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+       color: var(--mut); margin: 24px 0 10px 8px; line-height: 1.25;
+       display: flex; align-items: center; gap: 9px; }
+  h4::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%;
+       background: var(--acc); opacity: .75; }
+  p { margin: 0 0 12px; }
+  .note { color: var(--mut); font-size: 13.5px; margin: 10px 0 16px; }
+  ul.tight { margin: 0 0 16px; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  ul.tight li::marker { color: var(--acc); }
+  .cols2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 12px 32px; margin-bottom: 16px; }
+
+  /* ---------- procedure strip (auto-numbered) ---------- */
+  .pipe { display: flex; align-items: stretch; overflow-x: auto; margin: 6px 0 16px;
+          border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+          box-shadow: var(--shadow); counter-reset: step; }
+  .pipe .step { flex: 1 1 0; min-width: 150px; padding: 14px 16px;
+                border-right: 1px solid var(--line); counter-increment: step; }
+  .pipe .step:last-child { border-right: 0; }
+  .pipe .step b { display: block; font-size: 14.5px; font-weight: 650; margin-bottom: 4px; }
+  .pipe .step b::before { content: counter(step); font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px; font-weight: 700; color: var(--acc-ink); background: var(--acc-bg);
+    border-radius: 6px; padding: 1px 7px; margin-right: 8px; vertical-align: 2px; }
+  .pipe .step span { display: block; color: var(--mut); font-size: 13px; line-height: 1.55; }
+  .pipe .step.hot { background: linear-gradient(180deg, var(--acc-bg), transparent 160%); }
+  .pipe .step.hot b { color: var(--acc-ink); }
+  .pipe .step .freq { display: block; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 7px; }
+  .pipe .step.hot .freq { color: var(--acc-ink); opacity: .8; }
+  .pipe .step.open b, .pipe .step.open span { opacity: .6; }
+  .pipe .step.open .freq { color: var(--warn); opacity: 1; }
+
+  /* ---------- lifecycle timeline ---------- */
+  .flow { list-style: none; margin: 10px 0 20px; padding: 0; position: relative;
+          display: flex; flex-direction: column; gap: 14px; }
+  .flow::before { content: ""; position: absolute; left: 20px; top: 14px; bottom: 14px;
+                  width: 2px; background: var(--line); }
+  .flow li { display: flex; gap: 18px; align-items: flex-start; }
+  .flow .dot { position: relative; z-index: 1; flex: none; width: 42px; height: 42px;
+               border-radius: 50%; display: grid; place-items: center;
+               font-family: ui-monospace, Consolas, monospace; font-size: 15px; font-weight: 700;
+               background: var(--panel); color: var(--faint); border: 2px solid var(--line); }
+  .flow li.hot .dot { background: var(--acc-bg); color: var(--acc-ink); border-color: var(--acc); }
+  .flow li.open .dot { border-style: dashed; border-color: var(--warn); color: var(--warn); }
+  .flow .card { flex: 1; background: var(--panel); border: 1px solid var(--line);
+                border-radius: 14px; padding: 14px 18px; box-shadow: var(--shadow); }
+  .flow li.hot .card { border-color: var(--acc); }
+  .flow li.open .card { border-style: dashed; }
+  .flow .card .freq { display: block; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint);
+    margin-bottom: 4px; }
+  .flow li.hot .card .freq { color: var(--acc-ink); }
+  .flow li.open .card .freq { color: var(--warn); }
+  .flow .card b { display: block; font-size: 16px; font-weight: 680; margin-bottom: 4px; }
+  .flow li.hot .card b { color: var(--acc-ink); }
+  .flow .card p { margin: 0; color: var(--mut); font-size: 14px; line-height: 1.6; }
+  .flow li.open .card p, .flow li.open .card b { opacity: .75; }
+
+  /* ---------- fact cards ---------- */
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+           gap: 12px; margin: 0 0 18px; }
+  .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+          padding: 16px 18px; font-size: 14.5px; color: var(--mut); box-shadow: var(--shadow); }
+  .fact b { display: block; color: var(--ink); font-size: 15.5px; margin-bottom: 5px; }
+
+  /* ---------- tables ---------- */
+  .twrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+           background: var(--panel); margin: 0 0 16px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint);
+       background: var(--panel2); font-weight: 700; white-space: nowrap; }
+  td.name { font-weight: 650; white-space: nowrap; }
+  td.t { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--mut); }
+
+  /* ---------- code / tree blocks ---------- */
+  .block { background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px;
+           padding: 16px 20px; overflow-x: auto; margin: 0 0 16px; white-space: pre;
+           font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px; line-height: 1.9; }
+  .block i { color: var(--mut); font-style: normal; }
+  .block b { color: var(--acc-ink); font-weight: 650; }
+  .block .x { color: var(--faint); }
+
+  /* ---------- pills ---------- */
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px;
+          font-weight: 650; letter-spacing: .02em; white-space: nowrap; }
+  .pill.done { background: var(--good-bg); color: var(--good); }
+  .pill.tbd  { background: var(--warn-bg); color: var(--warn); }
+  .pill.dim  { background: var(--panel2); color: var(--mut); }
+
+  /* ---------- mount map ---------- */
+  .mount { display: grid; grid-template-columns: minmax(0,1fr) 46px minmax(0,1.15fr); gap: 5px 8px;
+           align-items: baseline; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+           font-size: 13px; border: 1px solid var(--line); border-radius: 12px;
+           background: var(--panel); padding: 14px 18px; margin: 0 0 16px; overflow-x: auto;
+           box-shadow: var(--shadow); }
+  .mount .h { text-align: right; color: var(--mut); }
+  .mount .a { text-align: center; color: var(--acc-ink); font-weight: 700; }
+  .mount .c b { color: var(--acc-ink); }
+  .mount .c span { color: var(--mut); }
+  .mount .full { grid-column: 1 / -1; color: var(--faint); font-family: system-ui, sans-serif;
+                 font-size: 12.5px; text-align: center; padding-top: 8px; border-top: 1px dashed var(--line); margin-top: 8px; }
+
+  footer { color: var(--faint); font-size: 13px; padding: 26px 0 60px; }
+
+  @media (max-width: 640px) {
+    header { padding-top: 30px; }
+    .pipe { flex-direction: column; }
+    .pipe .step { border-right: 0; border-bottom: 1px solid var(--line); }
+    .pipe .step:last-child { border-bottom: 0; }
+    .mount { grid-template-columns: 1fr; }
+    .mount .h { text-align: left; }
+    .mount .a { text-align: left; }
+    .mount .c { margin-bottom: 6px; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">CoSiGen · robobench · data_engine</p>
+    <h1>Turn one solved benchmark into a verified demonstration dataset</h1>
+  </header>
+</div>
+
+<nav class="bar" aria-label="Sections">
+  <div class="wrap">
+    <div class="row">
+      <a href="#overview"><span class="num">01</span>Overview</a>
+      <a href="#levels"><span class="num">02</span>Diversification levels</a>
+      <a href="#generate"><span class="num">03</span>Generating data</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <main>
+
+    <!-- 01 OVERVIEW ---------------------------------------------------- -->
+    <section id="overview">
+      <h2><span class="num">01</span>Overview</h2>
+      <p class="lede">A coding agent solves a robobench task once. The data engine multiplies that single verified solve into a <b>large, diverse, per-episode-verified demonstration dataset</b>.</p>
+      <p>Three decoupled stages: <b>diversify</b> — agents write the code that adds diversity (scenes, strategies, phases, resets); <b>generate</b> — one generic launcher mass-produces batched episodes from whatever is authored; <b>verify</b> — the scene's grader stamps a verdict on every episode. Verification is also the <b>feedback on the code</b>: agents test-launch small batches mid-session, and each batch's success rate is documented — informing further authoring and repair.</p>
+
+      <h3>Hierarchical diversification</h3>
+      <p>The engine diversifies the <b>scene</b> and the <b>solve</b> along a hierarchy where each level contains the next: one scene hosts many strategies; each strategy breaks into phases, re-enterable from many sampled states; dynamics perturb every rollout; every rollout re-renders visually. <b>Each level can be run independently</b> — none is mandatory, none waits on another, and the downstream experiment picks the subset it needs.</p>
+
+      <div class="twrap"><table>
+        <thead><tr><th>level</th><th>what varies</th><th>diversity</th><th>agent involvement</th></tr></thead>
+        <tbody>
+          <tr><td class="name">L1 · scene</td><td>the world: distractor objects, more target objects, layout</td><td>world</td><td class="t">heavy</td></tr>
+          <tr><td class="name">L2 · strategy</td><td>the plan: grasp site, subtask order, arm roles, timing, preferences</td><td>behavior</td><td class="t">heavy</td></tr>
+          <tr><td class="name">L3 · phase</td><td>where each phase starts: checkpoints + perturbed re-entry</td><td>state coverage</td><td class="t">light</td></tr>
+          <tr><td class="name">L4 · dynamics</td><td>action noise; physical parameters: friction, mass, etc.</td><td>recovery</td><td class="t">none</td></tr>
+          <tr><td class="name">L5 · visual</td><td>pixels only: lighting, textures, background, camera</td><td>appearance</td><td class="t">none</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Example of layout</h3>
+      <p>Each <code>data_gen/</code> rides alongside one successful eval run: the solution and grader next to it <em>are</em> the reference.</p>
+      <div class="block">experiments/&lt;exp&gt;/runs/&lt;run_name&gt;/
+├─ task/  workspace/  run.json …   <i>the eval run as-is — solution + grader, in place, untouched</i>
+└─ data_gen/
+    └─ &lt;gen_name&gt;/                 <i>one named generation campaign — several can coexist</i>
+        ├─ scenes/                 <i>the generators — code only, laid out below</i>
+        └─ data/                   <i>raw trajectories only</i>
+            ├─ default/            <i>written by init: the nominal gate batch — the campaign's control cell</i>
+            │   ├─ ep_0000/
+            │   │   ├─ traj.npz    <i>state/action arrays at control rate, incl. per-step phase codes</i>
+            │   │   ├─ meta.json   <i>lineage (scene · strategy · phase · σ · seed) + verdict + sampled θ</i>
+            │   │   └─ imgs/       <i>optional — frames rendered from the states on demand</i>
+            │   ├─ ep_0001/
+            │   └─ meta.json       <i>batch meta: config, seeds, yield + failure-mode summary</i>
+            ├─ &lt;batch_1&gt;/
+            └─ &lt;batch_2&gt;/
+
+scenes/
+├─ scene_0/                        <i>the unmodified benchmark scene — the nominal control</i>
+│   ├─ .agent/                     <i>authoring trace: per-session transcripts + SUMMARY.md (what changed, why)</i>
+│   ├─ meta.json                   <i>metadata: episodes generated, success rate, …</i>
+│   ├─ scene/
+│   │   ├─ scene.py                <i>full standalone scene — unblocked suite copy, edited</i>
+│   │   ├─ cfg.py                  <i>env registration: robot, control mode, sim overrides, tunables</i>
+│   │   └─ randomization.yaml      <i>optional — system randomization: spawn bands, physics params, actuation noise</i>
+│   ├─ grader/
+│   │   └─ grader.py               <i>the grader this scene's episodes are verified with — the suite's, modified to match the scene changes</i>
+│   └─ strategies/
+│       ├─ strategy_0/
+│       │   ├─ .agent/             <i>authoring trace of the strategy session (incl. its phases + resets)</i>
+│       │   ├─ meta.json           <i>metadata: episodes generated, success rate, …</i>
+│       │   ├─ solver_params.yaml  <i>optional — solver parameters to sample from</i>
+│       │   └─ phases/
+│       │       ├─ phase_0/        <i>the from-scratch entry — the full solve</i>
+│       │       │   ├─ meta.json   <i>metadata: episodes generated, success rate, …</i>
+│       │       │   ├─ phase.yaml  <i>name + what it does (episodes' per-step phase codes refer to these) + reset strategies to sample: bands, weights</i>
+│       │       │   ├─ solve.py    <i>closed-loop, batch-native; enters here, runs to task-done</i>
+│       │       │   └─ reset.py    <i>implements the declared reset strategies; the runner samples among them</i>
+│       │       ├─ phase_1/
+│       │       └─ phase_2/
+│       └─ strategy_1/
+├─ scene_1/
+└─ scene_2/</div>
+
+    </section>
+
+
+    <!-- 02 LEVELS ------------------------------------------------------ -->
+    <section id="levels" hidden>
+      <h2><span class="num">02</span>Diversification levels</h2>
+      <p class="lede">One subsection per level of the hierarchy — the rules, the examples, and the checks each level runs at acceptance.</p>
+
+      <h3>L1 · scene</h3>
+      <p><b>Irrelevant objects</b> (an apple beside the bulb): collision-safe placement only — grader and solve untouched; assets from the prebuilt pipeline. <b>Relevant objects</b> (three nuts, seat them all): task semantics change — prefer <em>parameterizing</em> the proven grader (<code>num_pairs</code> already exists in the scenes) over rewriting it. A genuinely new criterion is bench authoring: human-reviewed, sanity-tested (reference solve passes, null rollout fails).</p>
+
+      <h3>L2 · strategy</h3>
+      <p>Enumerable choices (approach side, execution order) are <b>surfaced as solver arguments</b> at solve time and sampled at script cost forever. Structural mutants (hand the ikea leg to the other arm and let <em>it</em> screw; dome grasp vs neck grasp) take one agent session each, with the grader as the acceptance test <em>plus a distinctness check</em> — a "new" strategy that collapses into an existing one inflates K nominally.</p>
+
+      <h3>L3 · phase</h3>
+      <p>Checkpoints at phase boundaries (recorded phase codes make them machine-readable; agents may add mid-phase ones). Restore into all envs, perturb, resume with fresh calibrations. Perturbation mode follows the <b>grasp-coupling rule</b>: object free → move it alone (initial-condition randomization entering at t<sub>k</sub>); object grasped → rigid hand+object transform + re-IK (the MimicGen relocation idea, executed closed-loop). Safe re-entry points are <b>measured, not declared</b> — probe batches per boundary, keep what yields.</p>
+
+      <h3>L4 · dynamics</h3>
+      <p>DART-style action noise: perturb the <em>executed</em> action, record the <em>clean</em> action as the label — the recovery-teaching signal. Physics parameters (friction, mass) sample per round; some are solvability-tuned, so expect asymmetric bands. All of it generic; per-task only σ and bands, found by sample-and-filter.</p>
+
+      <h3>L5 · visual</h3>
+      <p>Free, and retroactive: pixels come from replaying recorded states, so k visual variants per episode cost render time only — no physics, and it applies to every episode ever recorded.</p>
+    </section>
+
+    <!-- 03 GENERATE ------------------------------------------------------ -->
+    <section id="generate" hidden>
+      <h2><span class="num">03</span>Generating data</h2>
+      <p class="lede">The diversification levels produce <b>code</b>; this stage turns it into <b>episodes</b>. Generation is one generic command over any authored cell — a (scene, strategy, phase) triple — with no task-specific logic anywhere in the launcher.</p>
+
+      <h3>Init — from eval run to the first spine</h3>
+      <div class="pipe">
+        <div class="step"><b>scaffold</b><span>create <code>scenes/scene_0/</code>: unblocked suite scene + cfg into <code>scene/</code>, suite grader into <code>grader/</code></span></div>
+        <div class="step"><b>port</b><span>the eval solution → <code>strategy_0/phases/phase_0/solve.py</code>; mechanical if it followed the batch prompt rule</span></div>
+        <div class="step"><b>default reset</b><span><code>phase_0/reset.py</code> = the scene's own seeded reset + IC bands</span></div>
+        <div class="step hot"><b>gate</b><span>run a nominal batch, grade it, write it to <code>data/default/</code> — scene_0 · strategy_0 · phase_0 at nominal is the campaign's control cell; if it doesn't yield, the harness is broken, not the diversification</span></div>
+      </div>
+
+      <h3>Sampling — one generic sampler over declared dims</h3>
+      <p>Every <code>*.yaml</code> entry is one of a <b>typed schema</b> defined once in python — <code>Range</code> (continuous band), <code>Choice</code> (discrete options — values <em>or names</em>, e.g. which reset function), <code>Const</code> (frozen, reason required) — validated at load, so a typo fails in seconds, not an hour into a batch. The runner derives θ as a pure function of the episode index (low-discrepancy over ranges, cycled choices, <b>index 0 = nominal</b>) and routes it: scene dims → build/reset, solver dims → <code>solve.py</code> args, reset choice → the named function in <code>reset.py</code>. The drawn θ is recorded in each episode's <code>meta.json</code> — the yaml is the menu, the meta is what happened.</p>
+
+      <h3>One batch, end to end</h3>
+      <div class="pipe">
+        <div class="step"><b>pick cells</b><span>any (scene × strategy × phase) triples + episode budget — whatever is authored and gated</span></div>
+        <div class="step"><b>sample</b><span>θ per episode index from the yamls: bands, choices, reset strategies; index 0 = nominal</span></div>
+        <div class="step hot"><b>roll out</b><span>E envs × rounds on one GPU; each env enters at its phase via the sampled reset, runs to task-done</span></div>
+        <div class="step hot"><b>grade</b><span>the scene's grader judges every episode — the only quality gate there is</span></div>
+        <div class="step"><b>write</b><span>ep folders + batch meta into <code>data/&lt;batch&gt;/</code>; failures kept with their θ for yield curves; level metas refreshed</span></div>
+      </div>
+
+      <h3>Under the hood — runner and solver</h3>
+      <p>The runner owns everything repetitive about batched execution; a solver plugs in through three hooks — so the runner is written once and executes any compliant solver at any <code>num_envs</code>:</p>
+      <div class="block"><b>setup</b>(env)                        <i># once: controller retunes, one-off calibration</i>
+<b>fresh_state</b>(entry_phase) -&gt; dict    <i># per-env FSM state, enterable at ANY phase</i>
+<b>step</b>(obs_e, st) -&gt; action_row | ("done"|"abort", verdict)</div>
+      <p>Each control tick the runner pulls all state in a few batched CPU transfers, steps every env's FSM on that snapshot, perturbs the <em>executed</em> actions (clean actions go to the record), steps physics as one <code>(E, action_dim)</code> tensor, and records arrays + per-step phase codes with an exact snapshot at each phase transition. Done envs hold a zero-delta action until the round ends.</p>
+
+      <h3>Properties</h3>
+      <div class="facts">
+        <div class="fact"><b>Independent and parallel</b> Every (scene, strategy, phase) cell generates in its own process — across GPUs, no coordination — because θ is a pure function of the episode index.</div>
+        <div class="fact"><b>Reproducible, append-only</b> Re-running a batch re-derives the same θ sequence; same build + seed → byte-identical rollouts. Across code changes contact chaos diverges — validate by <em>milestones</em>, never trajectory equality.</div>
+        <div class="fact"><b>Nominal cells are the controls</b> scene_0 · strategy_0 · phase_0 at θ-nominal must keep yielding; when it stops, the harness broke — not the diversification.</div>
+        <div class="fact"><b>Cost profile</b> Isaac boots in ~75 s, then rounds are nearly free (E × rounds episodes per process) — but a round runs as long as its slowest env, so early-abort on detectable failure signatures is the main lever.</div>
+      </div>
+    </section>
+
+
+
+
+
+
+
+
+
+  </main>
+
+</div>
+
+<script>
+  (function () {
+    var row = document.querySelector("nav.bar .row");
+    row.setAttribute("role", "tablist");
+    var links = Array.prototype.slice.call(document.querySelectorAll("nav.bar a"));
+    var ids = links.map(function (a) { return a.getAttribute("href").slice(1); });
+    links.forEach(function (a, i) {
+      a.setAttribute("role", "tab");
+      var panel = document.getElementById(ids[i]);
+      if (panel) { panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-label", a.textContent.trim()); }
+    });
+    function show(id, focus) {
+      ids.forEach(function (s) { var el = document.getElementById(s); if (el) el.hidden = (s !== id); });
+      links.forEach(function (a) {
+        var on = a.getAttribute("href") === "#" + id;
+        a.classList.toggle("on", on);
+        a.setAttribute("aria-selected", on ? "true" : "false");
+        a.setAttribute("tabindex", on ? "0" : "-1");
+        if (on && focus) a.focus();
+      });
+      try { history.replaceState(null, "", "#" + id); } catch (e) {}
+      window.scrollTo(0, 0);
+    }
+    Array.prototype.forEach.call(document.querySelectorAll("main a[href^='#']"), function (a) {
+      var id = a.getAttribute("href").slice(1);
+      if (ids.indexOf(id) >= 0) a.addEventListener("click", function (e) { e.preventDefault(); show(id); });
+    });
+    links.forEach(function (a, i) {
+      a.addEventListener("click", function (e) { e.preventDefault(); show(ids[i]); });
+      a.addEventListener("keydown", function (e) {
+        var d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (d) { e.preventDefault(); show(ids[(i + d + ids.length) % ids.length], true); }
+      });
+    });
+    var initial = (location.hash || "").slice(1);
+    show(ids.indexOf(initial) >= 0 ? initial : ids[0]);
+  })();
+</script>
+</html>
+
