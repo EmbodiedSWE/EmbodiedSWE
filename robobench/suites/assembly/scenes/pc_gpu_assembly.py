@@ -32,6 +32,8 @@ import torch
 
 from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
+from ._grasp_weld import GraspSite, GraspWeldMixin
+
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
 
@@ -58,6 +60,11 @@ class PcGpuAssemblySceneCfg(BaseCfg):
     # slick against a grippier fixed case, so it slides down the channel but holds seat.
     card_friction: float = tunable(0.3)
     case_friction: float = tunable(0.75)
+    # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX form — `_grasp_weld.py`):
+    # close the fingers squarely across the card's body slab near its top edge and the card welds
+    # to the hand; open wide to release. Gripper envs only (no-op under robot="null").
+    grasp_weld: bool = tunable(True)
+    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
 
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     # Seated card origin (its PCB-tab bottom centre) in the case's local frame; orientation seated
@@ -116,7 +123,7 @@ class PcGpuAssemblySceneCfg(BaseCfg):
 
 
 @SCENES.register("pc_gpu")
-class PcGpuAssemblyScene(BaseScene):
+class PcGpuAssemblyScene(GraspWeldMixin, BaseScene):
     cfg: PcGpuAssemblySceneCfg
 
     # Card-local y extent of the body collision slab (from gpu_rtx2060.usd `/gpu/collision/body`:
@@ -263,6 +270,17 @@ class PcGpuAssemblyScene(BaseScene):
         self.env_origins = env.iscene.env_origins
         self._set_friction(self.case, self.cfg.case_friction)
         self._set_friction(self.card, self.cfg.card_friction)
+        self._grasp_weld_bind()
+
+    def grasp_sites(self) -> list[GraspSite]:
+        """One grip band: across the body slab (faces at CARD_BODY_Y, 34.8 mm wide), along the
+        card's upper length — band centre 15 mm below the shroud's top edge (z 0.1155)."""
+        y = 0.5 * (self.CARD_BODY_Y[0] + self.CARD_BODY_Y[1])
+        return [GraspSite("card", self.card, (-0.045, y, 0.1005), (0.045, y, 0.1005), (0.030, 0.039))]
+
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        """Reconcile the weld-on-closure grasp contract every physics substep."""
+        self._grasp_weld_step()
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
@@ -285,13 +303,16 @@ class PcGpuAssemblyScene(BaseScene):
         st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
         st[:, 3:7] = torch.tensor(c.card_init_quat, device=dev)
         self.card.write_root_state_to_sim(st, env_ids)
+        self._grasp_weld_release_all(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
-        """Restorable scene state: world root states (13) of the case and the card."""
+        """Restorable scene state: world root states (13) of the case and the card, plus the
+        grasp-weld holds."""
         return {
             "case": self.case.data.root_state_w[env_ids].clone(),
             "card": self.card.data.root_state_w[env_ids].clone(),
+            **self._grasp_weld_state(env_ids),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
@@ -299,6 +320,7 @@ class PcGpuAssemblyScene(BaseScene):
         root state, so the channel holds it on restore."""
         self.case.write_root_pose_to_sim(state["case"][:, 0:7], env_ids)
         self.card.write_root_state_to_sim(state["card"], env_ids)
+        self._grasp_weld_restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
@@ -322,6 +344,12 @@ class PcGpuAssemblyScene(BaseScene):
             "connector up with the x16 slot, and press it straight down until it bottoms out. "
             "A seated card stays put on its own. The task is complete once the card is fully "
             "seated."
+            + (
+                " The card holds in a firm pinch: close the fingers squarely across its body "
+                "slab near the top edge and the grip locks; open wide to release."
+                if self.cfg.grasp_weld
+                else ""
+            )
         )
 
     # ----- progress (public: seated()/engaged(); reads how far the assembly has got) -------------

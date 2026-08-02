@@ -37,6 +37,8 @@ import torch
 
 from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
+from ._grasp_weld import GraspSite, GraspWeldMixin
+
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
 
@@ -65,6 +67,11 @@ class PcRamAssemblySceneCfg(BaseCfg):
     # moderately slick against a grippier fixed case, so it slides down the channel but holds seat.
     ram_friction: float = tunable(0.3)
     case_friction: float = tunable(0.75)
+    # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX form — `_grasp_weld.py`):
+    # close the fingers flat across a stick's faces near its top edge and the stick welds to
+    # the hand; open wide to release. Gripper envs only (no-op under robot="null").
+    grasp_weld: bool = tunable(True)
+    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
 
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     # Seated stick origins (PCB-blade bottom centres) in the case's local frame, one per empty DIMM
@@ -131,7 +138,7 @@ class PcRamAssemblySceneCfg(BaseCfg):
 
 
 @SCENES.register("pc_ram")
-class PcRamAssemblyScene(BaseScene):
+class PcRamAssemblyScene(GraspWeldMixin, BaseScene):
     cfg: PcRamAssemblySceneCfg
 
     # Stick-local x extent of the body collision slab (from ram_tridentz.usd
@@ -279,6 +286,21 @@ class PcRamAssemblyScene(BaseScene):
         self._set_friction(self.case, self.cfg.case_friction)
         for ram in self.rams:
             self._set_friction(ram, self.cfg.ram_friction)
+        self._grasp_weld_bind()
+
+    def grasp_sites(self) -> list[GraspSite]:
+        """One grip band per stick: across the blade (faces at STICK_BODY_X, 7.3 mm wide),
+        along the stick's length at its top edge (z 0.0401) — permissive enough for both a
+        face pinch just below the edge and a pad-wrap pinch over it."""
+        x = 0.5 * (self.STICK_BODY_X[0] + self.STICK_BODY_X[1])
+        return [
+            GraspSite(f"ram{k}", ram, (x, -0.055, 0.0401), (x, 0.055, 0.0401), (0.005, 0.010))
+            for k, ram in enumerate(self.rams)
+        ]
+
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        """Reconcile the weld-on-closure grasp contract every physics substep."""
+        self._grasp_weld_step()
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
@@ -301,6 +323,7 @@ class PcRamAssemblyScene(BaseScene):
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 3:7] = torch.tensor(c.ram_init_quat, device=dev)
             ram.write_root_state_to_sim(st, env_ids)
+        self._grasp_weld_release_all(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -308,6 +331,7 @@ class PcRamAssemblyScene(BaseScene):
         out = {"case": self.case.data.root_state_w[env_ids].clone()}
         for k, ram in enumerate(self.rams):
             out[f"ram_{k}"] = ram.data.root_state_w[env_ids].clone()
+        out.update(self._grasp_weld_state(env_ids))
         return out
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
@@ -316,6 +340,7 @@ class PcRamAssemblyScene(BaseScene):
         self.case.write_root_pose_to_sim(state["case"][:, 0:7], env_ids)
         for k, ram in enumerate(self.rams):
             ram.write_root_state_to_sim(state[f"ram_{k}"], env_ids)
+        self._grasp_weld_restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
@@ -338,6 +363,12 @@ class PcRamAssemblyScene(BaseScene):
             "(the notch only fits one way — heat-spreader faces along the slot) — and press it "
             "straight down until it clicks fully home. A seated stick stays put on its own. The "
             "task is complete once both sticks are fully seated."
+            + (
+                " A stick holds in a firm pinch: close the fingers flat across its faces near "
+                "the top edge and the grip locks; open wide to release."
+                if self.cfg.grasp_weld
+                else ""
+            )
         )
 
     # ----- progress (public: seated()/engaged(); reads how far the assembly has got) -------------

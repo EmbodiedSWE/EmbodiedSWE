@@ -25,6 +25,8 @@ import torch
 
 from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
+from ._grasp_weld import GraspSite, GraspWeldMixin
+
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
 
@@ -49,6 +51,11 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
     bolt_friction: float = tunable(0.01)
     platform_friction: float = tunable(0.75)
     key_friction: float = tunable(0.6)
+    # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX form — `_grasp_weld.py`):
+    # close the fingers across either arm's hex and the key welds to the hand; open wide to
+    # release. Gripper envs only (no-op under robot="null").
+    grasp_weld: bool = tunable(True)
+    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
 
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     num_pairs: int = info(1)  # number of platform+bolt pairs
@@ -120,7 +127,7 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
 
 
 @SCENES.register("allen_bolt")
-class AllenBoltAssemblyScene(BaseScene):
+class AllenBoltAssemblyScene(GraspWeldMixin, BaseScene):
     cfg: AllenBoltAssemblySceneCfg
 
     def __init__(self, cfg: AllenBoltAssemblySceneCfg | None = None) -> None:
@@ -252,6 +259,21 @@ class AllenBoltAssemblyScene(BaseScene):
             self._set_friction(platform, self.cfg.platform_friction)
         for key in self.keys:
             self._set_friction(key, self.cfg.key_friction)
+        self._grasp_weld_bind()
+
+    def grasp_sites(self) -> list[GraspSite]:
+        """Two grip bands per key, across its hex (12.6 mm flats / 14.4 mm corners): the
+        120 mm HANDLE (local +x off the elbow at z 0.050) and the 50 mm SHORT ARM (local +z;
+        the crank grip). The key USD's origin is the short arm's tip."""
+        sites = []
+        for i, key in enumerate(self.keys):
+            sites.append(GraspSite(f"key{i}_handle", key, (0.005, 0.0, 0.050), (0.115, 0.0, 0.050), (0.009, 0.017)))
+            sites.append(GraspSite(f"key{i}_arm", key, (0.0, 0.0, 0.008), (0.0, 0.0, 0.045), (0.009, 0.017)))
+        return sites
+
+    def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        """Reconcile the weld-on-closure grasp contract every physics substep."""
+        self._grasp_weld_step()
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
@@ -280,6 +302,7 @@ class AllenBoltAssemblyScene(BaseScene):
                 st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
                 st[:, 3:7] = quat
                 part.write_root_state_to_sim(st, env_ids)
+        self._grasp_weld_release_all(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -288,6 +311,7 @@ class AllenBoltAssemblyScene(BaseScene):
             "platforms": torch.stack([p.data.root_state_w[env_ids].clone() for p in self.platforms], dim=1),
             "bolts": torch.stack([b.data.root_state_w[env_ids].clone() for b in self.bolts], dim=1),
             "keys": torch.stack([k.data.root_state_w[env_ids].clone() for k in self.keys], dim=1),
+            **self._grasp_weld_state(env_ids),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
@@ -299,6 +323,7 @@ class AllenBoltAssemblyScene(BaseScene):
             bolt.write_root_state_to_sim(state["bolts"][:, i], env_ids)
         for i, key in enumerate(self.keys):
             key.write_root_state_to_sim(state["keys"][:, i], env_ids)
+        self._grasp_weld_restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
@@ -314,6 +339,12 @@ class AllenBoltAssemblyScene(BaseScene):
             f"hole, seat the key in its socket, and drive it down (turn clockwise while pressing) "
             f"until it seats. A seated bolt locks in place. The task is complete once "
             f"{'the bolt is' if n == 1 else f'all {n} bolts are'} seated."
+            + (
+                " The key holds in a firm pinch: close the fingers across either arm's hex and "
+                "the grip locks; open wide to release."
+                if c.grasp_weld
+                else ""
+            )
         )
 
     # ----- progress (public: seated()/engaged(); reads how far the assembly has got) -------------
