@@ -2,4 +2,4 @@
 # as possible; a human may occasionally check results and give feedback.
 # (autonomous_operation does NOT apply here — someone may actually answer.)
 hints: [save_snapshot]
-rules: [interactive_session]
+rules: [interactive_session, batch_solve]

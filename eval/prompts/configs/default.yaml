@@ -1,2 +1,2 @@
 hints: [save_snapshot]
-rules: [autonomous_operation]
+rules: [autonomous_operation, batch_solve]

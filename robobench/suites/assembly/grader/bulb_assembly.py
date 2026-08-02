@@ -7,7 +7,8 @@ Rubric stages (weights and modes live in RUBRIC):
     engaged   fraction of bulbs on/in a socket bore
     threaded  mean thread depth from free-rest to seat (the scene's own
               glow band); unengaged bulbs count 0
-Success is the scene's `seated()`, read when the delivery finishes.
+Every stage is per env (fractions over that env's bulbs). Success is the
+scene's `seated()` per env, read when the delivery finishes.
 """
 
 from __future__ import annotations
@@ -36,8 +37,8 @@ class BulbAssemblyGrader(BaseGrader):
             [b.data.root_pos_w[:, 2] for b in self.scene.bulbs], dim=1)
         self._held_s = torch.zeros_like(self._z0)  # per-bulb consecutive lifted-and-slow time
 
-    def check_success(self) -> bool:
-        return bool(self.scene.seated().all())
+    def check_success(self):
+        return self.scene.seated().all(dim=1)  # (num_envs,) — every bulb of that env
 
     def _in_socket(self):
         """(engaged mask, thread completion), each (num_envs, num_bulbs)."""
@@ -51,8 +52,9 @@ class BulbAssemblyGrader(BaseGrader):
         thread = ((c.light_start_z - depth) / (c.light_start_z - c.seat_z)).clamp(0.0, 1.0)
         return engaged, thread
 
-    # ---- rubric stages -----------------------------------------------------
-    def picked(self) -> float:
+    # ---- rubric stages — each returns a (num_envs,) fraction over that
+    # env's bulbs ------------------------------------------------------------
+    def picked(self):
         import torch
 
         z = torch.stack([b.data.root_pos_w[:, 2] for b in self.scene.bulbs], dim=1)
@@ -60,12 +62,12 @@ class BulbAssemblyGrader(BaseGrader):
         held = (z > self._z0 + self.pick_lift) & (speed < self.pick_speed)
         step_dt = self.env.dt * self.env.robot.control_period
         self._held_s = torch.where(held, self._held_s + step_dt, torch.zeros_like(self._held_s))
-        return float((self._held_s >= self.pick_hold_s).float().mean())
+        return (self._held_s >= self.pick_hold_s).float().mean(dim=1)
 
-    def engaged(self) -> float:
+    def engaged(self):
         engaged, _ = self._in_socket()
-        return float(engaged.float().mean())
+        return engaged.float().mean(dim=1)
 
-    def threaded(self) -> float:
+    def threaded(self):
         engaged, thread = self._in_socket()
-        return float((engaged * thread).mean())
+        return (engaged * thread).mean(dim=1)
