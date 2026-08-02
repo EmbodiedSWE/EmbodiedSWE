@@ -4,7 +4,6 @@ Importing this package registers every scene into `robobench.core.SCENES`. Impor
 modules defer isaaclab/pxr, so registration is safe without a running app.
 """
 
-from ._grasp_weld import GraspSite, GraspWeldMixin
 from .allen_bolt_assembly import AllenBoltAssemblyScene, AllenBoltAssemblySceneCfg
 from .bulb_assembly import BulbAssemblyScene, BulbAssemblySceneCfg
 from .chair_assembly import ChairAssemblyScene, ChairAssemblySceneCfg
@@ -18,8 +17,6 @@ from .so101_assembly import SO101AssemblyScene, SO101SceneCfg
 from .stacking_toy import StackingToyScene, StackingToySceneCfg
 
 __all__ = [
-    "GraspSite",
-    "GraspWeldMixin",
     "IkeaTableAssemblyScene",
     "IkeaTableAssemblySceneCfg",
     "NutThreadAssemblyScene",
