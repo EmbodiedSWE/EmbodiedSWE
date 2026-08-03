@@ -269,18 +269,16 @@ scenes/
 │   ├─ .agent/                     <i>authoring trace: per-session transcripts + SUMMARY.md (what changed, why)</i>
 │   ├─ meta.json                   <i>metadata: episodes generated, success rate, …</i>
 │   ├─ scene/
-│   │   ├─ scene.py                <i>full standalone scene — unblocked suite copy, edited</i>
-│   │   ├─ cfg.py                  <i>env registration: robot, control mode, sim overrides, tunables</i>
-│   │   └─ randomization.yaml      <i>optional — system randomization: spawn bands, physics params, actuation noise</i>
+│   │   └─ scene.py                <i>full standalone scene — repo suite copy, edited; its cfg's tunables ARE the sampling declaration</i>
 │   ├─ grader/
 │   │   └─ grader.py               <i>the grader this scene's episodes are verified with — the suite's, modified to match the scene changes</i>
 │   └─ strategies/
 │       ├─ strategy_0/
 │       │   ├─ .agent/             <i>authoring trace of the strategy session (incl. its phases + resets)</i>
 │       │   ├─ meta.json           <i>metadata: episodes generated, success rate, …</i>
-│       │   ├─ solve.py            <i>closed-loop, batch-native; enters at any declared phase, runs to task-done</i>
-│       │   ├─ solver_params.yaml  <i>optional — solver parameters to sample from</i>
-│       │   └─ phases/
+│       │   ├─ solve.py            <i>the solve as delivered — never modified</i>
+│       │   ├─ solve_by_phase.py   <i>optional — created by an L3 session: the phase-enterable version; enters at any declared phase, runs to task-done</i>
+│       │   └─ phases/            <i>optional — created with solve_by_phase.py by an L3 session; until then the solve runs from the scene's own reset</i>
 │       │       ├─ phase_0/        <i>the from-scratch entry — the full solve</i>
 │       │       │   ├─ meta.json   <i>metadata: episodes generated, success rate, …</i>
 │       │       │   ├─ phase.yaml  <i>name + what it does (episodes' per-step phase codes refer to these) + reset strategies to sample: bands, weights</i>
@@ -309,10 +307,10 @@ scenes/
       <p><b>Gentle modifications of the world</b> — editing the scene code, optionally the configs and grader; parts that need dedicated expert checks stay untouched. In scope: <b>irrelevant objects</b> (an apple beside the bulb — collision-safe placement, assets from the prebuilt pipeline); <b>the work surface</b> (a different table height or condition, or a more task-suited table). Where a change shifts what success looks like, the scene's <b>check functions and grader are rewritten to match</b>. <b>Out of scope for now</b>: the hard parts — thread mechanics, physics config, and mechanisms like the weld gate stay as the suite ships them.</p>
 
       <h3>L2 · strategy</h3>
-      <p><b>A strategy is a way to do the task, delivered in its <code>solve.py</code></b>, usually separated into several phases, e.g. pick → place → thread. It varies at three grains: <b>parameters</b> of the solve, e.g. forces, speeds, clearances, declared in <code>solver_params.yaml</code>; <b>small modifications</b>, e.g. execution order where several are valid, preference choices, grasp site; <b>big changes</b>: a genuinely new way to solve the task, e.g. assembling a table with two arms, one strategy has a single arm do the assembly while the other only reorients the table; a new strategy hands the leg over and both arms thread.</p>
+      <p><b>A strategy is a way to do the task, delivered in its <code>solve.py</code></b>, usually separated into several phases, e.g. pick → place → thread. It varies at three grains: <b>parameters</b> of the solve, e.g. forces, speeds, clearances, declared as <code>tunable</code> fields on a <code>Params</code> cfg inside the solve itself — the same mechanism as the scene cfg, so one uniform sampler covers both; a new strategy keeps the base strategy's param names, adding its own (no Params = nominal only, e.g. the delivered solve); <b>small modifications</b>, e.g. execution order where several are valid, preference choices, grasp site; <b>big changes</b>: a genuinely new way to solve the task, e.g. assembling a table with two arms, one strategy has a single arm do the assembly while the other only reorients the table; a new strategy hands the leg over and both arms thread.</p>
 
       <h3>L3 · phase</h3>
-      <p><b>Once a strategy is finished, each of its phases becomes an entry point</b>: the strategy's <code>solve.py</code> enters there and runs to task-done, and the phase's <code>reset.py</code> proposes what the entry state looks like, e.g. restore a recorded mid-task state and jitter it, relocate a free object alone, or move a grasped object rigidly together with the hand.</p>
+      <p><b>Once a strategy is finished, each of its phases becomes an entry point</b>: the strategy's <code>solve.py</code> enters there and runs to task-done, and the phase's <code>reset.py</code> proposes what the entry state looks like, e.g. restore a recorded mid-task state and jitter it, relocate a free object alone, or move a grasped object rigidly together with the hand. Phases are <b>established, not assumed</b>: init bakes no <code>phases/</code> folder at all — the solve as delivered runs unmodified from the scene's own reset, whatever its shape. An L3 agent session creates <code>phases/</code> and a <code>solve_by_phase.py</code> beside the original — <code>solve.py</code> itself is never modified — accepted only if the nominal batch still yields.</p>
 
       <h3>L4 · dynamics</h3>
       <p><b>Random perturbations to actions and physical parameters</b>, e.g. actuation noise, friction, mass. The solve's own feedback control mitigates them, and that recovery behavior is what gets recorded: the perturbed action is executed, the clean action is the label. No agent involved, just batched solves.</p>
