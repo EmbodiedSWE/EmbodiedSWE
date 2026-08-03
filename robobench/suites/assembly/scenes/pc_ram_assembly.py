@@ -289,8 +289,7 @@ class PcRamAssemblyScene(BaseScene):
 
     def grasp_sites(self) -> list:
         """One grip band per stick: across the blade (faces at STICK_BODY_X, 7.3 mm wide),
-        along the stick's length at its top edge (z 0.0401) — permissive enough for both a
-        face pinch just below the edge and a pad-wrap pinch over it."""
+        along the stick's length at its top edge (z 0.0401)."""
         x = 0.5 * (self.STICK_BODY_X[0] + self.STICK_BODY_X[1])
         return [
             (f"ram{k}", ram, (x, -0.055, 0.0401), (x, 0.055, 0.0401), (0.005, 0.010))
