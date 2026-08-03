@@ -1,36 +1,32 @@
-"""Assemble the per-run /task folder: instructions + task + rules + hints.
+"""Assemble the per-run /task folder: instructions + task + rules + skills + tools.
 
-Called by the run launcher, NOT the builder: one built world can host many
-prompt conditions. Selection is by presence — the folder contains exactly the
-files this run's condition grants. Hints and rules both live as single-file
-libraries under eval/prompts/; the harness validates a selection against the
-world's receipt so the prompt can never LIE about the world (withholding a
-disclosure is allowed — that's an experimental variant; contradicting is not).
+Called by the run launcher, NOT the builder: one built world can host many prompt conditions.
+Selection is by presence — the folder contains exactly the files this run's condition grants.
+
+A condition's prompt is its listed files CONCATENATED, never branched (design note §1): where
+text must differ between arms, two files exist and each config picks one. So this module is a
+read-and-join loop with no conditionals about content, and `envbuild/condition.py` is the only
+thing that reads a config.
 
     /task/
-    ├── instructions.md   the contract (explains this folder; the CLI prompt)
-    ├── task.md           describe() harvest + goal extension + build snippet
-    ├── rules/<name>.md   the selected rule disclosures
-    └── hints/<name>.md   the selected hints
+    ├── instructions.md    the contract (explains this folder; the CLI prompt)
+    ├── task.md            describe() harvest + goal extension + build snippet
+    ├── rules/<name>.md    the selected rules the agent MUST follow
+    ├── skills/<name>.md   the selected skills the agent MAY follow
+    ├── tools.md           the granted tools' doc sections (written by envbuild/tools.py)
+    └── skills/<pkg>/      each granted tool's companion skill package
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
-PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
-HINTS_DIR = PROMPTS_DIR / "hints"
-RULES_DIR = PROMPTS_DIR / "rules"
-TASKS_DIR = PROMPTS_DIR / "tasks"
+from . import tools as tool_install
+from .condition import PROMPTS_DIR, RULES_DIR, SKILLS_DIR, Condition, check_facts, list_rules, list_skills
 
-# selection may withhold, never lie: each entry names the receipt fact a
-# hint/rule presumes, and the value that fact must have for it to be true
-HINTS_NEED = {"save_snapshot": ("set_states", True)}
-RULES_NEED = {
-    "no_set_states": ("set_states", False),
-    "frozen_controller": ("control_mode_frozen", True),
-}
+TASKS_DIR = PROMPTS_DIR / "tasks"
 
 _TRANSFER_NOTE = (
     "`/workspace` contains your files from the previous stage of this "
@@ -44,36 +40,6 @@ _BUDGET_NOTE = (
 )
 
 
-def list_hints() -> list[str]:
-    return sorted(p.stem for p in HINTS_DIR.glob("*.md"))
-
-
-def list_rules() -> list[str]:
-    return sorted(p.stem for p in RULES_DIR.glob("*.md"))
-
-
-def check_condition(hints: list[str], rules: list[str], facts: dict) -> None:
-    """Fail fast on unknown names and prompt-vs-world contradictions.
-
-    `facts` is the world receipt's fact set (e.g. {"set_states": True,
-    "control_mode_frozen": True}); a selected hint/rule whose presumed fact
-    doesn't hold refuses to render."""
-    for names, library, needs, kind in (
-        (hints, list_hints(), HINTS_NEED, "hint"),
-        (rules, list_rules(), RULES_NEED, "rule"),
-    ):
-        for n in names:
-            if n not in library:
-                raise SystemExit(
-                    f"unknown {kind} '{n}' — library: {', '.join(library) or '(empty)'}")
-            if n in needs:
-                fact, wanted = needs[n]
-                if facts.get(fact) != wanted:
-                    raise SystemExit(
-                        f"{kind} '{n}' presumes {fact}={wanted}, but this world has "
-                        f"{fact}={facts.get(fact)} — the prompt may not contradict the world")
-
-
 def render_task_dir(
     task_dir: Path,
     *,
@@ -81,19 +47,17 @@ def render_task_dir(
     preset: str,
     describe_text: str,
     facts: dict,
-    hints: list[str] | tuple[str, ...] = (),
-    rules: list[str] | tuple[str, ...] = (),
+    condition: Condition,
     carryover: bool = False,
     budget_min: float | None = None,
 ) -> Path:
-    """Write the complete /task folder for one run.
+    """Write the complete /task folder for one run under `condition`.
 
-    Everything except task.md (the auto-generated scene+robot description)
-    is hand-authored library content, included only when selected — an
-    unselected rule means the restriction goes undisclosed."""
-    hints = list(hints)
-    rules = list(rules)
-    check_condition(hints, rules, facts)
+    Everything except task.md (the auto-generated scene+robot description) is hand-authored
+    library content, included only when the condition selects it — an unselected rule means the
+    restriction goes undisclosed.
+    """
+    check_facts(condition, facts)  # fail before touching disk
     task_dir.mkdir(parents=True, exist_ok=True)
 
     # task.md — auto-generated world + goal, optionally extended per scene
@@ -113,16 +77,33 @@ def render_task_dir(
     ]
     (task_dir / "task.md").write_text("\n".join(parts))
 
-    for sub, names, src in (("rules", rules, RULES_DIR), ("hints", hints, HINTS_DIR)):
+    for sub, names, src in (
+        ("rules", condition.rules, RULES_DIR),
+        ("skills", condition.skills, SKILLS_DIR),
+    ):
         if names:
             d = task_dir / sub
             d.mkdir(exist_ok=True)
             for n in names:
                 shutil.copyfile(src / f"{n}.md", d / f"{n}.md")
 
-    # instructions.md — the contract verbatim (it explains the /task folder
-    # semantics generically), plus the transfer note when a workspace carries over
+    # Granted tools: their doc sections (tools.md) and companion skill packages.
+    tool_install.install(condition, task_dir)
+
+    # The condition, machine-readable, next to the text it produced. A driver mounts /task
+    # anyway, so it can read which tools to register and which names to keep in the program
+    # namespace from here — no env var, and no way for the prompt and the toolset to disagree.
+    (task_dir / "condition.json").write_text(json.dumps(condition.as_record(), indent=2) + "\n")
+
+    # instructions.md — the contract verbatim (it explains the /task folder semantics
+    # generically), plus the notes that depend on how this run is driven rather than on the
+    # condition. The granted tools' sections are appended IN the prompt, not only left as
+    # tools.md: the CLI's first message is this file, and a tool the agent has to discover by
+    # listing /task is a tool half-granted (2026-07-31: agents found tools.md only by exploring).
     contract = (PROMPTS_DIR / "_contract.md").read_text().strip() + "\n"
+    tools_doc = tool_install.prompt_sections(condition)
+    if tools_doc:
+        contract += "\n" + tools_doc
     if budget_min:
         contract += "\n" + _BUDGET_NOTE.format(minutes=budget_min) + "\n"
     if carryover:
