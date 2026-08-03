@@ -1,0 +1,9 @@
+# Condition for run_interactive.py sessions: the agent runs as autonomously as possible; a
+# human may occasionally check results and give feedback.
+# (autonomous_operation does NOT apply here — someone may actually answer.)
+
+rules:  [interactive_session]
+skills: [save_checkpoint, staged_planning]
+tools:  [checkpoint_tree, parameter_search, scene_view, assessment]
+features:
+  control_mode: false   # as default.yaml: the preset's controller is part of the task

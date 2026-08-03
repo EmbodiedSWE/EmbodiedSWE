@@ -1,0 +1,16 @@
+# The default condition: a fully-equipped autonomous agent.
+#
+# rules    — must follow, one markdown file each under prompts/rules/
+# skills   — may follow, one markdown file each under prompts/skills/
+# tools    — callable tools from the eval/tools/ library; each brings its own prompt
+#            section and its companion skill, and is registered by name
+# features — code gating. A feature is a CAPABILITY and defaults to TRUE (permissive), so a
+#            restriction has to be written down. `control_mode: false` is written here because
+#            the preset's controller is part of the task: it reproduces what every world built
+#            before this config did by default (the old `freeze_controller=True`).
+
+rules:  [autonomous_operation]
+skills: [save_checkpoint, staged_planning]
+tools:  [checkpoint_tree, parameter_search, sweep, scene_view, assessment]
+features:
+  control_mode: false
