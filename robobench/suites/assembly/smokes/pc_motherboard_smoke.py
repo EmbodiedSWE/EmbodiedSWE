@@ -1,8 +1,10 @@
 """Physics smoke test for PcMotherboardAssemblyScene — one ALLEN KEY fastens all 7 motherboard
 bolts. The key<->socket contact is LIVE and the key is driven purely by forces. Each bolt is a
-kinematic screw joint: it follows the key's measured rotation through the hex lash (one-way, like
-a frictional thread) and descends on the 1 mm-pitch helix, with hard stops; the insert's
-collision is disabled. Bolts not being driven hold their pose.
+kinematic screw joint — the SCENE's thread mechanic (`screw_mechanic`, on by default): it
+follows the key's measured rotation through the hex lash (one-way, like a frictional thread)
+and descends on the 1 mm-pitch helix, with hard stops; the insert's collision is disabled and
+bolts not being driven hold their pose. This smoke only flies the key — staging, kinematics,
+and the joints all belong to the scene, and the constants below are asserted against it.
 
 All bolts stage pre-engaged (`STAGE_DEPTH` deep — the run is the final tightening of an
 already-started board); the key starts where it lies on the table and never teleports: it is
@@ -121,9 +123,13 @@ def main() -> None:
     zero3 = torch.zeros(n, 1, 3, device=device)
     render = (not args.headless) or livestream_on
 
-    # Author the key's mass properties (`SYM_INERTIA`), make the bolts KINEMATIC (each is a
-    # scripted screw joint the dynamic key pushes against), and re-assert the inserts' disabled
-    # collision (the screw joint IS the thread). Must happen BEFORE the explicit sim reset.
+    # Author the key's mass properties (`SYM_INERTIA`). The bolts' kinematics, the inserts'
+    # disabled collision, and the screw joints are the SCENE's (`screw_mechanic`) — this smoke
+    # asserts its planning constants match the scene's and otherwise just flies the key.
+    assert sc.cfg.screw_mechanic, "this smoke exercises the scene's screw mechanic"
+    assert abs(sc.cfg.stage_depth - STAGE_DEPTH) < 1e-9 and abs(sc.cfg.stage_yaw - STAGE_YAW) < 1e-9
+    assert abs(sc.SCREW_PITCH - PITCH) < 1e-9 and abs(sc.SCREW_LASH_HALF - LASH_HALF) < 1e-9
+    assert abs(sc.cfg.thread_len - THREAD_LEN) < 1e-9 and abs(sc.SCREW_SEAT_MARGIN - SEAT_MARGIN) < 1e-9
     from pxr import Gf, UsdPhysics
     stage = env.stage
     for e in range(n):
@@ -133,13 +139,6 @@ def main() -> None:
         mass_api.CreateDiagonalInertiaAttr(tuple(SYM_INERTIA[:3]))
         mass_api.CreateCenterOfMassAttr((0.0, 0.0, SYM_INERTIA[3]))
         mass_api.CreatePrincipalAxesAttr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
-        for i in range(sc.cfg.num_holes):
-            prim = stage.GetPrimAtPath(f"/World/envs/env_{e}/Bolt_{i}/allen_bolt")
-            assert prim.IsValid(), f"missing bolt body prim: bolt {i}, env {e}"
-            UsdPhysics.RigidBodyAPI(prim).CreateKinematicEnabledAttr(True)
-            prim = stage.GetPrimAtPath(f"/World/envs/env_{e}/Case/case/hole_{i}/thread_insert")
-            assert prim.IsValid(), f"thread_insert prim missing: hole {i}, env {e}"
-            UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(False)
 
     cam = writer = None
     if args.video:
@@ -166,47 +165,16 @@ def main() -> None:
         cam.set_world_poses_from_view(eye, tgt)
     print(env.describe(), flush=True)
 
-    # Screw-joint state, anchored at stage time. Each staged bolt is a kinematic screw DOF:
-    # the active one follows the key's measured rotation through the hex lash (one-way, like a
-    # frictional thread); parked ones hold their pose.
-    z0 = board_z - STAGE_DEPTH                     # bolt z at stage (n,)
-    bolt_turn = torch.zeros(n, B, device=device)   # cumulative screw-in rotation (rad, +ve = down)
-    turn_max = (THREAD_LEN - SEAT_MARGIN - STAGE_DEPTH) * 2 * math.pi / PITCH
-
-    def stage_parts() -> None:
-        """Teleport all B bolts pre-engaged in their holes (upright, tip `STAGE_DEPTH` below the
-        board face). The key stays where it lies on the table — it flies over under PD."""
-        for b in range(B):
-            st = torch.zeros(n, 13, device=device)
-            st[:, 0:2] = holes_w[:, b]
-            st[:, 2] = z0
-            st[:, 3] = math.cos(STAGE_YAW / 2)
-            st[:, 6] = math.sin(STAGE_YAW / 2)
-            bolts[b].write_root_state_to_sim(st, ids)
+    # The screw joints are the scene's (`sc.screw_turn` is their per-hole rotation state);
+    # the bolts spawned already staged in their holes at reset.
 
     def depth(b: int) -> torch.Tensor:  # bolt b's tip depth below the board face (m), per env
         return board_z - bolts[b].data.root_pos_w[:, 2]
 
-    def project_bolts(active: int | None) -> None:
-        """Advance the ACTIVE bolt's screw joint — it follows the key's measured rotation through
-        the hex lash, one-way, and descends on the helix to a hard stop — then write every staged
-        bolt's kinematic pose (parked bolts hold theirs)."""
-        if active is not None:
-            follow = torch.clamp(key_turn - LASH_HALF, max=turn_max)
-            bolt_turn[:, active] = torch.maximum(bolt_turn[:, active], follow)
-        for b in range(B):
-            yaw = STAGE_YAW - bolt_turn[:, b]
-            st = torch.zeros(n, 7, device=device)
-            st[:, 0:2] = holes_w[:, b]
-            st[:, 2] = z0 - PITCH * bolt_turn[:, b] / (2 * math.pi)
-            st[:, 3] = torch.cos(yaw / 2)
-            st[:, 6] = torch.sin(yaw / 2)
-            bolts[b].write_root_pose_to_sim(st, ids)
-
     def reseat_key(b: int) -> None:
         """FALLBACK ONLY (logged): teleport the key into bolt `b`'s socket if a PD insertion ever
         times out — tip 0.1 mm off the floor on the bolt's axis, hex clocking matched."""
-        yaw = STAGE_YAW - bolt_turn[:, b]
+        yaw = STAGE_YAW - sc.screw_turn[:, b]
         kt = torch.zeros(n, 13, device=device)
         kt[:, 0:2] = holes_w[:, b]
         kt[:, 2] = bolts[b].data.root_pos_w[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
@@ -247,7 +215,7 @@ def main() -> None:
 
     def yaw_err_to(b: int) -> torch.Tensor:
         """Smallest key yaw change that matches bolt `b`'s hex clocking (mod 60 deg), (n,)."""
-        d = (STAGE_YAW - bolt_turn[:, b] - yaw_of(key.data.root_quat_w)) % (math.pi / 3)
+        d = (STAGE_YAW - sc.screw_turn[:, b] - yaw_of(key.data.root_quat_w)) % (math.pi / 3)
         return torch.where(d > math.pi / 6, d - math.pi / 3, d)
 
     def hop_key(tgt_xy: torch.Tensor, tgt_z: torch.Tensor, align_to: int | None = None) -> None:
@@ -300,10 +268,9 @@ def main() -> None:
         i += 1
         ramp = min(1.0, (i - marker) / ramp_steps) if ramp_steps > 0 else 1.0
         if phase == "show":
-            if i >= show_end:
-                stage_parts()
+            if i >= show_end:  # the bolts spawned staged; the key flies over from the table
                 prev_key_yaw = yaw_of(key.data.root_quat_w)
-                phase, marker = "lift", i  # the key flies over from the table
+                phase, marker = "lift", i
         elif phase == "lift":  # rise (and right itself) to the travel height, rate-limited
             pos = key.data.root_link_pos_w
             tgt_z = torch.minimum(pos[:, 2] + 0.03, board_z + TRAVEL_Z)
@@ -348,7 +315,7 @@ def main() -> None:
             if bool((depth(active) >= STOP_DEPTH).all()) or i - marker >= drive_max:
                 key.set_external_force_and_torque(zero3, zero3)  # applied wrench persists — zero it
                 hole_gain[:, active] = depth(active) - STAGE_DEPTH
-                slip_last = torch.rad2deg(key_turn - bolt_turn[:, active])
+                slip_last = torch.rad2deg(key_turn - sc.screw_turn[:, active])
                 if active + 1 < B:
                     active += 1
                     phase, marker = "lift", i
@@ -359,18 +326,17 @@ def main() -> None:
                 break
 
         step(i)
-        if phase != "show":
-            project_bolts(active if phase == "drive" else None)
+        if phase != "show":  # the scene's mechanic advances the joints; track our own key spin
             kcur = yaw_of(key.data.root_quat_w)
             key_turn = key_turn - _wrap(kcur - prev_key_yaw)
             prev_key_yaw = kcur
 
         if i % log_every == 0:
             d = depth(active) * 1e3
-            slip = torch.rad2deg(key_turn - bolt_turn[:, active])
+            slip = torch.rad2deg(key_turn - sc.screw_turn[:, active])
             kgap = (key.data.root_link_pos_w[:, 2] - bolts[active].data.root_pos_w[:, 2] - SOCKET_FLOOR_Z) * 1e3
             print(f"  step {i:5d} [{phase:6s}] hole {active} | tip depth {d.mean():+6.2f}mm | bolt "
-                  f"{torch.rad2deg(bolt_turn[:, active]).mean():+7.0f}deg | key-bolt slip {slip.mean():+6.1f}deg | "
+                  f"{torch.rad2deg(sc.screw_turn[:, active]).mean():+7.0f}deg | key-bolt slip {slip.mean():+6.1f}deg | "
                   f"key-floor {kgap.mean():+5.2f}mm", flush=True)
 
     if writer is not None:
@@ -378,7 +344,7 @@ def main() -> None:
         print("MP4:", args.video, flush=True)
 
     seated = sc.seated()  # (n, num_holes)
-    revs = bolt_turn / (2 * math.pi)  # (n, B)
+    revs = sc.screw_turn[:, :B] / (2 * math.pi)  # (n, B)
     gain_mm = hole_gain * 1e3
     turned = revs > 0.5
     mm_per_rev = float((gain_mm[turned] / revs[turned]).median()) if turned.any() else float("nan")
