@@ -332,7 +332,10 @@ scenes/
     <!-- 05 TODO ------------------------------------------------------ -->
     <section id="todo" hidden>
       <h2><span class="num">05</span>TODO</h2>
-      <p class="note">TODO — to be written.</p>
+
+      <h3>Rebuild <code>tunable</code> in the config</h3>
+      <p><b>Today (2026-08-03):</b> declared across scene/robot/controller cfgs, consumed by nothing — documentation only. Remove all current <code>tunable</code> marks from the scene cfgs and rethink which fields truly belong, e.g. grading thresholds like <code>seat_z</code> never do.</p>
+      <p><b>Rebuild:</b> make it THE sampling declaration, two clients: L4 domain randomization, e.g. friction, mass; L2 solver parameters via the <code>Params</code> cfg. Needs bands, e.g. <code>tunable(0.4, band=(0.30, 0.55))</code>. Note: reset/initialization randomization, e.g. spawn jitter, is not a tunable — it belongs to the scene's own reset and the phase <code>reset.py</code>.</p>
     </section>
 
 
