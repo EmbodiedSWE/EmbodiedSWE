@@ -61,8 +61,8 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
     # settled pose on the SDF threads that holds unaided (recalibrate by drop/nest/
     # helix-advance if the bolt or insert USDs change). False = the lying spawn.
     bolt_staged: bool = tunable(False)
-    bolt_stage_depth: float = info(0.004309)  # staged tip depth below the plate top (m)
-    bolt_stage_yaw: float = info(2.499571)  # the depth's helix register (rad, about +z)
+    bolt_stage_depth: float = info(0.004898)  # staged tip depth below the plate top (m)
+    bolt_stage_yaw: float = info(0.648037)  # the depth's helix register (rad, about +z)
 
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     num_pairs: int = info(1)  # number of platform+bolt pairs
