@@ -74,6 +74,40 @@ def minimal_tree(dst: Path, suite: str, scene: str, robot: str, keep_smokes: boo
     return copied
 
 
+def copy_missing(dst: Path, paths: list[str]) -> list[str]:
+    """Copy the asset subtrees behind `paths`; return what was added.
+
+    minimal_tree only sees the directories spelled out in the scene's Python, so
+    assets that reference each other are invisible to it (ikea's leg.usd reaches
+    for ../factory/factory_nut_m16.usd, and nothing in the scene file says
+    "factory"). boot_preset reports what failed to resolve and this brings those
+    trees over, keeping to the same granularity as minimal_tree: assets/<sub>.
+    """
+    added = []
+    for p in paths:
+        if Path(p).exists():  # an earlier subtree in this pass already brought it
+            continue
+        try:
+            rel = Path(p).relative_to(dst)
+        except ValueError:
+            print(f"[extract] missing asset outside the tree, cannot supply it: {p}")
+            continue
+        if "assets" not in rel.parts:
+            print(f"[extract] missing asset is not under an assets/ dir: {rel}")
+            continue
+        sub = Path(*rel.parts[: rel.parts.index("assets") + 2])
+        src, out = SRC.parent / sub, dst / sub
+        if out.exists():
+            print(f"[extract] {sub} is already here yet {Path(p).name} is not — check the source")
+            continue
+        if not src.is_dir():
+            print(f"[extract] no source for {sub} in {SRC}")
+            continue
+        shutil.copytree(src, out)
+        added.append(str(sub.relative_to("robobench")))
+    return added
+
+
 def _scrub_comments(root: Path) -> None:
     """Drop full-line comments matching LEAK_RE; truncate matching inline ones; fail on survivors."""
     for f in root.rglob("*.py"):

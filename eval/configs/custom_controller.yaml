@@ -1,0 +1,12 @@
+# Custom-controller variant: teach the controller topic, and let the agent switch modes.
+#
+# `control_mode` is left ENABLED here (the schema default) — this is the one condition that does
+# not pin the preset's controller, which is what makes the custom_controller skill true of the
+# world. Previously this required remembering to pass `--no-freeze-controller` at build time to
+# match the config; now the condition states it and the build derives the patch set from here,
+# so the pair cannot fall out of step.
+
+rules:  [autonomous_operation]
+skills: [custom_controller, save_checkpoint, staged_planning]
+tools:  [checkpoint_tree, parameter_search, scene_view, assessment]
+features: {}
