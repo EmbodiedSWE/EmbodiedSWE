@@ -226,6 +226,8 @@ for _mode in ("osc", "impedance", "joint"):
             scene="allen_bolt",
             scene_cfg=AllenBoltAssemblySceneCfg(
                 platform_slots=((-0.08, 0.0),),
+                bolt_staged=True,  # the bolt spawns hand-started in the hole (the scene's
+                # asset-baked thread register) — the graded work is the KEY
                 # The key inserts by its LONG arm (the 50 mm short arm then cranks at half the
                 # swept diameter, and the grip rides a long vertical shaft instead of a low one).
                 # Spawned yawed +90 deg — handle along +y, short arm along +x — so the erection

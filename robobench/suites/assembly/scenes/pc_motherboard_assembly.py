@@ -18,6 +18,7 @@ Heavy imports (isaaclab, pxr) are deferred so importing this module stays app-fr
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -55,6 +56,17 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
     # to release. Gripper envs only (no-op under robot="null").
     grasp_weld: bool = tunable(True)
     grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
+    # Kinematic screw-joint threading — the scene's thread mechanic (the force-driven smoke
+    # and the gripper presets both run it): every bolt spawns STAGED hand-started in its
+    # hole, is kinematic, and descends its 1 mm-pitch helix by following the key's
+    # hex-engaged rotation through the lash, one-way, to a hard stop just above seating the
+    # head. The thread inserts' collision is off (the joint IS the thread); the bolts'
+    # SOCKET walls stay live for the key, so insertion, press, cam-out, and slip are real
+    # contacts. False = dynamic bolts lying beside the case and live inserts (raw physics,
+    # unvalidated at this scale).
+    screw_mechanic: bool = tunable(True)
+    stage_depth: float = info(0.006)  # staged bolts' tip depth below the board face (m)
+    stage_yaw: float = info(3.141592653589793)  # staged bolts' yaw (a k*60 deg hex clocking)
     key_friction: float = tunable(0.6)
 
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
@@ -293,6 +305,7 @@ class PcMotherboardAssemblyScene(BaseScene):
         for bolt in self.bolts:
             self._set_friction(bolt, self.cfg.bolt_friction)
         self._grasp_weld_bind()
+        self._screw_bind()
 
     def grasp_sites(self) -> list:
         """One grip band: the key's HANDLE (local +x off the elbow at the working arm's top,
@@ -301,8 +314,10 @@ class PcMotherboardAssemblyScene(BaseScene):
         return [("key", self.key, (0.005, 0.0, 0.210), (0.115, 0.0, 0.210), (0.004, 0.010))]
 
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
-        """Reconcile the weld-on-closure grasp contract every physics substep."""
+        """Reconcile the weld-on-closure grasp contract and the screw joints every physics
+        substep."""
         self._grasp_weld_step()
+        self._screw_step()
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
@@ -319,8 +334,11 @@ class PcMotherboardAssemblyScene(BaseScene):
         origin = self.env_origins[env_ids]  # (m, 3)
         wx, wy = c.workbench_pos
 
-        rows = [(bolt, xy, c.bolt_init_z, c.bolt_init_quat) for bolt, xy in zip(self.bolts, c.bolt_init_xy)]
-        rows.append((self.key, c.key_init_xy, c.key_init_z, c.key_init_quat))
+        if self._screw_on:  # staged bolts: the mechanic owns them from spawn
+            rows = [(self.key, c.key_init_xy, c.key_init_z, c.key_init_quat)]
+        else:
+            rows = [(bolt, xy, c.bolt_init_z, c.bolt_init_quat) for bolt, xy in zip(self.bolts, c.bolt_init_xy)]
+            rows.append((self.key, c.key_init_xy, c.key_init_z, c.key_init_quat))
         for part, (x, y), init_z, init_quat in rows:
             st = torch.zeros(m, 13, device=dev)
             st[:, 0:3] = origin + torch.tensor((wx + x, wy + y, c.surface_z + init_z), device=dev)
@@ -328,6 +346,7 @@ class PcMotherboardAssemblyScene(BaseScene):
             st[:, 3:7] = torch.tensor(init_quat, device=dev)
             part.write_root_state_to_sim(st, env_ids)
         self._grasp_weld_release_all(env_ids)
+        self._screw_reset(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -337,6 +356,7 @@ class PcMotherboardAssemblyScene(BaseScene):
             "bolts": torch.stack([b.data.root_state_w[env_ids].clone() for b in self.bolts], dim=1),
             "key": self.key.data.root_state_w[env_ids].clone(),
             **self._grasp_weld_state(env_ids),
+            **self._screw_state(env_ids),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
@@ -347,6 +367,7 @@ class PcMotherboardAssemblyScene(BaseScene):
             bolt.write_root_state_to_sim(state["bolts"][:, i], env_ids)
         self.key.write_root_state_to_sim(state["key"], env_ids)
         self._grasp_weld_restore(state, env_ids)
+        self._screw_restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
@@ -357,9 +378,17 @@ class PcMotherboardAssemblyScene(BaseScene):
             f"M8 threaded insert in the case. Beside the case: {n} loose M8 allen (socket-head) "
             f"bolts lying in a row, and one long-series L-shaped allen key (its arm is long "
             f"enough that the swinging handle clears the case walls). Each bolt head carries a "
-            f"7 mm hex socket.\nGoal: stand a bolt tip-down in each hole, seat the key in its socket, and "
-            f"drive it down (turn clockwise while pressing) until it seats — then move on to the "
-            f"next hole. A seated bolt locks in place. The task is complete once all {n} bolts "
+            f"7 mm hex socket.\n"
+            + (
+                f"Every hole already holds its bolt hand-started upright, a few threads in.\n"
+                f"Goal: seat the key in a bolt's socket and drive the bolt down (turn clockwise "
+                f"while pressing) until it seats — then move on to the next hole. "
+                if self.cfg.screw_mechanic
+                else f"Goal: stand a bolt tip-down in each hole, seat the key in its socket, and "
+                f"drive it down (turn clockwise while pressing) until it seats — then move on to the "
+                f"next hole. "
+            )
+            + f"A seated bolt locks in place. The task is complete once all {n} bolts "
             f"are seated."
             + (
                 " The key holds in a firm pinch: close the fingers across its handle's hex and "
@@ -673,3 +702,135 @@ class PcMotherboardAssemblyScene(BaseScene):
                     self._gw_rel_q[i, s] = state["grasp_rel_q"][row, s]
                     self.grasp_held[i, s] = True
         self._gw_count[env_ids] = 0
+
+    # ----- screw-joint machinery (the scene's thread mechanic; private — not an agent action) ---
+    # Each staged bolt is a kinematic screw DOF on its hole's axis: while the key's tip sits
+    # hex-engaged in a bolt's socket, that bolt follows the key's measured rotation through the
+    # hex lash — one-way, like a frictional thread — and descends its helix at SCREW_PITCH per
+    # revolution to a hard stop just above seating the head. Parked bolts hold their pose
+    # (kinematic). The lash re-charges on every socket re-entry. Reconciled every physics
+    # substep from live poses alone — the mechanic has no idea who (or what) turns the key.
+    SCREW_PITCH: ClassVar[float] = 0.001  # helix pitch (m per revolution)
+    SCREW_SOCKET_MOUTH_Z: ClassVar[float] = 0.0214  # bolt-local: head top = the recess mouth
+    SCREW_SEAT_MARGIN: ClassVar[float] = 0.0001  # hard stop: the head held this far off the board
+    SCREW_LASH_HALF: ClassVar[float] = math.radians(8.0)  # key rotation before the flats engage
+    SCREW_ENGAGE_AXIAL: ClassVar[float] = 0.0008  # engaged = tip below mouth by this margin
+    SCREW_ENGAGE_LATERAL: ClassVar[float] = 0.004  # max tip-to-hole-axis distance while engaged
+
+    def _screw_bind(self) -> None:
+        """Flip every bolt kinematic, disable the thread inserts' collision (at bind = before
+        play, so PhysX parses the edits with the scene), and allocate the joint state."""
+        self._screw_on = bool(self.cfg.screw_mechanic)
+        if not self._screw_on:
+            return
+        from pxr import UsdPhysics
+
+        stage = self.env.stage
+        c = self.cfg
+        for e in range(self.env.num_envs):
+            base = f"/World/envs/env_{e}"
+            for i in range(c.num_holes):
+                prim = stage.GetPrimAtPath(f"{base}/Bolt_{i}/allen_bolt")
+                if not prim.IsValid():
+                    raise RuntimeError(f"[screw] bolt body prim missing: bolt {i}, env {e}")
+                UsdPhysics.RigidBodyAPI(prim).CreateKinematicEnabledAttr(True)
+                prim = stage.GetPrimAtPath(f"{base}/Case/case/hole_{i}/thread_insert")
+                if not prim.IsValid():
+                    raise RuntimeError(f"[screw] thread_insert prim missing: hole {i}, env {e}")
+                UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(False)
+        n = self.env.num_envs
+        dev = self.env.device
+        wx, wy = c.workbench_pos
+        holes = torch.tensor(c.hole_xy, device=dev) + torch.tensor((wx, wy), device=dev)  # (B, 2)
+        self._sj_holes = self.env_origins[:, None, 0:2] + holes[None]  # (n, B, 2), world
+        self._sj_board_z = self.env_origins[:, 2] + c.surface_z + c.case_lift  # (n,), world
+        self._sj_turn_max = (c.thread_len - self.SCREW_SEAT_MARGIN - c.stage_depth) * 2 * math.pi / self.SCREW_PITCH
+        self.screw_turn = torch.zeros(n, c.num_holes, device=dev)  # per-hole screw-in rotation (rad)
+        self._sj_coupled = torch.zeros(n, c.num_holes, device=dev)  # engaged key rotation per joint
+        self._sj_eng = torch.zeros(n, c.num_holes, dtype=torch.bool, device=dev)
+        self._sj_prev = torch.zeros(n, device=dev)  # key yaw last substep
+        self._sj_fresh = torch.ones(n, dtype=torch.bool, device=dev)  # rows needing a yaw baseline
+
+    @staticmethod
+    def _sj_yaw(q: torch.Tensor) -> torch.Tensor:
+        """Yaw about world +z of a wxyz quaternion batch, shape (n,)."""
+        return torch.atan2(2 * (q[:, 0] * q[:, 3] + q[:, 1] * q[:, 2]), 1 - 2 * (q[:, 2] ** 2 + q[:, 3] ** 2))
+
+    def _screw_step(self) -> None:
+        """Advance engaged joints from the key's measured spin. Runs every physics substep."""
+        if not getattr(self, "_screw_on", False):
+            return
+        yaw = self._sj_yaw(self.key.data.root_quat_w)
+        dspin = -((yaw - self._sj_prev + math.pi) % (2 * math.pi) - math.pi)  # +ve = screw-in
+        dspin = torch.where(self._sj_fresh, torch.zeros_like(dspin), dspin)  # fresh rows: baseline only
+        self._sj_prev = yaw
+        self._sj_fresh[:] = False
+
+        kp = self.key.data.root_pos_w
+        bolt_z = torch.stack([b.data.root_pos_w[:, 2] for b in self.bolts], dim=-1)  # (n, B)
+        tip_ax = kp[:, 2, None] - bolt_z
+        tip_lat = (kp[:, None, 0:2] - self._sj_holes).norm(dim=-1)
+        engaged = (tip_ax < self.SCREW_SOCKET_MOUTH_Z - self.SCREW_ENGAGE_AXIAL) & (
+            tip_lat < self.SCREW_ENGAGE_LATERAL
+        )
+        entered = engaged & ~self._sj_eng
+        self._sj_coupled = torch.where(entered, self.screw_turn, self._sj_coupled)  # lash re-charges
+        self._sj_coupled = torch.where(engaged, self._sj_coupled + dspin[:, None], self._sj_coupled)
+        self._sj_eng = engaged
+        follow = (self._sj_coupled - self.SCREW_LASH_HALF).clamp(max=self._sj_turn_max)
+        self.screw_turn = torch.where(engaged, torch.maximum(self.screw_turn, follow), self.screw_turn)
+        self._screw_write(engaged)
+
+    def _screw_write(self, mask: torch.Tensor) -> None:
+        """Write the kinematic pose of every (env, bolt) in `mask` from its screw state."""
+        c = self.cfg
+        for b, bolt in enumerate(self.bolts):
+            rows = mask[:, b].nonzero(as_tuple=False).flatten()
+            if not len(rows):
+                continue
+            turn = self.screw_turn[rows, b]
+            yaw = c.stage_yaw - turn
+            st = torch.zeros(len(rows), 7, device=turn.device)
+            st[:, 0:2] = self._sj_holes[rows, b]
+            st[:, 2] = self._sj_board_z[rows] - c.stage_depth - self.SCREW_PITCH * turn / (2 * math.pi)
+            st[:, 3] = torch.cos(yaw / 2)
+            st[:, 6] = torch.sin(yaw / 2)
+            bolt.write_root_pose_to_sim(st, rows)
+
+    def _screw_reset(self, env_ids: torch.Tensor) -> None:
+        """Fresh episode: every bolt back to its staged hand-started pose, joints zeroed. Called
+        from `reset()` (which skips the bolts' lying spawn when the mechanic owns them)."""
+        if not getattr(self, "_screw_on", False):
+            return
+        self.screw_turn[env_ids] = 0.0
+        self._sj_coupled[env_ids] = 0.0
+        self._sj_eng[env_ids] = False
+        self._sj_fresh[env_ids] = True
+        mask = torch.zeros_like(self._sj_eng)
+        mask[env_ids] = True
+        self._screw_write(mask)
+        for b, bolt in enumerate(self.bolts):  # zero the (kinematic) velocities too
+            bolt.write_root_velocity_to_sim(torch.zeros(len(env_ids), 6, device=self.env.device), env_ids)
+
+    def _screw_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
+        """The mechanic's restorable state (empty when it is off)."""
+        if not getattr(self, "_screw_on", False):
+            return {}
+        return {
+            "screw_turn": self.screw_turn[env_ids].clone(),
+            "screw_coupled": self._sj_coupled[env_ids].clone(),
+            "screw_engaged": self._sj_eng[env_ids].clone(),
+        }
+
+    def _screw_restore(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
+        """Restore what `_screw_state` recorded and re-write the bolts' kinematic poses from it
+        (the recorded joint state is the truth; the bolts' body rows just mirror it)."""
+        if not getattr(self, "_screw_on", False) or "screw_turn" not in state:
+            return
+        self.screw_turn[env_ids] = state["screw_turn"]
+        self._sj_coupled[env_ids] = state["screw_coupled"]
+        self._sj_eng[env_ids] = state["screw_engaged"]
+        self._sj_fresh[env_ids] = True
+        mask = torch.zeros_like(self._sj_eng)
+        mask[env_ids] = True
+        self._screw_write(mask)
