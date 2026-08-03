@@ -4,7 +4,7 @@ Scaffolds `<run_dir>/data_gen/<gen_name>/` from the run's own artifacts: run.jso
 names the preset, workspace/solution/ is the solve, and the scene + grader + assets
 come from the live repo suite — ONE tree, so scene, grader and runtime core are
 consistent by construction. If the run's stage bench is present, init diffs the
-scene against it and warns on drift; the gate batch is the real check.
+scene against it and warns on drift; a nominal batch is the real check.
 
     data_gen/<gen_name>/
     ├─ gen.yaml                     campaign facts: preset, provenance, git sha
@@ -62,7 +62,7 @@ def resolve_suite(preset: str) -> dict:
 
     Scene AND grader come from the live repo suite — one tree, so scene, grader and
     runtime core are consistent by construction. Drift since the eval run is the
-    gate batch's job to catch (and init warns if the stage bench disagrees).
+    nominal batch's job to catch (and init warns if the stage bench disagrees).
     """
     suite, scene = preset.split(".")[0:2]
     scenes_dir = REPO_ROOT / "robobench" / "suites" / suite / "scenes"
@@ -147,7 +147,7 @@ def init(run_dir: str | Path, name: str | None = None, force: bool = False) -> P
         staged = run["stage_bench"] / suite["scene_path"].relative_to(REPO_ROOT / "robobench")
         if staged.is_file() and staged.read_text() != suite["scene_path"].read_text():
             print(f"WARNING: {suite['scene_path'].name} moved since this run solved "
-                  f"(stage {run['stage']}) — the gate batch is your check")
+                  f"(stage {run['stage']}) — run a nominal batch to check")
 
     gen = run_dir / "data_gen" / name
     if gen.exists():
