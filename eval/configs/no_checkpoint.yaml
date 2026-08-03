@@ -1,0 +1,18 @@
+# Ablation arm: no saved world states at all.
+#
+# `set_states: false` patches the extracted tree at build time so BaseEnv.set_states raises,
+# and withholding the checkpoint_tree tool removes it from the prompt AND the program
+# namespace — the two halves of the same ablation. The rule file discloses it.
+#
+# evolutionary_parameter_search is absent BY NECESSITY, not by choice: the search restores its
+# parallel copies through set_states, so granting it here would be an invalid condition and the
+# loader refuses it (design note §5).
+#
+# control_mode: false matches default.yaml — the only difference under test is checkpointing.
+
+rules:  [no_checkpoint, autonomous_operation]
+skills: [staged_planning]
+tools:  [scene_view, assessment]  # no set_states => no tree AND no parameter search
+features:
+  set_states: false
+  control_mode: false
