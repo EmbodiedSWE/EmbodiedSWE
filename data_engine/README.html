@@ -215,8 +215,9 @@
   <div class="wrap">
     <div class="row">
       <a href="#overview"><span class="num">01</span>Overview</a>
-      <a href="#levels"><span class="num">02</span>Diversification levels</a>
-      <a href="#generate"><span class="num">03</span>Generating data</a>
+      <a href="#quickstart"><span class="num">02</span>Quick start</a>
+      <a href="#levels"><span class="num">03</span>Diversification levels</a>
+      <a href="#generate"><span class="num">04</span>Generating data</a>
     </div>
   </div>
 </nav>
@@ -276,12 +277,12 @@ scenes/
 │       ├─ strategy_0/
 │       │   ├─ .agent/             <i>authoring trace of the strategy session (incl. its phases + resets)</i>
 │       │   ├─ meta.json           <i>metadata: episodes generated, success rate, …</i>
+│       │   ├─ solve.py            <i>closed-loop, batch-native; enters at any declared phase, runs to task-done</i>
 │       │   ├─ solver_params.yaml  <i>optional — solver parameters to sample from</i>
 │       │   └─ phases/
 │       │       ├─ phase_0/        <i>the from-scratch entry — the full solve</i>
 │       │       │   ├─ meta.json   <i>metadata: episodes generated, success rate, …</i>
 │       │       │   ├─ phase.yaml  <i>name + what it does (episodes' per-step phase codes refer to these) + reset strategies to sample: bands, weights</i>
-│       │       │   ├─ solve.py    <i>closed-loop, batch-native; enters here, runs to task-done</i>
 │       │       │   └─ reset.py    <i>implements the declared reset strategies; the runner samples among them</i>
 │       │       ├─ phase_1/
 │       │       └─ phase_2/
@@ -293,65 +294,39 @@ scenes/
 
 
     <!-- 02 LEVELS ------------------------------------------------------ -->
+    <!-- 02 QUICKSTART ---------------------------------------------------- -->
+    <section id="quickstart" hidden>
+      <h2><span class="num">02</span>Quick start</h2>
+      <p class="note">TODO — to be written.</p>
+    </section>
+
     <section id="levels" hidden>
-      <h2><span class="num">02</span>Diversification levels</h2>
+      <h2><span class="num">03</span>Diversification levels</h2>
       <p class="lede">One subsection per level of the hierarchy — the rules, the examples, and the checks each level runs at acceptance.</p>
 
       <h3>L1 · scene</h3>
-      <p><b>Irrelevant objects</b> (an apple beside the bulb): collision-safe placement only — grader and solve untouched; assets from the prebuilt pipeline. <b>Relevant objects</b> (three nuts, seat them all): task semantics change — prefer <em>parameterizing</em> the proven grader (<code>num_pairs</code> already exists in the scenes) over rewriting it. A genuinely new criterion is bench authoring: human-reviewed, sanity-tested (reference solve passes, null rollout fails).</p>
+      <p><b>Gentle modifications of the world</b> — editing the scene code, optionally the configs and grader; parts that need dedicated expert checks stay untouched. In scope: <b>irrelevant objects</b> (an apple beside the bulb — collision-safe placement, assets from the prebuilt pipeline); <b>the work surface</b> (a different table height or condition, or a more task-suited table). Where a change shifts what success looks like, the scene's <b>check functions and grader are rewritten to match</b>. <b>Out of scope for now</b>: the hard parts — thread mechanics, physics config, and mechanisms like the weld gate stay as the suite ships them.</p>
 
       <h3>L2 · strategy</h3>
-      <p>Enumerable choices (approach side, execution order) are <b>surfaced as solver arguments</b> at solve time and sampled at script cost forever. Structural mutants (hand the ikea leg to the other arm and let <em>it</em> screw; dome grasp vs neck grasp) take one agent session each, with the grader as the acceptance test <em>plus a distinctness check</em> — a "new" strategy that collapses into an existing one inflates K nominally.</p>
+      <p><b>A strategy is a way to do the task, delivered in its <code>solve.py</code></b>, usually separated into several phases, e.g. pick → place → thread. It varies at three grains: <b>parameters</b> of the solve, e.g. forces, speeds, clearances, declared in <code>solver_params.yaml</code>; <b>small modifications</b>, e.g. execution order where several are valid, preference choices, grasp site; <b>big changes</b>: a genuinely new way to solve the task, e.g. assembling a table with two arms, one strategy has a single arm do the assembly while the other only reorients the table; a new strategy hands the leg over and both arms thread.</p>
 
       <h3>L3 · phase</h3>
-      <p>Checkpoints at phase boundaries (recorded phase codes make them machine-readable; agents may add mid-phase ones). Restore into all envs, perturb, resume with fresh calibrations. Perturbation mode follows the <b>grasp-coupling rule</b>: object free → move it alone (initial-condition randomization entering at t<sub>k</sub>); object grasped → rigid hand+object transform + re-IK (the MimicGen relocation idea, executed closed-loop). Safe re-entry points are <b>measured, not declared</b> — probe batches per boundary, keep what yields.</p>
+      <p><b>Once a strategy is finished, each of its phases becomes an entry point</b>: the strategy's <code>solve.py</code> enters there and runs to task-done, and the phase's <code>reset.py</code> proposes what the entry state looks like, e.g. restore a recorded mid-task state and jitter it, relocate a free object alone, or move a grasped object rigidly together with the hand.</p>
 
       <h3>L4 · dynamics</h3>
-      <p>DART-style action noise: perturb the <em>executed</em> action, record the <em>clean</em> action as the label — the recovery-teaching signal. Physics parameters (friction, mass) sample per round; some are solvability-tuned, so expect asymmetric bands. All of it generic; per-task only σ and bands, found by sample-and-filter.</p>
+      <p><b>Random perturbations to actions and physical parameters</b>, e.g. actuation noise, friction, mass. The solve's own feedback control mitigates them, and that recovery behavior is what gets recorded: the perturbed action is executed, the clean action is the label. No agent involved, just batched solves.</p>
 
       <h3>L5 · visual</h3>
-      <p>Free, and retroactive: pixels come from replaying recorded states, so k visual variants per episode cost render time only — no physics, and it applies to every episode ever recorded.</p>
+      <p><b>Generic, cheap, and free of physics</b>: once a trajectory is solved and recorded, replaying its states lets visual changes apply without affecting the dynamics, e.g. camera position, textures, lighting, background. Each variant costs render time only, and it works retroactively on every episode ever recorded.</p>
     </section>
 
     <!-- 03 GENERATE ------------------------------------------------------ -->
     <section id="generate" hidden>
-      <h2><span class="num">03</span>Generating data</h2>
-      <p class="lede">The diversification levels produce <b>code</b>; this stage turns it into <b>episodes</b>. Generation is one generic command over any authored cell — a (scene, strategy, phase) triple — with no task-specific logic anywhere in the launcher.</p>
+      <h2><span class="num">04</span>Generating data</h2>
+      <p class="lede">Generation takes a <b>scene</b>, a <b>solver</b> (strategy + phase entry), and <b>sampled parameters</b> from their yamls, and turns them into many trajectories — one generic launcher, batched rollouts, every episode graded. No task-specific logic anywhere in the launcher.</p>
 
-      <h3>Init — from eval run to the first spine</h3>
-      <div class="pipe">
-        <div class="step"><b>scaffold</b><span>create <code>scenes/scene_0/</code>: unblocked suite scene + cfg into <code>scene/</code>, suite grader into <code>grader/</code></span></div>
-        <div class="step"><b>port</b><span>the eval solution → <code>strategy_0/phases/phase_0/solve.py</code>; mechanical if it followed the batch prompt rule</span></div>
-        <div class="step"><b>default reset</b><span><code>phase_0/reset.py</code> = the scene's own seeded reset + IC bands</span></div>
-        <div class="step hot"><b>gate</b><span>run a nominal batch, grade it, write it to <code>data/default/</code> — scene_0 · strategy_0 · phase_0 at nominal is the campaign's control cell; if it doesn't yield, the harness is broken, not the diversification</span></div>
-      </div>
+      <p class="note">TODO — sections to be rewritten: init, sampling, batch flow, runner &amp; solver, properties.</p>
 
-      <h3>Sampling — one generic sampler over declared dims</h3>
-      <p>Every <code>*.yaml</code> entry is one of a <b>typed schema</b> defined once in python — <code>Range</code> (continuous band), <code>Choice</code> (discrete options — values <em>or names</em>, e.g. which reset function), <code>Const</code> (frozen, reason required) — validated at load, so a typo fails in seconds, not an hour into a batch. The runner derives θ as a pure function of the episode index (low-discrepancy over ranges, cycled choices, <b>index 0 = nominal</b>) and routes it: scene dims → build/reset, solver dims → <code>solve.py</code> args, reset choice → the named function in <code>reset.py</code>. The drawn θ is recorded in each episode's <code>meta.json</code> — the yaml is the menu, the meta is what happened.</p>
-
-      <h3>One batch, end to end</h3>
-      <div class="pipe">
-        <div class="step"><b>pick cells</b><span>any (scene × strategy × phase) triples + episode budget — whatever is authored and gated</span></div>
-        <div class="step"><b>sample</b><span>θ per episode index from the yamls: bands, choices, reset strategies; index 0 = nominal</span></div>
-        <div class="step hot"><b>roll out</b><span>E envs × rounds on one GPU; each env enters at its phase via the sampled reset, runs to task-done</span></div>
-        <div class="step hot"><b>grade</b><span>the scene's grader judges every episode — the only quality gate there is</span></div>
-        <div class="step"><b>write</b><span>ep folders + batch meta into <code>data/&lt;batch&gt;/</code>; failures kept with their θ for yield curves; level metas refreshed</span></div>
-      </div>
-
-      <h3>Under the hood — runner and solver</h3>
-      <p>The runner owns everything repetitive about batched execution; a solver plugs in through three hooks — so the runner is written once and executes any compliant solver at any <code>num_envs</code>:</p>
-      <div class="block"><b>setup</b>(env)                        <i># once: controller retunes, one-off calibration</i>
-<b>fresh_state</b>(entry_phase) -&gt; dict    <i># per-env FSM state, enterable at ANY phase</i>
-<b>step</b>(obs_e, st) -&gt; action_row | ("done"|"abort", verdict)</div>
-      <p>Each control tick the runner pulls all state in a few batched CPU transfers, steps every env's FSM on that snapshot, perturbs the <em>executed</em> actions (clean actions go to the record), steps physics as one <code>(E, action_dim)</code> tensor, and records arrays + per-step phase codes with an exact snapshot at each phase transition. Done envs hold a zero-delta action until the round ends.</p>
-
-      <h3>Properties</h3>
-      <div class="facts">
-        <div class="fact"><b>Independent and parallel</b> Every (scene, strategy, phase) cell generates in its own process — across GPUs, no coordination — because θ is a pure function of the episode index.</div>
-        <div class="fact"><b>Reproducible, append-only</b> Re-running a batch re-derives the same θ sequence; same build + seed → byte-identical rollouts. Across code changes contact chaos diverges — validate by <em>milestones</em>, never trajectory equality.</div>
-        <div class="fact"><b>Nominal cells are the controls</b> scene_0 · strategy_0 · phase_0 at θ-nominal must keep yielding; when it stops, the harness broke — not the diversification.</div>
-        <div class="fact"><b>Cost profile</b> Isaac boots in ~75 s, then rounds are nearly free (E × rounds episodes per process) — but a round runs as long as its slowest env, so early-abort on detectable failure signatures is the main lever.</div>
-      </div>
     </section>
 
 
