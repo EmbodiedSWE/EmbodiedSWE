@@ -56,12 +56,10 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
     # release. Gripper envs only (no-op under robot="null").
     grasp_weld: bool = tunable(True)
     grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
-    # Staged-bolt spawn (the gripper presets): each bolt spawns thread-captured in its hole,
-    # hand-started a couple of turns the way a person finger-starts a bolt, at the asset-baked
-    # register below — a solver-settled pose on the REAL SDF threads that holds unaided
-    # (self-locking at bolt_friction 0.3). The task is then the key work. Recalibrate the
-    # register (drop -> nest on the crests -> advance down the helix -> settle) if the
-    # bolt/insert USDs change. False = the lying spawn beside the platform.
+    # Staged-bolt spawn: each bolt spawns thread-captured in its hole — hand-started a couple
+    # of turns, the way a person finger-starts a bolt — at the asset-baked register below, a
+    # settled pose on the SDF threads that holds unaided (recalibrate by drop/nest/
+    # helix-advance if the bolt or insert USDs change). False = the lying spawn.
     bolt_staged: bool = tunable(False)
     bolt_stage_depth: float = info(0.004309)  # staged tip depth below the plate top (m)
     bolt_stage_yaw: float = info(2.499571)  # the depth's helix register (rad, about +z)
