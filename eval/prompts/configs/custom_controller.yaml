@@ -1,4 +1,4 @@
 # Custom-controller variant: teach the controller topic. Pair with a world built
 # with --no-freeze-controller if mode switching should be allowed too.
 hints: [custom_controller, save_snapshot]
-rules: [autonomous_operation]
+rules: [autonomous_operation, batch_solve]

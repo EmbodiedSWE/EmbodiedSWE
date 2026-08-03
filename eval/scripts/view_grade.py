@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Build an interactive viewer for one grade folder: frames on one side,
-score curve + rubric bars on the other, synced on sim time.
+"""Build interactive viewers for a grade — PER TRAJECTORY: frames on one
+side, score curve + rubric bars on the other, synced on sim time.
 
     python3 eval/scripts/view_grade.py experiments/<exp>/runs/<run>/grades/<name> [--serve 8110]
 
-Reads verdict.json + progress.jsonl (+ frames.jsonl if the grade was rendered)
-and writes <grade>/viewer.html — a single static page; frames are referenced
-relatively, so serve the grade folder itself (--serve does it).
+Given a grade folder, writes one traj_NNN/viewer.html per trajectory (the
+meta mean curve is a statistic — it gets no viewer, it wouldn't match any
+frames); a traj folder builds just that one. Rendered frames film env 0, so
+they appear in traj_000's viewer only. Legacy flat grades (no traj_*) build
+as before. Frames are referenced relatively — serve the grade folder itself
+(--serve does it).
 """
 
 from __future__ import annotations
@@ -26,58 +29,81 @@ def load_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("grade", help="a grade output folder (verdict.json + progress.jsonl [+ frames.jsonl])")
-    ap.add_argument("--serve", type=int, default=None, metavar="PORT",
-                    help="after building, serve the folder on this port")
-    args = ap.parse_args()
-
-    gdir = Path(args.grade).resolve()
-    verdict_file = gdir / "verdict.json"
-    # a budget-killed grade has no verdict — still viewable (frames + partial curve)
+def build(tdir: Path, *, title: str, grade_meta: dict,
+          frames: list[dict], frame_prefix: str = "") -> Path | None:
+    """One trajectory folder -> its viewer.html. Returns None if there is no
+    curve to plot (a budget-killed grade may still view: frames + partial curve)."""
+    verdict_file = tdir / "verdict.json"
     verdict = json.loads(verdict_file.read_text()) if verdict_file.exists() else {}
-    grade_meta = json.loads((gdir / "grade.json").read_text()) if (gdir / "grade.json").exists() else {}
-
-    progress = load_jsonl(gdir / "progress.jsonl")
+    progress = load_jsonl(tdir / "progress.jsonl")
     if not progress:
-        sys.exit(f"no progress.jsonl in {gdir} — nothing to plot")
+        print(f"skip {tdir.name}: no progress.jsonl")
+        return None
     if len(progress) > MAX_CURVE_POINTS:
         keep = max(1, len(progress) // MAX_CURVE_POINTS)
         progress = progress[::keep] + [progress[-1]]
-    frames = load_jsonl(gdir / "frames.jsonl")
 
     stages = list(progress[0].get("stages", {}).keys())
     # weights out of the criteria string ("picked ×0.2 (once) · engaged ×0.2 · ...")
     weights = dict(re.findall(r"(\w+) ×([\d.]+)", verdict.get("criteria", "")))
 
     data = {
-        "title": "/".join(p for p in (grade_meta.get("exp", gdir.parent.parent.parent.name).split("/")[-1],
-                                      gdir.parent.parent.name, gdir.name) if p),
-        "verdict": {k: verdict.get(k) for k in ("success", "score", "criteria", "solve_wall_s", "solve_sim_steps")},
+        "title": title,
+        "verdict": {k: verdict.get(k) for k in ("success", "score", "criteria", "solve_wall_s",
+                                                "solve_sim_steps", "summary")},
         "note": grade_meta.get("note"),
         "auto": bool((grade_meta.get("spend") or {}).get("auto")),
         "stages": stages,
         "weights": weights,
         "progress": [{"t": r["sim_time_s"], "p": r["progress"],
                       "s": [r["stages"].get(n) for n in stages]} for r in progress],
-        "frames": [{"t": r["sim_time_s"], "f": r["file"]} for r in frames],
+        "frames": [{"t": r["sim_time_s"], "f": frame_prefix + r["file"]} for r in frames],
     }
 
-    html = TEMPLATE.replace("__DATA__", json.dumps(data, separators=(",", ":")))
-    out = gdir / "viewer.html"
-    out.write_text(html)
+    out = tdir / "viewer.html"
+    out.write_text(TEMPLATE.replace("__DATA__", json.dumps(data, separators=(",", ":"))))
     print(f"built: {out}  ({len(data['progress'])} curve points, {len(data['frames'])} frames)")
+    return out
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("grade", help="a grade folder (builds every traj_*/viewer.html) or one traj folder")
+    ap.add_argument("--serve", type=int, default=None, metavar="PORT",
+                    help="after building, serve the grade folder on this port")
+    args = ap.parse_args()
+
+    gdir = Path(args.grade).resolve()
+    root = gdir.parent if gdir.name.startswith("traj_") else gdir  # the grade folder
+    grade_meta = json.loads((root / "grade.json").read_text()) if (root / "grade.json").exists() else {}
+    frames = load_jsonl(root / "frames.jsonl")  # rendered frames film env 0 = traj_000
+    base = "/".join(p for p in (grade_meta.get("exp", root.parent.parent.parent.name).split("/")[-1],
+                                root.parent.parent.name, root.name) if p)
+
+    if gdir.name.startswith("traj_"):
+        targets = [gdir]
+    else:
+        targets = sorted(d for d in gdir.glob("traj_*") if d.is_dir()) or [gdir]  # [gdir]: legacy flat
+
+    built = []
+    for t in targets:
+        flat = t == root
+        built.append(build(t, title=base if flat else f"{base}/{t.name}", grade_meta=grade_meta,
+                           frames=frames if flat or t.name == "traj_000" else [],
+                           frame_prefix="" if flat else "../"))
+    built = [b for b in built if b]
+    if not built:
+        sys.exit(f"nothing to view under {gdir}")
+    urls = "\n".join(f"  http://localhost:{args.serve or 8110}/{b.relative_to(root).as_posix()}" for b in built)
 
     if args.serve:
-        import http.server
         import functools
-        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(gdir))
-        print(f"serving: http://localhost:{args.serve}/viewer.html   (Ctrl-C to stop)")
+        import http.server
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
+        print(f"serving (Ctrl-C to stop):\n{urls}")
         http.server.ThreadingHTTPServer(("", args.serve), handler).serve_forever()
     else:
-        print(f"serve:  python3 -m http.server 8110 --directory {gdir}"
-              f"\nthen:   http://localhost:8110/viewer.html")
+        print(f"serve:  python3 -m http.server 8110 --directory {root}\nthen:\n{urls}")
 
 
 TEMPLATE = r"""<!doctype html>
@@ -156,10 +182,14 @@ const P = D.progress, F = D.frames, T = P[P.length-1].t;
 const colors = ["#E0A93E","#7FB4E0","#B07FE0","#6FCF8F","#E07F9E"];
 
 document.getElementById("title").textContent = D.title;
-const ok = D.verdict.success;
+const ok = D.verdict.success, sm = D.verdict.summary;
+const frac = sm ? sm.successes + "/" + sm.num_envs + " envs" : null;
 const badge = document.getElementById("badge");
-badge.textContent = ok === true ? "success" : ok === false ? "failed" : "no verdict";
-badge.className = "badge " + (ok === true ? "ok" : ok === false ? "bad" : "na");
+badge.textContent = ok === true || ok === 1 ? "success" + (frac && sm.num_envs > 1 ? " " + frac : "")
+  : ok === false || ok === 0 ? "failed" + (frac && sm.num_envs > 1 ? " " + frac : "")
+  : typeof ok === "number" ? "partial " + (frac || Math.round(ok * 100) + "%")
+  : "no verdict";
+badge.className = "badge " + (ok === true || ok === 1 ? "ok" : ok === false || ok === 0 ? "bad" : "na");
 document.getElementById("score").textContent = D.verdict.score == null ? "" : "score " + D.verdict.score;
 document.getElementById("crit").textContent = D.verdict.criteria || "";
 document.getElementById("note").textContent =
