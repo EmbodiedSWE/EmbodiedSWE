@@ -262,8 +262,8 @@ class AllenBoltAssemblyScene(BaseScene):
 
     def grasp_sites(self) -> list:
         """Two grip bands per key, across its hex (12.6 mm flats / 14.4 mm corners): the
-        120 mm HANDLE (local +x off the elbow at z 0.050) and the 50 mm SHORT ARM (local +z;
-        the crank grip). The key USD's origin is the short arm's tip."""
+        120 mm HANDLE (local +x off the elbow at z 0.050) and the 50 mm SHORT ARM (local +z).
+        The key USD's origin is the short arm's tip."""
         sites = []
         for i, key in enumerate(self.keys):
             sites.append((f"key{i}_handle", key, (0.005, 0.0, 0.050), (0.115, 0.0, 0.050), (0.009, 0.017)))
