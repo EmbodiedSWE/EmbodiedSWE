@@ -1,0 +1,9 @@
+# Disclosed-transfer variant for run_sequence.py: every stage is told the series shares
+# /workspace/experiences/ — read earlier notes, maintain your own.
+# Remove transfer_experience for the undisclosed variant.
+
+rules:  [autonomous_operation, transfer_experience]
+skills: [save_checkpoint, staged_planning]
+tools:  [checkpoint_tree, parameter_search, scene_view, assessment]
+features:
+  control_mode: false   # as default.yaml: the preset's controller is part of the task

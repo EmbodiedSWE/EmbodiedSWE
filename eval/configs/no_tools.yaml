@@ -1,0 +1,14 @@
+# Baseline arm: the same world and the same rules, with NO harness tools.
+#
+# The agent still writes and runs programs against the simulator; what it does not get is the
+# checkpoint tree, the parameter search, or staged assessment. This is the arm the tool arms are
+# compared against, so it differs from `default.yaml` in exactly one respect: the tools list.
+#
+# set_states stays enabled — the difference under test is the TOOLS, not the primitive. Pair
+# with no_checkpoint.yaml to ablate the primitive as well.
+
+rules:  [autonomous_operation]
+skills: [staged_planning]
+tools:  []
+features:
+  control_mode: false

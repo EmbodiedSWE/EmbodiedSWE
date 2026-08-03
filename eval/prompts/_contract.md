@@ -21,11 +21,15 @@ workspace carries over between stages.
 - `task.md` — the task: the scene, the robot, and the goal. Read it first.
 - `rules/` — if present: restrictions in force for this experiment. Each file
   states something that is disabled or constrained. Rules are binding.
-- `hints/` — if present: optional guidance provided for this run (API notes,
-  workflows, examples). Reading every hint before starting usually saves time.
+- `skills/` — if present: optional guidance provided for this run (API notes,
+  workflows, examples). Reading every skill before starting usually saves time.
+- `tools.md` — if present: python tools granted to this run. Their modules are
+  already installed at `/task/tools/`, which is on your `PYTHONPATH`, so your
+  scripts import them by name. Read `tools.md` before writing code — the tools
+  exist to save you real time.
 
-Only `task.md` is always there; a missing folder simply means no rules or no
-hints apply to this run.
+Only `task.md` is always there; a missing entry simply means no rules, skills,
+or tools apply to this run.
 
 ## Deliverable
 
@@ -70,11 +74,12 @@ deliverable.
 ## Practical notes
 
 - The environment builds with a fixed seed, so every fresh build starts from
-  the same initial condition; plain `env.reset()` draws a new one,
-  `env.reset(seed=0)` returns to it. Test against this seed first — grading
-  uses it too — then make the solution robust where you can: grading also
-  tests other initial conditions, and GPU physics is not bit-deterministic
-  (small errors compound), so closed-loop corrections beat open-loop replay.
+  the same initial condition. This bench build has no `reset(seed=...)`
+  parameter — plain `env.reset()` is what exists. Test against the build's own
+  initial condition first, then make the solution robust where you can:
+  grading also tests other initial conditions, and GPU physics is not
+  bit-deterministic (small errors compound), so closed-loop corrections beat
+  open-loop replay.
 - Running simulations headless saves time: `AppLauncher(headless=True)` —
   create it BEFORE importing anything that touches `isaaclab.sim`. The first
   sim launch takes ~1 minute; later launches are faster.
