@@ -38,7 +38,7 @@ scene.py (semantics excerpt — describe/success/score):
 {scene_source}
 ```
 
-Null-solution (the intended strategy, from smoke.py):
+The real-robot solution (the demonstrated strategy, from solve.py):
 ```python
 {smoke_source}
 ```
@@ -71,12 +71,16 @@ def main() -> None:
         seed_id = json.loads(run_file.read_text())["seed"]
 
     _, seed_source = get_seed(seed_id)
-    task_dir = SIM_GEN_ROOT / "tasks" / args.task
+    task_dir = Path(os.environ.get("SIM_GEN_TASKS_DIR", SIM_GEN_ROOT / "tasks")) / args.task
+    # the demonstrated strategy is solve.py (real robot); legacy packages have only smoke.py
+    strategy_file = task_dir / "solve.py"
+    if not strategy_file.exists():
+        strategy_file = task_dir / "smoke.py"
     prompt = JUDGE_PROMPT.format(
         seed_source=seed_source,
         task_md=(task_dir / "TASK.md").read_text(),
         scene_source=(task_dir / "scene.py").read_text(),
-        smoke_source=(task_dir / "smoke.py").read_text(),
+        smoke_source=strategy_file.read_text(),
     )
 
     # Campaign mode: SIMGEN_NOVELTY_BASE_URL points at a relay that owns the upstream
