@@ -17,6 +17,7 @@ Heavy imports (isaaclab, pxr) are deferred so importing this module stays app-fr
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -55,6 +56,13 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
     # release. Gripper envs only (no-op under robot="null").
     grasp_weld: bool = tunable(True)
     grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
+    # Staged-bolt spawn: each bolt spawns thread-captured in its hole — hand-started a couple
+    # of turns, the way a person finger-starts a bolt — at the asset-baked register below, a
+    # settled pose on the SDF threads that holds unaided (recalibrate by drop/nest/
+    # helix-advance if the bolt or insert USDs change). False = the lying spawn.
+    bolt_staged: bool = tunable(False)
+    bolt_stage_depth: float = info(0.004309)  # staged tip depth below the plate top (m)
+    bolt_stage_yaw: float = info(2.499571)  # the depth's helix register (rad, about +z)
 
     # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
     num_pairs: int = info(1)  # number of platform+bolt pairs
@@ -289,10 +297,24 @@ class AllenBoltAssemblyScene(BaseScene):
         origin = self.env_origins[env_ids]  # (m, 3)
         wx, wy = c.workbench_pos
 
-        for parts, xy_rows, init_z, init_quat in (
-            (self.bolts, c.bolt_init_xy, c.bolt_init_z, c.bolt_init_quat),
-            (self.keys, c.key_init_xy, c.key_init_z, c.key_init_quat),
-        ):
+        if c.bolt_staged:  # thread-captured in the hole, at the asset-baked register
+            half = c.bolt_stage_yaw / 2
+            for i, bolt in enumerate(self.bolts):
+                px, py = c.platform_slots[i]
+                st = torch.zeros(m, 13, device=dev)
+                st[:, 0:3] = origin + torch.tensor(
+                    (wx + px, wy + py, c.surface_z + c.plate_top - c.bolt_stage_depth), device=dev
+                )
+                st[:, 3] = math.cos(half)
+                st[:, 6] = math.sin(half)
+                bolt.write_root_state_to_sim(st, env_ids)
+            part_rows = ((self.keys, c.key_init_xy, c.key_init_z, c.key_init_quat),)
+        else:
+            part_rows = (
+                (self.bolts, c.bolt_init_xy, c.bolt_init_z, c.bolt_init_quat),
+                (self.keys, c.key_init_xy, c.key_init_z, c.key_init_quat),
+            )
+        for parts, xy_rows, init_z, init_quat in part_rows:
             quat = torch.tensor(init_quat, device=dev)
             for k, part in enumerate(parts):
                 x, y = xy_rows[k]
@@ -331,12 +353,25 @@ class AllenBoltAssemblyScene(BaseScene):
         p_word, b_word = ("platform", "bolt") if n == 1 else ("platforms", "bolts")
         return (
             f"{n} small steel {p_word} standing fixed on a sturdy table, each with an M16 threaded "
-            f"hole through its plate, and beside {'it' if n == 1 else 'them'}: {n} loose M16 allen "
-            f"(socket-head) {b_word} and {n} L-shaped allen {'key' if n == 1 else 'keys'} lying on "
-            f"the table. The hole carries real threads; the bolt head carries a 14 mm hex socket.\n"
-            f"Goal: stand {'the' if n == 1 else 'each'} bolt tip-down in {'the' if n == 1 else 'a'} "
-            f"hole, seat the key in its socket, and drive it down (turn clockwise while pressing) "
-            f"until it seats. A seated bolt locks in place. The task is complete once "
+            f"hole through its plate, and beside {'it' if n == 1 else 'them'}: "
+            + (
+                f"{n} L-shaped allen {'key' if n == 1 else 'keys'} lying on the table — "
+                f"{'the' if n == 1 else 'each'} hole's M16 allen (socket-head) bolt already stands "
+                f"in it hand-started, a couple of turns captured. "
+                if c.bolt_staged
+                else f"{n} loose M16 allen (socket-head) {b_word} and {n} L-shaped allen "
+                f"{'key' if n == 1 else 'keys'} lying on the table. "
+            )
+            + f"The hole carries real threads; the bolt head carries a 14 mm hex socket.\n"
+            + (
+                f"Goal: seat the key in {'the' if n == 1 else 'each'} bolt's socket and drive it "
+                f"down (turn clockwise while pressing) until it seats. "
+                if c.bolt_staged
+                else f"Goal: stand {'the' if n == 1 else 'each'} bolt tip-down in "
+                f"{'the' if n == 1 else 'a'} hole, seat the key in its socket, and drive it down "
+                f"(turn clockwise while pressing) until it seats. "
+            )
+            + f"A seated bolt locks in place. The task is complete once "
             f"{'the bolt is' if n == 1 else f'all {n} bolts are'} seated."
             + (
                 " The key holds in a firm pinch: close the fingers across either arm's hex and "
