@@ -5,12 +5,13 @@ training label (DART-style). The solve stays closed-loop on the true state — i
 own feedback control absorbs the perturbations, and that recovery is the data.
 
 One mechanism: burst-gated Gaussian. Per env, a noise window starts with prob
-`prob` per step and lasts `duration` steps; inside a window every step gets
+`prob` per step and lasts `duration` SIM-SECONDS (converted to control steps as
+duration / (env.dt * control_period), min 1); inside a window every step gets
 N(0, sigma) on `dims`. The corner cases are the classic models:
 
-    sigma=0                  off — the nominal/gate default
-    prob=1, duration=1       continuous white noise
-    prob=0.01, duration=30   occasional multi-step disturbances to recover from
+    sigma=0                  off — the nominal default
+    prob=1, duration=0       continuous white noise (0 -> a single step)
+    prob=0.01, duration=0.5  occasional multi-step disturbances to recover from
 
 Rules: only `dims` are noised (gripper dims never — noise there corrupts pinch
 calibration); a row whose dims are all zero is untouched (the batch_solve hold
@@ -27,9 +28,11 @@ class NoisyActionEnv:
     """Every attribute delegates to the wrapped env; only step() perturbs."""
 
     def __init__(self, env, dims: slice, sigma: float = 0.0,
-                 prob: float = 1.0, duration: int = 1, seed: int = 0) -> None:
+                 prob: float = 1.0, duration: float = 0.0, seed: int = 0) -> None:
         self._env, self._dims, self._sigma = env, dims, float(sigma)
-        self._prob, self._duration = float(prob), int(duration)
+        ctrl_dt = env.dt * env.robot.control_period
+        self._prob = float(prob)
+        self._duration = max(1, round(float(duration) / ctrl_dt))  # sim-seconds -> control steps
         self._rng = torch.Generator().manual_seed(seed)
         self._left = None  # (E,) steps remaining in each env's noise window
         self.last_clean = self.last_executed = None

@@ -253,15 +253,14 @@
 └─ data_gen/
     └─ &lt;gen_name&gt;/                 <i>one named generation campaign — several can coexist</i>
         ├─ scenes/                 <i>the generators — code only, laid out below</i>
-        └─ data/                   <i>raw trajectories only</i>
-            ├─ default/            <i>written by init: the nominal gate batch — the campaign's control cell</i>
+        └─ data/                   <i>raw trajectories only — one folder per batch, append-only</i>
+            ├─ &lt;batch_1&gt;/          <i>a nominal batch (no noise, no sampling) makes a good first one: the baseline other batches' yields are read against</i>
             │   ├─ ep_0000/
-            │   │   ├─ traj.npz    <i>state/action arrays at control rate, incl. per-step phase codes</i>
-            │   │   ├─ meta.json   <i>lineage (scene · strategy · phase · σ · seed) + verdict + sampled θ</i>
+            │   │   ├─ traj.npz    <i>state/action arrays at control rate</i>
+            │   │   ├─ meta.json   <i>lineage (scene · strategy · phase · noise · seed) + verdict + sampled parameters</i>
             │   │   └─ imgs/       <i>optional — frames rendered from the states on demand</i>
             │   ├─ ep_0001/
             │   └─ meta.json       <i>batch meta: config, seeds, yield + failure-mode summary</i>
-            ├─ &lt;batch_1&gt;/
             └─ &lt;batch_2&gt;/
 
 scenes/

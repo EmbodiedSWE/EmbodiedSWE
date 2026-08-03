@@ -1,0 +1,204 @@
+"""generation — run one batch on a baked cell and write graded episodes.
+
+A cell is a (scene × strategy × phase) triple in a campaign; the phase is optional —
+without one the strategy's solve.py runs from scratch off the scene's own reset; with
+one, the strategy's solve_by_phase.py enters at the phase's declared entry, and the
+entry state is built by a reset strategy sampled (by weight) from the phase's
+phase.yaml and implemented in its reset.py. One batch = rounds × num_envs episodes:
+
+    build the env from the campaign preset on the cell's LOCAL scene copy
+    per round: reset(seed+round) [→ phase reset] → grader → noise → recorder → solve
+    grade every trajectory, write data/<batch>/ep_NNNN/{traj.npz, meta.json}
+    finish with the batch meta.json: config, yield, per-episode verdicts
+
+The stack around the unmodified solve:  solve(Recorder(NoisyActionEnv(GradedEnv(env)))).
+States are recorded BEFORE each step (state_t, action_t pairs); the recorded action
+is the solve's commanded (clean) one — the noise wrapper perturbs only what executes.
+Episode states come from env.get_states(), so any recorded step can later be
+restored with set_states (phase resets draw their entry states from these).
+
+Needs a running AppLauncher (see scripts/generate.py). Sampling is nominal-only
+for now: engine/sampler.py is a placeholder until the tunable rebuild.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .meta import refresh_metas
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _load(name: str, path: Path):
+    """Exec a file as module `name` once; later calls return the same module."""
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def build_env(scene_dir: Path, num_envs: int, device: str, seed: int):
+    """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene."""
+    import dataclasses
+
+    import robobench
+    import yaml
+
+    robobench.discover()
+    from robobench.core.registries import ENVS
+
+    _load("datagen_local_scene", scene_dir / "scene" / "scene.py")
+    scene_name = re.search(r'@SCENES\.register\("([\w.]+)"\)',
+                           (scene_dir / "scene" / "scene.py").read_text()).group(1)
+    gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
+    cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
+    return cfg.build(num_envs=num_envs, device=device, seed=seed), gen
+
+
+def load_grader_cls(scene_dir: Path):
+    from robobench.core.grader import BaseGrader
+
+    mod = _load("datagen_grader", scene_dir / "grader" / "grader.py")
+    return next(v for v in vars(mod).values()
+                if isinstance(v, type) and issubclass(v, BaseGrader) and v is not BaseGrader)
+
+
+def _flat(d: dict, prefix: str = "") -> dict:
+    """Nested get_states dict -> {"scene/nut/root_state": (E, …) cpu tensor, …}."""
+    out = {}
+    for k, v in d.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict):
+            out.update(_flat(v, key + "/"))
+        else:
+            out[key] = v.detach().cpu().clone()
+    return out
+
+
+class Recorder:
+    """Outermost wrapper: records (state_t, commanded action_t) before delegating."""
+
+    def __init__(self, env, raw_env) -> None:
+        self._env, self._raw = env, raw_env
+        self.states: list[dict] = []
+        self.actions: list = []
+
+    def __getattr__(self, name: str):
+        return getattr(self._env, name)
+
+    def step(self, action, render: bool = False):
+        self.states.append(_flat(self._raw.get_states()))
+        self.actions.append(action.detach().cpu().clone())
+        return self._env.step(action, render)
+
+
+def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scene_0",
+              strategy: str = "strategy_0", phase: str | None = None, num_envs: int = 4,
+              rounds: int = 1, seed: int = 0, noise: dict | None = None,
+              device: str = "cuda:0") -> Path:
+    import random
+
+    import numpy as np
+    import torch
+    import yaml
+
+    from robobench.core.grader import GradedEnv
+
+    from .noise import NoisyActionEnv
+
+    noise = noise or {}
+    gen_root = Path(gen_root).resolve()
+    scene_dir = gen_root / "scenes" / scene
+    strategy_dir = scene_dir / "strategies" / strategy
+    cell = f"{scene}/{strategy}" + (f"/{phase}" if phase else "")
+    batch = batch or datetime.now().strftime("batch_%Y%m%d_%H%M%S")
+    out = gen_root / "data" / batch
+    if out.exists():
+        raise SystemExit(f"{out} already exists — batches are append-only")
+
+    env, gen = build_env(scene_dir, num_envs, device, seed)
+    grader_cls = load_grader_cls(scene_dir)
+    if phase is None:
+        solve = _load("datagen_solve", strategy_dir / "solve.py").solve
+        entry, resets, reset_mod = None, None, None
+    else:
+        phase_dir = strategy_dir / "phases" / phase
+        solve = _load("datagen_solve", strategy_dir / "solve_by_phase.py").solve
+        spec = yaml.safe_load((phase_dir / "phase.yaml").read_text())
+        entry, resets = spec.get("entry"), spec.get("resets") or {}
+        reset_mod = _load("datagen_reset", phase_dir / "reset.py")
+    sha = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
+                         capture_output=True, text=True).stdout.strip()
+    dims = noise.get("dims")
+
+    verdicts_all = []
+    for rnd in range(rounds):
+        env.reset(seed=seed + rnd)
+        reset_name = None
+        if resets:
+            rng = random.Random(seed + rnd)
+            reset_name = rng.choices(list(resets), weights=[r.get("weight", 1.0)
+                                                            for r in resets.values()])[0]
+            params = {k: v for k, v in resets[reset_name].items() if k != "weight"}
+            getattr(reset_mod, reset_name)(env, params, rng)
+        grader = grader_cls(env)
+        grader.setup()
+        stack = GradedEnv(env, grader)
+        stack = NoisyActionEnv(stack, dims=slice(*dims) if dims else slice(0, 0),
+                               sigma=noise.get("sigma", 0.0), prob=noise.get("prob", 1.0),
+                               duration=noise.get("duration", 0.0), seed=seed + rnd)
+        rec = Recorder(stack, env)
+        print(f"[batch {batch}] round {rnd}: solve on {num_envs} envs …", flush=True)
+        solve(rec) if phase is None else solve(rec, entry=entry)
+
+        verdicts = grader.verdict()
+        T = len(rec.actions)
+        arrays = {k: np.stack([s[k].numpy() for s in rec.states]) for k in rec.states[0]}
+        arrays["action"] = np.stack([a.numpy() for a in rec.actions])
+        for e in range(num_envs):
+            ep = rnd * num_envs + e
+            ep_dir = out / f"ep_{ep:04d}"
+            ep_dir.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(ep_dir / "traj.npz",
+                                **{k: v[:, e] for k, v in arrays.items()})
+            meta = {
+                "episode": ep, "round": rnd, "env_index": e,
+                "success": verdicts[e]["success"], "score": verdicts[e]["score"],
+                "parameters": {},  # nominal — sampler is a placeholder
+                "reset": reset_name, "entry": entry,
+                "seed": seed + rnd, "steps": T,
+                "sim_dt": env.dt, "decimation": env.robot.control_period,
+                "noise": {k: v for k, v in noise.items() if v},
+                "preset": gen["preset"],
+                "cell": cell,
+                "git_sha": sha,
+            }
+            (ep_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+        verdicts_all += [{"episode": rnd * num_envs + e, **v} for e, v in enumerate(verdicts)]
+        ok = sum(v["success"] for v in verdicts)
+        print(f"[batch {batch}] round {rnd}: {ok}/{num_envs} succeeded, {T} steps", flush=True)
+
+    n_ok = sum(v["success"] for v in verdicts_all)
+    (out / "meta.json").write_text(json.dumps({
+        "batch": batch, "cell": cell,
+        "preset": gen["preset"], "num_envs": num_envs, "rounds": rounds, "seed": seed,
+        "noise": {k: v for k, v in noise.items() if v},
+        "episodes": len(verdicts_all), "successes": n_ok,
+        "success_rate": round(n_ok / max(1, len(verdicts_all)), 4),
+        "verdicts": verdicts_all,
+        "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "git_sha": sha,
+    }, indent=2) + "\n")
+    refresh_metas(gen_root)
+    print(f"[batch {batch}] DONE: {n_ok}/{len(verdicts_all)} -> {out}", flush=True)
+    return out
