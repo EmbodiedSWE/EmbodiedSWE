@@ -2,4 +2,4 @@
 # shares /workspace/experiences/ — read earlier notes, maintain your own.
 # Remove transfer_experience for the undisclosed variant.
 hints: [save_snapshot]
-rules: [autonomous_operation, transfer_experience]
+rules: [autonomous_operation, transfer_experience, batch_solve]
