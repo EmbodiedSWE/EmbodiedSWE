@@ -247,7 +247,10 @@ class AllenBoltAssemblyScene(BaseScene):
                 "friction_correlation_distance": 0.00625,
                 "gpu_max_rigid_contact_count": 2**23,
                 "gpu_max_rigid_patch_count": 2**23,
-                "gpu_collision_stack_size": 2**28,
+                # 2**29: at 512 envs this scene's SDF thread contacts overflowed the previous
+                # 2**28 stack (PhysX asked for ~437 MB and DROPPED CONTACTS, silently
+                # corrupting wide parameter searches; measured 2026-08-01).
+                "gpu_collision_stack_size": 2**29,
                 "gpu_max_num_partitions": 1,
             },
         )
