@@ -1,0 +1,3 @@
+[submodule "sim_gen/RoboVerse"]
+	path = sim_gen/RoboVerse
+	url = https://github.com/RoboVerseOrg/RoboVerse.git
