@@ -56,14 +56,12 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
     # to release. Gripper envs only (no-op under robot="null").
     grasp_weld: bool = tunable(True)
     grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
-    # Kinematic screw-joint threading — the scene's thread mechanic (the force-driven smoke
-    # and the gripper presets both run it): every bolt spawns STAGED hand-started in its
-    # hole, is kinematic, and descends its 1 mm-pitch helix by following the key's
-    # hex-engaged rotation through the lash, one-way, to a hard stop just above seating the
-    # head. The thread inserts' collision is off (the joint IS the thread); the bolts'
-    # SOCKET walls stay live for the key, so insertion, press, cam-out, and slip are real
-    # contacts. False = dynamic bolts lying beside the case and live inserts (raw physics,
-    # unvalidated at this scale).
+    # Kinematic screw-joint threading: every bolt spawns STAGED hand-started in its hole, is
+    # kinematic, and descends its 1 mm-pitch helix by following the key's hex-engaged
+    # rotation through the lash, one-way, to a hard stop just above seating the head. The
+    # thread inserts' collision is off (the joint IS the thread); the bolts' SOCKET walls
+    # stay live, so insertion, press, cam-out, and slip are real contacts. False = dynamic
+    # bolts lying beside the case and live inserts.
     screw_mechanic: bool = tunable(True)
     stage_depth: float = info(0.006)  # staged bolts' tip depth below the board face (m)
     stage_yaw: float = info(3.141592653589793)  # staged bolts' yaw (a k*60 deg hex clocking)
@@ -703,13 +701,13 @@ class PcMotherboardAssemblyScene(BaseScene):
                     self.grasp_held[i, s] = True
         self._gw_count[env_ids] = 0
 
-    # ----- screw-joint machinery (the scene's thread mechanic; private — not an agent action) ---
+    # ----- screw-joint machinery (the thread mechanic; private — not an agent action) ---------
     # Each staged bolt is a kinematic screw DOF on its hole's axis: while the key's tip sits
     # hex-engaged in a bolt's socket, that bolt follows the key's measured rotation through the
     # hex lash — one-way, like a frictional thread — and descends its helix at SCREW_PITCH per
-    # revolution to a hard stop just above seating the head. Parked bolts hold their pose
-    # (kinematic). The lash re-charges on every socket re-entry. Reconciled every physics
-    # substep from live poses alone — the mechanic has no idea who (or what) turns the key.
+    # revolution to a hard stop just above seating the head. Parked bolts hold their pose; the
+    # lash re-charges on every socket re-entry. Reconciled every physics substep from live
+    # poses alone, embodiment-agnostic.
     SCREW_PITCH: ClassVar[float] = 0.001  # helix pitch (m per revolution)
     SCREW_SOCKET_MOUTH_Z: ClassVar[float] = 0.0214  # bolt-local: head top = the recess mouth
     SCREW_SEAT_MARGIN: ClassVar[float] = 0.0001  # hard stop: the head held this far off the board
@@ -798,8 +796,7 @@ class PcMotherboardAssemblyScene(BaseScene):
             bolt.write_root_pose_to_sim(st, rows)
 
     def _screw_reset(self, env_ids: torch.Tensor) -> None:
-        """Fresh episode: every bolt back to its staged hand-started pose, joints zeroed. Called
-        from `reset()` (which skips the bolts' lying spawn when the mechanic owns them)."""
+        """Fresh episode: every bolt back to its staged hand-started pose, joints zeroed."""
         if not getattr(self, "_screw_on", False):
             return
         self.screw_turn[env_ids] = 0.0
