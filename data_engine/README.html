@@ -337,7 +337,7 @@ scenes/
       <p><b>Rebuild:</b> make it THE sampling declaration, two clients: L4 domain randomization, e.g. friction, mass; L2 solver parameters via the <code>Params</code> cfg. Needs bands, e.g. <code>tunable(0.4, band=(0.30, 0.55))</code>. Note: reset/initialization randomization, e.g. spawn jitter, is not a tunable — it belongs to the scene's own reset and the phase <code>reset.py</code>.</p>
 
       <h3>Make a docker launch for diversification</h3>
-      <p>Run diversify sessions in a container: everything exposed but read-only, only the campaign writable, GPU passthrough — reuse the eval agent image. Reason: the contract's rules, e.g. don't touch robobench or other experiments, are only prose an agent can ignore; read-only mounts enforce them by construction, which matters once sessions run headless or in batches. Also: the launcher should create no cell — the agent creates every cell itself via <code>create_cell.py</code>.</p>
+      <p>Run diversify sessions in a container: everything exposed but read-only, only the campaign writable, GPU passthrough — reuse the eval agent image. Reason: the contract's rules, e.g. don't touch robobench or other experiments, are only prose an agent can ignore; read-only mounts enforce them by construction, which matters once sessions run headless or in batches. (The launcher already creates no cell — the agent creates every cell itself via <code>create_cell.py</code>.)</p>
     </section>
 
 

@@ -53,7 +53,8 @@ def create_cell(gen_root: Path, level: str, scene: str, strategy: str, name: str
         src, dst = scenes / scene, scenes / name
         if dst.exists():
             raise SystemExit(f"{dst} already exists")
-        shutil.copytree(src, dst, symlinks=True)
+        shutil.copytree(src, dst, symlinks=True,
+                        ignore=shutil.ignore_patterns('__pycache__'))
         shutil.rmtree(dst / ".agent", ignore_errors=True)  # fresh trace, fresh metas
         (dst / ".agent").mkdir()
         for meta in dst.rglob("meta.json"):
