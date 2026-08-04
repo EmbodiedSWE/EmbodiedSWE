@@ -186,8 +186,19 @@ class BaseRobot(ABC):
     def apply_action(self, action: torch.Tensor, substep: int = 0) -> None:
         """Run the active controller, which computes **and writes** its command (no-op without one).
         `substep` is the physics-step index in the `env.step` window; the controller fires only on its
-        own subdivision (see `BaseController.apply`). Override for a fully custom action path."""
+        own subdivision (see `BaseController.apply`). Override for a fully custom action path.
+
+        `action` may be any array-like (numpy / list / torch): controllers assume a float32 torch
+        tensor on the sim device, so it is coerced here — the one choke point every path shares
+        (`env.step`, direct calls). Agent-written code passes numpy, which used to surface as a
+        baffling numpy↔cuda-tensor TypeError deep in the controller's EMA math. A no-op (same
+        object back) when the input is already a float32 tensor on the sim device."""
         if self.controller is not None:
+            import torch
+
+            action = torch.as_tensor(action, dtype=torch.float32, device=self.env.device)
+            if action.dim() == 1:  # tolerate a single unbatched action vector
+                action = action.unsqueeze(0)
             self.controller.apply(action, substep)
 
     def actuator_sink(self, command_type: str):
