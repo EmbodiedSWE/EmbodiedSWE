@@ -1,10 +1,11 @@
 """generation — run one batch on a baked cell and write graded episodes.
 
 A cell is a (scene × strategy × phase) triple in a campaign; the phase is optional —
-without one the strategy's solve.py runs from scratch off the scene's own reset; with
-one, the strategy's solve_by_phase.py enters at the phase's declared entry, and the
-entry state is built by a reset strategy sampled (by weight) from the phase's
-phase.yaml and implemented in its reset.py. One batch = rounds × num_envs episodes:
+without one the strategy's solve.py runs from scratch off the scene's own reset. With
+one, the entry state is built by a reset strategy sampled (by weight) from the phase's
+phase.yaml and implemented in its reset.py; then entry null runs the plain solve.py
+from its natural start, a deeper entry runs solve_by_phase.py(entry=...). One batch =
+rounds × num_envs episodes:
 
     build the env from the campaign preset on the cell's LOCAL scene copy
     per round: reset(seed+round) [→ phase reset] → grader → noise → recorder → solve
@@ -133,10 +134,13 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         entry, resets, reset_mod = None, None, None
     else:
         phase_dir = strategy_dir / "phases" / phase
-        solve = _load("datagen_solve", strategy_dir / "solve_by_phase.py").solve
         spec = yaml.safe_load((phase_dir / "phase.yaml").read_text())
         entry, resets = spec.get("entry"), spec.get("resets") or {}
         reset_mod = _load("datagen_reset", phase_dir / "reset.py")
+        # entry null = the solve's natural start: the plain solve.py works as-is;
+        # a deeper entry needs the phase-enterable port
+        src = "solve.py" if entry is None else "solve_by_phase.py"
+        solve = _load("datagen_solve", strategy_dir / src).solve
     sha = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
     dims = noise.get("dims")
@@ -159,7 +163,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                                duration=noise.get("duration", 0.0), seed=seed + rnd)
         rec = Recorder(stack, env)
         print(f"[batch {batch}] round {rnd}: solve on {num_envs} envs …", flush=True)
-        solve(rec) if phase is None else solve(rec, entry=entry)
+        solve(rec) if entry is None else solve(rec, entry=entry)
 
         verdicts = grader.verdict()
         T = len(rec.actions)
