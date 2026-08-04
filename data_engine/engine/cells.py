@@ -2,7 +2,7 @@
 
 One cell per proposed variant: a scene copy to edit, an empty strategy, or a
 stubbed phase. Used by the diversify launcher for the session's first cell, and
-by the AGENT ITSELF (via engine/agent/tools/create_cell.py) to propose many variants in one
+by the AGENT ITSELF (via engine/agent/cli/create_cell.py) to propose many variants in one
 session — each in its own cell.
 """
 
@@ -38,11 +38,12 @@ def scene_default(env, params, rng) -> None:
 
 
 def next_name(parent: Path, prefix: str) -> str:
-    taken = {p.name for p in parent.glob(f"{prefix}_*")}
-    n = 0
-    while f"{prefix}_{n}" in taken:
-        n += 1
-    return f"{prefix}_{n}"
+    """Always one past the HIGHEST existing index — gaps are never refilled, so a
+    deleted cell's name is never reused (batch metas in the pool may still
+    reference it) and repeated create_cell calls count strictly onward."""
+    ns = [int(p.name.rsplit("_", 1)[1]) for p in parent.glob(f"{prefix}_*")
+          if p.name.rsplit("_", 1)[1].isdigit()]
+    return f"{prefix}_{max(ns) + 1 if ns else 0}"
 
 
 def create_cell(gen_root: Path, level: str, scene: str, strategy: str, name: str | None) -> tuple[Path, str, str]:
@@ -82,3 +83,4 @@ def create_cell(gen_root: Path, level: str, scene: str, strategy: str, name: str
     (phase_dir / "reset.py").write_text(RESET_PY_STUB)
     (phase_dir / "meta.json").write_text(json.dumps(META_STUB, indent=2) + "\n")
     return dst, strategy, name
+
