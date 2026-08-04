@@ -25,7 +25,9 @@ parser = argparse.ArgumentParser(description="generate one batch of graded episo
 parser.add_argument("gen_root", help="the campaign: …/<run>/data_gen/<gen_name>")
 parser.add_argument("--scene", default="scene_0")
 parser.add_argument("--strategy", default="strategy_0")
-parser.add_argument("--phase", default=None, help="phase entry (needs solve_by_phase.py + phases/<phase>/)")
+parser.add_argument("--phase", default=None,
+                    help="phase under the strategy's phases/ (entry null runs solve.py; "
+                         "a deeper entry needs solve_by_phase.py)")
 parser.add_argument("--batch", default=None, help="batch name under data/ (default: batch_<timestamp>)")
 parser.add_argument("--num_envs", type=int, default=4)
 parser.add_argument("--rounds", type=int, default=1)
