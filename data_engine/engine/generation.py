@@ -118,12 +118,16 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     from .noise import NoisyActionEnv
 
     noise = noise or {}
-    gen_root = Path(gen_root).resolve()
+    gen_root = Path(gen_root)
     scene_dir = gen_root / "scenes" / scene
     strategy_dir = scene_dir / "strategies" / strategy
-    cell = f"{scene}/{strategy}" + (f"/{phase}" if phase else "")
+    # a session's workspace view aliases cells (scene_0 -> the real start scene);
+    # lineage always records the CAMPAIGN names, so resolve through any symlinks
+    real_root = (gen_root / "gen.yaml").resolve().parent
+    cell = (f"{scene_dir.resolve().name}/{strategy_dir.resolve().name}"
+            + (f"/{phase}" if phase else ""))
     batch = batch or datetime.now().strftime("batch_%Y%m%d_%H%M%S")
-    out = gen_root / "data" / batch
+    out = real_root / "data" / batch
     if out.exists():
         raise SystemExit(f"{out} already exists — batches are append-only")
 
@@ -203,6 +207,6 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_sha": sha,
     }, indent=2) + "\n")
-    refresh_metas(gen_root)
+    refresh_metas(real_root)
     print(f"[batch {batch}] DONE: {n_ok}/{len(verdicts_all)} -> {out}", flush=True)
     return out

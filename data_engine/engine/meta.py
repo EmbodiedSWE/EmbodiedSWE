@@ -25,12 +25,15 @@ def refresh_metas(gen_root: str | Path) -> None:
         sel = [m for m in batches if match(m.get("cell", "").split("/"))]
         eps = sum(m["episodes"] for m in sel)
         ok = sum(m["successes"] for m in sel)
-        (level_dir / "meta.json").write_text(json.dumps({
-            "episodes": eps, "successes": ok,
-            "success_rate": round(ok / eps, 4) if eps else None,
-            "batches": [m["batch"] for m in sel],
-            "refreshed": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        }, indent=2) + "\n")
+        try:
+            (level_dir / "meta.json").write_text(json.dumps({
+                "episodes": eps, "successes": ok,
+                "success_rate": round(ok / eps, 4) if eps else None,
+                "batches": [m["batch"] for m in sel],
+                "refreshed": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }, indent=2) + "\n")
+        except OSError:
+            pass  # a fenced session's read-only base cell: its meta stays stale; the pool is truth
 
     for scene_dir in sorted(gen_root.glob("scenes/*")):
         s = scene_dir.name
