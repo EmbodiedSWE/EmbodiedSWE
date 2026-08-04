@@ -12,7 +12,9 @@ rounds × num_envs episodes:
     grade every trajectory, write data/<batch>/ep_NNNN/{traj.npz, meta.json}
     finish with the batch meta.json: config, yield, per-episode verdicts
 
-The stack around the unmodified solve:  solve(Recorder(NoisyActionEnv(GradedEnv(env)))).
+The stack around the unmodified solve:  solve(Recorder(NoisyActionEnv(env))).
+Grading is generation's own job, no env wrapper: the cell's grader is
+constructed at the entry state and its verdict() read from the final state.
 States are recorded BEFORE each step (state_t, action_t pairs); the recorded action
 is the solve's commanded (clean) one — the noise wrapper perturbs only what executes.
 Episode states come from env.get_states(), so any recorded step can later be
@@ -67,6 +69,10 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int):
 
 
 def load_grader_cls(scene_dir: Path):
+    """The judge is always the CELL's grader/grader.py (scene and grader move
+    as a pair). Generation owns grading directly: the grader is constructed at
+    the entry state and its verdict() read from the FINAL state — the solve
+    runs unwrapped by any grading env."""
     from robobench.core.grader import BaseGrader
 
     mod = _load("datagen_grader", scene_dir / "grader" / "grader.py")
@@ -113,7 +119,6 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     import torch
     import yaml
 
-    from robobench.core.grader import GradedEnv
 
     from .noise import NoisyActionEnv
 
@@ -160,9 +165,8 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             params = {k: v for k, v in resets[reset_name].items() if k != "weight"}
             getattr(reset_mod, reset_name)(env, params, rng)
         grader = grader_cls(env)
-        grader.setup()
-        stack = GradedEnv(env, grader)
-        stack = NoisyActionEnv(stack, dims=slice(*dims) if dims else slice(0, 0),
+        grader.setup()  # baselines captured at the entry state
+        stack = NoisyActionEnv(env, dims=slice(*dims) if dims else slice(0, 0),
                                sigma=noise.get("sigma", 0.0), prob=noise.get("prob", 1.0),
                                duration=noise.get("duration", 0.0), seed=seed + rnd)
         rec = Recorder(stack, env)

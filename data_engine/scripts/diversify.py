@@ -13,14 +13,14 @@ key=value args override any field, hydra-style (values yaml-parsed):
 The launcher creates NO cell — it assembles the instructions (contract + the
 condition's prompt modules + campaign facts) into the session ledger
 `<gen_root>/.agent/<ts>_<level>/` (with the RESOLVED condition.yaml beside it),
-then launches the agent fenced in docker. The agent's world has two handles:
-/reference — the whole repo read-only, the standard reference it browses to
-choose what to start from; /workspace — its writable home, a link onto the
-campaign (which is mounted rw at its true depth under /reference, so the
-campaign's relative symlinks keep resolving). GPU passthrough; one code path
-for supervised testbeds and future headless batches. The agent's first
-authoring act is creating its first cell with create_cell.py. --host is the
-UNFENCED escape hatch for engine development only.
+then launches the agent fenced in docker. The agent's world has three handles:
+/workspace — its writable home, the campaign (mounted rw at its true depth
+under /repo, so relative symlinks keep resolving); /reference — the eval run
+this campaign multiplies (read-only): the task and the agent trace of how the
+solve was built; /repo — the whole repo, read-only, optional background. GPU
+passthrough; one code path for supervised testbeds and future headless
+batches. The agent's first authoring act is creating its first cell with
+create_cell.py. --host is the UNFENCED escape hatch for engine development.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ REPO_ROOT = ROOT.parent
 CRED_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_API_KEY")
 DEFAULTS = {"scene": "scene_0", "strategy": "strategy_0", "prompts": [], "cli": [],
             "agent": "claude", "model": "claude-opus-5",
-            "image": "rb-l1-agent:2.1.216", "gpu": "0"}
+            "image": "rb-l1-agent:2.1.216", "gpu": "0", "budget_min": 240}
 
 
 def load_condition(path: Path, overrides: list[str]) -> dict:
@@ -56,9 +56,11 @@ def load_condition(path: Path, overrides: list[str]) -> dict:
 
 def assemble(session: Path, gen_root: Path, cfg: dict, repo_as: Path, gen_as: Path) -> Path:
     """Write instructions.md + the resolved condition.yaml into the session ledger.
-    Paths render as the SESSION sees them: `repo_as` = the repo root
-    (/reference in a container), `gen_as` = the campaign (/workspace). One global
-    namespace everywhere: the agent sees the campaign's real cell names."""
+    Paths render as the SESSION sees them: `repo_as` = the repo root (/repo in
+    a container), `gen_as` = the campaign (/workspace). One global namespace
+    everywhere: the agent sees the campaign's real cell names."""
+    run_as = (Path("/reference") if repo_as != REPO_ROOT
+              else gen_root.parents[1])  # the eval run this campaign multiplies
     base = cfg["strategy"] if cfg["level"] == "phase" else cfg["scene"]
 
     parts = [(ROOT / "agent" / "prompts" / "_contract.md").read_text()]
@@ -68,7 +70,8 @@ def assemble(session: Path, gen_root: Path, cfg: dict, repo_as: Path, gen_as: Pa
     parts += [
         "\n\n## This session\n",
         f"- your workspace: {gen_as}  (the campaign; your cwd; work only in here)",
-        f"- your reference: {repo_as}  (the whole repo, read-only — scenes, graders, tools)",
+        f"- your reference: {run_as}  (read-only — the eval run this campaign multiplies)",
+        f"- the repo: {repo_as}  (read-only — optional background)",
         f"- your start point is READ-ONLY — copy it with create_cell, never edit it in place",
         f"- level: {cfg['level']} — start from: {cfg['scene']}"
         + (f"/{cfg['strategy']}" if cfg["level"] in ("strategy", "phase") else ""),
@@ -107,20 +110,22 @@ def start_point_ro(gen_root: Path, cfg: dict) -> list[Path]:
 
 
 def container_cmd(gen_root: Path, instructions: Path, cfg: dict) -> list[str]:
-    """docker run: repo read-only at /reference, the campaign rw over it at its true
-    depth (relative symlinks keep resolving), /workspace linked onto the campaign."""
+    """docker run: repo read-only at /repo, the campaign rw over it at its true
+    depth (relative symlinks keep resolving); /workspace links to the campaign,
+    /reference to the eval run it multiplies."""
     rel = gen_root.relative_to(REPO_ROOT)
+    run_rel = gen_root.parents[1].relative_to(REPO_ROOT)
     instr_in = Path("/workspace") / instructions.relative_to(gen_root)
     cmd = [
         "docker", "run", "-it", "--rm",
         "--name", f"dgen_{gen_root.name}_{instructions.parent.name}",
         "--device", f"nvidia.com/gpu={cfg['gpu']}", "--shm-size", "2g",
-        "-v", f"{REPO_ROOT}:/reference:ro",
-        "-v", f"{gen_root}:/reference/{rel}",     # the deeper rw bind wins over the ro repo
+        "-v", f"{REPO_ROOT}:/repo:ro",
+        "-v", f"{gen_root}:/repo/{rel}",          # the deeper rw bind wins over the ro repo
         *[a for pth in start_point_ro(gen_root, cfg) if pth.exists()
-          for a in ("-v", f"{pth}:/reference/{pth.relative_to(REPO_ROOT)}:ro")],
+          for a in ("-v", f"{pth}:/repo/{pth.relative_to(REPO_ROOT)}:ro")],
         "-v", "rb-ovcache:/ovcache",
-        "-e", "PYTHONPATH=/reference",
+        "-e", "PYTHONPATH=/repo",
         "-e", "PYTHONDONTWRITEBYTECODE=1",
         "-e", "DGEN_ROOT=/workspace",
         "-e", f"DGEN_LEVEL={cfg['level']}",
@@ -135,14 +140,17 @@ def container_cmd(gen_root: Path, instructions: Path, cfg: dict) -> list[str]:
     # entry: replace the image's stock empty /workspace with the campaign link,
     # install each DECLARED tool as a PATH command, then hand over to the agent
     shims = " && ".join(
-        f"printf '#!/bin/bash\\nexec python /reference/data_engine/agent/cli/{t}.py \"$@\"\\n'"
+        f"printf '#!/bin/bash\\nexec python /repo/data_engine/agent/cli/{t}.py \"$@\"\\n'"
         f" > /usr/local/bin/{t} && chmod +x /usr/local/bin/{t}" for t in cfg["cli"])
-    setup = f"rmdir /workspace 2>/dev/null; ln -sT /reference/{rel} /workspace"
+    setup = (f"rmdir /workspace 2>/dev/null; ln -sT /repo/{rel} /workspace"
+             f" && ln -sT /repo/{run_rel} /reference")
     # setup runs as root (shims in /usr/local/bin, the / link); the agent itself
     # drops to the image's non-root `agent` user (uid 1000 = the host user, so
     # everything the session writes is host-owned)
+    budget_s = int(float(cfg["budget_min"]) * 60)  # wall-clock cap: a dead session frees the GPU
     entry = " && ".join(x for x in (setup, shims,
-                                    f"cd /workspace && exec runuser -u agent -- {agent_cmd}") if x)
+                                    f"cd /workspace && exec timeout {budget_s} "
+                                    f"runuser -u agent -- {agent_cmd}") if x)
     cmd += [cfg["image"], "bash", "-c", entry]
     return cmd
 
@@ -167,7 +175,7 @@ def main() -> None:
     cfg = load_condition(Path(args.config), args.overrides)
     session = gen_root / ".agent" / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{cfg['level']}"
     session.mkdir(parents=True)
-    repo_as = REPO_ROOT if args.host else Path("/reference")
+    repo_as = REPO_ROOT if args.host else Path("/repo")
     gen_as = gen_root if args.host else Path("/workspace")
     instructions = assemble(session, gen_root, cfg, repo_as, gen_as)
     print(f"session: {session}\ninstructions: {instructions}")
