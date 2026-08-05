@@ -7,11 +7,11 @@ condition yaml), so:
     create_cell               one new cell of the session's level
     create_cell --count 3     three at once: scene_1, scene_2, scene_3 …
 
-What is copied depends on the level: scene = a full copy of the start scene
-(assets links intact, fresh metas); strategy = an empty cell to author a new
-solve.py in; phase = stubbed phase.yaml + reset.py inside the start strategy.
-Every flag can still override the environment (e.g. --scene scene_1 to branch
-from a cell you just made).
+What is created depends on the level: scene = a full copy of the start scene
+(assets links intact, fresh metas); strategy = an empty cell for a new
+solve.py; phase = phases/phase_N/ stubs — one PROPOSAL of how to divide/enter
+the strategy's solve (its own solve_by_phase.py lives inside). Flags override
+the environment (e.g. --scene scene_1 to branch from a cell you just made).
 """
 
 from __future__ import annotations
@@ -47,8 +47,7 @@ def main() -> None:
 
     for _ in range(args.count):
         target, base, name = create_cell(gen_root, args.level, args.scene, args.strategy, args.name)
-        print(f"created {args.level} cell: {target.name}"
-              + (f" (phases/{name})" if args.level == "phase" else ""))
+        print(f"created {args.level} cell: {target.name}")
 
 
 if __name__ == "__main__":
