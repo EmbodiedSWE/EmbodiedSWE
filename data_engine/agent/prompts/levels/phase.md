@@ -103,16 +103,21 @@ must satisfy the phase's precondition as documented in `ENTRIES`.
   test batches add to it: every episode's `traj.npz` stores full restorable
   sim states, `env.set_states(...)` any recorded step. Successes give mid-task
   boundary states (e.g. "part placed, hand free"), perturbed with jitter for
-  coverage; failures at recoverable moments (a dropped part near the goal)
-  give recovery starts that from-scratch data cannot contain. Judge which
-  failures are physically recoverable — an unrecoverable mess is not an entry
-  state.
+  coverage; failures give recovery starts that from-scratch data cannot
+  contain. Recoverable means some phase of your division can redo the work
+  from there — a part dropped beside the goal is a valid entry to the pick
+  phase, with the dropped pose as the initial condition. An unrecoverable
+  mess is not an entry state.
 
 ### Practice
 
 - randomize PER ENV: each of the `env.num_envs` worlds gets its own draw
   (poses, sources, jitters) — a builder that sets every env identically wastes
   the batch.
+- locate the campaign relative to YOUR OWN FILE, never a mount path: builders
+  also run outside the container. From `reset/<phase>.py` the pool is
+  `Path(__file__).resolve().parents[7] / "data"` — `/workspace/...` breaks on
+  the host.
 - the arm: the scene's own reset already ran — leaving the arm where it is
   often IS the precondition ("hand free and clear"). Only pose the arm if the
   phase genuinely needs it.
@@ -122,6 +127,10 @@ must satisfy the phase's precondition as documented in `ENTRIES`.
 - a little jitter goes a long way: no need for a fully generic builder over
   the whole state space when that is hard — start from anchor states (a few
   recorded or hardcoded ones) and apply small perturbations around them.
+- check your own precondition: settling can knock a part out of the intended
+  state in some envs. After the settle, verify the precondition per env (poses
+  are observable) and re-draw just the envs that missed — a dead entry state
+  burns a full episode at generation time.
 
 A builder typically looks like (this one is real, for the bulb scene — your
 `scene.py` declares the asset names; everything is batched, one call covers
