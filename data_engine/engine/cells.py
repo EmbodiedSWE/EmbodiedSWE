@@ -46,8 +46,8 @@ def create_cell(gen_root: Path, level: str, scene: str, strategy: str, name: str
             raise SystemExit(f"{dst} already exists")
         shutil.copytree(src, dst, symlinks=True,
                         ignore=shutil.ignore_patterns('__pycache__'))
-        shutil.rmtree(dst / ".agent", ignore_errors=True)  # fresh trace, fresh metas
-        (dst / ".agent").mkdir()
+        shutil.rmtree(dst / ".agent", ignore_errors=True)   # a fresh cell:
+        (dst / "SUMMARY.md").unlink(missing_ok=True)         # no inherited record
         for meta in dst.rglob("meta.json"):
             meta.write_text(json.dumps(META_STUB, indent=2) + "\n")
         return dst, scene, name
@@ -56,7 +56,7 @@ def create_cell(gen_root: Path, level: str, scene: str, strategy: str, name: str
         dst = scenes / scene / "strategies" / name
         if dst.exists():
             raise SystemExit(f"{dst} already exists")
-        (dst / ".agent").mkdir(parents=True)
+        dst.mkdir(parents=True)
         (dst / "meta.json").write_text(json.dumps(META_STUB, indent=2) + "\n")
         return dst, strategy, name
     # phase: one proposal of how to divide/enter the strategy's solve

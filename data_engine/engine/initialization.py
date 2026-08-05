@@ -9,14 +9,14 @@ scene against it and warns on drift; a nominal batch is the real check.
     data_gen/<gen_name>/
     ├─ gen.yaml                     campaign facts: preset, provenance, git sha
     ├─ scenes/scene_0/              the unmodified benchmark scene — nominal control
-    │   ├─ .agent/  meta.json
+    │   ├─ meta.json
     │   ├─ scene/scene.py           repo suite scene copy; registrations renamed *_local so
     │   │                           the copy loads beside the suite and EDITS TAKE EFFECT
     │   ├─ assets/<sub> -> …        symlinks, only the asset subdirs this scene references
     │   │                           (scenes resolve assets relative to their own file)
     │   ├─ grader/grader.py         suite grader copy, re-pointed at the local scene class
     │   └─ strategies/strategy_0/
-    │       ├─ .agent/  meta.json
+    │       ├─ meta.json
     │       ├─ solve.py             the eval solution (whole solution folder) — never modified
     │       └─ (phases/, solve_by_phase.py)
     │                               OPTIONAL — created together by an L3 session; until
@@ -157,8 +157,7 @@ def init(run_dir: str | Path, name: str | None = None, force: bool = False) -> P
 
     scene0 = gen / "scenes" / "scene_0"
     strat0 = scene0 / "strategies" / "strategy_0"
-    for d in (scene0 / ".agent", scene0 / "scene", scene0 / "grader",
-              strat0 / ".agent", gen / "data"):
+    for d in (scene0 / "scene", scene0 / "grader", strat0, gen / "data"):
         d.mkdir(parents=True, exist_ok=True)
 
     bake_scene(suite["scene_path"], scene0 / "scene" / "scene.py")
