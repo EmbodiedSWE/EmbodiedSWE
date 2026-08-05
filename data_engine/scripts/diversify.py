@@ -173,7 +173,15 @@ def main() -> None:
         raise SystemExit(f"container sessions need the campaign under the repo tree ({REPO_ROOT})")
 
     cfg = load_condition(Path(args.config), args.overrides)
-    session = gen_root / ".agent" / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{cfg['level']}"
+    # the ledger lives beside where the session's cells land:
+    # scene -> scenes/.agent, strategy -> <scene>/strategies/.agent,
+    # phase -> <strategy>/phases/.agent
+    parents = {"scene": gen_root / "scenes",
+               "strategy": gen_root / "scenes" / cfg["scene"] / "strategies",
+               "phase": (gen_root / "scenes" / cfg["scene"] / "strategies"
+                         / cfg["strategy"] / "phases")}
+    session = parents[cfg["level"]] / ".agent" / \
+        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{cfg['level']}"
     session.mkdir(parents=True)
     repo_as = REPO_ROOT if args.host else Path("/repo")
     gen_as = gen_root if args.host else Path("/workspace")

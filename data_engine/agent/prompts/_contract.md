@@ -15,7 +15,7 @@ and where to start.
 - `/reference` — the eval run this campaign multiplies, read-only: its task,
   and the agent workspace of how the solve was built. Usually the read that
   pays off most, together with other campaigns' diversification histories
-  (their cells' `.agent/SUMMARY.md`).
+  (their cells' `SUMMARY.md`).
 - `/repo` — the whole CoSiGen repo, read-only. Optional background: the
   benchmark suite sources (`robobench/suites/…`), the data_engine, past
   experiments.
@@ -77,7 +77,7 @@ summary — testing them is a cheap job for whoever comes next.
   `scenes/`: they are the session's product, ready for future generation.
 - **The batches** you generated under `data/` — real graded episodes; they
   stay in the pool, and the level metas carry their yields.
-- **`.agent/SUMMARY.md`** in each cell you ship — one entry per idea you
+- **`SUMMARY.md`** at the root of each cell you ship — one entry per idea you
   tried: what you thought, what you changed, whether it succeeded when you
   launched generate (yield vs. the baseline), and what you learned. Ideas
   that failed belong in the summary too; they are what the next session
