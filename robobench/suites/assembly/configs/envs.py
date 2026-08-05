@@ -31,6 +31,7 @@ from robobench.suites.assembly.scenes import (
     ChairAssemblySceneCfg,
     IkeaTableAssemblySceneCfg,
     NutThreadAssemblySceneCfg,
+    PcAllAssemblySceneCfg,
     PcGpuAssemblySceneCfg,
     PcGpuRamAssemblySceneCfg,
     PcMotherboardAssemblySceneCfg,
@@ -161,6 +162,76 @@ for _mode in ("osc", "impedance", "joint"):
                 base_pos=(0.72, -0.30, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x;
                 # 40 mm north with the case, the 154 mm rear foot points +x along the strip
             ),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+
+# The COMPLETE build: the same case with all three work sites open at once — 7 case-mount
+# bolts staged hand-started in the motherboard's holes (one allen key beside the case drives
+# them), two empty DIMM slots with two loose RAM sticks, and the empty PCIe x16 slot (+ rear
+# cutout) with a loose graphics card — scene physics only for now.
+# -> "assembly.pc_all"
+register_env(SUITE, lambda: EnvCfg(scene="pc_all", robot="null", env_spacing=2))
+
+# Franka arm at the complete build. The work cell is the pc_motherboard.franka cell VERBATIM
+# (that leg is the reach-critical one: its 7 holes span the arm's top-down band and were
+# reach-probed from exactly this base): base WEST of the case at (0.07, 0) facing +x, the whole
+# table slid 40 mm east (`workbench_pos` = `case_xy` = (0.54, 0)), the key standing tip-down in
+# its four-wall stand at world (0.30, -0.30) — the very crank grip the ratchet screws with.
+# From this same base every other work point falls in or near the proven band: DIMM seats at
+# 0.33/0.35 m, DIMM picks 0.34/0.37 m, card pick 0.37 m, card placement 0.43 m; only the PCIe
+# seat (0.455 m) grazes the band's far edge — inside the radius the motherboard leg's own
+# sub-0.3 mm insertions proved at similar hand heights (0.31-0.55 m).
+# Staging keeps every part on the SAME south-west side as the key stand (user request), every
+# holder >= 5 cm clear of the case walls: the two stick holders at world (0.13, -0.335) and
+# (0.215, -0.335) (seated heading — no reorientation in flight), and the card on a SECOND row
+# beyond them at world (0.00, -0.44) in its SEATED heading (no re-orientation either). The
+# card is installed LAST, so its 156 mm standing height must never sit between the base and an
+# earlier pick — the reaching arm's elbow rests on anything that tall in its lap (measured:
+# with the card at (0.05, -0.30) the stick-0 pick stalled 25 mm high on it). On the outer row
+# nothing is ever reached past it: the arm never extends beyond its wrist. Deterministic spawn
+# (no jitter): the stands are static geometry authored at the spawn points. sim dt 1/240 — the
+# depth all three force-driven smokes validated.
+# Three control modes, switchable by env name:
+#   - "assembly.pc_all.franka.osc"       — operational-space control (default)
+#   - "assembly.pc_all.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_all.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_all",
+            scene_cfg=PcAllAssemblySceneCfg(
+                workbench_pos=(0.54, 0.0),
+                case_xy=(0.54, 0.0),  # case at the table anchor — the motherboard cell layout
+                key_init_xy=(-0.18, -0.30),  # table-rel -> world (0.36, -0.30): 6 cm east of the
+                # pc_motherboard cell's stand spot — the 213 mm key sleeve must stay out of the
+                # stick picks' WRIST envelope (at (0.30, -0.30), 8.5 cm from the stick-1 grip,
+                # the wrist rested on the sleeve rim and the pick stalled 95 mm high)
+                key_init_z=0.007,  # tip 1 mm above the stand's 6 mm floor pad
+                key_init_quat=(1.0, 0.0, 0.0, 0.0),  # standing tip-down in the stand
+                key_stand=True,
+                card_init_xy=(-0.54, -0.44),  # table-rel -> world (0.00, -0.44): a SECOND row
+                # south-west of the stick holders — the card is installed LAST, and its 156 mm
+                # standing height must never sit between the base and an earlier pick (the
+                # reaching arm's elbow rests on it; measured: the stick-0 pick stalled 25 mm
+                # high). Out here nothing is ever reached past it, and it clears the stick
+                # stands' floors by 7 mm in y.
+                card_init_z=0.030,  # tab-bottom plane = the holder's floor top
+                card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the SEATED heading (length
+                # along x) — the carry needs no re-orientation at all
+                ram_init_xy=((-0.41, -0.335), (-0.325, -0.335)),  # table-rel -> world
+                # (0.13/0.215, -0.335): the south-west staging strip, west of the key stand
+                ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                reset_pos_jitter=0.0,
+                card_stand=True,
+                ram_stand=True,
+            ),
+            robot="franka",
+            robot_cfg=FrankaRobotCfg(base_pos=(0.07, 0.0, 0.0)),
             control_mode=mode,
             env_spacing=2,
             sim_overrides={"dt": 1.0 / 240.0},
