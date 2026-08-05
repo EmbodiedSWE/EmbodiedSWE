@@ -3,15 +3,18 @@
 A cell is a (scene × strategy × phase) triple in a campaign; the phase is optional —
 without one the strategy's solve.py runs from scratch off the scene's own reset. With
 one, the phase cell declares itself in code: reset/ holds one file per phase of the
-cell's division, named exactly as the phase — the file sampled each round (uniformly)
-both chooses which phase to enter and builds its entry state: it holds one or more
-initial-condition builders reset_0(env), reset_1(env), … — generate targets one by
-index (default 0); their randomness uses the globally seeded RNGs. No port in the
+cell's division, named exactly as the phase — each round sweeps ALL the files, one
+rollout per file (in name order), so every entry is covered whatever rounds is: a
+file both chooses which phase to enter and builds its entry state via one or more
+initial-condition builders reset_0(env), reset_1(env), … — a rollout runs them ALL,
+dividing the batch's envs evenly among them (remainder to the earliest; fewer envs
+than builders fills them in order); each episode's meta records its (file, builder)
+lineage. Their randomness uses the globally seeded RNGs. No port in the
 cell = plain solve.py from its natural start. One batch =
-rounds × num_envs episodes:
+rounds × reset-files × num_envs episodes (no phase: rounds × num_envs):
 
     build the env from the campaign preset on the cell's LOCAL scene copy
-    per round: reset(seed+round) [→ phase reset] → grader → noise → recorder → solve
+    per rollout: reset(seed+rollout) [→ phase reset] → grader → noise → recorder → solve
     grade every trajectory, write data/<batch>/ep_NNNN/{traj.npz, meta.json}
     finish with the batch meta.json: config, yield, per-episode verdicts
 
@@ -83,6 +86,21 @@ def load_grader_cls(scene_dir: Path):
                 if isinstance(v, type) and issubclass(v, BaseGrader) and v is not BaseGrader)
 
 
+def _clone_states(d: dict) -> dict:
+    """Deep-clone a get_states tree so a snapshot survives further sim stepping."""
+    return {k: _clone_states(v) if isinstance(v, dict) else v.detach().clone()
+            for k, v in d.items()}
+
+
+def _slice_assign(dst: dict, src: dict, sl: slice) -> None:
+    """Copy src's env-slice into dst across the whole states tree (dim 0 = env)."""
+    for k, v in src.items():
+        if isinstance(v, dict):
+            _slice_assign(dst[k], v, sl)
+        else:
+            dst[k][sl] = v[sl]
+
+
 def _flat(d: dict, prefix: str = "") -> dict:
     """Nested get_states dict -> {"scene/nut/root_state": (E, …) cpu tensor, …}."""
     out = {}
@@ -113,11 +131,9 @@ class Recorder:
 
 
 def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scene_0",
-              strategy: str = "strategy_0", phase: str | None = None, reset: int = 0,
+              strategy: str = "strategy_0", phase: str | None = None,
               num_envs: int = 4, rounds: int = 1, seed: int = 0,
               noise: dict | None = None, device: str = "cuda:0") -> Path:
-    import random
-
     import numpy as np
     import torch
 
@@ -144,8 +160,9 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         solve = _load("datagen_solve", strategy_dir / "solve.py").solve
         entry, conditions = None, []
     else:
-        # reset/ holds one file per phase, named as the phase: the sampled file
-        # chooses the entry and builds its state. No port = plain solve.py.
+        # reset/ holds one file per phase, named as the phase: each round
+        # sweeps all the files, one rollout per file — a file chooses the
+        # entry and builds its state. No port = plain solve.py.
         phase_dir = strategy_dir / "phases" / phase
         port = phase_dir / "solve_by_phase.py"
         solve = _load("datagen_solve", port if port.is_file()
@@ -159,18 +176,45 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     dims = noise.get("dims")
 
     verdicts_all = []
-    for rnd in range(rounds):
+    # a round sweeps ALL the cell's reset files, one rollout per file (no
+    # phase = one rollout per round) — every entry is covered whatever rounds is
+    rollouts = rounds * max(1, len(conditions))
+    for rnd in range(rollouts):
         env.reset(seed=seed + rnd)
-        reset_name = None
+        reset_name, fn_of_env = None, None
         if conditions:
-            rng = random.Random(seed + rnd)
-            cond = rng.choice(conditions)
+            cond = conditions[rnd % len(conditions)]
             reset_name = cond.__name__.removeprefix("datagen_reset_")
-            # a phase file holds reset_0(env), reset_1(env), … — take the targeted
-            # one, falling back to reset_0. Randomness inside uses the global RNGs,
-            # already seeded by env.reset(seed=seed+round).
-            fn = getattr(cond, f"reset_{reset}", None) or cond.reset_0
-            fn(env)
+            # a phase file holds reset_0(env), reset_1(env), … — ALL of them run,
+            # the batch's envs divided evenly among them: each builder shapes
+            # (and settles) the whole batch; its settled snapshot supplies its
+            # env-slice of the composed entry state, so a later builder's settle
+            # never disturbs an earlier builder's envs. Randomness inside uses
+            # the global RNGs, already seeded by env.reset(seed=seed+rollout).
+            names = sorted((n for n in vars(cond) if re.fullmatch(r"reset_\d+", n)),
+                           key=lambda n: int(n[6:]))
+            if len(names) == 1:
+                getattr(cond, names[0])(env)
+                fn_of_env = [names[0]] * num_envs
+            else:
+                # even split, remainder to the earliest; fewer envs than
+                # builders fills them in order (later builders get none and
+                # are skipped)
+                base, rem = divmod(num_envs, len(names))
+                counts = [base + (1 if i < rem else 0) for i in range(len(names))]
+                composed, fn_of_env, lo = None, [], 0
+                for n, c in zip(names, counts):
+                    if c == 0:
+                        continue
+                    getattr(cond, n)(env)
+                    snap = _clone_states(env.get_states())
+                    if composed is None:
+                        composed = snap
+                    else:
+                        _slice_assign(composed, snap, slice(lo, lo + c))
+                    fn_of_env += [n] * c
+                    lo += c
+                env.set_states(composed)
             entry = reset_name if has_port else None  # the file IS the phase
         grader = grader_cls(env)
         grader.setup()  # baselines captured at the entry state
@@ -178,7 +222,9 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                                sigma=noise.get("sigma", 0.0), prob=noise.get("prob", 1.0),
                                duration=noise.get("duration", 0.0), seed=seed + rnd)
         rec = Recorder(stack, env)
-        print(f"[batch {batch}] round {rnd}: solve on {num_envs} envs …", flush=True)
+        print(f"[batch {batch}] rollout {rnd + 1}/{rollouts}"
+              + (f" ({reset_name})" if reset_name else "")
+              + f": solve on {num_envs} envs …", flush=True)
         solve(rec) if entry is None else solve(rec, entry=entry)
 
         verdicts = grader.verdict()
@@ -195,7 +241,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                 "episode": ep, "round": rnd, "env_index": e,
                 "success": verdicts[e]["success"], "score": verdicts[e]["score"],
                 "parameters": {},  # nominal — sampler is a placeholder
-                "reset": reset_name, "reset_fn": (f"reset_{reset}" if reset_name else None),
+                "reset": reset_name, "reset_fn": (fn_of_env[e] if fn_of_env else None),
                 "entry": entry,
                 "seed": seed + rnd, "steps": T,
                 "sim_dt": env.dt, "decimation": env.robot.control_period,
@@ -207,7 +253,8 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             (ep_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
         verdicts_all += [{"episode": rnd * num_envs + e, **v} for e, v in enumerate(verdicts)]
         ok = sum(v["success"] for v in verdicts)
-        print(f"[batch {batch}] round {rnd}: {ok}/{num_envs} succeeded, {T} steps", flush=True)
+        print(f"[batch {batch}] rollout {rnd + 1}/{rollouts}: {ok}/{num_envs} succeeded, "
+              f"{T} steps", flush=True)
 
     n_ok = sum(v["success"] for v in verdicts_all)
     (out / "meta.json").write_text(json.dumps({

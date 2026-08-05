@@ -7,7 +7,9 @@
 
 The cell is the (scene × strategy × phase) triple; phase is optional — without it
 the strategy's solve.py runs from scratch, with it solve_by_phase.py enters at the
-phase's declared entry off a sampled reset strategy. Noise defaults to off (the
+phase's declared entries: each round sweeps ALL the cell's reset/ files, one rollout
+per file, and within a rollout every reset_N builder in the file shapes an even share
+of the envs. Noise defaults to off (the
 nominal configuration); --dims (e.g. 0:6 = franka-osc arm) is required when
 sigma > 0 — gripper dims are never noised.
 """
@@ -27,8 +29,6 @@ parser.add_argument("--scene", default="scene_0")
 parser.add_argument("--strategy", default="strategy_0")
 parser.add_argument("--phase", default=None,
                     help="phase cell under the strategy's phases/ (no cell = from scratch)")
-parser.add_argument("--reset", type=int, default=0,
-                    help="which reset_<N>(env) to use in the sampled phase file (default 0)")
 parser.add_argument("--batch", default=None, help="batch name under data/ (default: batch_<timestamp>)")
 parser.add_argument("--num_envs", type=int, default=4)
 parser.add_argument("--rounds", type=int, default=1)
@@ -53,7 +53,7 @@ from engine.generation import run_batch  # noqa: E402
 noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
          "dims": tuple(int(x) for x in args.dims.split(":")) if args.dims else None}
 run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
-          phase=args.phase, reset=args.reset, num_envs=args.num_envs, rounds=args.rounds, seed=args.seed,
+          phase=args.phase, num_envs=args.num_envs, rounds=args.rounds, seed=args.seed,
           noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu")
 
 app.close()

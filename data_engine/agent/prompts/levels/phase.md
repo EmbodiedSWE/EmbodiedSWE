@@ -17,11 +17,12 @@ Create, explicitly:
      phases and their preconditions. Each `phase_N` is a different division
      strategy of the solve — in most cases `phase_0` is all you need.
    - `reset/` — one file per phase, named exactly as the phase (one per
-     `ENTRIES` key). The file sampled each round chooses the entry and builds
-     its state via `reset_0(env)`, `reset_1(env)`, … — generate targets one
-     by index (`--reset N`, default 0).
+     `ENTRIES` key). Each round sweeps ALL the files, one rollout per file: a
+     file chooses the entry and builds its state via `reset_0(env)`,
+     `reset_1(env)`, … — all applied, the rollout's envs divided evenly among
+     them.
 
-At generation time the runner builds the entry state from a sampled reset
+At generation time the runner builds the entry state from the rollout's reset
 FIRST, then calls your port. Entry states are the reset builders' job — your
 port only steps (`reset`/`set_states` are not blocked, but teleported state
 becomes part of the recorded demonstration). The phases are not given to you:
@@ -54,8 +55,8 @@ The port is a copy of `solve.py` with four edits — everything else identical:
 
        ENTRIES = {"<phase>": "<one-line precondition on the world>", ...}
 
-   (the runner never reads it — each round's entry is the NAME of the sampled
-   reset file; keep one reset file per ENTRIES key)
+   (the runner never reads it — each rollout's entry is the NAME of its reset
+   file; keep one reset file per ENTRIES key)
 3. `fresh_state()` starts at `st["phase"] = entry or "<start>"`.
 4. `entry_calibrate(...)` on the first tick: fill what the skipped phases
    would have measured, from observation — e.g. entering at "insert" above,
@@ -123,7 +124,7 @@ must satisfy the phase's precondition as documented in `ENTRIES`.
   phase genuinely needs it.
 - different builders in one file = different state families for the same phase
   (e.g. `reset_0` built-by-hand nominal, `reset_1` restored-from-failures);
-  generate targets one per batch (`--reset N`, default 0).
+  each rollout runs them all, its envs divided evenly among them.
 - a little jitter goes a long way: no need for a fully generic builder over
   the whole state space when that is hard — start from anchor states (a few
   recorded or hardcoded ones) and apply small perturbations around them.
@@ -166,6 +167,10 @@ recorded pool states):
     generate --headless /workspace --scene <scene> --strategy {base} \
         --phase phase_N --num_envs 64 --seed 0
 
+Each round sweeps ALL your reset files, one rollout of `--num_envs` episodes
+per file, the envs divided evenly among the file's builders — a single round
+already exercises every entry and every builder; each episode's meta records
+its (file, builder) lineage.
 This generates one batch of data using your proposed `phase_N` and its initial
 conditions, under `/workspace/data/<batch>/`: one `ep_NNNN/` folder per
 episode, success/fail in each episode's `meta.json`, and the batch summary
