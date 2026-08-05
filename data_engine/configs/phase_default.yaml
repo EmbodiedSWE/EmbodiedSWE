@@ -1,7 +1,11 @@
 # Diversify session condition: phase level, default.
-# Case modules (e.g. a failure-mining prompt) become extra entries in `prompts:            # agent/prompts/<path>.md, assembled in order after _contract.md
+
+scene: scene_0        # context: the scene this session works against
+strategy: strategy_0  # context: the strategy whose solve gets phase-divided
+level: phase
+prompts:            # agent/prompts/<path>.md, assembled in order after _contract.md
   - levels/phase
-cli:
+cli:                # agent/cli/<name>.py the session is offered
   - create_cell
   - generate
 model: claude-opus-5
