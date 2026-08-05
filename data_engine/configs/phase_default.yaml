@@ -5,6 +5,7 @@ strategy: strategy_0  # context: the strategy whose solve gets phase-divided
 level: phase
 prompts:            # agent/prompts/<path>.md, assembled in order after _contract.md
   - levels/phase
+  - rules/autonomous_operation
 cli:                # agent/cli/<name>.py the session is offered
   - create_cell
   - generate
