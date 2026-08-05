@@ -12,8 +12,7 @@ flown to each hole under force-only PD (lift clear of the standing heads, glide 
 yaw to the socket's nearest hex clocking, descend into the socket) and then driven like a hand
 would — a ramped press along the bolt's axis, a torque-capped velocity-servo twist, and soft
 xy-centering / tilt-righting PD wrenches (gravity-free key). The FIRST approach crosses the
-case's 195 mm wall line HIGH (tip at board +215 mm, then sinks over hole 0): the case shell's
-side walls carry invisible colliders, so the old +30 mm glide-in would jam on the rear wall.
+case's wall line high, then sinks over hole 0.
 
 Phases: show -> stage -> [lift -> glide (-> descend) -> align -> insert -> drive] x 7 ->
 settle. Verdict: seated count, per-hole depth gained per rev vs the 1.0 mm pitch, and
@@ -67,8 +66,7 @@ STAGE_YAW = math.pi       # bolt (and key) yaw at stage (a k*60 deg hex clocking
 SEAT_MARGIN = 0.0001      # screw-joint hard stop: head held this far above the board (never preloads it)
 STOP_DEPTH = 0.0118       # stop twisting at this tip depth (m) — just before the head bottoms at 12.4 mm
 TRAVEL_Z = 0.030          # key TIP height above the board while hopping (clears the standing heads)
-KEY_CROSS_Z = 0.215       # key TIP height for the FIRST approach: crossing the case's 195 mm wall
-# line (the shell walls collide — a +30 mm glide-in would jam on the rear wall)
+KEY_CROSS_Z = 0.215       # key TIP height for the FIRST approach, crossing the case's wall line
 # Drive parameters (module constants, like the sibling smokes). The twist is a torque-capped
 # velocity servo: tau = clamp(KW * (w_tgt - wz), -cap, +cap).
 DT = 1.0 / 240.0          # sim timestep
@@ -280,8 +278,7 @@ def main() -> None:
                 prev_key_yaw = yaw_of(key.data.root_quat_w)
                 phase, marker = "lift", i
         elif phase == "lift":  # rise (and right itself), rate-limited; the FIRST approach goes to
-            # wall-crossing height (the key starts outside the case and the shell walls collide),
-            # later hops stay low over the standing heads
+            # wall-crossing height, later hops stay low over the standing heads
             pos = key.data.root_link_pos_w
             lift_z = board_z + (KEY_CROSS_Z if active == 0 else TRAVEL_Z)
             tgt_z = torch.minimum(pos[:, 2] + 0.03, lift_z)
