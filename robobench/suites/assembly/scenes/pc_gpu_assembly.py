@@ -6,8 +6,9 @@ RTX 2060 (extracted from the PC model as its own rigid body, backplate down). Go
 no task layer): stand the card upright over the primary x16 slot, line its PCB edge up with the
 slot, and press it straight down until it seats.
 
-The case is one kinematic body that never moves — the PC model stays visual-only; its physics is
-an invisible fixture inside the case body: a channel whose walls grip the card's 4 mm PCB tab at
+The case is one kinematic body that never moves — the PC model's meshes stay visual-only; its
+physics is an invisible fixture inside the case body (plus the base case's `shell_fixture`
+walls — invisible colliders on the four standing sides, so nothing reaches through the shell): a channel whose walls grip the card's 4 mm PCB tab at
 0.15 mm/side (flaring to a 1.2 mm/side funnel mouth — idealizing the real slot's spring
 contacts, and capping the unscrewed card's gravity roll at ~2 deg), a floor whose top is the
 model's own seated tab height, end stops (~1.6 mm play), a flush board plate so a dropped card
