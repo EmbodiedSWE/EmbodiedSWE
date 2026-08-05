@@ -6,6 +6,7 @@ strategy: strategy_0  # context: the strategy (used by phase level)
 level: scene
 prompts:            # agent/prompts/<path>.md, assembled in order after _contract.md
   - levels/scene
+  - rules/autonomous_operation
 cli:              # agent/cli/<name>.py the session is offered (declaration:
   - create_cell     # the write-fence is the mounts; this shapes the prompt)
   - generate
