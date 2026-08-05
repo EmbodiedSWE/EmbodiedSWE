@@ -9,7 +9,7 @@ every hole is fastened.
 
 SEVEN fastenings share one fixed part, so the key must move hole-to-hole. The case is one rigid
 body that never moves — the PC model's meshes are visual-only; its physics (with the base
-case's `shell_fixture` side-wall colliders — nothing reaches through the shell) is 7 thread inserts + 7
+case's `shell_fixture` side-wall colliders) is 7 thread inserts + 7
 invisible bored seat plates flush with the board face. The case origin is the CENTRE of the
 board's top face, z=0 ON the face, so a bolt's tip depth below the board is just `case_z -
 bolt_z` (the bolt origin IS its tip).
