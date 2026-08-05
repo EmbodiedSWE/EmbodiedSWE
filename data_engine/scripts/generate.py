@@ -56,5 +56,12 @@ run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strat
           phase=args.phase, num_envs=args.num_envs, rounds=args.rounds, seed=args.seed,
           noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu")
 
+# Kit teardown regularly hangs inside app.close() (100% CPU spin, holds GPU memory) —
+# same watchdog hard-exit as robobench/scripts/smoke.py; the batch is fully written by now.
+import threading  # noqa: E402
+
+watchdog = threading.Timer(10.0, lambda: os._exit(0))
+watchdog.daemon = True
+watchdog.start()
 app.close()
 os._exit(0)
