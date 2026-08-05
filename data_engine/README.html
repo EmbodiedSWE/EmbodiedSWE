@@ -264,19 +264,21 @@
             └─ &lt;batch_2&gt;/
 
 scenes/
+├─ .agent/                         <i>scene-session ledgers: &lt;ts&gt;_scene/ {instructions.md, condition.yaml, transcript}</i>
 ├─ scene_0/                        <i>the unmodified benchmark scene — the nominal control</i>
-│   ├─ .agent/                     <i>authoring trace: per-session transcripts + SUMMARY.md (what changed, why)</i>
+│   ├─ SUMMARY.md                  <i>this cell's record: what changed, why, measured yields</i>
 │   ├─ meta.json                   <i>metadata: episodes generated, success rate, …</i>
 │   ├─ scene/
 │   │   └─ scene.py                <i>full standalone scene — repo suite copy, edited; its cfg's tunables ARE the sampling declaration</i>
 │   ├─ grader/
 │   │   └─ grader.py               <i>the grader this scene's episodes are verified with — the suite's, modified to match the scene changes</i>
 │   └─ strategies/
+│       ├─ .agent/                 <i>strategy-session ledgers (&lt;ts&gt;_strategy/)</i>
 │       ├─ strategy_0/
-│       │   ├─ .agent/             <i>authoring trace of the strategy session (incl. its phases + resets)</i>
+│       │   ├─ SUMMARY.md          <i>this cell's record</i>
 │       │   ├─ meta.json           <i>metadata: episodes generated, success rate, …</i>
 │       │   ├─ solve.py            <i>the solve as delivered — never modified</i>
-│       │   └─ phases/            <i>optional — created by an L3 session; until then the solve runs from the scene's own reset</i>
+│       │   └─ phases/            <i>optional — created by an L3 session (its ledger in phases/.agent/); until then the solve runs from the scene's own reset</i>
 │       │       ├─ phase_0/        <i>ONE proposal of how to divide/enter the solve — self-contained</i>
 │       │       │   ├─ solve_by_phase.py  <i>this cell's port: enters at any phase of the division, runs to task-done (solve.py never modified)</i>
 │       │       │   ├─ reset/      <i>one file PER PHASE, named exactly as the phase — the sampled file chooses the entry AND builds its state via reset_0(env), reset_1(env), … (generate targets one by index)</i>
