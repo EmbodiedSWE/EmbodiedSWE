@@ -10,8 +10,10 @@ it straight down to seat — and press each stick straight down into its DIMM sl
 `pc_ram` proved, into the outermost and second-from-socket slots (the alternating pair a 2-stick
 dual-channel kit populates).
 
-The case is one kinematic body that never moves — the PC model stays visual-only; its physics is
-the union of the two proven invisible fixtures inside the case body (this scene's case USD
+The case is one kinematic body that never moves — the PC model's meshes stay visual-only; its
+physics is the union of the two proven invisible fixtures inside the case body (plus the base
+case's `shell_fixture` walls: invisible colliders on the four standing sides, so nothing
+reaches through the shell) (this scene's case USD
 composes both single-task overlays over the same base case): the PCIe channel + end stops +
 rear-panel cutout frame from `pc_gpu`, and the two DIMM channels + end stops from `pc_ram`, each
 gripping its part's PCB edge at 0.15 mm/side with a 1.2 mm/side funnel mouth, over a flush board

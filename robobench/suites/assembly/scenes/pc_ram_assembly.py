@@ -8,8 +8,9 @@ stick upright over its target slot — the outermost and the second-from-socket,
 pair a 2-stick dual-channel kit populates — line its PCB edge up with the slot, and press it
 straight down until it seats.
 
-The case is one kinematic body that never moves — the PC model stays visual-only; its physics is
-an invisible fixture inside the case body: per empty slot a channel whose walls grip the stick's
+The case is one kinematic body that never moves — the PC model's meshes stay visual-only; its
+physics is an invisible fixture inside the case body (plus the base case's `shell_fixture`
+walls — invisible colliders on the four standing sides, so nothing reaches through the shell): per empty slot a channel whose walls grip the stick's
 1.6 mm PCB blade at 0.15 mm/side (flaring to a 1.2 mm/side funnel mouth — idealizing the real
 slot's spring contacts), a floor whose top is the model's own seated blade height, end stops
 (0.5 mm play, hidden inside the slot's latch blocks), and a flush board plate so a dropped stick
