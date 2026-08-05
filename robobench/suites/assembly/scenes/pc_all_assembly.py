@@ -6,32 +6,23 @@ screw holes each hold a bolt hand-started a few threads in (with one long allen 
 case to drive them), all four memory slots sit empty, and the primary PCIe x16 slot is empty
 (with the rear I/O panel's expansion-slot cutout). Beside the case: the key, two loose TridentZ
 sticks, and a loose RTX 2060. Goal (carried here, no task layer): build the PC in assembly
-order — fasten the motherboard down first (seat the key in each bolt's socket and drive it home,
-the way `pc_motherboard` proved), then press each stick straight down into its DIMM slot (the
-alternating dual-channel pair, the way `pc_ram` proved), and finally install the card (place it
-inside the case forward of the rear panel, slide rearward through the cutout, press to seat, the
-way `pc_gpu` proved).
+order — fasten the motherboard down first, then seat both memory sticks (the alternating
+dual-channel pair), and finally install the card through the rear cutout into the x16 slot.
 
 The case is one kinematic body that never moves — the PC model's meshes stay visual-only; its
-physics is the union of the three proven invisible fixtures inside the case body (the committed
+physics is the union of the invisible fixtures inside the case body (the committed
 `pc_case_gpu_ram_assembly_mb.usd` composes all of them over the same base case): the 7 threaded
-holes' seat plates from `pc_motherboard`, the two DIMM channels + end stops from `pc_ram`, and
-the PCIe channel + end stops + rear-panel cutout frame from `pc_gpu` — plus the base case's
-`shell_fixture` walls: invisible colliders on the four standing sides of the lying case (tops
-0.180-0.194, under every proven crossing height), so nothing can reach through the shell; only
-the case's top opening and the rear expansion cutout admit anything. The card's and sticks'
-origins are their PCB-edge bottom centres with axes equal to the case's; a bolt's origin is its
-thread tip, so its depth below the board face is just a z difference.
+holes' seat plates, the two DIMM channels + end stops, and the PCIe channel + end stops +
+rear-panel cutout frame — plus the base case's `shell_fixture` walls: invisible colliders on
+the case shell's four standing sides (the top opening and the rear expansion cutout are open).
+The card's and sticks' origins are their PCB-edge bottom centres with axes equal to the case's;
+a bolt's origin is its thread tip.
 
-Threading is the `pc_motherboard` kinematic screw-joint mechanic (`screw_mechanic`, on by
-default): every bolt spawns STAGED hand-started in its hole, is kinematic, and descends its
-1 mm-pitch helix by following the key's hex-engaged rotation through the lash — one-way, like a
-frictional thread — to a hard stop just above seating the head. The thread inserts' collision is
-off (the joint IS the thread); the bolts' SOCKET walls stay live, so key insertion, press,
-cam-out, and slip are real contacts.
-
-The stick asset authors an inflated rotational inertia (see `pc_ram_assembly`); the card is the
-`pc_gpu` asset unchanged.
+Threading is a kinematic screw-joint mechanic (`screw_mechanic`, on by default): every bolt
+spawns STAGED hand-started in its hole, is kinematic, and descends its 1 mm-pitch helix by
+following the key's hex-engaged rotation through the lash — one-way, like a frictional thread —
+to a hard stop just above seating the head. The thread inserts' collision is off (the joint IS
+the thread); the bolts' SOCKET walls stay live.
 
 Heavy imports (isaaclab, pxr) are deferred so importing this module stays app-free.
 """
@@ -56,12 +47,10 @@ if TYPE_CHECKING:
 @dataclass
 class PcAllAssemblySceneCfg(BaseCfg):
     """Config for `PcAllAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial or
-    an `info()` structural constant (see `robobench.core.BaseCfg`). The bolt_*, gpu_* and ram_*
-    gates and geometry carry the single-task scenes' proven values verbatim."""
+    an `info()` structural constant (see `robobench.core.BaseCfg`)."""
 
     # --- tunable: the curriculum / difficulty dials -----------------------------------------------
-    # Seating gates, per part family (see the single-task scenes for their rationale; the stick
-    # tilt gate is wider because a seated stick may legitimately rest leaned ~5 deg).
+    # Seating gates, per part family (a seated stick may legitimately rest leaned a few deg).
     bolt_seat_depth: float = tunable(0.011)  # min tip depth below the board face (m) to count seated
     bolt_align_xy: float = tunable(0.003)  # max lateral distance (m) of a bolt tip from its hole axis
     bolt_align_axis_deg: float = tunable(5.0)  # max tilt of a bolt axis off the hole axis (deg)
@@ -124,7 +113,7 @@ class PcAllAssemblySceneCfg(BaseCfg):
     bolt_mass: float = info(0.012)  # M8 socket-head cap screw (kg)
     key_mass: float = info(0.10)  # steel 6.25 mm long-series L-key, 210 mm arm (kg)
     card_mass: float = info(1.0)  # dual-fan RTX 2060 (kg)
-    ram_mass: float = info(0.25)  # keeps the press PD/solver in the proven stability class
+    ram_mass: float = info(0.25)  # stick mass (kg)
     light_intensity: float = info(2500.0)
     # Loose part start poses (table-relative xy; see the single-task scenes for the lying
     # defaults' rationale — a gripper env instead stages the key and every part upright).
@@ -135,8 +124,7 @@ class PcAllAssemblySceneCfg(BaseCfg):
     bolt_spacing: float = info(0.09)  # y gap between adjacent bolts
     bolt_init_z: float = info(0.0065)  # bolt-origin height when lying on its side (head rim + crest)
     bolt_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # lying
-    key_init_xy: tuple[float, float] = info((0.30, 0.40))  # key start xy (table-rel.; the default
-    # flat key lies past the staging strip's north end, clear of the lying card/sticks)
+    key_init_xy: tuple[float, float] = info((0.30, 0.40))  # key start xy (table-rel.)
     key_init_z: float = info(0.004)  # resting on a hex flat (apothem 3.1 mm) + margin
     key_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
     key_disable_gravity: bool = info(False)  # the force-driven key smoke sets this True (no hand
@@ -147,14 +135,12 @@ class PcAllAssemblySceneCfg(BaseCfg):
     ram_init_xy: tuple[tuple[float, float], ...] = info(((0.27, -0.085), (0.27, 0.085)))
     ram_init_z: float = info(0.0042)
     ram_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # flat
-    key_contact_offset: float = info(0.00025)  # well below the 0.375 mm/side socket clearance
-    bolt_contact_offset: float = info(0.00025)  # ditto for the bolt's socket walls
-    card_contact_offset: float = info(0.0001)  # well below the 0.15 mm/side channel grips
+    key_contact_offset: float = info(0.00025)  # collision contact offsets (m), set at spawn
+    bolt_contact_offset: float = info(0.00025)
+    card_contact_offset: float = info(0.0001)
     ram_contact_offset: float = info(0.0001)
     case_contact_offset: float = info(0.0001)
-    # Optional stands that present the parts UPRIGHT for a parallel-jaw grasp (each part's lying
-    # default is ungraspable: flat, its only sub-80 mm dimension points up; the flat key demands a
-    # low pinch + a 90 deg in-hand reorientation). Enable together with upright init quats
+    # Optional stands that present the parts UPRIGHT. Enable together with upright init quats
     # (identity = seated orientation / standing tip-down) and init z = the holders' floor top.
     key_stand: bool = info(False)
     key_stand_gap: float = info(0.0022)  # pocket clearance per side around the arm's 7.2 mm corners
@@ -232,8 +218,7 @@ class PcAllAssemblyScene(BaseScene):
     def assets(self) -> dict[str, Any]:
         """Floor, dome light, table, the PC case lying on it (kinematic, with ALL the invisible
         fixtures), `num_holes` loose bolts, one allen key, one loose graphics card, and two loose
-        RAM sticks. The moving parts load with the high solver-iteration count the snug channels
-        and sockets need."""
+        RAM sticks. The moving parts load with a high solver-iteration count."""
         import isaaclab.sim as sim_utils
         from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
 
@@ -277,9 +262,8 @@ class PcAllAssemblyScene(BaseScene):
                 spawn=table_spawn,
             ),
             # The case: kinematic; the invisible fixtures inside it (7 threaded holes' seat
-            # plates, PCIe channel + rear cutout frame, two DIMM channels, board plates) are what
-            # the parts mate with. Fixture contact offsets are set here (not just authored in the
-            # asset) so the 0.15 mm/side channel grips never fight speculative contacts.
+            # plates, PCIe channel + rear cutout frame, two DIMM channels, board plates, shell
+            # walls) are what the parts mate with.
             "case": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Case",
                 spawn=sim_utils.UsdFileCfg(
@@ -294,8 +278,6 @@ class PcAllAssemblyScene(BaseScene):
                     pos=(c.case_xy[0], c.case_xy[1], c.surface_z + c.case_lift)
                 ),
             ),
-            # Part contact offsets must stay well below the channel grips (0.15 mm/side) and the
-            # key<->socket clearance (0.375 mm/side) or speculative contacts choke the fits.
             "card": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Card",
                 spawn=sim_utils.UsdFileCfg(
@@ -351,8 +333,6 @@ class PcAllAssemblyScene(BaseScene):
                     pos=(wx + bx, wy + by, c.surface_z + c.bolt_init_z), rot=c.bolt_init_quat
                 ),
             )
-        # Key contact offset must stay well below the key<->socket clearance (0.375 mm/side) or
-        # speculative contacts choke the fit.
         kx, ky = c.key_init_xy
         out["key"] = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Key",
@@ -390,14 +370,7 @@ class PcAllAssemblyScene(BaseScene):
         if c.key_stand:
             # Upright key SLEEVE for a gripper env: four STATIC walls (no rigid body) forming a
             # tall square bore at the key spawn — a tool holder. The key stands tip-down on the
-            # floor pad, arm in the bore (lean capped ~0.6 deg); the rim ends 3 mm under the
-            # resting handle, so if a release's tip-drop ever fails to catch, the HANDLE lands
-            # across both rims and the key hangs with its tip 0.6 mm over the pad — visually
-            # racked either way. (pc_motherboard's 45 mm pocket is not enough here: the racked
-            # key must stand unheld through the whole memory + card legs, and tip-on-support
-            # contact proved flaky against release-time fall states — the handle-on-rim rest is
-            # the equilibrium three probe runs demonstrated rock-stable.) The fingers crank at
-            # 22 mm out from the shaft, east of the sleeve — no wall exists at that x.
+            # floor pad, arm in the bore; the rim ends just under the resting handle.
             inner = 0.0072 + 2 * c.key_stand_gap
             wall_h, wall_t, floor_h = 0.213, 0.006, 0.006
             for name, size, (dx, dy) in (
@@ -407,13 +380,8 @@ class PcAllAssemblyScene(BaseScene):
                 ("key_stand_w", (wall_t, inner, wall_h), (-(inner + wall_t) / 2, 0.0)),
             ):
                 stand(name, size, (wx + kx + dx, wy + ky + dy, c.surface_z + 0.5 * wall_h))
-            # A pocket FLOOR pad, like every other holder's: the key tip must never rest on the
-            # bare tabletop — its 0.25 mm contact offset makes tip<->table contact so marginal
-            # that a millimetre drop tunnels straight through the top collider. The pad wears a
-            # FAT contact offset of its own (it is purely a landing pad — rest_offset 0 keeps
-            # the resting surface true) so the tip's settle-drop is caught speculatively well
-            # before the faces meet; a pre-penetrated flat tip loses the pair entirely and
-            # slides through, so the key is always set down HOVERING and dropped from rest.
+            # The pocket's FLOOR pad: a landing pad with a fat contact offset of its own
+            # (rest_offset 0 keeps the resting surface true).
             out["key_stand_floor"] = AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/KeyStandFloor",
                 spawn=sim_utils.CuboidCfg(
@@ -432,8 +400,7 @@ class PcAllAssemblyScene(BaseScene):
             # body slab); geometry as in `pc_gpu_ram_assembly`. The holder follows the staging
             # yaw in `card_init_quat`: at identity the card stands in its seated heading (length
             # along x) and the rails flank the slab across y; at yaw 90 it stands lengthwise
-            # along y and the rails flank across x instead. Rail tops stay 35+ mm below the pick
-            # grip band, clear of descending open fingers.
+            # along y and the rails flank across x instead.
             y0, y1 = self.CARD_BODY_Y
             half_gap = 0.5 * (y1 - y0) + c.card_stand_gap
             rail_h, rail_t = 0.055, 0.008
@@ -773,17 +740,15 @@ class PcAllAssemblyScene(BaseScene):
         return (part_ax * case_ax).sum(dim=-1)
 
     # ----- grasp-weld machinery (the weld-on-closure contract; private — not an agent action) ----
-    # Pre-authored, normally-disabled FixedJoint pools, toggled and never created mid-sim — the
-    # ikea/chair toggle pattern aimed hand<->part, with the pouring suite's closure criterion.
+    # Pre-authored, normally-disabled FixedJoint pools, toggled and never created mid-sim.
     # PhysX latches a joint's local frames on FIRST enable and ignores rewrites on a re-enable,
     # so every engage consumes a fresh pool joint: the live hand->part pose is written while the
     # joint is still disabled, it is enabled once, and on release it is retired for good.
     # Engage (reconciled every physics substep, debounced): pinch point within `grasp_weld_dist`
-    # of a site's LIVE grip band + aperture inside the site's closure window (below = closed on
-    # air, above = nothing snagged) + fingers STALLED (a closing sweep passes through the window;
-    # a real pinch stops in it). Release: aperture past window-top + margin (hysteresis). One
-    # hold per env (a parallel jaw pinches one part). Embodiment-agnostic: no hand on the stage
-    # (e.g. robot="null") -> no joints, no-op contract. Holds ride get_state/set_state.
+    # of a site's LIVE grip band + aperture inside the site's closure window + fingers STALLED.
+    # Release: aperture past window-top + margin (hysteresis). One hold per env. Embodiment-
+    # agnostic: no hand on the stage (e.g. robot="null") -> no joints, no-op contract. Holds
+    # ride get_state/set_state.
     GRASP_HAND_BODY: ClassVar[str] = "panda_hand"
     GRASP_FINGER_JOINTS: ClassVar[str] = "panda_finger_joint.*"
     GRASP_PINCH_OFFSET: ClassVar[float] = 0.1034  # hand origin -> finger-pad centre, along approach

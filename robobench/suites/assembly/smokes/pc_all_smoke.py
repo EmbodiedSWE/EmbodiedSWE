@@ -1,26 +1,10 @@
 """Physics smoke test for PcAllAssemblyScene — the COMPLETE PC install, in assembly order:
-motherboard first, then memory, then the graphics card. No robot: every part is driven purely by
-forces, each leg exactly the way its single-task smoke proved.
-
-Leg 1 — motherboard (cf. `pc_motherboard_smoke`): all 7 bolts stage pre-engaged (the scene's
-`screw_mechanic` kinematic screw joints); the ALLEN KEY starts where it lies on the table and
-never teleports — it is flown to each hole under force-only PD (gravity-free key; the soft PD
-wrenches stand in for the steadying hand), aligned to the socket's hex clocking, dropped in, and
-driven: a ramped press along the bolt's axis + a torque-capped velocity-servo twist. The
-key<->socket hex contact is LIVE; the scene's joint follows the key's measured rotation through
-the lash and descends 1 mm/rev to a hard stop. Unlike the single-task smoke, the key's first
-approach and its final park-out cross the case's 195 mm wall line HIGH — inside the case it
-travels just over the standing heads. After the last hole the key parks back at its spawn spot,
-PD-held, out of the later legs' way.
-
-Leg 2 — memory (cf. `pc_ram_smoke`): each TridentZ stick is lifted off the table by a PD "hand"
-(weight feedforward — gravity stays ON, so every hold-check is a real retention test), righted,
-carried over the case rim, hovered over its DIMM slot and pressed straight down; the invisible
-channel guides the last 4.4 mm. Far slot first, then the near one.
-
-Leg 3 — graphics card (cf. `pc_gpu_smoke`): the RTX 2060 is lifted, righted, carried inside the
-case at a 28 mm forward offset (bracket clear of the rear panel), slid rearward through the I/O
-cutout, and pressed straight down into the PCIe x16 slot.
+motherboard first, then memory, then the graphics card. No robot: every part is driven purely
+by forces (soft PD "hand" wrenches), end to end against the scene's own mechanics — the
+kinematic screw joints thread the bolts as the key turns, the DIMM channels seat the sticks,
+and the PCIe channel + rear cutout seat the card. The key is flown to each hole, aligned to the
+socket's hex clocking, dropped in, and driven (a ramped press + a torque-capped velocity-servo
+twist); each stick and the card are lifted, carried over the case rim, and pressed home.
 
 Phases: show -> [k_lift -> k_glide -> k_descend -> k_align -> k_insert -> k_drive] x 7 ->
 k_exit -> k_park -> k_park_drop -> [r_lift -> r_cross -> r_drop -> r_align -> r_press
@@ -70,7 +54,7 @@ if TYPE_CHECKING:
 DT = 1.0 / 240.0          # sim timestep
 GRAV = 9.81
 
-# ----- leg 1: the key + the scene's screw joints (pc_motherboard_smoke's proven values) ----------
+# ----- leg 1: the key + the scene's screw joints --------------------------------------------------
 # Bolt-local geometry baked into the committed bolt USD (bolt origin = thread TIP, +z up):
 THREAD_LEN = 0.0124       # head bottom above the tip: tip depth at which the head bottoms out
 SOCKET_FLOOR_Z = 0.01775  # hex recess floor
@@ -79,8 +63,8 @@ STAGE_DEPTH = 0.006       # bolt tip depth below the board face at stage (m)
 STAGE_YAW = math.pi       # bolt (and key) yaw at stage (a k*60 deg hex clocking)
 SEAT_MARGIN = 0.0001      # screw-joint hard stop: head held this far above the board
 STOP_DEPTH = 0.0118       # stop twisting at this tip depth (m) — just before the head bottoms
-TRAVEL_Z = 0.030          # key TIP height above the board while hopping (clears the standing heads)
-KEY_CROSS_Z = 0.215       # key TIP height for crossing the case's 195 mm wall line (in and out)
+TRAVEL_Z = 0.030          # key TIP height above the board while hopping between holes
+KEY_CROSS_Z = 0.215       # key TIP height for entering/leaving over the case wall
 PITCH = 0.001             # screw-joint thread pitch (m per revolution; M8-scaled)
 PITCH_MM = PITCH * 1e3
 KW = 0.05                 # twist servo gain (N m s/rad)
@@ -101,13 +85,13 @@ K_DESCEND_STEPS, K_PARK_STEPS = 168, 300
 ALIGN_TOL = math.radians(2.0)  # yaw error under which the key may descend into the socket
 PARK_TIP_Z = 0.004        # parked key: tip this far off the table, standing at its spawn spot
 
-# ----- legs 2 + 3: the stick and card PD "hand" (pc_ram_smoke / pc_gpu_smoke's proven values) ----
-CROSS_Z = 0.240           # part-origin height while crossing the case rim (clears 195 mm walls)
-RAM_ALIGN_Z = 0.011       # stick hover height over the slot: blade 2 mm above the 9 mm stop tops
+# ----- legs 2 + 3: the stick and card PD "hand" ---------------------------------------------------
+CROSS_Z = 0.240           # part-origin height while crossing the case rim
+RAM_ALIGN_Z = 0.011       # stick hover height over the slot before the press
 PRESS_TGT = -0.0005       # press z target below the seated origin (sustained push until bottomed)
 RAM_PRESS_DONE = 0.0042   # blade depth below the slot mouth to call a stick pressed (stroke 4.44)
-GPU_SLIDE_OFF = 0.028     # forward (-x) offset while placing the card inside (bracket clear)
-GPU_SLIDE_Z = 0.0165      # placement + rearward slide height: tab 1 mm above the channel walls
+GPU_SLIDE_OFF = 0.028     # forward (-x) offset while placing the card inside the case
+GPU_SLIDE_Z = 0.0165      # card placement + rearward slide height
 GPU_PRESS_DONE = 0.0048   # tab depth below the slot mouth to call the card pressed (stroke 5 mm)
 MAX_RETRIES = 2           # press re-tries per part
 RAM_ORDER = (1, 0)        # slot insertion order: far slot 1 first, then 0
@@ -119,7 +103,7 @@ T_CAP = 3.0                       # N m — torque authority
 P_LIFT_STEPS, P_CROSS_STEPS, P_DROP_STEPS, P_ALIGN_STEPS = 600, 420, 420, 240
 SLIDE_STEPS = 360
 PRESS_STEPS, PRESS_MAX = 480, 1440
-RAM_ALIGN_XY_TOL = 0.0004  # m — stick gate at the hover (beats the 0.5 mm end-stop play)
+RAM_ALIGN_XY_TOL = 0.0004  # m — stick alignment gate at the hover
 GPU_ALIGN_XY_TOL = 0.0008  # m — card gate at the placement point / end of slide
 P_ALIGN_ROT_TOL = math.radians(1.0)
 
@@ -206,7 +190,7 @@ def main() -> None:
     cam_pose = None
     if cam is not None:
         p0 = case_pos[0]
-        anchors = {  # (eye, tgt) per leg, each the single-task smoke's proven framing
+        anchors = {  # (eye, tgt) per leg
             "mb": (torch.tensor([p0[0] - 0.34, p0[1] - 0.36, p0[2] + 0.80], device=device),
                    torch.tensor([p0[0] + 0.02, p0[1], p0[2] + 0.05], device=device)),
             "ram": (torch.tensor([p0[0] - 0.31, p0[1] - 0.18, p0[2] + 0.245], device=device),
@@ -496,8 +480,8 @@ def main() -> None:
             part_hand("ram", tgt)
             if i - marker >= p_drop_steps:
                 phase, marker = "r_align", i
-        elif phase == "r_align":  # settle at the hover: the 0.4 mm gate beats the funnel AND the
-            tgt = ram_seats_w[ram_k].clone()  # 0.5 mm end-stop play, so the blade enters clean
+        elif phase == "r_align":  # settle at the hover before the press
+            tgt = ram_seats_w[ram_k].clone()
             tgt[:, 2] = board_z + RAM_ALIGN_Z
             part_hand("ram", tgt)
             perr = part_xy_err("ram", ram_seats_w[ram_k])
@@ -506,7 +490,7 @@ def main() -> None:
             if bool(ok.all()) or i - marker >= 2 * p_align_steps:
                 press_from = sc.rams[ram_k].data.root_link_pos_w[:, 2].clone()
                 phase, marker = "r_press", i
-        elif phase == "r_press":  # straight down; the channel funnel guides the last 4.4 mm
+        elif phase == "r_press":  # straight down into the slot
             s = smoothstep((i - marker) / press_steps)
             tgt = ram_seats_w[ram_k].clone()
             tgt[:, 2] = press_from + s * (ram_seats_w[ram_k][:, 2] + PRESS_TGT - press_from)
@@ -592,7 +576,7 @@ def main() -> None:
             if (i - marker >= slide_steps and bool(done.all())) or i - marker >= 2 * slide_steps:
                 press_from = card.data.root_link_pos_w[:, 2].clone()
                 phase, marker = "g_press", i
-        elif phase == "g_press":  # straight down; the channel funnel guides the last 5 mm
+        elif phase == "g_press":  # straight down into the slot
             s = smoothstep((i - marker) / press_steps)
             tgt = gpu_seat_w.clone()
             tgt[:, 2] = press_from + s * (gpu_seat_w[:, 2] + PRESS_TGT - press_from)
@@ -611,8 +595,8 @@ def main() -> None:
                     print("  WARN: card press exhausted its retries — releasing as-is", flush=True)
                     card.set_external_force_and_torque(zero3, zero3)
                     phase, marker = "settle", i
-        elif phase == "g_reseat":  # back up to slide height ONLY (the bracket sits in the cutout —
-            tgt = gpu_seat_w.clone()  # rising higher would jam it on the panel above the opening)
+        elif phase == "g_reseat":  # back up to slide height and re-settle before re-pressing
+            tgt = gpu_seat_w.clone()
             tgt[:, 2] = board_z + GPU_SLIDE_Z
             part_hand("gpu", tgt)
             if i - marker >= p_align_steps:
