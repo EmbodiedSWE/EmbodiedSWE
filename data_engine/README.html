@@ -281,7 +281,7 @@ scenes/
 │       │   └─ phases/            <i>optional — created by an L3 session (its ledger in phases/.agent/); until then the solve runs from the scene's own reset</i>
 │       │       ├─ phase_0/        <i>ONE proposal of how to divide/enter the solve — self-contained</i>
 │       │       │   ├─ solve_by_phase.py  <i>this cell's port: enters at any phase of the division, runs to task-done (solve.py never modified)</i>
-│       │       │   ├─ reset/      <i>one file PER PHASE, named exactly as the phase — the sampled file chooses the entry AND builds its state via reset_0(env), reset_1(env), … (generate targets one by index)</i>
+│       │       │   ├─ reset/      <i>one file PER PHASE, named exactly as the phase — each round sweeps all the files, one rollout per file; a file chooses the entry AND builds its state via reset_0(env), reset_1(env), … (all applied, envs divided evenly among them)</i>
 │       │       │   └─ meta.json   <i>metadata: episodes generated, success rate, …</i>
 │       │       ├─ phase_1/        <i>a different division/entry proposal — may carry its own port</i>
 │       │       └─ phase_2/
