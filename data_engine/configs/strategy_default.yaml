@@ -5,6 +5,7 @@ strategy: strategy_0  # context: the strategy (used by phase level)
 level: strategy
 prompts:            # agent/prompts/<path>.md, assembled in order after _contract.md
   - levels/strategy
+  - rules/autonomous_operation
 cli:
   - create_cell
   - generate
