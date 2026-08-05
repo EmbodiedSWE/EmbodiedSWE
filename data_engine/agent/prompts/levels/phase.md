@@ -125,9 +125,12 @@ must satisfy the phase's precondition as documented in `ENTRIES`.
 - different builders in one file = different state families for the same phase
   (e.g. `reset_0` built-by-hand nominal, `reset_1` restored-from-failures);
   each rollout runs them all, its envs divided evenly among them.
-- a little jitter goes a long way: no need for a fully generic builder over
-  the whole state space when that is hard — start from anchor states (a few
-  recorded or hardcoded ones) and apply small perturbations around them.
+- as MANY anchor poses as possible, each with small jitter: no need for one
+  generic builder over the whole state space — cover the precondition's
+  feasible region with many anchors (approach side, position on the
+  workspace, orientation), recorded or hardcoded, and perturb a little around
+  each. One anchor + jitter replays the same episode over and over; many
+  anchors is what makes the data diverse.
 - check your own precondition: settling can knock a part out of the intended
   state in some envs. After the settle, verify the precondition per env (poses
   are observable) and re-draw just the envs that missed — a dead entry state
