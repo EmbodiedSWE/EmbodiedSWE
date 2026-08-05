@@ -2,9 +2,12 @@
 
 A cell is a (scene × strategy × phase) triple in a campaign; the phase is optional —
 without one the strategy's solve.py runs from scratch off the scene's own reset. With
-one, the entry state is built by a reset strategy sampled (by weight) from the phase's
-phase.yaml and implemented in its reset.py; then entry null runs the plain solve.py
-from its natural start, a deeper entry runs solve_by_phase.py(entry=...). One batch =
+one, the phase cell declares itself in code: reset/ holds one file per phase of the
+cell's division, named exactly as the phase — the file sampled each round (uniformly)
+both chooses which phase to enter and builds its entry state: it holds one or more
+initial-condition builders reset_0(env), reset_1(env), … — generate targets one by
+index (default 0); their randomness uses the globally seeded RNGs. No port in the
+cell = plain solve.py from its natural start. One batch =
 rounds × num_envs episodes:
 
     build the env from the campaign preset on the cell's LOCAL scene copy
@@ -110,14 +113,13 @@ class Recorder:
 
 
 def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scene_0",
-              strategy: str = "strategy_0", phase: str | None = None, num_envs: int = 4,
-              rounds: int = 1, seed: int = 0, noise: dict | None = None,
-              device: str = "cuda:0") -> Path:
+              strategy: str = "strategy_0", phase: str | None = None, reset: int = 0,
+              num_envs: int = 4, rounds: int = 1, seed: int = 0,
+              noise: dict | None = None, device: str = "cuda:0") -> Path:
     import random
 
     import numpy as np
     import torch
-    import yaml
 
 
     from .noise import NoisyActionEnv
@@ -140,16 +142,18 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     grader_cls = load_grader_cls(scene_dir)
     if phase is None:
         solve = _load("datagen_solve", strategy_dir / "solve.py").solve
-        entry, resets, reset_mod = None, None, None
+        entry, conditions = None, []
     else:
+        # reset/ holds one file per phase, named as the phase: the sampled file
+        # chooses the entry and builds its state. No port = plain solve.py.
         phase_dir = strategy_dir / "phases" / phase
-        spec = yaml.safe_load((phase_dir / "phase.yaml").read_text())
-        entry, resets = spec.get("entry"), spec.get("resets") or {}
-        reset_mod = _load("datagen_reset", phase_dir / "reset.py")
-        # entry null = the solve's natural start: the plain solve.py works as-is;
-        # a deeper entry needs the phase-enterable port
-        src = "solve.py" if entry is None else "solve_by_phase.py"
-        solve = _load("datagen_solve", strategy_dir / src).solve
+        port = phase_dir / "solve_by_phase.py"
+        solve = _load("datagen_solve", port if port.is_file()
+                      else strategy_dir / "solve.py").solve
+        has_port = port.is_file()
+        entry = None
+        conditions = [_load(f"datagen_reset_{f.stem}", f)
+                      for f in sorted((phase_dir / "reset").glob("*.py"))]
     sha = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
     dims = noise.get("dims")
@@ -158,12 +162,16 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     for rnd in range(rounds):
         env.reset(seed=seed + rnd)
         reset_name = None
-        if resets:
+        if conditions:
             rng = random.Random(seed + rnd)
-            reset_name = rng.choices(list(resets), weights=[r.get("weight", 1.0)
-                                                            for r in resets.values()])[0]
-            params = {k: v for k, v in resets[reset_name].items() if k != "weight"}
-            getattr(reset_mod, reset_name)(env, params, rng)
+            cond = rng.choice(conditions)
+            reset_name = cond.__name__.removeprefix("datagen_reset_")
+            # a phase file holds reset_0(env), reset_1(env), … — take the targeted
+            # one, falling back to reset_0. Randomness inside uses the global RNGs,
+            # already seeded by env.reset(seed=seed+round).
+            fn = getattr(cond, f"reset_{reset}", None) or cond.reset_0
+            fn(env)
+            entry = reset_name if has_port else None  # the file IS the phase
         grader = grader_cls(env)
         grader.setup()  # baselines captured at the entry state
         stack = NoisyActionEnv(env, dims=slice(*dims) if dims else slice(0, 0),
@@ -187,7 +195,8 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                 "episode": ep, "round": rnd, "env_index": e,
                 "success": verdicts[e]["success"], "score": verdicts[e]["score"],
                 "parameters": {},  # nominal — sampler is a placeholder
-                "reset": reset_name, "entry": entry,
+                "reset": reset_name, "reset_fn": (f"reset_{reset}" if reset_name else None),
+                "entry": entry,
                 "seed": seed + rnd, "steps": T,
                 "sim_dt": env.dt, "decimation": env.robot.control_period,
                 "noise": {k: v for k, v in noise.items() if v},

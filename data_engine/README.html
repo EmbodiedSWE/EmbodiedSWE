@@ -276,13 +276,12 @@ scenes/
 │       │   ├─ .agent/             <i>authoring trace of the strategy session (incl. its phases + resets)</i>
 │       │   ├─ meta.json           <i>metadata: episodes generated, success rate, …</i>
 │       │   ├─ solve.py            <i>the solve as delivered — never modified</i>
-│       │   ├─ solve_by_phase.py   <i>optional — created by an L3 session: the phase-enterable version; enters at any declared phase, runs to task-done</i>
-│       │   └─ phases/            <i>optional — created with solve_by_phase.py by an L3 session; until then the solve runs from the scene's own reset</i>
-│       │       ├─ phase_0/        <i>the from-scratch entry — the full solve</i>
-│       │       │   ├─ meta.json   <i>metadata: episodes generated, success rate, …</i>
-│       │       │   ├─ phase.yaml  <i>name + what it does (episodes' per-step phase codes refer to these) + reset strategies to sample: bands, weights</i>
-│       │       │   └─ reset.py    <i>implements the declared reset strategies; the runner samples among them</i>
-│       │       ├─ phase_1/
+│       │   └─ phases/            <i>optional — created by an L3 session; until then the solve runs from the scene's own reset</i>
+│       │       ├─ phase_0/        <i>ONE proposal of how to divide/enter the solve — self-contained</i>
+│       │       │   ├─ solve_by_phase.py  <i>this cell's port: enters at any phase of the division, runs to task-done (solve.py never modified)</i>
+│       │       │   ├─ reset/      <i>one file PER PHASE, named exactly as the phase — the sampled file chooses the entry AND builds its state via reset_0(env), reset_1(env), … (generate targets one by index)</i>
+│       │       │   └─ meta.json   <i>metadata: episodes generated, success rate, …</i>
+│       │       ├─ phase_1/        <i>a different division/entry proposal — may carry its own port</i>
 │       │       └─ phase_2/
 │       └─ strategy_1/
 ├─ scene_1/
@@ -309,7 +308,7 @@ scenes/
       <p><b>A strategy is a way to do the task, delivered in its <code>solve.py</code></b>, usually separated into several phases, e.g. pick → place → thread. It varies at three grains: <b>parameters</b> of the solve, e.g. forces, speeds, clearances, declared as <code>tunable</code> fields on a <code>Params</code> cfg inside the solve itself — the same mechanism as the scene cfg, so one uniform sampler covers both; a new strategy keeps the base strategy's param names, adding its own (no Params = nominal only, e.g. the delivered solve); <b>small modifications</b>, e.g. execution order where several are valid, preference choices, grasp site; <b>big changes</b>: a genuinely new way to solve the task, e.g. assembling a table with two arms, one strategy has a single arm do the assembly while the other only reorients the table; a new strategy hands the leg over and both arms thread.</p>
 
       <h3>L3 · phase</h3>
-      <p><b>Once a strategy is finished, each of its phases becomes an entry point</b>: the strategy's <code>solve.py</code> enters there and runs to task-done, and the phase's <code>reset.py</code> proposes what the entry state looks like, e.g. restore a recorded mid-task state and jitter it, relocate a free object alone, or move a grasped object rigidly together with the hand. Phases are <b>established, not assumed</b>: init bakes no <code>phases/</code> folder at all — the solve as delivered runs unmodified from the scene's own reset, whatever its shape. An L3 agent session creates <code>phases/</code> and a <code>solve_by_phase.py</code> beside the original — <code>solve.py</code> itself is never modified — accepted only if the nominal batch still yields.</p>
+      <p><b>Once a strategy is finished, each of its phases becomes an entry point</b>: the strategy's <code>solve.py</code> enters there and runs to task-done, and the phase's reset conditions (<code>reset/&lt;name&gt;.py</code>) propose what the entry state looks like, e.g. restore a recorded mid-task state and jitter it, relocate a free object alone, or move a grasped object rigidly together with the hand. Phases are <b>established, not assumed</b>: init bakes no <code>phases/</code> folder at all — the solve as delivered runs unmodified from the scene's own reset, whatever its shape. An L3 agent session creates phase cells (<code>phases/phase_N/</code>), each a self-contained proposal of how to divide and enter the solve, carrying its own <code>solve_by_phase.py</code> — <code>solve.py</code> itself is never modified — accepted only if the phase's test batch yields.</p>
 
       <h3>L4 · dynamics</h3>
       <p><b>Random perturbations to actions and physical parameters</b>, e.g. actuation noise, friction, mass. The solve's own feedback control mitigates them, and that recovery behavior is what gets recorded: the perturbed action is executed, the clean action is the label. No agent involved, just batched solves.</p>
@@ -334,7 +333,7 @@ scenes/
 
       <h3>Rebuild <code>tunable</code> in the config</h3>
       <p><b>Today (2026-08-03):</b> declared across scene/robot/controller cfgs, consumed by nothing — documentation only. Remove all current <code>tunable</code> marks from the scene cfgs and rethink which fields truly belong, e.g. grading thresholds like <code>seat_z</code> never do.</p>
-      <p><b>Rebuild:</b> make it THE sampling declaration, two clients: L4 domain randomization, e.g. friction, mass; L2 solver parameters via the <code>Params</code> cfg. Needs bands, e.g. <code>tunable(0.4, band=(0.30, 0.55))</code>. Note: reset/initialization randomization, e.g. spawn jitter, is not a tunable — it belongs to the scene's own reset and the phase <code>reset.py</code>.</p>
+      <p><b>Rebuild:</b> make it THE sampling declaration, two clients: L4 domain randomization, e.g. friction, mass; L2 solver parameters via the <code>Params</code> cfg. Needs bands, e.g. <code>tunable(0.4, band=(0.30, 0.55))</code>. Note: reset/initialization randomization, e.g. spawn jitter, is not a tunable — it belongs to the scene's own reset and the phase reset conditions (<code>reset/&lt;name&gt;.py</code>).</p>
 
       <h3>Generate batches across machines</h3>
       <p>One <code>generate</code> run = one process, one GPU, one batch — fan-out needs only a dispatcher, since cells are independent, batches are append-only and seeds are explicit. Shard by index (machine k owns seed slice k, à la zeyu's <code>launch_pool.py</code>: rerunning worker k reproduces the same draw); executors = forge-style servers (<code>sim_gen/isaac/forge_server.py</code>); orchestrate with a ledger like <code>sim_gen/pipeline/generate_batch.py</code>. Merge = copy batch folders into <code>data/</code> + <code>refresh_metas</code>.</p>
