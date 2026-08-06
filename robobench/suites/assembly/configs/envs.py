@@ -62,18 +62,11 @@ register_env(SUITE, lambda: EnvCfg(scene="allen_bolt", robot="null", env_spacing
 register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spacing=2))
 
 # Franka arm at the pc-motherboard scene: one key fastens all 7 board bolts. The base stands
-# WEST of the case at (0.07, 0), facing +x, and the whole table (case included) slides 40 mm
-# east (`workbench_pos`) so the arm's foot clears the case's west edge by 5 cm — the 7 holes
-# then span the arm's 0.36-0.60 m top-down band, where a reach probe (yaw 0 / +-120 deg,
-# z 0.28-0.40) tracks to a few mm; an east base instead put the nearest holes at 0.19-0.26 m,
-# inside the folded arm's close-in cliff, and the reinsert plunge saturated ~1 cm short. The
-# key stands UPRIGHT in a four-wall stand in the south-west strip (`key_stand`), tip down and
-# handle 210 mm up — the very grip the ratchet cranks with, so the arm lifts it out and screws
-# with a single grasp (a flat-lying key instead demands a low pinch, a 90 deg in-hand
-# reorientation, and a release+regrasp in the first socket). The bolt row lies along the SOUTH
-# table edge (the smoke stages bolts kinematically in their holes, so the row is scenery).
-# Deterministic spawn; sim dt 1/240 (no SDF threads here — the smoke drives the scene's
-# kinematic screw joints, cf. pc_motherboard_smoke).
+# WEST of the case at (0.07, 0), facing +x, with the whole table (case included) slid 40 mm
+# east (`workbench_pos`). The key stands UPRIGHT in a four-wall stand in the south-west strip
+# (`key_stand`), tip down and handle 210 mm up. The bolt row lies along the SOUTH table edge
+# (bolts stage kinematically in their holes, so the row is scenery). Deterministic spawn;
+# sim dt 1/240 (no SDF threads here — the scene drives kinematic screw joints).
 # Three control modes, switchable by env name:
 #   - "assembly.pc_motherboard.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_motherboard.franka.impedance" — Jacobian-transpose task-space impedance
@@ -116,22 +109,14 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_ram", robot="null", env_spacing=2))
 # -> "assembly.pc_gpu_ram"
 register_env(SUITE, lambda: EnvCfg(scene="pc_gpu_ram", robot="null", env_spacing=2))
 
-# Franka arm at the combined gpu+ram scene: the card goes into the PCIe x16 slot FIRST (placed
-# inside the case, slid rearward through the I/O cutout, pressed to seat), then the two sticks
-# go into the DIMM pair. The three parts stage side by side in ONE line on the table south of
-# the case, every part's length along y — pointing away from the case, so no pick brings the
-# wrist near its 22 cm wall: stick 0 at world (0.29, -0.32), the card lengthwise between the
-# sticks at (0.365, -0.321), stick 1 at (0.44, -0.32). The sticks stand in their seated heading;
-# the card stands yawed 90 deg and the smoke rotates it back during its carry, in free air over
-# the case. The case sits 40 mm north of the table anchor (`case_xy`) so the 267 mm card fits
-# lengthwise in the staging strip, and the base follows to (0.72, -0.30) yaw 180 — the whole
-# work cell translates rigidly, keeping every case-relative reach in the arm's accurate band:
-# PCIe seat 0.394 m, its placement point 0.404 m (the rearward slide runs slightly radially
-# inward), DIMM seats 0.365/0.378 m, picks 0.43/0.36/0.28 m. The card is installed first, so
-# its emptied holder never obstructs the later stick flights. All parts stage UPRIGHT in foam
-# holders (their lying defaults are ungraspable — see the single-task envs); deterministic
-# spawn (no jitter): the holders are static geometry authored at the spawn points. sim dt
-# 1/240 — the depth both force-driven smokes validated.
+# Franka arm at the combined gpu+ram scene: the empty PCIe x16 slot (+ rear cutout), the two
+# empty DIMM slots, and the three parts staged side by side in ONE line on the table south of
+# the case, every part's length along y: stick 0 at world (0.29, -0.32), the card lengthwise
+# between the sticks at (0.365, -0.321), stick 1 at (0.44, -0.32). The sticks stand in their
+# seated heading; the card stands yawed 90 deg. The case sits 40 mm north of the table anchor
+# (`case_xy`) so the 267 mm card fits lengthwise in the staging strip, and the base follows to
+# (0.72, -0.30) yaw 180. All parts stage UPRIGHT in foam holders; deterministic spawn (no
+# jitter): the holders are static geometry authored at the spawn points. sim dt 1/240.
 # Three control modes, switchable by env name:
 #   - "assembly.pc_gpu_ram.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_gpu_ram.franka.impedance" — Jacobian-transpose task-space impedance
@@ -148,7 +133,7 @@ for _mode in ("osc", "impedance", "joint"):
                 # of the staging line, lengthwise between the sticks
                 card_init_z=0.030,  # tab-bottom plane = the holder's floor top
                 card_init_quat=(0.70711, 0.0, 0.0, 0.70711),  # upright, yawed 90 deg: staged
-                # parallel to the sticks; the carry rotates it back to its seated heading
+                # parallel to the sticks
                 ram_init_xy=((-0.26, -0.32), (-0.11, -0.32)),  # table-rel -> world
                 # (0.29/0.44, -0.32): flanking the card, all three parts parallel along y
                 ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
@@ -217,15 +202,11 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
-# Franka arm at the pc-ram scene (the case/table preset sits at 0.55 here). Same north-strip
-# placement family as pc_gpu.franka: the base stands at (0.72, -0.34) yaw 180 with its whole
-# link0 footprint (x [-0.154, +0.072] x y +-0.095) on the top plate, and the two stick holders
-# sit west of it at world (0.30, -0.36) and (0.42, -0.36) — reaches: picks 0.42 / 0.30 m, slots
-# 0.376 / 0.365 m, all in the arm's accurate band. The sticks cannot start in the scene's lying
-# default (flat, their 7.3 mm thickness points up — no parallel-jaw pinch off the table), so the
-# gripper env stages them UPRIGHT in the scene's foam holders, already in the seated
-# orientation. Deterministic spawn (no jitter): the holders are static geometry authored at the
-# spawn points. sim dt 1/240, the depth the force-driven pc_ram smoke runs at.
+# Franka arm at the pc-ram scene (the case/table preset sits at 0.55 here). The base stands at
+# (0.72, -0.34) yaw 180 in the table's north strip, and the two stick holders sit west of it
+# at world (0.30, -0.36) and (0.42, -0.36). The gripper env stages the sticks UPRIGHT in the
+# scene's foam holders, already in the seated orientation. Deterministic spawn (no jitter):
+# the holders are static geometry authored at the spawn points. sim dt 1/240.
 # Three control modes, switchable by env name:
 #   - "assembly.pc_ram.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_ram.franka.impedance" — Jacobian-transpose task-space impedance
@@ -253,18 +234,12 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
-# Franka arm at the allen-bolt scene (base at the origin). Placement follows the solve-verified
-# reach lessons of the sibling franka envs: the platform is pulled from the table preset's 0.50 m
-# to 0.42 m (`platform_slots`) — the screwing happens under a TOP-DOWN hand, and beyond ~0.45 m
-# the gravity-uncompensated arm saturates several mm short (pc_gpu note), more than the socket's
-# 0.75 mm/side clearance; the loose key leaves the stock "+x row" (0.76 m, out of reach) for the
-# proven ~0.36 m pick radius on the +y side (the bulb layout's band). The bolt spawn stays put —
-# the smoke stages it upright over the hole (the robot's job is the KEY). Deterministic spawn
-# (no jitter) so smoke iterations reproduce. bolt_friction 0.3 makes the M16 thread SELF-LOCKING
-# (needs mu > tan(2.5 deg) ~ 0.044): at the scene's slick 0.01 the bolt spins back out whenever
-# the ratcheting key lifts out of the socket between strokes (the force-driven smoke never
-# disengages, so only the robot env needs it). sim dt 1/240 — the depth the force-driven smoke
-# validated for a pressed M16 on the SDF threads (the scene's 1/120 is for parts at rest).
+# Franka arm at the allen-bolt scene (base at the origin). The platform is pulled from the
+# table preset's 0.50 m to 0.42 m (`platform_slots`), and the loose key spawns on the +y side.
+# The bolt stages upright, hand-started in its hole (the robot's job is the KEY).
+# Deterministic spawn (no jitter). bolt_friction 0.3 makes the M16 thread SELF-LOCKING (needs
+# mu > tan(2.5 deg) ~ 0.044; at the scene's slick 0.01 the bolt spins back out of the hole on
+# its own). sim dt 1/240 (the scene's 1/120 is for parts at rest).
 # Three control modes, switchable by env name:
 #   - "assembly.allen_bolt.franka.osc"       — operational-space control (default)
 #   - "assembly.allen_bolt.franka.impedance" — Jacobian-transpose task-space impedance
@@ -278,12 +253,7 @@ for _mode in ("osc", "impedance", "joint"):
                 platform_slots=((-0.08, 0.0),),
                 bolt_staged=True,  # the bolt spawns hand-started in its hole; the task is
                 # the key work
-                # The key inserts by its LONG arm (the 50 mm short arm then cranks at half the
-                # swept diameter, and the grip rides a long vertical shaft instead of a low one).
-                # Spawned yawed +90 deg — handle along +y, short arm along +x — so the erection
-                # about the short-arm axis lands the hand in the proven -y-approach insertion
-                # configuration; spawn pulled to y 0.18 so the 120 mm handle's far end (the
-                # inserting tip, 0.43 m out) stays inside the arm's accurate pick band.
+                # Spawned yawed +90 deg — handle along +y, short arm along +x.
                 key_init_xy=((-0.24, 0.18),),
                 key_init_quat=(0.5, 0.5, 0.5, 0.5),
                 bolt_friction=0.3,
@@ -302,12 +272,9 @@ for _mode in ("osc", "impedance", "joint"):
 register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
 
 # Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x).
-# Baked in (measured at the natural flat layout — base at the table plane, no sink):
-#   - nut spawn pulled to (-0.12, 0) — the stock "+x row" default puts it at 0.62 m, out of the
-#     origin-mounted arm's reach (the bolt's default slot at 0.50 m is in-band and stays);
-#   - nut_friction 0.4 — at the 0.01 default the jaws cannot transmit wrench torque to the nut;
-#   - sim dt 1/480 — a pressed M16 TUNNELS through the SDF threads at the scene's 1/120, so nothing
-#     can genuinely thread there (1/240 narrows the window, 1/480 clean).
+# Baked in: nut spawn pulled to (-0.12, 0) (the stock "+x row" default is out of the
+# origin-mounted arm's reach; the bolt's default slot stays); nut_friction 0.4; sim dt 1/480
+# (SDF thread contact needs the fine step).
 # Three control modes, switchable by env name:
 #   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
 #                                              smooth on this arm)
@@ -330,10 +297,8 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
-# Franka arm at the bulb scene (base at the origin). The socket + loose bulb are pulled off the stock
-# nut_thread "+x row" layout into the arm's measured reach band: the default row put the bulb at
-# 0.63 m (out of reach -> REORIENT_STUCK) on the centreline (parks wrist q7 near its stop). Baked in:
-# socket 9 cm closer, bulb at the ~0.43 m pick radius on the +y side (q7 margin).
+# Franka arm at the bulb scene (base at the origin). The socket + loose bulb are pulled off
+# the stock nut_thread "+x row" layout: socket 9 cm closer, bulb on the +y side.
 # (Per-shape bulb friction is already the scene default — no override needed.)
 # Three control modes, switchable by env name:
 #   - "assembly.bulb.franka.osc"       — operational-space control (default)
@@ -356,22 +321,10 @@ for _mode in ("osc", "impedance", "joint"):
 
 # Franka arm at the pc-gpu scene. The base stands in the table's NORTH strip at (0.64, -0.34),
 # yaw 180 deg, beside the case's north-east corner; the card holder sits west of it at
-# (0.28, -0.36). Both fit fully on the lab table's top plate — x [-0.32, 0.96] x y [-0.47, 0.44]
-# in world, with panda link0's footprint spanning x [-0.154, +0.072] x y +-0.095 around the base
-# origin, so the 0.26 m-deep strip only fits it with the rear foot pointing +-x. Reach stays in
-# the arm's accurate band: pick 0.36 m near dead-ahead, placement 0.393 m / seat 0.384 m at
-# ~74 deg right, and the rearward slide runs slightly radially inward. (A base much beyond
-# ~0.45 m from the seat saturates the top-down arm several mm short — more than the channel's
-# 1.5 mm end-stop play.) The case stays at the table preset's 0.5 m. The loose card cannot
-# start in the scene's lying default:
-# flat on its backplate its only sub-80 mm dimension (the 36 mm body thickness) points UP, so no
-# parallel-jaw pinch can take it off the table. The gripper env therefore stages it UPRIGHT in the
-# scene's foam holder (`card_stand=True`), already in the seated orientation — one top-down
-# fingertip grip on the card's top edge (see the smoke's grasp-geometry note) then serves pick,
-# carry, slide and press, with no re-orientation anywhere near the case. Deterministic spawn (no
-# jitter): the holder is static geometry authored at the spawn point, so a jittered card would
-# spawn inside a rail.
-# sim dt 1/240 — the depth the force-driven pc_gpu smoke validated for the 0.15 mm/side channel.
+# (0.28, -0.36), both fully on the lab table's top plate. The case stays at the table preset's
+# 0.5 m. The gripper env stages the card UPRIGHT in the scene's foam holder
+# (`card_stand=True`), already in the seated orientation. Deterministic spawn (no jitter): the
+# holder is static geometry authored at the spawn point. sim dt 1/240.
 # Three control modes, switchable by env name:
 #   - "assembly.pc_gpu.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_gpu.franka.impedance" — Jacobian-transpose task-space impedance
@@ -382,7 +335,7 @@ for _mode in ("osc", "impedance", "joint"):
         lambda mode=_mode: EnvCfg(
             scene="pc_gpu",
             scene_cfg=PcGpuAssemblySceneCfg(
-                card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36): the pick band
+                card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36)
                 card_init_z=0.030,  # tab-bottom plane = the holder's floor top
                 card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
                 reset_pos_jitter=0.0,
@@ -391,7 +344,7 @@ for _mode in ("osc", "impedance", "joint"):
             robot="franka",
             robot_cfg=FrankaRobotCfg(
                 base_pos=(0.64, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)  # yaw 180: faces -x,
-                # the 154 mm rear foot points +x along the strip (the only fit inside it)
+                # the 154 mm rear foot points +x along the strip
             ),
             control_mode=mode,
             env_spacing=2,
