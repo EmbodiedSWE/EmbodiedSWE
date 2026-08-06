@@ -65,7 +65,7 @@ STAGE_DEPTH = 0.006       # bolt tip depth below the board face at stage (m)
 STAGE_YAW = math.pi       # bolt (and key) yaw at stage (a k*60 deg hex clocking)
 SEAT_MARGIN = 0.0001      # screw-joint hard stop: head held this far above the board (never preloads it)
 STOP_DEPTH = 0.0118       # stop twisting at this tip depth (m) — just before the head bottoms at 12.4 mm
-TRAVEL_Z = 0.030          # key TIP height above the board while hopping (clears the standing heads)
+TRAVEL_Z = 0.030          # key TIP height above the board while hopping between holes
 KEY_CROSS_Z = 0.215       # key TIP height for the FIRST approach, crossing the case's wall line
 # Drive parameters (module constants, like the sibling smokes). The twist is a torque-capped
 # velocity servo: tau = clamp(KW * (w_tgt - wz), -cap, +cap).
