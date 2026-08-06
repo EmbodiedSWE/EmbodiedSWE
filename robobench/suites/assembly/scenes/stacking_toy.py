@@ -7,9 +7,9 @@ family — scattered around the base.
 **Goal (carried here, no task layer): drop every present piece over the peg of its own
 color until it rests flat on that peg's stack, for all four pegs.**
 
-This is the benchmark's DIFFICULTY FLOOR, on purpose (by design): no hidden state,
-no irreversibility, toy-grade hole-over-peg clearance (~10 mm diametral) — its value is a
-graded bottom tier and a pure execution-reliability probe (ten consecutive insertions).
+This is the benchmark's easiest task, on purpose (by design): no hidden state,
+no irreversibility, toy-grade hole-over-peg clearance (~10 mm diametral) — its value is
+a graded baseline and a pure execution-reliability probe (ten consecutive insertions).
 
 Judged by the ported source rubric, with the PEG doing the enforcement (the source's 1 mm
 concentricity predicate is honest only because blocks on a pole are concentric by
@@ -32,8 +32,8 @@ crenellations, square corners — the balance_scale needle pattern).
 Per-episode randomization (task-family knobs): scatter poses (xy jitter + yaw +/-45 deg,
 source convention) AND subset sampling — which pieces of each family appear is sampled per
 episode, so a memorized fixed pick sequence fails; success is judged on the sampled
-subset. Piece types stay oracle-visible (no hidden state — that is the point of the floor
-tier). Absent pieces park in an off-camera ground depot (InteractiveScene cannot despawn).
+subset. Piece types stay oracle-visible (no hidden state — that is the point of this
+task). Absent pieces park in an off-camera ground depot (InteractiveScene cannot despawn).
 
 Heavy imports (isaaclab, pxr) are deferred so importing this module — and registering the
 scene — stays app-free.

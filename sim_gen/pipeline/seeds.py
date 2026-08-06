@@ -25,7 +25,8 @@ def get_seed(seed_id: str) -> tuple[Path, str]:
 # pick_single_egad.py registers ~1,589 asset variants of ONE task; peg_insertion_side.py
 # ~1,000 geometry variants). Sampling is therefore done at the TASK-FILE level: one
 # hand-ported task = one file = one seed, regardless of how many variants it registers.
-# This collapses ~2,900 registrations to ~210 distinct tasks.
+# This collapses ~2,900 registrations to 194 distinct manipulation tasks (locomotion
+# and whole-body families excluded).
 
 _EXCLUDE_PARTS = ("_passthrough", "_native", "__init__", "_base", "base_table",
                   "task_template", "_convert", "_locator", "_util")

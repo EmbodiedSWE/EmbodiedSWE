@@ -267,7 +267,7 @@ def _spatula_gr1t2_cfg() -> SpatulaFlipServeSceneCfg:
     """GR1-T2 (longer arms, comfortable band farther out)."""
     return SpatulaFlipServeSceneCfg(
         surface_z=0.7,
-        board_pos=(-0.18, 0.16),
+        pan_pos=(-0.18, 0.16),
         plate_pos=(0.18, 0.18),
         spatula_pos=(0.02, -0.02),
     )
@@ -277,17 +277,19 @@ def _spatula_g1_cfg() -> SpatulaFlipServeSceneCfg:
     """G1 (short ~0.55 m arms): everything pulled toward the bench front."""
     return SpatulaFlipServeSceneCfg(
         surface_z=0.7,
-        board_pos=(-0.15, 0.10),
+        pan_pos=(-0.15, 0.10),
         plate_pos=(0.15, 0.12),
         spatula_pos=(0.02, -0.04),
     )
 
 
 def _spatula_franka_cfg() -> SpatulaFlipServeSceneCfg:
-    """Franka: ground-level work in front of the base; the 24 mm handle pinches under
+    """Franka: ground-level work in front of the base; the molded handle pinches under
     the 8 cm jaw."""
     return SpatulaFlipServeSceneCfg(
-        board_pos=(-0.14, 0.08),
+        surface_z=0.0,  # table-mounted arm at ground level (the packing preset's
+        # native 0.994 is for standalone/humanoid layouts)
+        pan_pos=(-0.14, 0.08),
         plate_pos=(0.14, 0.10),
         spatula_pos=(0.02, -0.08),
     )

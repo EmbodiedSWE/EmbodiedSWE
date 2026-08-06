@@ -10,11 +10,11 @@ SIM_GEN_ROOT = Path(__file__).resolve().parent.parent
 ISAAC_TEMPLATE = """\
 You are constructing ONE new Isaac Lab simulation task for a robotics post-training
 benchmark, derived from a seed task but STRATEGICALLY DIFFERENT from it — and you must
-SOLVE it with a real Franka arm in this same session. A task without a working robot
-solution is not accepted. The task is written in the robobench format (the house
-framework in {cosigen_root}/robobench) and is tested remotely on your dedicated GPU
-"forge" server. When testing, read the full stdout tail, fix root causes, and never
-delete or weaken a check to pass.
+write a TELEPORT SOLUTION that demonstrably solves it in this same session. A task
+without a working teleport solution is not accepted. The task is written in the
+robobench format (the house framework in {cosigen_root}/robobench) and is tested
+remotely on your dedicated GPU "forge" server. When testing, read the full stdout
+tail, fix root causes, and never delete or weaken a check to pass.
 
 ## The seed (read-only context — do not import or modify it)
 
@@ -23,10 +23,11 @@ Seed source file: {seed_path}
 
 ## The embodiment (design for it from the start)
 
-Your task must be solved by a SINGLE FRANKA ARM with a parallel-jaw gripper, driven
-through the robobench OSC controller. Your own solution is the feasibility check —
-an infeasible design will simply cost you rework when solving — so think the
-embodiment through while designing, not after:
+Your teleport solution certifies the task's interactions are physically achievable in
+the scene — but the task will ultimately be solved by a SINGLE FRANKA ARM with a
+parallel-jaw gripper, driven through the robobench OSC controller. Designing something
+the arm cannot do makes the task worthless, so think the embodiment through while
+designing, and record the intended arm strategy in TASK.md:
 - for every object the robot must move, know the intended contact strategy up front:
   a graspable feature that actually fits the jaw with room for the hand to approach,
   or a face it can push;
@@ -34,15 +35,19 @@ embodiment through while designing, not after:
   tolerances near the arm's control noise turn a sound design into a lottery;
 - watch clearances: contacts very near the ground, under low overhangs, or through
   apertures barely larger than the object are where solutions die;
-- place the action within comfortable reach — you choose the base pose once, in
-  solve.py, so lay the scene out with that in mind.
+- keep the action within comfortable reach of one plausible base pose (state it in
+  TASK.md).
 Mechanisms (interlocks, counterweights, ordered fixtures) are welcome — the
 requirement is that every contact the task REQUIRES is one the arm can actually make.
 
 ## Order of work (the rubric comes AFTER the solution)
 
 1. Design the scene; give it a MINIMAL goal predicate (success()) so you can iterate.
-2. Write solve.py and iterate on the forge until the goal state is physically reached.
+2. Write solve.py — the teleport solution — and iterate on the forge until the goal
+   state is physically reached: teleport handles TRANSPORT only, every load-bearing
+   interaction goes through contact dynamics (e.g. to thread a nut onto a bolt:
+   teleport the nut to just above the bolt, then press and twist it down the thread
+   with applied forces until the scene reports success — never spawn it seated).
 3. Only then write the final rubric: success() plus a graded score() anchored in your
    demonstrated solution — latch the stages the solution actually passes through,
    score ~0 for the null policy, 1.0 iff success(), credit that does not evaporate
@@ -61,29 +66,39 @@ requirement is that every contact the task REQUIRES is one the arm can actually 
    - describe() is the statement a solving agent receives: goal state, how every
      target is identified visually, and any ordering constraints — complete enough
      that a competent solver could do the task from describe() alone;
+   - instruction() is the SHORT form of the same task for VLA training: one or two
+     imperative sentences, under 200 tokens, stating the goal and any constraint
+     whose violation fails the task — nothing else;
    - register with SCENES.register("<name>") and register_env with robot="null"
-     (scene-level; solve.py builds its own Franka env).
-2. solve.py — the REAL ROBOT SOLUTION, and the task's feasibility certificate:
+     (scene-level; solve.py and smoke.py build the same scene-level env).
+2. solve.py — the TELEPORT SOLUTION, and the task's legitimacy certificate:
    - standalone, AppLauncher-style entry point (must run as
      `python -m simgen_tasks.<task>.solve --headless` — the orchestrator re-runs it
      exactly that way);
-   - builds the env with robot="franka" and your chosen base pose (record it in
-     TASK.md); commands ONLY the arm's joints and gripper via OSC;
-   - NEVER writes task-object state (write_root_state_to_sim etc.) and never applies
-     external forces to task objects — the orchestrator re-runs solve.py fresh and a
-     solution that cheats is rejected;
+   - builds the scene-level env (robot="null" — no arm; the arm strategy lives in
+     TASK.md as the embodiment argument);
+   - teleportation handles TRANSPORT ONLY: setting an object's pose to move it across
+     free space is fine; every LOAD-BEARING interaction the task requires (insertion,
+     threading, pressing, latching, sliding under contact...) must be executed through
+     the simulator's contact dynamics — applied forces/torques are the tool there.
+     Never teleport an object into a state that bypasses the interaction (a nut is
+     teleported to just above the bolt, then pressed and twisted down the thread with
+     applied forces until the scene reports success — never spawned seated);
    - reaches the goal state with everything settled, prints the scene's own readouts,
      prints `SIM_GEN_SCORE <score()>` at each phase boundary (acceptance checks these
-     never decrease — latched credit must not evaporate along your real trajectory),
-     and prints exactly `SIM_GEN_SOLVE: SUCCESS` on success (this marker is the
-     acceptance signal); hard exit after the verdict (os._exit after a watchdog
-     Timer — Kit teardown hangs otherwise);
+     never decrease — latched credit must not evaporate along the solution
+     trajectory); after success() first turns True, KEEP SIMULATING for at least 3
+     more simulated seconds with no further intervention and only if success() still
+     holds print exactly `SIM_GEN_SOLVE: SUCCESS` (this marker is the acceptance
+     signal; the persistence window is what rejects fly-through successes); hard exit
+     after the verdict (os._exit after a watchdog Timer — Kit teardown hangs
+     otherwise);
    - must pass on at least 2 seeds in your own testing before you finish.
-3. smoke.py — REJECTION TESTS for your rubric (this is NOT a solution; do not write
-   any teleport solution — your solve.py already proves the rubric accepts correct
-   outcomes; smoke.py proves it REJECTS wrong ones). For every outcome your rubric
-   claims to reject, CONSTRUCT that outcome as a settled state (teleport objects,
-   settle, evaluate) and assert rejection, as named PASS/FAIL checks:
+3. smoke.py — REJECTION TESTS for your rubric (rejection only: your solve.py already
+   proves the rubric ACCEPTS a correct outcome; smoke.py proves it REJECTS wrong
+   ones). For every outcome your rubric claims to reject, CONSTRUCT that outcome as a
+   settled state (teleport objects, settle, evaluate) and assert rejection, as named
+   PASS/FAIL checks:
    - the end state the SEED's strategy would produce -> success() False (if
      expressible in your scene; else document N/A in TASK.md);
    - a settled near-miss just outside each load-bearing tolerance -> success() False;
@@ -96,8 +111,9 @@ requirement is that every contact the task REQUIRES is one the arm can actually 
    - print exactly `SIM_GEN_SMOKE: ALL PASS <n>/<n>` when every check passes; hard
      exit as above.
 4. TASK.md — task card: seed provenance, what you changed, WHY strategically
-   different, the solution outline (phases, base pose), whether execution order is
-   required, and the check list.
+   different, the teleport-solution outline (phases), the EMBODIMENT ARGUMENT (per
+   manipulated object: the intended Franka contact strategy; plus one plausible base
+   pose), whether execution order is required, and the check list.
 
 ## Testing on your forge (your ONLY way to run Isaac; there is no local GPU)
 
@@ -115,14 +131,16 @@ verifying randomization by readback, settle before judging.
 
 ## Hard requirements
 
-- STRATEGICALLY DIFFERENT from the seed: a solver must need a different PLAN, not
-  different parameters. Same-strategy-different-numbers is REJECTED (an LLM judge
-  compares your TASK.md + code against the seed source).
-- Real solution only: solve.py drives the arm; teleporting task objects there is an
-  automatic reject. Physics must be honest everywhere: success()/score() judge
-  PHYSICAL outcomes (settled poses, real containment) — smoke.py's teleported probes
-  are instrumentation, not a solution. An LLM judge reviews your solve.py for
-  legitimacy (arm-only manipulation, no rubric loopholes).
+- STRATEGICALLY DIFFERENT from the seed: a solver must need a different PLAN and a
+  different code structure, not different parameters or minor changes.
+  Same-strategy-different-numbers is REJECTED (an LLM judge compares your TASK.md +
+  code against the seed source).
+- Honest teleport solution: teleports move objects, they never do the task. The
+  load-bearing interactions must go through contact dynamics, and success()/score()
+  judge PHYSICAL outcomes (settled poses, real containment) — a solution that reaches
+  success() by teleporting past the required interaction, pinning objects against
+  physics, or exploiting a rubric loophole is rejected. An LLM judge reviews your
+  solve.py for exactly this.
 - describe() is judged for clarity: a competent solver must be able to do the task
   from describe() alone.
 - Tasks may require a specific execution order or not — both fine; declare in TASK.md.

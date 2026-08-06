@@ -16,7 +16,8 @@ import sys
 from pathlib import Path
 
 SIM_GEN_ROOT = Path(__file__).resolve().parent.parent
-REPORTS = SIM_GEN_ROOT / "artifacts" / "reports"
+REPORTS = Path(os.environ.get("SIM_GEN_REPORTS_DIR",
+                              SIM_GEN_ROOT / "artifacts" / "reports"))
 
 JUDGE_PROMPT = """\
 You are judging whether a NEW simulation task is STRATEGICALLY different from the SEED
@@ -38,7 +39,8 @@ scene.py (semantics excerpt — describe/success/score):
 {scene_source}
 ```
 
-The real-robot solution (the demonstrated strategy, from solve.py):
+The demonstrated solution (solve.py — a teleport solution: teleports handle
+transport, the load-bearing interactions run through contact dynamics):
 ```python
 {smoke_source}
 ```
@@ -72,7 +74,8 @@ def main() -> None:
 
     _, seed_source = get_seed(seed_id)
     task_dir = Path(os.environ.get("SIM_GEN_TASKS_DIR", SIM_GEN_ROOT / "tasks")) / args.task
-    # the demonstrated strategy is solve.py (real robot); legacy packages have only smoke.py
+    # the demonstrated strategy is solve.py (teleport solution); legacy packages have
+    # only smoke.py
     strategy_file = task_dir / "solve.py"
     if not strategy_file.exists():
         strategy_file = task_dir / "smoke.py"
@@ -86,9 +89,13 @@ def main() -> None:
     # Campaign mode: SIMGEN_NOVELTY_BASE_URL points at a relay that owns the upstream
     # key (platform billing); otherwise the default OAuth + logging-relay path.
     if os.environ.get("SIMGEN_NOVELTY_BASE_URL"):
+        # OAuth mode (CLAUDE_CODE_OAUTH_TOKEN in env): the token is the credential and
+        # the key stays empty. Key mode: nonempty placeholder — the CLI refuses to
+        # start on an empty key, and the relay replaces client auth anyway.
         env = dict(os.environ,
                    ANTHROPIC_BASE_URL=os.environ["SIMGEN_NOVELTY_BASE_URL"],
-                   ANTHROPIC_API_KEY="")
+                   ANTHROPIC_API_KEY=""
+                   if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") else "relay-session")
     else:
         sys.path.insert(0, str(SIM_GEN_ROOT / "legacy_mujoco"))
         from spawn_agent import RELAY_PORT, oauth_token, start_relay

@@ -1,0 +1,83 @@
+# Tolerance analysis of examples/solve_nut_and_bolt.py (assembly.nut_thread.franka.osc).
+#
+# Every band below is justified by something the solve script itself records — its argparse help
+# strings, its inline comments, or its run log (r1-r9). Nothing here is a guess about physics: the
+# script was written across nine repair rounds and its comments say which constants are load-bearing
+# and why. The frozen list at the bottom is the part a blind AST fuzzer would destroy.
+#
+# Three sections, because the diversity comes from three different places:
+#   env      — the world the policy wakes up in (scene cfg + reset draw)
+#   policy   — continuous knobs of the closed-loop policy (bands)
+#   strategy — discrete choices, each a different way to do the task (not a band)
+
+env:
+  # The scene's own reset already jitters the nut +/-10 mm (reset_pos_jitter, on by default), and
+  # the solve script sets the spawn explicitly, so spawn position is a first-class parameter.
+  nut_x:      {nominal: -0.12, range: [-0.16, -0.08]}   # table-rel; world x = 0.5 + this
+  nut_y:      {nominal: 0.0,   range: [-0.04, 0.04]}
+  # Bolt radius 0.50 is "elbow mid-range"; the script warns 0.37 "folds it to its limit — zero
+  # stroke authority", so this stays a narrow band well clear of that.
+  bolt_slot_x: {nominal: 0.0,  range: [-0.03, 0.03]}
+  # The solve raises the scene default (0.01) to 0.4 for the pick; the band keeps a grippable nut.
+  nut_friction: {nominal: 0.4, range: [0.30, 0.55]}
+  # Draws the reset jitter and any sampling inside the sim.
+  seed: {range: [0, 1000000]}
+
+policy:
+  # "SOFT pinch per finger for engagement/seek (N) — keeps settle compliance". Too firm and the nut
+  # cannot settle onto the helix start; the script's whole threading idea is friction-limited
+  # compliance, so this band stays soft.
+  pinch_n:      {nominal: 3.0,  range: [2.0, 5.0]}
+  # "FIRM pinch for wind strokes — 3 N cams over the hex corners once engaged (needs ~0.15 N*m)".
+  # Lower bound must still deliver that torque.
+  pinch_wind_n: {nominal: 25.0, range: [15.0, 35.0]}
+  # "z press-lean below the follow height while winding". Safe because "transmitted force saturates
+  # at pad friction (~3 N), so it cannot cross-thread-jam like a rigid press".
+  lean:         {nominal: 0.003, range: [0.0015, 0.005]}
+  wind_rate:    {nominal: 2.0,  range: [1.2, 3.0]}      # rad/s; pacing loop tolerates the range
+  rewind_rate:  {nominal: 3.0,  range: [2.0, 4.5]}      # rad/s, jaws clear of the hex
+  # "max back-rotation seeking the thread start (deg; capped so a fruitless seek can't eat the
+  # wrist-roll range)". The cap is the reason for the upper bound.
+  seek_deg:     {nominal: 50.0, range: [30.0, 70.0]}
+  # Free-space geometry: hover clearance above the nut and carry height over the bolt. Nothing
+  # measures these; they only have to clear the parts.
+  hover_dz:     {nominal: 0.05, range: [0.035, 0.075]}
+  carry_dz:     {nominal: 0.16, range: [0.12, 0.20]}
+  # Touch-detect descent rate (m/s). Slower is gentler; faster risks overshooting the quiet window.
+  lower_mps:    {nominal: 0.015, range: [0.010, 0.022]}
+  # Phase durations, as multipliers on the script's schedule (settle/hover/descend/grasp/lift/over).
+  # These change speeds and therefore the dynamics, which is state-action diversity for free.
+  phase_mult:   {nominal: 1.0,  range: [0.8, 1.4]}
+
+strategy:
+  # The nut is a hex: "120 = hex-symmetric ... after each rewind the jaws re-land flat-on-flat".
+  # 60 and 180 are the other flat-on-flat multiples, so all three are legal re-landings.
+  sweep_deg: {choices: [60.0, 120.0, 180.0], nominal: 120.0}
+  # nut_center was here as a free choice. Batch nut_b2 settled it: of 21 episodes that never
+  # picked the nut up at all (it fell, dz went negative, and the policy's dz<=5mm stop declared
+  # itself done at stroke 0), 20 had nut_center=False. The script's own help string already said
+  # it is "REQUIRED at the flat layout (2-16mm posture bias)" and that OFF "replicates the raw
+  # sink-era servo" — so this was never a strategy, it was a frozen constant I misread. Moved to
+  # frozen; sampling it cost 44 of 62 episodes.
+  # Rewind landing angle: "+45deg gives the aligning reclose room to search tighten-ward while
+  # keeping the following stroke's end >= ~-140 (wrist-safe)". Band stays inside that reasoning.
+  w_land_deg: {choices: [30.0, 45.0, 60.0], nominal: 45.0}
+
+# Load-bearing. Each line is why the script says so.
+# Frozen values the program still reads from theta (copied verbatim into every draw).
+constants:
+  nut_center: true
+
+frozen:
+  nut_center: "TRUE — required at the flat layout (2-16mm posture bias); OFF never picks the nut up (20 of 21 no-pick episodes in nut_b2)"
+  dt: "1/480 — the scene's 1/120 TUNNELS a pressed M16 (probe v1)"
+  down_yaw: "-0.5 — centres wrist-roll q7 so wind strokes have range; the sink-era 1.83 parks q7 0.6 rad from its limit and strokes bind"
+  HAND_OFFSET: "0.058 — measured panda_hand -> fingertip geometry"
+  GRIP_KP: "8000 — pinch force is KP * overshoot; changing it silently rescales every pinch_n"
+  osc_gains: "kp 150/600, rot_scale 0.15 — raised after run 1 stalled turning the engaged nut"
+  xy_integrator_caps: "3e-4 per step (pick/carry), 2e-6 (thread) — a big clamp at 480 Hz slams the hand sideways and ejects the nut (r6)"
+  z_floor: "z_contact - 0.021 — below this the pads graze the bolt head"
+  rewind_lift: "+8 mm width-gated — lifting while the fingers still travel drags the clamped nut up the thread (r7)"
+  stop_dz: "0.005 — bottom-out is ~0.001, pads graze below ~0.004"
+  layout: "surface_z 0.0, base_z 0.0 — the flat layout this script was solved at"
+  oracle: "seat_z 0.012 / align_xy 0.015 / align_axis_deg 10 — that is the verifier, never a parameter"

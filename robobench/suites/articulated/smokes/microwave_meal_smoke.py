@@ -83,9 +83,12 @@ def main() -> None:
 
         env.sim.set_render_mode(env.sim.RenderMode.PARTIAL_RENDERING)
         o = env.iscene.env_origins[0].detach().cpu().numpy().astype(float)
-        # Framing: microwave front + counter, keypad and mat both in shot.
-        cam = (0.55, -0.85, 0.55) if not args.demo else (0.45, -0.75, 0.45)
-        tgt = (0.05, 0.10, 0.18)
+        o[2] += scene.cfg.surface_z  # the work rides the table top
+        # Framing: microwave front + counter, keypad and mat both in shot, pulled back
+        # far enough that the 0.62 m appliance reads at a natural size in frame
+        # (user framing note 2026-08-05: the old (0.65, -1.00, 0.62) filled the frame).
+        cam = (0.88, -1.32, 0.82) if not args.demo else (0.75, -1.16, 0.68)
+        tgt = (0.08, 0.06, 0.16)
         env.sim.set_camera_view(tuple(np.array(cam) + o), tuple(np.array(tgt) + o),
                                 camera_prim_path="/OmniverseKit_Persp")
         rp = rep.create.render_product("/OmniverseKit_Persp", (960, 600))
@@ -173,7 +176,7 @@ def main() -> None:
         return dmax
 
     def disc_top_z() -> float:
-        return c.surface_z + c.wall_t + c.tt_clear + c.tt_h
+        return c.surface_z + c.tt_top_z
 
     def put_bowl(b: int, dx: float = 0.0, dy: float = 0.0, on_disc: bool = True,
                  pos: tuple | None = None) -> None:
@@ -182,7 +185,7 @@ def main() -> None:
         st = torch.zeros(env.num_envs, 13, device=device)
         if pos is None:
             x = c.mw_pos[0] + c.tt_off_x + dx
-            y = c.mw_pos[1] + dy
+            y = c.mw_pos[1] + c.tt_off_y + dy
             z = disc_top_z() + c.bowl_h / 2 + 0.003
         else:
             x, y = pos

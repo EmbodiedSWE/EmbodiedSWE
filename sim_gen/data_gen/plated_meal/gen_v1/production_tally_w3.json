@@ -1,0 +1,70 @@
+{
+ "attempted": 94,
+ "succeeded": 72,
+ "runs": [
+  {
+   "batch": "prod_visual_w3f5_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5300,
+   "successes": 9,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w3f3_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5100,
+   "successes": 10,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w3f2_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5000,
+   "successes": 10,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w3f7_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5500,
+   "successes": 9,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w3f6_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5400,
+   "successes": 7,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w3f4_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5200,
+   "successes": 7,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w3f1_0",
+   "mode": "physics",
+   "episodes": 16,
+   "seed0": 4300,
+   "successes": 11,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w3f0_0",
+   "mode": "physics",
+   "episodes": 18,
+   "seed0": 4000,
+   "successes": 9,
+   "rc": 1
+  }
+ ]
+}

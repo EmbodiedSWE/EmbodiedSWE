@@ -3,9 +3,9 @@
 Pipeline for constructing new simulation problems from seed problems, for building a
 post-training mix for coding agents. Seeds come from the vendored
 [RoboVerse](RoboVerse/) corpus; new problems are tasks implemented in the CoSiGen house
-style (scene-is-task, config dataclass, **real Franka-arm solution**, rubric battery,
-rendered video). One construction session owns one problem end to end — scene, robot
-solution, rubric, checks — under a **2-hour wall-clock budget**.
+style (scene-is-task, config dataclass, **teleport solution**, rubric battery,
+rendered video). One construction session owns one problem end to end — scene,
+teleport solution, rubric, checks — under a **1-hour wall-clock budget**.
 
 ## Simulation backend: Isaac Lab (decision 2026-07-22)
 
@@ -30,13 +30,14 @@ Two backend notes:
 seed (RoboVerse task file)
    │
    ▼
-[1] seed selection ──────────── pipeline/seeds.py (deduplicated pool, ~194 tasks)
+[1] seed selection ──────────── pipeline/seeds.py (deduplicated pool, 194 tasks)
    │
    ▼
 [2] construction agent ──────── pipeline/generate_batch.py spawns one agent per
-   │                            (seed, attempt); the agent designs the scene, SOLVES it
-   │                            with a real Franka arm on its GPU forge, then writes the
-   │                            rubric from the demonstrated solution (2 h budget)
+   │                            (seed, attempt); the agent designs the scene, writes a
+   │                            TELEPORT solution that reaches the goal on its GPU
+   │                            forge, then writes the rubric from the demonstrated
+   │                            solution (1 h budget)
    ▼
 [3] task package ────────────── tasks/<name>/{scene.py, solve.py, smoke.py, TASK.md}
    │
@@ -60,7 +61,7 @@ admitted task + artifacts (video, checks report, solve trajectory, agent traject
 | `super_relay/` | Vendored logging relay: CC agents point `ANTHROPIC_BASE_URL` at it; it forwards upstream and logs every request/response for trajectory export + cost accounting. Runs in auth-passthrough mode (client's own credentials) or relay-owned-key mode (`SUPER_RELAY_API_KEY` + `--force-model`). |
 | `legacy_mujoco/` | The retired MuJoCo variant — reference only, see its README. |
 | `isaac/` | `forge_server.py` — the per-agent GPU forge: an HTTP service on a warm L20 pod that runs a task package's modules as fresh Isaac subprocesses (submit / run / fetch). Deployed via `scripts/launch_cosigen_render_pool.py --forge N`. |
-| `tasks/` | One package per task: `scene.py`, `solve.py` (real-robot solution), `smoke.py` (rubric battery), `TASK.md` (task card). |
+| `tasks/` | One package per task: `scene.py`, `solve.py` (teleport solution), `smoke.py` (rubric battery), `TASK.md` (task card). |
 | `pipeline/` | `seeds.py` (deduplicated seed pool + sampling) · `prompt.py` (construction prompt) · `forge_client.py` (agent<->forge CLI) · `generate_batch.py` (campaign orchestrator: parallel agents, count quota, cost ledger) · `novelty.py` (novelty judge) · `judges.py` (solution-legitimacy + description-clarity judges). |
 | `artifacts/` | Videos, check reports, relay logs, exported agent trajectories. Gitignored. |
 
@@ -85,12 +86,21 @@ spawning one Claude Code agent per (seed, attempt):
   and **solves** the new problem in one session. **The agent chooses the mutation
   freely** (objective, objects, mechanism, constraints — any combination), under one
   hard instruction: the new problem must be **strategically different** from the seed
-  — a solver should need a different plan, not different parameters.
+  — a solver should need a different plan and a different code structure, not
+  different parameters or minor changes.
+- **The solution is a teleport solution** — written as if any object could be
+  teleported anywhere, which is far cheaper to write than a real-robot solution while
+  still certifying the task: teleportation handles only **transport**, and every
+  **load-bearing interaction** still goes through the simulator's contact dynamics
+  (to thread a nut onto a bolt, the solution teleports the nut to just above the
+  bolt, then presses and twists it down the thread with applied forces until the
+  scene reports success). A working teleport solution certifies that the interactions
+  the task requires are physically achievable in the scene.
 - **Order of work is fixed: solution before rubric.** The agent first reaches the goal
-  state with the real arm, then writes `success()`/`score()` anchored in the
+  state with the teleport solution, then writes `success()`/`score()` anchored in the
   demonstrated solution (see stage 3). A rubric written before any solution exists is
   guesswork about feasibility — that is what this ordering eliminates.
-- **2-hour cutoff per attempt**, enforced by the orchestrator (`--agent-timeout`).
+- **1-hour cutoff per attempt**, enforced by the orchestrator (`--agent-timeout`).
   The agent is deliberately not told the budget — it is an empirical operating
   number, not design guidance.
 - All traffic is routed through **super_relay**, which logs every request/response;
@@ -101,10 +111,12 @@ spawning one Claude Code agent per (seed, attempt):
 ## The embodiment (design for it from the start)
 
 Every task must be solvable by a **single Franka arm with a parallel-jaw gripper**
-driven through the robobench OSC controller. The enforcement is mechanical — **no
-working `solve.py`, no task** — so the guidance below is not a contract; it is a
-reminder that saves the constructor rework, since an infeasible design only reveals
-itself when the solution fails:
+driven through the robobench OSC controller. The teleport solution certifies the
+scene's required interactions are physically achievable, but it does not exercise the
+arm — so beyond the solution working, the construction agent must make sure the
+Franka can actually manipulate the objects in the way the task requires, and argue it
+in TASK.md (the embodiment argument: per manipulated object, the intended contact
+strategy, plus one plausible base pose):
 
 - every object the robot must move needs an intended contact strategy up front: a
   graspable feature that fits the jaw with room for the hand to approach, or a
@@ -113,8 +125,7 @@ itself when the solution fails:
   tolerances near the control noise turn a sound design into a lottery;
 - clearances are where solutions die: contacts very near the ground, under low
   overhangs, or through apertures barely larger than the object;
-- the action must sit within comfortable reach; the base pose is chosen once by the
-  solution and recorded with the task.
+- the action must sit within comfortable reach of the stated base pose.
 
 This is not a mandate for trivial tasks — mechanisms (interlocks, counterweights,
 ordered fixtures) are welcome — the requirement is that every contact the task
@@ -132,18 +143,26 @@ A generated task is a package `tasks/<name>/` with four files:
   - `describe()` is the task statement a solving agent receives: it must state the
     goal, how targets are identified visually, and any ordering constraints —
     complete enough that following only `describe()` can solve the task;
-  - registered scene-level (`robot="null"`); `solve.py` builds its own Franka env.
-- **`solve.py`** — the **real-robot solution** and the task's feasibility
-  certificate:
-  - builds the env with `robot="franka"` (base pose chosen here, recorded in
-    TASK.md), commands ONLY the arm's joints and gripper;
-  - never writes task-object state or applies external forces to task objects —
-    a solution that does is rejected;
+  - `instruction()` is the short form for VLA training: one or two imperative
+    sentences (< 200 tokens) stating the goal and the constraints whose violation
+    fails the task;
+  - registered scene-level (`robot="null"`); `solve.py` and `smoke.py` build the
+    same scene-level env.
+- **`solve.py`** — the **teleport solution** and the task's legitimacy certificate:
+  - builds the scene-level env (`robot="null"`; the arm strategy lives in TASK.md
+    as the embodiment argument);
+  - teleportation handles **transport only** (setting poses to move objects across
+    free space); every **load-bearing interaction** the task requires (insertion,
+    threading, pressing, latching...) is executed through contact dynamics, with
+    applied forces/torques as the tool — never teleporting an object into a state
+    that bypasses the interaction;
   - must reach the goal state with everything settled, print scene readouts,
     `SIM_GEN_SCORE <value>` at each phase boundary (the rubric's latched credit must
-    never decrease along the real trajectory — checked at acceptance), and exactly
-    `SIM_GEN_SOLVE: SUCCESS` on success (the acceptance marker); must pass on at
-    least 2 seeds in the agent's own testing;
+    never decrease along the solution trajectory — checked at acceptance); after
+    `success()` first turns True it keeps simulating ≥ 3 more simulated seconds with
+    no further intervention, and only if success still holds prints exactly
+    `SIM_GEN_SOLVE: SUCCESS` (the acceptance marker; the persistence window rejects
+    fly-through successes); must pass on at least 2 seeds in the agent's own testing;
   - hard exit after the verdict (Kit teardown hangs).
 - **`smoke.py`** — **rejection tests for the rubric** (teleported probe states; not a
   solution of any kind). A successful solve only proves the rubric *accepts* correct
@@ -158,27 +177,41 @@ A generated task is a package `tasks/<name>/` with four files:
   randomization differs across seeds (verified by readback), settle/no-NaN. Records
   video `frames.npz`; prints `SIM_GEN_SMOKE: ALL PASS n/n`.
 - **`TASK.md`** — task card: seed provenance, what changed, why strategically
-  different, the solution outline (phases, base pose), whether execution order is
-  required, and the check list.
+  different, the teleport-solution outline (phases), the embodiment argument (per
+  manipulated object the intended Franka contact strategy, plus one plausible base
+  pose), whether execution order is required, and the check list.
 
 **Rubric after solution.** `success()` starts as a minimal goal predicate so the
 agent can iterate `solve.py`; the final rubric is written only after the solution
-works, anchored in it: latch the stages the real solution actually passes through,
-`~0` for the null policy, `1.0` iff `success()`, credit that doesn't evaporate under
-correct behavior. The `SIM_GEN_SCORE` prints along the final solve run are the
-monotonicity evidence; the acceptance gate checks them.
+works, anchored in it: latch the stages the demonstrated solution actually passes
+through, `~0` for the null policy, `1.0` iff `success()`, credit that doesn't
+evaporate under correct behavior. The `SIM_GEN_SCORE` prints along the final solve
+run are the monotonicity evidence; the acceptance gate checks them.
+
+**Post-acceptance packaging.** `solve.py` is the answer key: after acceptance it moves out
+of the task package into `sim_gen/solutions/<task>/solve.py`, so a shipped/evaluated task
+directory never contains its own solution. (TASK.md keeps a solution *outline*; strip it
+too when packaging tasks for solving agents.)
 
 ## Stage 4 — validation
 
-The orchestrator trusts nothing the agent reports. On the forge, from the files on
-disk:
+The orchestrator trusts nothing the agent reports: everything is re-run on the forge
+from the files on disk. The checks, and where each runs:
 
-1. **smoke gate** — re-run `smoke.py`: `SIM_GEN_SMOKE: ALL PASS` required;
-2. **solve gate** — re-run `solve.py` fresh: `SIM_GEN_SOLVE: SUCCESS` required, and
-   the `SIM_GEN_SCORE` prints along the run must be non-decreasing (latched credit
-   never evaporates on the real trajectory);
-3. **success persistence** — after success first triggers, keep simulating: it must
-   not flicker off (rejects single-frame and fly-through successes).
+1. **rejection tests** — re-run `smoke.py`: every bad state correctly rejected
+   (`SIM_GEN_SMOKE: ALL PASS` required);
+2. **null policy** — scores ~0 on the crafted rubric (a check inside the smoke
+   battery, re-run by gate 1);
+3. **randomization + stability** — scene randomization actually varies across seeds
+   (verified by readback) and the scene settles without numerical blow-ups (also
+   inside the smoke battery);
+4. **score monotonicity** — re-run `solve.py` fresh: `SIM_GEN_SOLVE: SUCCESS`
+   required, and the `SIM_GEN_SCORE` prints along the run must be non-decreasing
+   (latched credit never evaporates along the teleport-solution trajectory);
+5. **success persistence** — the environment keeps simulating after success first
+   triggers and success must hold through the window (≥ 3 simulated seconds, no
+   intervention) before `solve.py` may print the success marker — rejects
+   single-frame and fly-through successes.
 
 ## Stage 5 — LLM judges
 
@@ -188,10 +221,11 @@ Three independent judge calls, all through the same relay; all must pass:
   seed? Judged over the seed's source + `TASK.md` + `scene.py` semantics + `solve.py`.
   Within the seed family; where two variants of the same seed both exist in `tasks/`,
   the executable cross-check also applies: variant A's solution must not pass B.
-- **solution legitimacy** (`pipeline/judges.py`) — does `solve.py` genuinely do the
-  described task through arm-only physical manipulation: no task-object state writes
-  or external forces, no exploiting a rubric loophole to reach `success()` without
-  doing the task.
+- **solution legitimacy** (`pipeline/judges.py`) — does the teleport solution
+  genuinely solve the task rather than exploiting a loophole: teleports carry
+  transport only, every load-bearing interaction runs through contact dynamics, no
+  teleporting past a required interaction, no pinning objects against physics, no
+  rubric loopholes.
 - **description clarity** (`pipeline/judges.py`) — could a competent solver perform
   the task from `describe()` alone: goal state, how targets are identified, and any
   ordering constraints all stated.
@@ -199,7 +233,7 @@ Three independent judge calls, all through the same relay; all must pass:
 ## Running: the campaign
 
 The operating model is per-problem: each construction agent owns ONE problem on ONE
-GPU forge for one 2-hour attempt; the orchestrator respawns finished workers with
+GPU forge for one 1-hour attempt; the orchestrator respawns finished workers with
 newly sampled seeds until the count quota is met.
 
 ```bash

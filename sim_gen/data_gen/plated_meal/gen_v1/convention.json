@@ -1,0 +1,12 @@
+{
+ "state": "[eef_pos_env(3) m, eef_axis_angle(3) rad, finger_qpos(2) m] \u2014 panda_hand body, env-origin-relative position",
+ "actions": "[delta_eef_pose(6) normalized OSC command in [-1,1] (pos_scale/rot_scale units), gripper(1) per-finger position target m] \u2014 the CLEAN controller output; noise-mode episodes execute actions_exec = clean + OU noise (recorded alongside), per sim_gen/diversification.html dynamics level",
+ "gripper_convention": "both fingers commanded symmetrically; single channel = per-finger target (0.04 open)",
+ "cameras": {
+  "image": "fixed scene view eye=(0.55,-0.85,0.75) target=(0.05,0.05,0.28) env-relative (visual batches jitter it, per-episode values in meta)",
+  "wrist_image": "eye = hand - 0.02*approach + 0.06*jaw_x, target = hand + 0.22*approach (probed 'side6' placement: fingertips visible top-center, workspace below)"
+ },
+ "fps": 10,
+ "alignment": "state and both renders captured BEFORE the action executes",
+ "instruction": "Gather all the food cubes into one bowl and set that bowl on the plate; keep the other two bowls off the plate."
+}

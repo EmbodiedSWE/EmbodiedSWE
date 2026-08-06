@@ -233,3 +233,12 @@ robobench/suites/*/videos/
 # of git). Committed specs + machinery live elsewhere (robobench/, and later agent/ + configs/).
 /experiments/*
 !/experiments/README.md
+
+# Run outputs, never source: campaign ledgers/relay logs/videos (multi-GB) and the
+# eval artifact tree. Code that produces them is committed; the outputs are not.
+sim_gen/artifacts/
+cosigen_eval_artifacts/
+eval/test/
+
+# Retired harness kept locally for reference — it hardcodes live API keys.
+eval/legacy/cosigen_harness.py

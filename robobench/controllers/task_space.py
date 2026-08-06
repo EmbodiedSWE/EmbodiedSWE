@@ -16,7 +16,6 @@ Heavy math is imported in-method so registration stays app-free.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -169,7 +168,13 @@ class _TaskSpaceController(BaseController):
         # task torque (the two forms differ in `_task_force`) + dynamically-consistent nullspace posture
         tau = (jac_T @ self._task_force(pose_error, ee_vel, lambda_task).unsqueeze(-1)).squeeze(-1)
         dof_pos, dof_vel = art.data.joint_pos[:, jids], art.data.joint_vel[:, jids]
-        to_default = (self._q_default - dof_pos + math.pi) % (2 * math.pi) - math.pi  # wrap to [-π, π]
+        # NO wrap on the posture error: every arm this drives has limited-range
+        # joints (no continuous rotation), so the true error is the plain
+        # difference — wrapping to [-pi, pi] REVERSES the pull for a joint wound
+        # >180 deg from home and chatters at exactly pi (measured 2026-08-05,
+        # microwave franka runs 35-38: panda_joint7 pinned at -180 deg debt while
+        # the posture torque pushed it into the far limit on every recovery dwell).
+        to_default = self._q_default - dof_pos
         u_null = (mass @ (c.kp_null * to_default - c.kd_null * dof_vel).unsqueeze(-1)).squeeze(-1)
         eye = torch.eye(self._n_arm, device=tau.device).unsqueeze(0)
         tau_null = ((eye - jac_T @ (lambda_task @ jac @ mass_inv)) @ u_null.unsqueeze(-1)).squeeze(-1)

@@ -1,7 +1,7 @@
 """Campaign orchestrator: N parallel construction agents building Isaac tasks.
 
 One worker per forge. Each worker loops: sample an unused seed -> spawn a Claude Code
-agent (2 h budget) that builds sim_gen/tasks/<task>/ — scene, REAL Franka solution,
+agent (1 h budget) that builds sim_gen/tasks/<task>/ — scene, TELEPORT solution,
 rubric written after the solution, smoke battery — iterating on its forge ->
 orchestrator independently re-runs the smoke (ALL PASS) AND the solve
 (SIM_GEN_SOLVE: SUCCESS) on the forge + novelty judge -> ledger + cost accounting ->
@@ -9,7 +9,7 @@ respawn with a new seed. Stops when the accepted-task count is met.
 
 Usage:
   python sim_gen/pipeline/generate_batch.py --count 50 \
-      --workers 10 [--relay-port 8119] [--agent-timeout 7200]
+      --workers 10 [--relay-port 8119] [--agent-timeout 3600]
 
 State/artifacts under sim_gen/artifacts/campaign/:
   ledger.jsonl   one line per finished attempt (accepted or failed) with cost
@@ -108,7 +108,12 @@ class Campaign:
                 self.totals["usd_estimate"] += rec.get("usd_estimate", 0.0)
 
     def claim(self) -> tuple[str, int] | None:
-        """Reserve (seed, attempt#) or None when the count quota is met."""
+        """Reserve (seed, attempt#) or None when the count quota is met.
+
+        Seeds are REUSABLE: a seed may host many strategically-different variants
+        (novelty is judged per variant). The used-seed set only spreads draws across
+        the pool; when every seed has been drawn once, the lap resets and the pool
+        cycles — a quota larger than the pool keeps producing."""
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from seeds import enumerate_seed_pool
@@ -117,9 +122,13 @@ class Campaign:
                 return None
             pool = [s for s in sorted(enumerate_seed_pool()) if s not in self.used_seeds]
             if not pool:
-                return None
+                self.used_seeds.clear()
+                pool = sorted(enumerate_seed_pool())
             import random
-            seed = random.Random(self.attempt_no).choice(pool)
+            # salt by campaign dir: fresh campaigns draw fresh seed sequences (an unsalted
+            # draw repeats the same first seeds every campaign, and agents then rediscover
+            # and port their own prior constructions of those seeds)
+            seed = random.Random(f"{CAMP.name}:{self.attempt_no}").choice(pool)
             self.used_seeds.add(seed)
             self.attempt_no += 1
             return seed, self.attempt_no
@@ -226,7 +235,7 @@ def accept(task: str, forge_url: str) -> tuple[bool, str]:
         return False, f"forge error: {exc!r}"
     if not (res.get("rc") == 0 and res.get("all_pass")):
         return False, f"smoke rc={res.get('rc')} all_pass={res.get('all_pass')}"
-    # the real-robot solution is the feasibility certificate: re-run it fresh
+    # the teleport solution is the task's legitimacy certificate: re-run it fresh
     try:
         sol = _call(forge_url + "/run",
                     {"task": task, "module": "solve", "args": ["--headless"],
@@ -236,7 +245,7 @@ def accept(task: str, forge_url: str) -> tuple[bool, str]:
     tail = sol.get("stdout_tail") or ""
     if not (sol.get("rc") == 0 and "SIM_GEN_SOLVE: SUCCESS" in tail):
         return False, f"solve rc={sol.get('rc')} (no SIM_GEN_SOLVE: SUCCESS)"
-    # latched credit must never decrease along the real trajectory
+    # latched credit must never decrease along the solution trajectory
     scores = [float(m) for m in re.findall(r"SIM_GEN_SCORE\s+([0-9.]+)", tail)]
     drops = [(a, b) for a, b in zip(scores, scores[1:]) if b < a - 1e-6]
     if drops:
@@ -303,7 +312,8 @@ def worker(idx: int, forge_url: str, camp: Campaign) -> None:
         novelty = judges = None
         if ok:
             jenv = dict(os.environ,
-                        SIMGEN_NOVELTY_BASE_URL=f"http://127.0.0.1:{camp.relay_port}")
+                        SIMGEN_NOVELTY_BASE_URL=f"http://127.0.0.1:{camp.relay_port}",
+                        SIM_GEN_REPORTS_DIR=str(CAMP / "reports"))
             oauth = Path(os.environ.get("SIM_GEN_OAUTH_ENV", Path.home() / ".claude_oauth_env"))
             if oauth.exists():   # platform-billing mode needs no client token (relay owns the key)
                 jenv["CLAUDE_CODE_OAUTH_TOKEN"] = _oauth_token()
@@ -312,6 +322,7 @@ def worker(idx: int, forge_url: str, camp: Campaign) -> None:
                  str(SIM_GEN_ROOT / "pipeline" / "novelty.py"),
                  "--task", task, "--seed", seed_id, "--model", camp.model_cli],
                 capture_output=True, text=True, cwd=str(COSIGEN_ROOT), env=jenv)
+            (CAMP / task / "novelty.log").write_text((nv.stdout or "") + (nv.stderr or ""))
             novelty = nv.returncode == 0
             if not novelty:
                 ok, reason = False, "novelty judge rejected"
@@ -321,6 +332,7 @@ def worker(idx: int, forge_url: str, camp: Campaign) -> None:
                  str(SIM_GEN_ROOT / "pipeline" / "judges.py"),
                  "--task", task, "--which", "both", "--model", camp.model_cli],
                 capture_output=True, text=True, cwd=str(COSIGEN_ROOT), env=jenv)
+            (CAMP / task / "judges.log").write_text((jd.stdout or "") + (jd.stderr or ""))
             judges = jd.returncode == 0
             if not judges:
                 tail = (jd.stdout or "").strip().splitlines()
@@ -338,11 +350,13 @@ def main() -> None:
     ap.add_argument("--count", type=int, default=50, help="accepted tasks wanted")
     ap.add_argument("--workers", type=int, default=10)
     ap.add_argument("--relay-port", type=int, default=8119)
-    ap.add_argument("--agent-timeout", type=float, default=7200,
-                    help="2 h wall clock per attempt: design + solve + rubric + checks")
+    ap.add_argument("--agent-timeout", type=float, default=3600,
+                    help="1 h wall clock per attempt: design + solve + rubric + checks")
     ap.add_argument("--model-cli", default="claude-fable-5",
                     help="model passed to the claude CLI (the relay decides billing: "
                          "auth passthrough or relay-owned key)")
+    ap.add_argument("--forge-offset", type=int, default=0,
+                    help="skip the first N live forges (lets two campaigns share a pool)")
     args = ap.parse_args()
 
     urls = forge_urls()
@@ -355,9 +369,10 @@ def main() -> None:
         except Exception:
             print(f"[campaign] forge unreachable: {u}", flush=True)
     print(f"[campaign] {len(live)} forges live: {live}")
+    live = live[args.forge_offset:]
     n = min(args.workers, len(live))
     if n == 0:
-        raise SystemExit("no live forges")
+        raise SystemExit("no live forges (after --forge-offset)")
 
     camp = Campaign(args.count, args.relay_port, args.agent_timeout, args.model_cli)
     threads = [threading.Thread(target=worker, args=(i, live[i], camp), daemon=True)
@@ -366,10 +381,12 @@ def main() -> None:
         t.start()
     for t in threads:
         t.join()
-    # export the construction trajectories (the campaign's data product)
+    # export the construction trajectories (the campaign's data product);
+    # super_relay lives in relevant_repos (moved out of sim_gen 2026-08)
     out = CAMP / "training_trajs.jsonl"
     subprocess.run([os.environ.get("SIM_GEN_PYTHON", "python3"),
-                    str(SIM_GEN_ROOT / "super_relay" / "build_training_trajs.py"),
+                    str(COSIGEN_ROOT.parent / "relevant_repos" / "super_relay"
+                        / "build_training_trajs.py"),
                     "--raw-log", str(RELAY_LOG), "--output", str(out),
                     "--min-messages", "4"], check=False)
     print(f"[campaign] trajectories -> {out}")

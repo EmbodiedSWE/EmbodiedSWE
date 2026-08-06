@@ -1,0 +1,180 @@
+# Self-contained BC checkpoint eval: ONE L20 pod runs Isaac + the openpi policy
+# server side by side and scores pi05 on the plated_meal scene (graded score()).
+# Template of the run that WORKED on 2026-08-05 (job d4c9c05795577308);
+# placeholders __STEP__/__OUT__/__EPISODES__ are filled by launch_bc_eval.py.
+caption: '[pi05] plated_meal___RUN__'
+jobDefVersion:
+  entrypointMode: FULL_SCRIPT
+  gitRepo:
+    commitSha: eba665296fbb353876907cffd1a742a9c647c951
+    mnt: /opt/tiger/alpha-seed
+    repoName: seed/alpha-seed
+  imageMeta:
+    imageVid: csost2bc77u68h428eb0
+  pip3: []
+  lazyDownloadCode: true
+  name: '[pi05] plated_meal___RUN__'
+  resource:
+    arnoldConfig:
+      clusterName: palm-wlby
+      groupIds:
+        - 1804
+      keepMins: 0
+      preemptible: true
+      quotaPool: nvidia-l20-16.hpccluster-ydxtmq090qm5d2qqu2ss.ai
+      roles:
+        - cpu: 16
+          gpu: 1
+          gpuv: NVIDIA-L20-16
+          memory: 65536
+          name: worker
+          num: 1
+          ports: 5
+    backend: ARNOLD
+jobRunParams:
+  entrypointFullScript: |
+    LOG=/tmp/pi05_plated_meal___RUN__.log
+    OUT=__OUT__
+    ( while true; do sleep 60; timeout 60 hdfs dfs -mkdir -p $OUT 2>/dev/null; timeout 120 hdfs dfs -put -f "$LOG" $OUT/pod.log 2>/dev/null; timeout 120 hdfs dfs -put -f /home/tiger/workspace/serve.log $OUT/serve.log 2>/dev/null; done ) &
+    UPLOADER=$!
+    trap 'kill ${UPLOADER} 2>/dev/null; timeout 120 hdfs dfs -put -f "$LOG" $OUT/pod.log 2>/dev/null; pkill -P $$ 2>/dev/null' EXIT
+    {
+      set -x
+      nvidia-smi
+      sudo apt-get update
+      sudo apt-get install -y --no-install-recommends \
+        libglu1-mesa libgl1 libegl1 libgles2 libglvnd0 libglx0 \
+        libxrender1 libxext6 libsm6 libice6 libxkbcommon0 libxt6 \
+        libxrandr2 libxi6 libxcursor1 libxinerama1 \
+        libvulkan1 vulkan-tools libgomp1 curl
+      GLX=$(find /usr/lib /usr/local/nvidia /usr/local/lib /run/nvidia 2>/dev/null -name "libGLX_nvidia.so*" | head -1)
+      NVLIB=${GLX:-$(ldconfig -p | grep -m1 'libGLX_nvidia.so.0' | awk '{print $NF}')}
+      sudo mkdir -p /usr/share/vulkan/icd.d /usr/share/glvnd/egl_vendor.d
+      printf '{"file_format_version":"1.0.0","ICD":{"library_path":"%s","api_version":"1.3.277"}}\n' "${NVLIB:-libGLX_nvidia.so.0}" | sudo tee /usr/share/vulkan/icd.d/nvidia_icd.json
+      printf '{"file_format_version":"1.0.0","ICD":{"library_path":"libEGL_nvidia.so.0"}}\n' | sudo tee /usr/share/glvnd/egl_vendor.d/10_nvidia.json
+
+      cd /home/tiger
+      time hdfs dfs -get -f hdfs://haruna/tmp/zeyu.shen/isaaclab_env.tar.gz /tmp/isaaclab_env.tar.gz
+      time tar xzf /tmp/isaaclab_env.tar.gz -C /home/tiger && rm -f /tmp/isaaclab_env.tar.gz
+      VENV=/home/tiger/isaaclab_build/env_isaaclab
+      hdfs dfs -get -f hdfs://haruna/tmp/zeyu.shen/cosigen.tar.gz /tmp/cosigen.tar.gz
+      tar xzf /tmp/cosigen.tar.gz -C /home/tiger && rm -f /tmp/cosigen.tar.gz
+      hdfs dfs -get -f hdfs://haruna/tmp/zeyu.shen/simgen_cc_kit.tar.gz /tmp/kit.tar.gz
+      tar xzf /tmp/kit.tar.gz -C /home/tiger && rm -f /tmp/kit.tar.gz
+      hdfs dfs -get -f hdfs://harunawl/home/byte_data_seed_wl/code_agent/zeyu.shen/simgen_bc/openpi_repo.tgz /tmp/openpi.tar.gz
+      # SAME path as on the devbox: the shipped venv is an EDITABLE install whose .pth points at
+      # /home/tiger/cap-x/relevant_repos/openpi — anywhere else and `import openpi` fails.
+      mkdir -p /home/tiger/cap-x/relevant_repos
+      tar xzf /tmp/openpi.tar.gz -C /home/tiger/cap-x/relevant_repos && rm -f /tmp/openpi.tar.gz
+      export PYTHONPATH=/tmp/clientlibs:/home/tiger/CoSiGen:/home/tiger/CoSiGen/eval:$PYTHONPATH
+      # The Isaac venv has imageio but NOT its ffmpeg backend (attempt 7 died opening ep0's mp4
+      # writer). Same fix as diversification/launch_pool.py: install the backend beside the venv
+      # and let imageio find it via PYTHONPATH + IMAGEIO_FFMPEG_EXE.
+      pip3 install --no-cache-dir --target /tmp/pylibs imageio-ffmpeg || \
+        pip3 install --no-cache-dir --target /tmp/pylibs \
+          -i https://bytedpypi.byted.org/simple imageio-ffmpeg
+      export PYTHONPATH=/tmp/pylibs:$PYTHONPATH
+      export IMAGEIO_FFMPEG_EXE=$(find /tmp/pylibs -name 'ffmpeg*' -type f -perm -u+x | head -1)
+      echo "imageio-ffmpeg binary: ${IMAGEIO_FFMPEG_EXE:-NONE}"
+      test -n "$IMAGEIO_FFMPEG_EXE" || { echo "NO FFMPEG BACKEND — refusing to run unrecorded"; exit 84; }
+      export OMNI_KIT_ACCEPT_EULA=YES
+      export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json
+      export __GLX_VENDOR_LIBRARY_NAME=nvidia
+      mkdir -p /home/tiger/workspace/pi05
+
+      # ---- the checkpoint --------------------------------------------------------------------
+      mkdir -p /home/tiger/pi05_ckpt && time hdfs dfs -get -f hdfs://harunawl/home/byte_data_seed_wl/code_agent/zeyu.shen/simgen_bc/checkpoints_pytorch/pi05_simgen_bc_v1/bc_v1_h20x64/__STEP__/model.safetensors hdfs://harunawl/home/byte_data_seed_wl/code_agent/zeyu.shen/simgen_bc/checkpoints_pytorch/pi05_simgen_bc_v1/bc_v1_h20x64/__STEP__/metadata.pt /home/tiger/pi05_ckpt/ && time hdfs dfs -get -f hdfs://harunawl/home/byte_data_seed_wl/code_agent/zeyu.shen/simgen_bc/checkpoints_pytorch/pi05_simgen_bc_v1/bc_v1_h20x64/__STEP__/assets /home/tiger/pi05_ckpt/assets
+      du -sh /home/tiger/pi05_ckpt
+
+      # ---- openpi venv: PREBUILT on the devbox and shipped whole. Pods cannot reach astral.sh
+      # (same egress policy that blocks api.anthropic.com), so nothing installs here. The venv
+      # links /usr/bin/python3.11, which this image has (the Isaac venv's pyvenv.cfg says so).
+      time hdfs dfs -get -f hdfs://harunawl/home/byte_data_seed_wl/code_agent/zeyu.shen/simgen_bc/openpi_venv.tgz /tmp/openpi_venv.tar.gz
+      tar xzf /tmp/openpi_venv.tar.gz -C /home/tiger/cap-x/relevant_repos/openpi && rm -f /tmp/openpi_venv.tar.gz
+      test -x /usr/bin/python3.11 || { echo "IMAGE HAS NO python3.11"; exit 82; }
+      /home/tiger/cap-x/relevant_repos/openpi/.venv/bin/python -c "import openpi, jax; print('openpi venv ok, jax', jax.__version__)" || { echo "SHIPPED VENV BROKEN"; exit 83; }
+      # the eval loop only needs the thin client, which is pure python -> Isaac's venv
+      pip3 install --no-cache-dir --target /tmp/clientlibs \
+        /home/tiger/cap-x/relevant_repos/openpi/packages/openpi-client || \
+        pip3 install --no-cache-dir --target /tmp/clientlibs -i https://bytedpypi.byted.org/simple \
+        /home/tiger/cap-x/relevant_repos/openpi/packages/openpi-client
+
+      # ---- policy server ---------------------------------------------------------------------
+      PPORT=$((20000 + RANDOM % 20000))
+      echo "[pi05] policy port ${PPORT}"
+      cd /home/tiger/cap-x/relevant_repos/openpi
+      # serve_policy's startup logging calls socket.gethostbyname(hostname), which raises on these
+      # pods (hostname has no DNS entry) AFTER the policy loads and kills a perfectly good server.
+      # Patch the pod's copy only.
+      sed -i 's/local_ip = socket.gethostbyname(hostname)/local_ip = "127.0.0.1"/' scripts/serve_policy.py
+      grep -n 'local_ip' scripts/serve_policy.py | head -2
+      # env -u PYTHONPATH: the pod exports /tmp/clientlibs + CoSiGen for the EVAL loop, and
+      # the server inherited it — something there shadows `proto`, and google-cloud-storage
+      # died with "module 'proto' has no attribute 'module'" during checkpoint restore.
+      # The server wants nothing from PYTHONPATH; its venv is complete.
+      nohup env -u PYTHONPATH /home/tiger/cap-x/relevant_repos/openpi/.venv/bin/python scripts/serve_policy.py \
+        --port ${PPORT} policy:checkpoint --policy.config=pi05_simgen_bc_v1 \
+        --policy.dir=/home/tiger/pi05_ckpt > /home/tiger/workspace/serve.log 2>&1 &
+      echo $! > /home/tiger/workspace/serve.pid
+      # jax compiles on first load; give it a real budget and FAIL LOUDLY rather than run blind
+      # Probe the server instead of grepping its log: serve_policy prints "Creating server",
+      # which no reasonable pattern guesses, and a log line is not proof it answers anyway.
+      READY=0
+      for i in $(seq 1 60); do
+        sleep 20
+        if $VENV/bin/python -c "from openpi_client import websocket_client_policy as w; print(w.WebsocketClientPolicy(host='127.0.0.1', port=${PPORT}).get_server_metadata())"; then READY=1; break; fi
+        kill -0 $(cat /home/tiger/workspace/serve.pid) 2>/dev/null || { echo "POLICY SERVER DIED"; tail -40 /home/tiger/workspace/serve.log; exit 80; }
+      done
+      [ "$READY" = "1" ] || { echo "POLICY SERVER NEVER ANSWERED"; tail -40 /home/tiger/workspace/serve.log; exit 81; }
+      tail -20 /home/tiger/workspace/serve.log
+
+      # ---- warmup: absorb the first-inference compile server-side ----------------------------
+      # The first infer JIT/torch-compiles for minutes; the eval client's websocket keepalive
+      # (20s, not configurable through openpi_client) kills the connection mid-compile (seen:
+      # "sent 1011 keepalive ping timeout" right after ep0 started). One raw-websocket call
+      # with pings disabled pays the compile once; all later inferences are sub-second.
+      timeout 2400 $VENV/bin/python - ${PPORT} <<'WARM' || { echo "POLICY WARMUP FAILED"; exit 85; }
+    import numpy as np
+    import websockets.sync.client as w
+    from openpi_client import msgpack_numpy
+    import sys
+    conn = w.connect(f"ws://127.0.0.1:{sys.argv[1]}", compression=None, max_size=None,
+                     ping_interval=None, ping_timeout=None)
+    print("warmup: metadata", msgpack_numpy.unpackb(conn.recv()), flush=True)
+    obs = {"observation/image": np.zeros((256, 256, 3), np.uint8),
+           "observation/wrist_image": np.zeros((256, 256, 3), np.uint8),
+           "observation/state": np.zeros(8, np.float32),
+           "prompt": "warmup"}
+    import time
+    t0 = time.time()
+    conn.send(msgpack_numpy.Packer().pack(obs))
+    r = conn.recv()
+    print(f"warmup: first inference done in {time.time()-t0:.0f}s, {len(r)} bytes", flush=True)
+    WARM
+
+      # ---- the eval ---------------------------------------------------------------------------
+      # pi05_eval.py postdates the staged cosigen tarball; each run ships its own copy
+      # (plus any scene file the run needs, e.g. the data_gen plated_meal scene).
+      hdfs dfs -get -f __CODE__/pi05_eval.py /home/tiger/pi05_eval.py
+      hdfs dfs -get -f __CODE__/plated_meal_scene.py /home/tiger/plated_meal_scene.py 2>/dev/null || true
+      $VENV/bin/python /home/tiger/pi05_eval.py \
+        --task-dir plated_meal --scene plated_meal --host 127.0.0.1 --port ${PPORT} \
+        --episodes __EPISODES__ --seed0 __SEED0__ --max-steps 1100 --prompt "Gather all the food cubes into one bowl and set that bowl on the plate; keep the other two bowls off the plate." \
+        --task-module local:plated_meal_scene.py --scene-eye 0.55,-0.85,0.75 --scene-tgt 0.05,0.05,0.28 --wrist-mode side6 --state-origin-relative --gripper-mode meters --hold -1 --osc-preset plated_meal --robot-preset plated_meal --obs-res 256 --replan 10 --video-every 1 \
+        --out /home/tiger/workspace/pi05 --hdfs $OUT --headless --enable_cameras
+      EVAL_RC=$?
+      echo "[pi05] eval exited rc=${EVAL_RC}"
+      echo ${EVAL_RC} > /tmp/eval_rc
+      ls -la /home/tiger/workspace/pi05
+    } > "$LOG" 2>&1
+    kill $UPLOADER 2>/dev/null
+    hdfs dfs -mkdir -p $OUT
+    hdfs dfs -put -f "$LOG" $OUT/pod.log
+    hdfs dfs -put -f /home/tiger/workspace/serve.log $OUT/serve.log
+    hdfs dfs -put -rf /home/tiger/workspace/pi05 $OUT/
+    # FAIL the job when the eval failed (user directive 2026-08-04): logs are
+    # already on HDFS, so there is nothing to debug on the pod itself.
+    exit $(cat /tmp/eval_rc 2>/dev/null || echo 1)
+  envsList:
+    NVIDIA_DRIVER_CAPABILITIES: all
+namespace: /user/zeyu.shen

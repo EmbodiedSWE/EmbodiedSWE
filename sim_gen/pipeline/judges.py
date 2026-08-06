@@ -15,15 +15,20 @@ import sys
 from pathlib import Path
 
 SIM_GEN_ROOT = Path(__file__).resolve().parent.parent
-REPORTS = SIM_GEN_ROOT / "artifacts" / "reports"
+REPORTS = Path(os.environ.get("SIM_GEN_REPORTS_DIR",
+                              SIM_GEN_ROOT / "artifacts" / "reports"))
 
 LEGIT_PROMPT = """\
-You are auditing the SOLUTION of a robot simulation task. The rule: the solution must
-genuinely perform the described task through arm-only physical manipulation — it may
-command the robot's joints and gripper, and read scene state, but it must NOT write
-task-object states (e.g. write_root_state_to_sim on task objects), apply external
-forces to task objects, weaken or bypass the rubric, or reach success() through a
-loophole that avoids doing the described task.
+You are auditing the TELEPORT SOLUTION of a simulation task. The contract: the
+solution must genuinely solve the described task, with teleportation handling
+TRANSPORT ONLY — setting object poses to move them across free space is allowed, and
+applied forces/torques are allowed for executing interactions. Every LOAD-BEARING
+interaction the task requires (insertion, threading, pressing, latching, sliding
+under contact...) must go through the simulator's contact dynamics. The solution must
+NOT teleport an object into or through a state that bypasses a required interaction
+(e.g. spawning a nut already seated on the bolt instead of threading it down), pin or
+hold objects against physics to fake a settled outcome, weaken or bypass the rubric,
+or reach success() through a loophole that avoids doing the described task.
 
 ## The task card (TASK.md)
 {task_md}
@@ -80,7 +85,11 @@ def _excerpt(src: str, names: tuple[str, ...]) -> str:
 
 
 def _ask(prompt: str, model: str) -> dict:
-    env = dict(os.environ, ANTHROPIC_API_KEY="")
+    # OAuth mode (CLAUDE_CODE_OAUTH_TOKEN in env): the token IS the credential and the
+    # API key must stay empty. Key mode: nonempty placeholder — the CLI refuses an
+    # empty key and the relay owns the real one.
+    key = "" if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") else "relay-session"
+    env = dict(os.environ, ANTHROPIC_API_KEY=key)
     if os.environ.get("SIMGEN_NOVELTY_BASE_URL"):
         env["ANTHROPIC_BASE_URL"] = os.environ["SIMGEN_NOVELTY_BASE_URL"]
     out = subprocess.run(["claude", "-p", prompt, "--model", model],

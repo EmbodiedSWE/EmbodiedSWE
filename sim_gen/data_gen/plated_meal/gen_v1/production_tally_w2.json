@@ -1,0 +1,294 @@
+{
+ "attempted": 518,
+ "succeeded": 0,
+ "runs": [
+  {
+   "batch": "prod_physics_w2f2_0",
+   "mode": "physics",
+   "episodes": 18,
+   "seed0": 4200,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w2f3_0",
+   "mode": "physics",
+   "episodes": 16,
+   "seed0": 4300,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f9_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5500,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_w2f13_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 6300,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f8_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5400,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f6_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5200,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_noise_w2f14_0",
+   "mode": "noise",
+   "episodes": 22,
+   "seed0": 6400,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f17_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 6700,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_noise_w2f15_0",
+   "mode": "noise",
+   "episodes": 22,
+   "seed0": 6500,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w2f2_0",
+   "mode": "physics",
+   "episodes": 18,
+   "seed0": 4237,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w2f1_0",
+   "mode": "physics",
+   "episodes": 18,
+   "seed0": 4100,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f7_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5300,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f5_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5100,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f4_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5000,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w2f3_0",
+   "mode": "physics",
+   "episodes": 16,
+   "seed0": 4337,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f9_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5537,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f6_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5237,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f8_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5437,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_w2f13_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 6337,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f17_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 6737,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_noise_w2f15_0",
+   "mode": "noise",
+   "episodes": 22,
+   "seed0": 6537,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w2f1_0",
+   "mode": "physics",
+   "episodes": 18,
+   "seed0": 4137,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_noise_w2f14_0",
+   "mode": "noise",
+   "episodes": 22,
+   "seed0": 6437,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f7_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5337,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f5_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5137,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_visual_w2f4_0",
+   "mode": "visual",
+   "episodes": 10,
+   "seed0": 5037,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w2f0_0",
+   "mode": "physics",
+   "episodes": 18,
+   "seed0": 4000,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_nominal_w2f10_0",
+   "mode": "nominal",
+   "episodes": 15,
+   "seed0": 6000,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w2f0_0",
+   "mode": "physics",
+   "episodes": 18,
+   "seed0": 4037,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w2f16_0",
+   "mode": "physics",
+   "episodes": 18,
+   "seed0": 6600,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_nominal_w2f10_0",
+   "mode": "nominal",
+   "episodes": 15,
+   "seed0": 6037,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_physics_w2f16_0",
+   "mode": "physics",
+   "episodes": 18,
+   "seed0": 6637,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_w2f12_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 6200,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_w2f11_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 6100,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_w2f12_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 6237,
+   "successes": 0,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_w2f11_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 6137,
+   "successes": 0,
+   "rc": 1
+  }
+ ]
+}

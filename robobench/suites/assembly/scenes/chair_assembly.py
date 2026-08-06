@@ -1,77 +1,51 @@
-"""ChairAssemblyScene — a six-part FurnitureBench-style chair to assemble (port).
+"""ChairAssemblyScene — attach the tufted backrest to a real dining chair, then bolt it on.
 
-The object world for the furniture-bench "chair" port: a seat slab lying UPSIDE DOWN on
-the work surface (underside up, so its two front leg sockets and two rear threaded studs
-face the robot), two loose legs, a backrest whose bottom flange carries two matching
-holes, and two loose locking nuts, all scattered around it.
-**Goal (carried here, no task layer): fit both legs into the front sockets, lower the
-backrest's flange over BOTH rear studs at once until it seats on the slab, then drop
-each nut over a protruding stud tip so it clamps the flange — 5 assembly pairs in all.**
+The object world is a REAL scanned product (an Amazon beige tufted dining chair, split into
+parts by scripts/split_chair_asset.py; textures and normal maps ship with the parts under
+assets/chair/). The chair BASE — seat cushion with all four wooden legs pre-attached — stands
+upright on the floor. Its rear frame carries two horizontal hanger-bolt studs: a smooth steel
+shank each, tipped with the factory M16 thread (SDF collision, the nut_thread/ikea machinery).
+Beside it lie the loose BACKREST (its lower shell carries two matching through-holes) and two
+loose M16 nuts. **Goal (carried here, no task layer): slide the backrest onto both studs at
+once — its bottom face rides the rear legs' top faces as a natural rail — then thread each nut
+onto its exposed stud tip to clamp the backrest. 3 assembly pairs in all.**
 
-Success logic is the faithful structural port of furniture-bench's relative-pose
-assembly graph (furniture.py + pose.py): a fixed set of `should_be_assembled` pairs —
-(seat,leg0), (seat,leg1), (seat,back), (seat,nut0), (seat,nut1); the nuts anchor on the
-seat's studs, which are the backrest's clamp points — each judged by the child's anchor
-point against candidate mating poses IN THE PARENT'S BODY FRAME (legs may take either
-socket, nuts either stud — order-independent within a stage, the source's
-multi-candidate `assembled_rel_poses`), with per-axis position thresholds (`tau_xy`,
-`tau_z`; the source uses 5 mm sim — ours default looser pending GPU calibration) and an
-orientation cosine >= `ori_cos` (0.94, source verbatim). `should_assembled_first`
-ordering is ported as a logic gate — the nut pairs never count before (seat,back) is
-assembled — AND is enforced by real geometry: a nut dropped on a bare stud slides to the
-slab and its 60 mm ring physically prevents the flange (17 mm hole) from seating over
-that stud, the source's "nuts cannot go on before the backrest", made literal. A nut
-riding a stud of an unassembled backrest increments the `order_violations` metric.
-Progress = +1 per newly assembled pair (`pairs_assembled()` in 0..5), `score()` = 20 per
-pair, `success()` = all 5. Judging in the parent body frame (the pen-holder pen-holder lesson)
-means a lifted / shaken / tilted chair judges identically to a standing one.
+Legs are deliberately pre-attached: screwing legs is the ikea_table task's content, and gating
+this task's novel stages (large-part two-point insertion + fine threading) behind four
+redundant leg screwings would starve them of attempts. `legs_preattached=False` (the full
+flat-pack variant; the split leg parts exist under assets/chair/) is reserved and raises until
+its mating features are authored.
 
-PORT FIDELITY, stated honestly (stated honestly): the source has NO thread
-physics and NO welding — its "screwing" is scripted end-effector theater and "assembled"
-a sticky pose label; parts can physically fall apart afterwards. Ours is stricter where
-proven machinery allows: every counted pair WELDS on seat (the ikea_table pre-authored
-FixedJoint pattern), so the finished chair is genuinely rigid and survives a shake test,
-and the nut-before-back ordering is a physical block, not just a label. The brainstorm's
-"real SDF nut threading" upgrade is NOT in this procedural port — nuts drop over smooth
-studs and lock by weld (screwing remains robot-side theater, as in the source).
-Assembled = welded is the sticky label, source convention.
+Success logic is the furniture-bench relative-pose port carried over from the procedural
+predecessor: pairs (base,back), (base,nut_0), (base,nut_1), judged in the BASE's body frame
+(lifted/tilted assemblies judge identically), with `should_assembled_first` ordering — nuts
+never count before the back is on, and a nut parked on a bare stud physically blocks the
+back's 18 mm holes (its 27.8 mm hex cannot pass). Every counted pair WELDS (the ikea
+pre-authored FixedJoint toggle pattern), so the finished chair is rigid and survives a shake.
+UNLIKE the predecessor, the nut stage demands real rotation: an engaged nut advances ONLY
+per its measured rotation about the stud axis, at true M16x2 pitch (the pc_motherboard
+screw-joint mechanic, nut-side). Direct SDF threading was measured and rejected: an SDF
+thread hosted in a rigid COMPOUND body offers zero axial resistance (a nut fell through
+the full thread, 24.7 mm on 0 degrees of spin, on a vised vertical probe), while the same
+asset pair threads correctly on nut_thread's world-pinned fixed-base articulation — a
+MOVABLE chair cannot pin its studs to the world, so the joint is the thread here, and
+crest-skipping is impossible by construction. The threading axis is HORIZONTAL (the scan's
+own joint geometry: the shell laps the seat's rear face), which the smoke validates.
 
-Assets are fully procedural, one rigid body each, authored by custom compound spawners
-(the shared compound-spawner pattern — child colliders of one body never self-collide):
-  - seat: slab + 2 front leg-socket annuli + 2 rear stud cylinders topped with guide
-    cones (dark — doubling as the "threaded tip" visual cue the nuts go on);
-  - leg: cylinder shaft + a COLLIDING guide cone at the insertion end (-z) + a
-    visual-only foot cap at +z (so a viewer reads the orientation);
-  - back: bottom flange plate + 2 hole annuli (over the studs) + the upright panel;
-  - nut: an octagonal annulus ring (the stacking-piece core), far wider than the
-    flange holes — the viewer-visible "this cannot pass the hole" cue.
-Guide cones matter: radial clearances are 3-5 mm and GPU PhysX has no CCD, so a bare
-drop would need sub-clearance alignment; the cone flank funnels it (the stacking-toy tip
-pattern). Contact offsets are explicit and small (the ~2 cm default would exceed every
-clearance — the pc_gpu precedent); free bodies carry the pen-holder physics armor
-(maxDepenetrationVelocity 0.5, light damping).
+Assembled back pose in the base frame: origin at (0, +0.219, +0.320) — measured from the scan
+(see scripts/author_chair_rigs.py; the shell's collision front kisses the slab's rear face
+there with 0.4 mm slack, the fabric visually compressing against the edge exactly as scanned).
 
-Per-episode randomization (task-family knobs): seat pose (xy jitter + yaw — the rubric
-is seat-frame, so yaw is transparent to judging), and the five loose parts scattered on
-arc slots with a PER-EPISODE RANDOM SLOT PERMUTATION + xy jitter + yaw, so a memorized
-fixed pick order fails.
-
-Embodiment-agnostic: parts are scene objects the robot reaches through `env.scene`; a
-NullRobot smoke drives them by teleport/kinematic staging. This port is the benchmark's
-Franka long-horizon anchor (source platform), with g1/gr1t2/multi bindings registered
-alongside.
-
-Heavy imports (isaaclab, pxr) are deferred so importing this module — and registering
-the scene — stays app-free.
+Heavy imports (isaaclab, pxr) are deferred so importing this module stays app-free.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+import os
+from dataclasses import dataclass
 from pathlib import Path
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
@@ -83,397 +57,139 @@ if TYPE_CHECKING:
     from robobench.core import BaseEnv
 
 
-# ----- custom compound spawners ---------------------------------------------------------------
-# One rigid body per part, several child colliders + visual-only decoration, authored with raw
-# pxr APIs; only `isaaclab.sim.utils.clone` is borrowed (the regex-resolve + per-env replicate
-# machinery every CuboidCfg spawn uses). Fallback if this ever fights the platform: author the
-# same compound into a /tmp USD and return a UsdFileCfg instead.
-
-_SPAWNER_CACHE: dict[str, Any] = {}
-
-
-def _apply_body_apis(root, mass: float) -> None:
-    """RigidBodyAPI + explicit MassAPI (overlapping child colliders would double-count
-    density) + the pen-holder physics armor: depenetration cap 0.5 (tame the contact-solver pop
-    that ejects parts ballistically from mm-deep overlap) and light damping (small parts
-    cross the settle gate promptly instead of ringing)."""
-    from pxr import PhysxSchema, UsdPhysics
-
-    UsdPhysics.RigidBodyAPI.Apply(root)
-    UsdPhysics.MassAPI.Apply(root).CreateMassAttr(float(mass))
-    pxrb = PhysxSchema.PhysxRigidBodyAPI.Apply(root)
-    pxrb.CreateMaxDepenetrationVelocityAttr(0.5)
-    pxrb.CreateLinearDampingAttr(0.05)
-    pxrb.CreateAngularDampingAttr(0.05)
-
-
-def _collide(prim, contact_offset: float) -> None:
-    from pxr import PhysxSchema, UsdPhysics
-
-    UsdPhysics.CollisionAPI.Apply(prim)
-    px = PhysxSchema.PhysxCollisionAPI.Apply(prim)
-    px.CreateContactOffsetAttr(float(contact_offset))
-    px.CreateRestOffsetAttr(0.0)
-
-
-def _author_annulus(stage, prim_path: str, tag: str, center, r_in: float, wall: float,
-                    height: float, n: int, color, contact_offset: float) -> None:
-    """n box segments forming an octagonal annulus around `center` (body-local), the stacking-toy
-    stacking-piece core: the aperture is the exact intersection of the n inner half-planes
-    (a regular octagon of inradius `r_in`); adjacent segments overlap toward the outside —
-    harmless inside one body."""
-    from pxr import Gf, UsdGeom
-
-    r_mid = r_in + wall / 2
-    seg_len = 2 * (r_in + wall) * math.tan(math.pi / n) + 0.002
-    cx, cy, cz = center
-    for k in range(n):
-        ang = 2 * math.pi * k / n
-        seg = UsdGeom.Cube.Define(stage, f"{prim_path}/{tag}_{k}")
-        seg.CreateSizeAttr(1.0)
-        sxf = UsdGeom.Xformable(seg.GetPrim())
-        sxf.AddTranslateOp().Set(Gf.Vec3d(cx + r_mid * math.cos(ang),
-                                          cy + r_mid * math.sin(ang), cz))
-        sxf.AddRotateZOp().Set(math.degrees(ang))
-        sxf.AddScaleOp().Set(Gf.Vec3f(wall, seg_len, height))
-        seg.CreateDisplayColorAttr([Gf.Vec3f(*color)])
-        _collide(seg.GetPrim(), contact_offset)
-
-
-def _author_cylinder(stage, path: str, radius: float, height: float, center, color,
-                     contact_offset: float | None) -> None:
-    """A cylinder collider (or visual-only when `contact_offset` is None) at `center`."""
-    from pxr import Gf, UsdGeom
-
-    cyl = UsdGeom.Cylinder.Define(stage, path)
-    cyl.CreateRadiusAttr(radius)
-    cyl.CreateHeightAttr(height)
-    cyl.CreateExtentAttr([Gf.Vec3f(-radius, -radius, -height / 2),
-                          Gf.Vec3f(radius, radius, height / 2)])
-    UsdGeom.Xformable(cyl.GetPrim()).AddTranslateOp().Set(Gf.Vec3d(*center))
-    cyl.CreateDisplayColorAttr([Gf.Vec3f(*color)])
-    if contact_offset is not None:
-        _collide(cyl.GetPrim(), contact_offset)
-
-
-def _author_cone(stage, path: str, radius: float, height: float, center, apex_up: bool,
-                 color, contact_offset: float) -> None:
-    """A colliding guide cone at `center` (apex up or down)."""
-    from pxr import Gf, UsdGeom
-
-    cone = UsdGeom.Cone.Define(stage, path)
-    cone.CreateRadiusAttr(radius)
-    cone.CreateHeightAttr(height)
-    cone.CreateExtentAttr([Gf.Vec3f(-radius, -radius, -height / 2),
-                           Gf.Vec3f(radius, radius, height / 2)])
-    cxf = UsdGeom.Xformable(cone.GetPrim())
-    cxf.AddTranslateOp().Set(Gf.Vec3d(*center))
-    if not apex_up:
-        cxf.AddRotateXOp().Set(180.0)
-    cone.CreateDisplayColorAttr([Gf.Vec3f(*color)])
-    _collide(cone.GetPrim(), contact_offset)
-
-
-def _author_box(stage, path: str, size, center, color, contact_offset: float | None) -> None:
-    from pxr import Gf, UsdGeom
-
-    box = UsdGeom.Cube.Define(stage, path)
-    box.CreateSizeAttr(1.0)
-    bxf = UsdGeom.Xformable(box.GetPrim())
-    bxf.AddTranslateOp().Set(Gf.Vec3d(*center))
-    bxf.AddScaleOp().Set(Gf.Vec3f(*size))
-    box.CreateDisplayColorAttr([Gf.Vec3f(*color)])
-    if contact_offset is not None:
-        _collide(box.GetPrim(), contact_offset)
-
-
-def _root_xform(stage, prim_path: str, translation, orientation):
-    from pxr import Gf, UsdGeom
-
-    xform = UsdGeom.Xform.Define(stage, prim_path)
-    xf = UsdGeom.Xformable(xform)
-    if translation is not None:
-        xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
-    if orientation is not None:
-        w, x, y, z = (float(v) for v in orientation)
-        xf.AddOrientOp().Set(Gf.Quatf(w, Gf.Vec3f(x, y, z)))
-    return xform.GetPrim()
-
-
-def _spawn_chair_seat(prim_path: str, cfg: Any, translation=None, orientation=None):
-    """The seat, underside = local +z: slab collider + 2 front leg-socket annuli + 2 rear
-    upright studs (cylinder + dark guide cone on top). One rigid body."""
-    import omni.usd
-
-    stage = omni.usd.get_context().get_stage()
-    root = _root_xform(stage, prim_path, translation, orientation)
-    _apply_body_apis(root, cfg.mass_props.mass)
-
-    sx, sy, st = cfg.slab_size
-    _author_box(stage, f"{prim_path}/slab", (sx, sy, st), (0.0, 0.0, 0.0), cfg.color,
-                cfg.contact_offset)
-    for j, (lx, ly) in enumerate(cfg.leg_slots):
-        _author_annulus(stage, prim_path, f"socket{j}", (lx, ly, st / 2 + cfg.socket_h / 2),
-                        cfg.socket_r_in, cfg.socket_wall, cfg.socket_h, cfg.n_segments,
-                        cfg.fitting_color, cfg.contact_offset)
-    shaft_l = cfg.stud_l - cfg.stud_cone_h
-    for j, (bx, by) in enumerate(cfg.stud_slots):
-        _author_cylinder(stage, f"{prim_path}/stud_{j}", cfg.stud_r, shaft_l,
-                         (bx, by, st / 2 + shaft_l / 2), cfg.stud_color, cfg.contact_offset)
-        _author_cone(stage, f"{prim_path}/stud_tip_{j}", cfg.stud_r, cfg.stud_cone_h,
-                     (bx, by, st / 2 + shaft_l + cfg.stud_cone_h / 2), True,
-                     cfg.tip_color, cfg.contact_offset)
-    return root
-
-
-def _spawn_chair_leg(prim_path: str, cfg: Any, translation=None, orientation=None):
-    """One leg: shaft cylinder along local z + a COLLIDING guide cone at the insertion end
-    (-z, apex down — funnels the drop into the socket) + a visual-only foot cap at +z
-    (orientation cue for a skimming viewer)."""
-    import omni.usd
-
-    stage = omni.usd.get_context().get_stage()
-    root = _root_xform(stage, prim_path, translation, orientation)
-    _apply_body_apis(root, cfg.mass_props.mass)
-
-    shaft_l = cfg.leg_l - cfg.cone_h  # cylinder part; the cone tip completes leg_l
-    _author_cylinder(stage, f"{prim_path}/shaft", cfg.leg_r, shaft_l,
-                     (0.0, 0.0, cfg.cone_h / 2), cfg.color, cfg.contact_offset)
-    _author_cone(stage, f"{prim_path}/tip", cfg.leg_r, cfg.cone_h,
-                 (0.0, 0.0, -cfg.leg_l / 2 + cfg.cone_h / 2), False,
-                 cfg.tip_color, cfg.contact_offset)
-    _author_cylinder(stage, f"{prim_path}/foot", cfg.leg_r * 1.4, 0.008,
-                     (0.0, 0.0, cfg.leg_l / 2 - 0.004), cfg.tip_color, None)  # visual only
-    return root
-
-
-def _spawn_chair_back(prim_path: str, cfg: Any, translation=None, orientation=None):
-    """The backrest: a bottom flange plate carrying 2 hole annuli (these drop over the
-    seat's studs — the two-point insertion) + the upright panel behind them. Back local
-    frame: origin at the hole line, flange plate spans z in [-t/2, +t/2], holes at
-    (+/- hole_sx, 0), panel rises above the plate on the +y side (clear of the nut drop
-    path over the holes)."""
-    import omni.usd
-
-    stage = omni.usd.get_context().get_stage()
-    root = _root_xform(stage, prim_path, translation, orientation)
-    _apply_body_apis(root, cfg.mass_props.mass)
-
-    px_, py, pz = cfg.panel_size
-    t = cfg.flange_t
-    for j, sx in enumerate((-cfg.hole_sx, cfg.hole_sx)):
-        _author_annulus(stage, prim_path, f"hole{j}", (sx, 0.0, 0.0), cfg.hole_r_in,
-                        cfg.hole_wall, t, cfg.n_segments, cfg.color, cfg.contact_offset)
-    # flange plate: connects the two hole rings to the panel foot (overlaps with the
-    # annuli are harmless — same body)
-    _author_box(stage, f"{prim_path}/plate", (px_, cfg.flange_d, t),
-                (0.0, cfg.flange_d / 2 - 0.008, 0.0), cfg.color, cfg.contact_offset)
-    _author_box(stage, f"{prim_path}/panel", (px_, py, pz),
-                (0.0, cfg.panel_y, t / 2 + pz / 2), cfg.color, cfg.contact_offset)
-    return root
-
-
-def _spawn_chair_nut(prim_path: str, cfg: Any, translation=None, orientation=None):
-    """One nut: an octagonal annulus ring (the stacking-toy stacking-piece core), hole inradius
-    `r_in` over the stud, outer inradius `r_out` — far wider than the flange holes."""
-    import omni.usd
-
-    stage = omni.usd.get_context().get_stage()
-    root = _root_xform(stage, prim_path, translation, orientation)
-    _apply_body_apis(root, cfg.mass_props.mass)
-    _author_annulus(stage, prim_path, "ring", (0.0, 0.0, 0.0), cfg.r_in,
-                    cfg.r_out - cfg.r_in, cfg.thickness, cfg.n_segments, cfg.color,
-                    cfg.contact_offset)
-    return root
-
-
-def _chair_spawner_cfg(kind: str, *, mass: float, **kw: Any) -> Any:
-    """Build (lazily, app required) the spawner cfg for one chair part. Each configclass is
-    defined once and cached — `clone` wraps the spawn function exactly like `spawn_cuboid`
-    is wrapped."""
-    import isaaclab.sim as sim_utils
-    from isaaclab.sim.spawners.spawner_cfg import RigidObjectSpawnerCfg
-    from isaaclab.sim.utils import clone
-    from isaaclab.utils import configclass
-
-    if kind not in _SPAWNER_CACHE:
-
-        @configclass
-        class ChairSeatSpawnerCfg(RigidObjectSpawnerCfg):
-            func: Callable = clone(_spawn_chair_seat)
-            slab_size: tuple = (0.26, 0.26, 0.03)
-            leg_slots: tuple = ((-0.08, -0.08), (0.08, -0.08))
-            stud_slots: tuple = ((-0.08, 0.08), (0.08, 0.08))
-            socket_r_in: float = 0.019
-            socket_wall: float = 0.012
-            socket_h: float = 0.04
-            stud_r: float = 0.012
-            stud_l: float = 0.085
-            stud_cone_h: float = 0.024
-            n_segments: int = 8
-            contact_offset: float = 0.0015
-            color: tuple = (0.72, 0.55, 0.34)
-            fitting_color: tuple = (0.45, 0.45, 0.48)
-            stud_color: tuple = (0.55, 0.57, 0.60)
-            tip_color: tuple = (0.10, 0.10, 0.10)
-
-        @configclass
-        class ChairLegSpawnerCfg(RigidObjectSpawnerCfg):
-            func: Callable = clone(_spawn_chair_leg)
-            leg_r: float = 0.015
-            leg_l: float = 0.16
-            cone_h: float = 0.012
-            contact_offset: float = 0.0015
-            color: tuple = (0.30, 0.25, 0.20)
-            tip_color: tuple = (0.10, 0.10, 0.10)
-
-        @configclass
-        class ChairBackSpawnerCfg(RigidObjectSpawnerCfg):
-            func: Callable = clone(_spawn_chair_back)
-            panel_size: tuple = (0.24, 0.02, 0.10)
-            panel_y: float = 0.050
-            flange_d: float = 0.06
-            flange_t: float = 0.015
-            hole_sx: float = 0.08
-            hole_r_in: float = 0.017
-            hole_wall: float = 0.012
-            n_segments: int = 8
-            contact_offset: float = 0.0015
-            color: tuple = (0.62, 0.45, 0.26)
-
-        @configclass
-        class ChairNutSpawnerCfg(RigidObjectSpawnerCfg):
-            func: Callable = clone(_spawn_chair_nut)
-            r_in: float = 0.015
-            r_out: float = 0.030
-            thickness: float = 0.012
-            n_segments: int = 8
-            contact_offset: float = 0.0015
-            color: tuple = (0.75, 0.20, 0.15)
-
-        _SPAWNER_CACHE["seat"] = ChairSeatSpawnerCfg
-        _SPAWNER_CACHE["leg"] = ChairLegSpawnerCfg
-        _SPAWNER_CACHE["back"] = ChairBackSpawnerCfg
-        _SPAWNER_CACHE["nut"] = ChairNutSpawnerCfg
-
-    return _SPAWNER_CACHE[kind](
-        mass_props=sim_utils.MassPropertiesCfg(mass=mass),
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-        **kw,
-    )
-
-
-# ----- scene cfg -------------------------------------------------------------------------------
 @dataclass
 class ChairAssemblySceneCfg(BaseCfg):
-    """Config for `ChairAssemblyScene`. `ori_cos` is the source's 0.94 verbatim; the
-    position thresholds default looser than the source's 5 mm sim (procedural clearances
-    are the honest bound here) — tighten after the GPU calibration sweep publishes the
-    real knee."""
+    """Config for `ChairAssemblyScene`. Geometry constants are measured from the split scan
+    parts (assets/chair/chair_parts.json provenance) — see scripts/author_chair_rigs.py."""
 
-    # --- tunable: rubric thresholds (the ported assembly-graph terms) -------------------------
-    tau_xy: float = tunable(0.010)  # child anchor within this of a candidate, parent-frame xy (m)
-    tau_z: float = tunable(0.008)  # child anchor within this of the candidate seat depth (m)
-    ori_cos: float = tunable(0.94)  # min orientation cosine child-axis vs parent-axis (source)
+    # --- tunable: rubric thresholds ----------------------------------------------------------
+    tau_xy: float = tunable(0.010)  # max lateral error of a mating feature, base frame (m)
+    tau_z: float = tunable(0.008)  # max along-axis error at the seated pose (m)
+    ori_cos: float = tunable(0.94)  # min axis-alignment cosine (the source's 0.94, verbatim)
     settle_speed: float = tunable(0.05)  # max child |v| at the moment of welding (m/s)
-    nut_friction: float = tunable(0.10)  # nut material friction (static = dynamic), set at
-    # bind. Low on purpose: a nut must SLIDE down the stud-tip cone and the stud instead of
-    # sticking (it locks by weld, so it never needs friction; the nut_thread scene pattern).
+    # A nut is seated once it has threaded far enough down the exposed stud tip.
+    nut_seat_depth: float = tunable(0.020)  # min travel from the thread tip (m); full thread 0.025
+    # Part friction (static = dynamic), set at bind — the nut_thread scene's proven pairing:
+    # the moving threaded part runs slick against a grippier fixed part.
+    nut_friction: float = tunable(0.01)
+    base_friction: float = tunable(0.75)  # chair base: studs, shell contacts, AND feet on the floor
+    back_friction: float = tunable(0.3)  # the shell riding the leg-top rail / shanks
 
-    # --- tunable: randomization (the task-family knobs) ----------------------------------------
+    # Weld-on-closure grasping (the benchmark's auto-weld contract, the pc_motherboard
+    # machinery generalized to EVERY hand on the stage — a bi-Franka binding has two):
+    # close the fingers across a part's grip band and it welds to that hand; open wide to
+    # release. Gripper envs only (no-op under robot="null").
+    grasp_weld: bool = tunable(True)
+    # Engage radius 25 mm (the mb scene uses 10): the chair's grip bands sit on big parts
+    # with no confusable geometry nearby, and a Franka pinching the backrest's 6 cm shell
+    # measurably stalls in-window with its pinch centre ~2 cm off the nominal band line.
+    grasp_weld_dist: float = tunable(0.025)
+    # Measured-rotation screw joints (the pc_motherboard screw mechanic, nut-side): an
+    # engaged nut stays DYNAMIC — something must physically hold and rotate it — but its
+    # AXIAL advance is written from its measured rotation about the stud axis at the true
+    # thread pitch, one-way through an engagement lash. The stud's SDF thread cannot carry
+    # this itself: SDF colliders hosted in a rigid COMPOUND body measurably offer no axial
+    # resistance (helix ratio 0.00 on the vertical vise probe; nut_thread's fixed-base
+    # ARTICULATION bolt threads correctly on the same box — a movable chair cannot pin
+    # its studs to the world, so the joint IS the thread here).
+    screw_pitch: float = tunable(0.002)  # m per revolution (M16x2), TWO-WAY (nuts unscrew)
+    screw_lash_deg: float = tunable(30.0)  # engaged rotation before the helix couples
+    screw_engage_lat: float = tunable(0.004)  # max lateral offset to count as on-tip (m)
+    screw_engage_window: float = tunable(0.004)  # tip +/- this in y = the engage band (m)
+
+    # --- tunable: randomization (the task-family knobs) ---------------------------------------
     reset_pos_jitter: float = tunable(0.04)  # uniform +/- xy jitter per loose part at reset (m)
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- yaw per loose part at reset
-    seat_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the seat at reset (m)
-    seat_yaw_deg: float = tunable(30.0)  # uniform +/- yaw of the seat at reset (rubric is
-    # seat-frame, so this is transparent to judging — it only moves the work)
+    reset_yaw_deg: float = tunable(60.0)  # uniform +/- yaw per loose part at reset
+    seat_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the chair base at reset (m)
+    seat_yaw_base: float = tunable(0.0)  # fixed base yaw (deg) — bindings orient the chair
+    # to their workspace (rubric is base-frame, so yaw is transparent to judging)
+    seat_yaw_deg: float = tunable(20.0)  # uniform +/- yaw jitter on top of the base yaw
     shuffle_slots: bool = tunable(True)  # per-episode random part->slot permutation
+    legs_preattached: bool = tunable(True)  # False = the flat-pack variant (NOT YET AUTHORED)
 
-    # --- tunable: placement (robot embodiments raise the work onto a bench) --------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
-    seat_pos: tuple = tunable((0.0, 0.0))  # seat centre on the surface
-    spawn_radii: tuple = tunable((0.40,))  # scatter ring radii for the 5 loose parts
-    spawn_arc: tuple = tunable((0.0, 360.0))  # scatter arc (deg) around the seat
+    # --- tunable: placement (kept name-compatible with the robot bindings in configs/envs.py) --
+    # Default work pose: a LOW assembly platform (the suite's tables would put a 1 m chair's
+    # studs at ~1.4 m, outside Franka reach; the floor puts them at 0.40 m, the envelope's
+    # low edge). 0.25 m lands the studs at ~0.65 m; robots stand ON the platform.
+    surface_z: float = tunable(0.25)  # work-surface height; 0 = the chair stands on the floor
+    seat_pos: tuple = tunable((0.0, 0.0))  # chair-base centre on the surface
+    spawn_radii: tuple = tunable((0.45, 0.62))  # scatter ring radii for the 3 loose parts
+    spawn_arc: tuple = tunable((200.0, 340.0))  # scatter arc (deg) around the base
+    # Explicit part placement, overriding the arc when non-empty (the siblings'
+    # `nut_init_xy` pattern): one (x, y, yaw_deg) per manifest part [back, nut_0, nut_1].
+    # The packing-table top is 2.47 x 0.76 m — radial scatter around the chair walks off
+    # its short axis, so robot bindings lay parts along the LONG axis instead.
+    spawn_slots: tuple = tunable(())
+    # Staging riser (a low parts pallet) under the backrest's slot: lying flat on the
+    # bench, the panel's only jaw-sized pinches (the 54 mm bottom lip, the 60-66 mm
+    # low side bands) sit within ~3 cm of the tabletop — inside the palm's own
+    # height, MEASURED unreachable (the hand body intersects the bench). The riser
+    # lifts them into free air. (x, y) centre, scene frame; () = no riser.
+    riser_pos: tuple = tunable(())
+    riser_size: tuple = info((0.42, 0.30, 0.12))
+    back_spawn_dz: float = tunable(0.0)  # extra back spawn height (set = riser height)
+    # Leaning rack (a tall staging block): the backrest spawns LEANING against it at
+    # `back_lean_deg`, nearly upright. Every welded-wrist rotation beyond ~25 deg
+    # stalls against this controller (measured across 8 variants: solo/dual, either
+    # arm, gains 30-90, gravity on/off) while grasps, dual translations, and <=25 deg
+    # rolls are reliable — so the staging supplies the uprightness instead of the
+    # arms. (x, y) centre, scene frame; () = no rack.
+    rack_pos: tuple = tunable(())
+    rack_size: tuple = info((0.34, 0.20, 0.45))
+    back_lean_deg: float = tunable(0.0)  # 0 = lying face-up; >0 = leaning this far up
 
-    # --- info: structure ------------------------------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))  # procedural bench top (x, y), used when surface_z > 0
-    slab_size: tuple = info((0.26, 0.26, 0.03))
-    seat_mass: float = info(0.50)
-    # Front leg sockets / rear studs, seat-local xy. Stud x spacing == 2 * hole_sx.
-    leg_slots: tuple = info(((-0.08, -0.08), (0.08, -0.08)))
-    stud_slots: tuple = info(((-0.08, 0.08), (0.08, 0.08)))
-    leg_r: float = info(0.015)
-    leg_l: float = info(0.16)  # total, INCLUDING the guide cone at the insertion end
-    leg_mass: float = info(0.08)
-    socket_clear: float = info(0.004)  # radial clearance leg-in-socket (m)
-    socket_wall: float = info(0.012)
-    socket_h: float = info(0.04)
-    stud_r: float = info(0.012)
-    stud_l: float = info(0.085)  # above the slab top, INCLUDING the tip cone
-    cone_h: float = info(0.012)  # leg-insertion guide-cone height
-    # Stud tip cone: TALLER than the leg cones on purpose): at a
-    # 45 deg half-angle (12 mm tall) a dropped nut ring that touched the flank cocked or
-    # stuck and every capture was pure hole clearance (0/3 mm ok, 6 mm+ 0/3). 24 mm tall
-    # -> ~27 deg half-angle: contact normals are mostly lateral (centering) and the
-    # slide condition holds for any sane friction.
-    stud_cone_h: float = info(0.024)
-    panel_size: tuple = info((0.24, 0.02, 0.10))  # backrest panel (x, y=thickness, z)
-    panel_y: float = info(0.050)  # panel centre y, back-local — behind the hole line, so a
-    # nut (outer inradius 30 mm) drops onto a stud with >= 10 mm of clearance to the panel
-    flange_d: float = info(0.06)  # flange plate depth (y) connecting holes to the panel foot
-    flange_t: float = info(0.015)  # flange thickness = the stud insertion depth
-    hole_sx: float = info(0.08)  # flange holes at (+/- hole_sx, 0), back-local
-    hole_clear: float = info(0.005)  # radial clearance stud-in-hole (two-point insertion grace)
-    hole_wall: float = info(0.012)
-    back_mass: float = info(0.30)
-    # Nut-over-stud radial clearance. 5 mm (was 3 — GPU sweep A showed raw drops capture
-    # only within the pure clearance): still honest under the rubric — max physical
-    # on-stud offset = nut_r_in/cos(pi/8) - stud_r ~= 6.4 mm < tau_xy, and the 60 mm ring
-    # still cannot pass the 17 mm flange hole (the ordering block is untouched).
-    nut_hole_clear: float = info(0.005)
-    nut_r_out: float = info(0.030)  # nut outer inradius — far wider than the flange hole
-    nut_t: float = info(0.012)
-    nut_mass: float = info(0.03)
-    n_segments: int = info(8)
-    # Explicit small contact offset: clearances are 3-5 mm, the ~2 cm default would produce
-    # phantom contact everywhere (pc_gpu precedent); both mating sides carry it, so the
-    # speculative sum (3 mm) stays under the smallest diametral clearance.
-    contact_offset: float = info(0.0015)
-    seat_color: tuple = info((0.72, 0.55, 0.34))
-    fitting_color: tuple = info((0.45, 0.45, 0.48))
-    leg_color: tuple = info((0.30, 0.25, 0.20))
-    back_color: tuple = info((0.62, 0.45, 0.26))
-    stud_color: tuple = info((0.55, 0.57, 0.60))
-    tip_color: tuple = info((0.10, 0.10, 0.10))
-    nut_color: tuple = info((0.75, 0.20, 0.15))
-
-    # Derived (filled in __post_init__).
-    socket_r_in: float = field(default=None, init=False)
-    hole_r_in: float = field(default=None, init=False)
-    nut_r_in: float = field(default=None, init=False)
-    slab_top: float = field(default=None, init=False)  # slab top face, seat body frame z
-    back_seat_z: float = field(default=None, init=False)  # seated back ORIGIN, seat frame z
-    nut_seat_z: float = field(default=None, init=False)  # seated nut ORIGIN, seat frame z
-    manifest: tuple = field(default=None, init=False)  # ((name, kind), ...) loose parts
+    # --- info: measured structure (assets/chair, authored by author_chair_rigs.py) -------------
+    # The work surface is the suite's vendored Heavy-Duty PackingTable (the ikea/mb table),
+    # SUNK so its top lands at `surface_z` (the ikea pattern: the buried part clips below
+    # the floor, purely cosmetic). A procedural slab was tried and looked wrong.
+    workbench_usd: str = info("")  # empty -> the vendored packing table
+    # float = isotropic; a (sx, sy, sz) tuple scales axes independently (e.g. widen the
+    # top without stretching the length or height). Authored in cm.
+    workbench_scale: Any = info(0.01)
+    workbench_height: float = info(0.994)  # its intrinsic top height at this scale
+    base_mass: float = info(5.0)
+    back_mass: float = info(2.5)
+    nut_mass: float = info(0.03)  # M16 nut (kg), nut_thread verbatim
+    stud_x: float = info(0.14)  # stud axes at (+/- stud_x, stud_z), base frame, pointing +y
+    stud_z: float = info(0.397)  # mid-slab stud height
+    shank_y0: float = info(0.2296)  # smooth shank from here (1 cm embedded past the rear face)
+    thread_y0: float = info(0.3048)  # exposed thread base (usable nut travel starts here)
+    thread_y1: float = info(0.3296)  # thread tip
+    slab_rear_y: float = info(0.2396)  # the slab collision's rear face
+    back_seat_pos: tuple = info((0.0, 0.219, 0.320))  # back origin at the seated pose, base frame
+    back_hole_z: float = info(0.077)  # hole height in the BACK's frame (0.320 + 0.077 = 0.397)
+    hole_r_in: float = info(0.009)  # 18 mm holes over the 15.6 mm shanks
+    nut_r_in: float = info(0.008)  # M16 nut bore radius (ordering-violation detector)
+    base_height: float = info(0.473)  # floor -> slab top
+    back_height: float = info(0.686)  # shell bottom -> crown
+    back_depth: float = info(0.213)  # shell front skin -> crown lean-back extreme
+    light_intensity: float = info(2500.0)
+    # Asset USDs; empty -> the packaged parts under assets/chair + assets/factory.
+    asset_dir: str = info("")
+    base_usd: str = info("")
+    back_usd: str = info("")
+    nut_usd: str = info("")
 
     def __post_init__(self) -> None:
-        self.socket_r_in = round(self.leg_r + self.socket_clear, 4)
-        self.hole_r_in = round(self.stud_r + self.hole_clear, 4)
-        self.nut_r_in = round(self.stud_r + self.nut_hole_clear, 4)
-        self.slab_top = round(self.slab_size[2] / 2, 4)
-        # back origin (hole-line centre, mid-flange) when the flange rests on the slab
-        self.back_seat_z = round(self.slab_top + self.flange_t / 2, 4)
-        # nut resting on the flange top around a stud
-        self.nut_seat_z = round(self.slab_top + self.flange_t + self.nut_t / 2, 4)
-        self.manifest = (("leg_0", "leg"), ("leg_1", "leg"), ("back", "back"),
-                         ("nut_0", "nut"), ("nut_1", "nut"))
+        if not self.legs_preattached:
+            raise ValueError(
+                "legs_preattached=False (the flat-pack variant) is reserved: the split leg "
+                "parts exist under assets/chair/ but their mating features are not authored yet"
+            )
+        assets = Path(__file__).resolve().parents[1] / "assets"
+        self.asset_dir = self.asset_dir or str(assets / "chair")
+        self.base_usd = self.base_usd or str(Path(self.asset_dir) / "chair_base.usd")
+        self.back_usd = self.back_usd or str(Path(self.asset_dir) / "chair_back.usd")
+        self.nut_usd = self.nut_usd or str(assets / "factory" / "factory_nut_m16.usd")
+        self.workbench_usd = self.workbench_usd or str(
+            assets / "props" / "packing_table" / "SM_HeavyDutyPackingTable_C02_01_physics.usd")
+        self.manifest = (("back", "back"), ("nut_0", "nut"), ("nut_1", "nut"))
 
 
-# Assembly-pair order (fixed): the parent of every pair is the seat (nuts anchor on the
-# seat's studs — the backrest's clamp points).
-PAIRS = ("seat-leg_0", "seat-leg_1", "seat-back", "seat-nut_0", "seat-nut_1")
+# Assembly-pair order (fixed): the parent of every pair is the chair base.
+PAIRS = ("base-back", "base-nut_0", "base-nut_1")
 
 
-# ----- scene -----------------------------------------------------------------------------------
 @SCENES.register("chair")
 class ChairAssemblyScene(BaseScene):
     cfg: ChairAssemblySceneCfg
@@ -483,8 +199,9 @@ class ChairAssemblyScene(BaseScene):
 
     # ----- assets -------------------------------------------------------------------------------
     def assets(self) -> dict[str, Any]:
-        """Ground, light, optional bench, the seat lying underside-up, and the five loose
-        parts at nominal scatter slots (reset() re-places everything)."""
+        """Ground, dome light, optional bench, the chair base standing upright, the backrest
+        lying face-down nearby, and two loose nuts. The threaded parts load with the high
+        solver-iteration counts the SDF threads need (nut_thread verbatim)."""
         import isaaclab.sim as sim_utils
         from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
 
@@ -500,71 +217,125 @@ class ChairAssemblyScene(BaseScene):
             ),
             "light": AssetBaseCfg(
                 prim_path="/World/light",
-                spawn=sim_utils.DomeLightCfg(intensity=2500.0, color=(0.9, 0.9, 0.9)),
+                spawn=sim_utils.DomeLightCfg(intensity=c.light_intensity, color=(0.9, 0.9, 0.9)),
             ),
         }
-        if z0 > 0:  # procedural workbench (crate pattern): kinematic slab, top at surface_z
-            out["bench"] = RigidObjectCfg(
+        if z0 > 0:  # the vendored packing table, SUNK so its top lands at surface_z (the
+            # ikea pattern — the buried part clips below the floor, purely cosmetic).
+            # Spawned as AssetBaseCfg with kinematic rigid props, exactly like ikea's
+            # workbench (a RigidObjectCfg procedural cuboid crashed the 5.1 GPU view).
+            out["bench"] = AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Bench",
-                spawn=sim_utils.CuboidCfg(
-                    size=(c.bench_size[0], c.bench_size[1], z0),
+                spawn=sim_utils.UsdFileCfg(
+                    usd_path=c.workbench_usd,
+                    scale=((c.workbench_scale,) * 3 if isinstance(c.workbench_scale, float)
+                           else tuple(c.workbench_scale)),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-                    collision_props=sim_utils.CollisionPropertiesCfg(),
-                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.35, 0.35, 0.38)),
                 ),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, z0 / 2)),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, z0 - c.workbench_height)),
+            )
+        if c.riser_pos:  # staging riser under the backrest slot (see cfg note) — a
+            # referenced USD mesh like the bench: a procedural CuboidCfg here crashed
+            # the GPU physics parse at sim.reset(), twice, measured (the bench has the
+            # same history). Authored by scripts/author_riser_usd.py, origin at the
+            # bottom face.
+            out["riser"] = AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/Riser",
+                spawn=sim_utils.UsdFileCfg(
+                    usd_path=str(Path(c.asset_dir) / "riser.usd"),
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+                ),
+                init_state=AssetBaseCfg.InitialStateCfg(
+                    pos=(c.riser_pos[0], c.riser_pos[1], z0)),
+            )
+        if c.rack_pos:  # leaning rack (see cfg note) — same referenced-USD pattern
+            out["rack"] = AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/Rack",
+                spawn=sim_utils.UsdFileCfg(
+                    usd_path=str(Path(c.asset_dir) / "rack.usd"),
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+                ),
+                init_state=AssetBaseCfg.InitialStateCfg(
+                    pos=(c.rack_pos[0], c.rack_pos[1], z0)),
             )
 
-        out["seat"] = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/Seat",
-            spawn=_chair_spawner_cfg(
-                "seat", mass=c.seat_mass, slab_size=c.slab_size, leg_slots=c.leg_slots,
-                stud_slots=c.stud_slots, socket_r_in=c.socket_r_in, socket_wall=c.socket_wall,
-                socket_h=c.socket_h, stud_r=c.stud_r, stud_l=c.stud_l,
-                stud_cone_h=c.stud_cone_h,
-                n_segments=c.n_segments, contact_offset=c.contact_offset, color=c.seat_color,
-                fitting_color=c.fitting_color, stud_color=c.stud_color, tip_color=c.tip_color,
+        # Chair base: DYNAMIC (welds bind two dynamic bodies), standing on its feet. NO
+        # spawner-wide collision offsets: the box/shank colliders carry their own small
+        # per-prim offsets (baked by author_chair_rigs — the 1.2 mm/side hole clearance
+        # needs them) while the referenced factory threads keep their defaults — a
+        # spawner-wide 0.2 mm offset let the press-fed nut TUNNEL through the SDF crests.
+        out["base"] = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/ChairBase",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=c.base_usd,
+                activate_contact_sensors=True,
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    solver_position_iteration_count=192,
+                    solver_velocity_iteration_count=1,
+                    max_depenetration_velocity=5.0,
+                ),
+                mass_props=sim_utils.MassPropertiesCfg(mass=c.base_mass),
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(
-                pos=(c.seat_pos[0], c.seat_pos[1], z0 + c.slab_size[2] / 2 + 0.002)),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=(c.seat_pos[0], c.seat_pos[1], z0 + 0.002)),
         )
-        for i, (name, kind) in enumerate(c.manifest):
-            if kind == "leg":
-                spawn = _chair_spawner_cfg(
-                    "leg", mass=c.leg_mass, leg_r=c.leg_r, leg_l=c.leg_l, cone_h=c.cone_h,
-                    contact_offset=c.contact_offset, color=c.leg_color, tip_color=c.tip_color)
-                z = z0 + c.leg_r + 0.003
-            elif kind == "back":
-                spawn = _chair_spawner_cfg(
-                    "back", mass=c.back_mass, panel_size=c.panel_size, panel_y=c.panel_y,
-                    flange_d=c.flange_d, flange_t=c.flange_t, hole_sx=c.hole_sx,
-                    hole_r_in=c.hole_r_in, hole_wall=c.hole_wall, n_segments=c.n_segments,
-                    contact_offset=c.contact_offset, color=c.back_color)
-                # lying on its side the back rests on its hole rings (outer ~29 mm + the
-                # octagon corners) — spawn the origin just above that, not at panel thickness
-                z = z0 + c.hole_r_in + c.hole_wall + 0.006
-            else:
-                spawn = _chair_spawner_cfg(
-                    "nut", mass=c.nut_mass, r_in=c.nut_r_in, r_out=c.nut_r_out,
-                    thickness=c.nut_t, n_segments=c.n_segments,
-                    contact_offset=c.contact_offset, color=c.nut_color)
-                z = z0 + c.nut_t / 2 + 0.003
-            ang = math.radians(self._slot_angle(i))
-            r = c.spawn_radii[i % len(c.spawn_radii)]
-            out[name] = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/" + name.capitalize(),  # Leg_0 / Back / Nut_0 ...
-                spawn=spawn,
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(c.seat_pos[0] + r * math.cos(ang),
-                         c.seat_pos[1] + r * math.sin(ang), z)),
+        out["back"] = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Back",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=c.back_usd,
+                activate_contact_sensors=True,
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    solver_position_iteration_count=192,
+                    solver_velocity_iteration_count=1,
+                    max_depenetration_velocity=5.0,
+                ),
+                mass_props=sim_utils.MassPropertiesCfg(mass=c.back_mass),
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=self._slot_pos(0, z0 + 0.008)),
+        )
+        for i in range(2):
+            out[f"nut_{i}"] = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Nut_%d" % i,
+                spawn=sim_utils.UsdFileCfg(
+                    usd_path=c.nut_usd,
+                    activate_contact_sensors=True,
+                    articulation_props=sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False),
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                        solver_position_iteration_count=192,
+                        solver_velocity_iteration_count=1,
+                        max_depenetration_velocity=5.0,
+                        # Never sleeps: on the HORIZONTAL stud a nut pauses with zero
+                        # velocity mid-thread (no gravity feed, unlike nut_thread's
+                        # vertical bolt), PhysX puts it to sleep, and the tensor-API
+                        # external wrench is ignored on sleeping bodies (measured:
+                        # 1400 steps at 2.5 N, zero displacement).
+                        sleep_threshold=0.0,
+                    ),
+                    mass_props=sim_utils.MassPropertiesCfg(mass=c.nut_mass),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=self._slot_pos(1 + i, z0 + 0.02)),
             )
         return out
 
     def _slot_angle(self, i: int) -> float:
-        """Nominal arc angle (deg) of scatter slot `i` (5 slots evenly on the arc)."""
+        """Nominal arc angle (deg) of scatter slot `i` (3 slots evenly on the arc)."""
         a0, a1 = self.cfg.spawn_arc
         n = len(self.cfg.manifest)
         return a0 + (a1 - a0) * (i + 0.5) / n
+
+    def _slot_xy_yaw(self, i: int) -> tuple[float, float, float]:
+        """Slot centre + nominal yaw (deg) for part `i`: explicit `spawn_slots` when set,
+        else the scatter arc (yaw 0)."""
+        c = self.cfg
+        if c.spawn_slots:
+            x, y, yaw = c.spawn_slots[i]
+            return (c.seat_pos[0] + x, c.seat_pos[1] + y, yaw)
+        ang = math.radians(self._slot_angle(i))
+        r = c.spawn_radii[i % len(c.spawn_radii)]
+        return (c.seat_pos[0] + r * math.cos(ang), c.seat_pos[1] + r * math.sin(ang), 0.0)
+
+    def _slot_pos(self, i: int, z: float) -> tuple:
+        x, y, _yaw = self._slot_xy_yaw(i)
+        return (x, y, z)
 
     def sim_cfg(self) -> SimCfg:
         return SimCfg(
@@ -583,99 +354,147 @@ class ChairAssemblyScene(BaseScene):
 
     # ----- lifecycle ------------------------------------------------------------------------------
     def bind(self, env: BaseEnv) -> None:
-        """Grab handles, allocate the weld flags + ordering-violation metric, and pre-author
-        the 5 (disabled) weld joints per env (the ikea pattern: toggled, never created
-        mid-sim)."""
+        """Grab handles, allocate the weld flags + ordering metric, set the frictions, and
+        pre-author the 3 (disabled) weld joints per env (the ikea toggle pattern)."""
         super().bind(env)
-        self.seat: RigidObject = env.iscene["seat"]
-        self.legs: list[RigidObject] = [env.iscene["leg_0"], env.iscene["leg_1"]]
+        self.base: RigidObject = env.iscene["base"]
         self.back: RigidObject = env.iscene["back"]
         self.nuts: list[RigidObject] = [env.iscene["nut_0"], env.iscene["nut_1"]]
         self.env_origins = env.iscene.env_origins
         n = env.num_envs
-        self.welded = torch.zeros(n, 5, dtype=torch.bool, device=env.device)
-        # ordering metric: rising edges of "nut riding a stud while (seat,back) unassembled"
+        self.welded = torch.zeros(n, 3, dtype=torch.bool, device=env.device)
         self.order_violations = torch.zeros(n, dtype=torch.long, device=env.device)
         self._viol_prev = torch.zeros(n, 2, dtype=torch.bool, device=env.device)
-        for nut in self.nuts:  # nuts must SLIDE down cone + stud; they lock by weld
+        self._set_friction(self.base, self.cfg.base_friction)
+        self._set_friction(self.back, self.cfg.back_friction)
+        for nut in self.nuts:
             self._set_friction(nut, self.cfg.nut_friction)
         self._precreate_weld_joints()
+        self._grasp_weld_bind()
+        self._screw_bind()
 
     def _set_friction(self, asset, value: float) -> None:
-        """Overwrite static + dynamic friction on every shape of `asset` (all envs) — the
-        nut_thread scene pattern."""
+        """Overwrite static + dynamic friction on every shape of `asset` (all envs)."""
         mats = asset.root_physx_view.get_material_properties()
         mats[..., 0:2] = value  # [static, dynamic, restitution]
         asset.root_physx_view.set_material_properties(
             mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
-        """Fresh, unassembled start (all welds released): the seat lies underside-up at
-        `seat_pos` (+ jitter + yaw); the five loose parts land on the scatter-arc slots —
-        randomly permuted per episode — legs and back lying on their side, nuts flat."""
+        """Fresh, unassembled start (all welds released): the base stands at `seat_pos`
+        (+ jitter + yaw); the back lies FACE-DOWN and the nuts flat on the scatter-arc slots —
+        randomly permuted per episode."""
         c = self.cfg
         dev = self.env.device
         m = len(env_ids)
         origin = self.env_origins[env_ids]
-        c45 = math.cos(math.pi / 4)
-
-        # --- seat: underside (sockets/studs) up, xy jitter + yaw ---
+        # --- chair base: standing upright, xy jitter + yaw ---
         st = torch.zeros(m, 13, device=dev)
         st[:, 0] = c.seat_pos[0]
         st[:, 1] = c.seat_pos[1]
         st[:, :2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.seat_jitter
-        st[:, 2] = c.surface_z + c.slab_size[2] / 2 + 0.002
-        half = (torch.rand(m, device=dev) * 2 - 1) * math.radians(c.seat_yaw_deg) / 2
+        st[:, 2] = c.surface_z + 0.002
+        half = (math.radians(c.seat_yaw_base)
+                + (torch.rand(m, device=dev) * 2 - 1) * math.radians(c.seat_yaw_deg)) / 2
         st[:, 3] = torch.cos(half)
         st[:, 6] = torch.sin(half)
         st[:, 0:3] += origin
-        self.seat.write_root_state_to_sim(st, env_ids)
+        self.base.write_root_state_to_sim(st, env_ids)
 
         # --- loose parts: slot permutation + jitter + yaw ---
         n_parts = len(c.manifest)
-        if c.shuffle_slots:
-            perm = torch.rand(m, n_parts, device=dev).argsort(dim=1)  # (m, P): slot of part i
+        if c.shuffle_slots and not c.spawn_slots:  # explicit slots are role-assigned
+            perm = torch.rand(m, n_parts, device=dev).argsort(dim=1)
         else:
             perm = torch.arange(n_parts, device=dev).expand(m, n_parts)
-        slot_ang = torch.tensor([math.radians(self._slot_angle(i)) for i in range(n_parts)],
-                                device=dev)
-        slot_r = torch.tensor([c.spawn_radii[i % len(c.spawn_radii)] for i in range(n_parts)],
-                              device=dev)
+        slot_xyy = [self._slot_xy_yaw(i) for i in range(n_parts)]
+        slot_x = torch.tensor([s[0] for s in slot_xyy], device=dev)
+        slot_y = torch.tensor([s[1] for s in slot_xyy], device=dev)
+        slot_yaw = torch.tensor([math.radians(s[2]) for s in slot_xyy], device=dev)
         yaw_amp = math.radians(c.reset_yaw_deg)
-        bodies = dict(zip([nm for nm, _k in c.manifest],
-                          [*self.legs, self.back, *self.nuts]))
+        bodies = dict(zip([nm for nm, _k in c.manifest], [self.back, *self.nuts]))
         for i, (name, kind) in enumerate(c.manifest):
-            ang = slot_ang[perm[:, i]]
-            r = slot_r[perm[:, i]]
             st = torch.zeros(m, 13, device=dev)
-            st[:, 0] = c.seat_pos[0] + r * torch.cos(ang)
-            st[:, 1] = c.seat_pos[1] + r * torch.sin(ang)
+            st[:, 0] = slot_x[perm[:, i]]
+            st[:, 1] = slot_y[perm[:, i]]
             st[:, :2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
-            half = (torch.rand(m, device=dev) * 2 - 1) * yaw_amp / 2
+            half = (slot_yaw[perm[:, i]]
+                    + (torch.rand(m, device=dev) * 2 - 1) * yaw_amp) / 2
             cy, sy = torch.cos(half), torch.sin(half)
-            if kind == "leg":  # lying on its side: q = qz(yaw) * qy(90 deg)
-                st[:, 2] = c.surface_z + c.leg_r + 0.003
-                st[:, 3], st[:, 4], st[:, 5], st[:, 6] = cy * c45, -sy * c45, cy * c45, sy * c45
-            elif kind == "back":  # lying on its side: q = qz(yaw) * qx(90 deg); rests on
-                # the hole rings (outer ~29 mm + octagon corners), panel roughly face-down
-                st[:, 2] = c.surface_z + c.hole_r_in + c.hole_wall + 0.006
-                st[:, 3], st[:, 4], st[:, 5], st[:, 6] = cy * c45, cy * c45, sy * c45, sy * c45
-            else:  # nut: flat, free yaw
-                st[:, 2] = c.surface_z + c.nut_t / 2 + 0.003
+            if kind == "back":
+                if c.back_lean_deg != 0.0:
+                    # LEANING against the rack, nearly upright (see rack_pos note):
+                    # slot-local quat = qx(-+(90 - |lean|)) — 0 deg = flat face-up,
+                    # 90 = standing; the bottom edge rests on the bench, the upper
+                    # face on the rack's edge. The SIGN of back_lean_deg picks the
+                    # tip direction about the slot x-axis (positive tips the way
+                    # the negative-qx roll leans; negative mirrors it). Bindings
+                    # place slot + rack so the geometry closes; the preview render
+                    # verifies the settle.
+                    tip_sign = -1.0 if c.back_lean_deg > 0.0 else 1.0
+                    half_p = tip_sign * math.radians(90.0 - abs(c.back_lean_deg)) / 2
+                    rl = (math.cos(half_p), math.sin(half_p), 0.0, 0.0)
+                    st[:, 2] = c.surface_z + 0.012
+                else:
+                    # face-UP at its MEASURED rest pose (probe_chair_multi_reset
+                    # --rest-back, dropped high over open bench, 400-step settle). The
+                    # banana-curved shell has NO flat free rest; of its two measured
+                    # roll equilibria the LOW one is baked here — origin 0.074 above
+                    # the surface, ~9 deg of tilt, visually "lying on the table" (the
+                    # other equilibrium props the bottom edge 0.163 up = floating
+                    # look). Spawning at the rest orientation + a 1.5 cm hop makes
+                    # the drop a pure vertical settle (landing dynamics are NOT
+                    # yaw-covariant; a tumbled bake walked the panel off the rim).
+                    # Spawning low and flat instead embeds the curl in the bench slab
+                    # (26 m/s contact blast, swept the chair off). STANDING free tips
+                    # over; face-down hides every pinchable band.
+                    rl = (0.7610, -0.6488, 0.0, 0.0)  # low-rest quat in the slot frame
+                    st[:, 2] = c.surface_z + c.back_spawn_dz + 0.088
+                st[:, 3] = cy * rl[0] - sy * rl[3]
+                st[:, 4] = cy * rl[1] - sy * rl[2]
+                st[:, 5] = cy * rl[2] + sy * rl[1]
+                st[:, 6] = cy * rl[3] + sy * rl[0]
+            else:  # nut: flat, screw axis up, free yaw (nut_thread's resting pose)
+                st[:, 2] = c.surface_z + 0.02
                 st[:, 3], st[:, 6] = cy, sy
             st[:, 0:3] += origin
             bodies[name].write_root_state_to_sim(st, env_ids)
 
         self.order_violations[env_ids] = 0
         self._viol_prev[env_ids] = False
-        self._reconcile_welds(env_ids, torch.zeros(m, 5, dtype=torch.bool, device=dev))
+        self._reconcile_welds(env_ids, torch.zeros(m, 3, dtype=torch.bool, device=dev))
+        self._grasp_weld_release_all(env_ids)
+        self._screw_reset(env_ids)
+
+    def grasp_sites(self) -> list:
+        """Grip bands for the weld-on-closure contract: the backrest's bottom-edge lip,
+        its two SIDE edges, and each nut's hex (across the 24.4 mm flats). Band =
+        (name, handle, p0, p1, (lo, hi)), part-local. MEASURED against the 80 mm jaw:
+        the shell's side-edge cross-section is 60-66 mm only below z 0.15 (70-79 mm at
+        z 0.2-0.5 and up to 130 mm at the crown — unpinchable), and the bottom lip is
+        54 mm; windows cap at 0.070 so release (window top + the 8 mm hysteresis)
+        stays inside the jaw's 80 mm travel."""
+        return [
+            ("back", self.back, (-0.06, 0.0505, 0.025), (0.06, 0.0505, 0.025), (0.045, 0.070)),
+            # side bands reach to z 0.30 — near the panel's CoM (~0.30 up), where a
+            # mid-grip makes the erect a near-in-place roll instead of a pendulum
+            # swing (user's fix). Measured edge: 60-66 mm below z 0.15, 69-72 mm at
+            # z 0.15-0.32; the (0.048, 0.072) window admits the 72 mm stall and its
+            # release (+8 mm hysteresis) stays inside the 80 mm jaw.
+            ("back_r", self.back, (0.19, 0.05, 0.08), (0.19, 0.055, 0.30), (0.048, 0.072)),
+            ("back_l", self.back, (-0.19, 0.05, 0.08), (-0.19, 0.055, 0.30), (0.048, 0.072)),
+            ("nut_0", self.nuts[0], (-0.004, 0.0, 0.0165), (0.004, 0.0, 0.0165), (0.020, 0.027)),
+            ("nut_1", self.nuts[1], (-0.004, 0.0, 0.0165), (0.004, 0.0, 0.0165), (0.020, 0.027)),
+        ]
 
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
-        """Reconcile every weld against the assembly-graph criterion (auto-weld on seat) and
-        accumulate the ordering-violation metric. Runs each step."""
+        """Reconcile the grasp contract, the screw joints, and every weld against the
+        assembly criterion, and accumulate the ordering-violation metric. Runs each step."""
+        self._grasp_weld_step()
+        self._screw_step()
         ids = torch.arange(self.env.num_envs, device=self.env.device) if env_ids is None else env_ids
         self._reconcile_welds(ids, self._weld_targets()[ids])
-        viol = self._nut_on_stud() & ~self.welded[:, 2:3]
+        viol = self._nut_on_stud() & ~self.welded[:, 0:1]
         edges = viol & ~self._viol_prev
         self.order_violations[ids] += edges[ids].sum(dim=1)
         self._viol_prev[ids] = viol[ids]
@@ -683,240 +502,217 @@ class ChairAssemblyScene(BaseScene):
     # ----- state (full, restorable) -----------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         return {
-            "seat": self.seat.data.root_state_w[env_ids].clone(),
-            "legs": torch.stack([b.data.root_state_w[env_ids].clone() for b in self.legs], dim=1),
+            "base": self.base.data.root_state_w[env_ids].clone(),
             "back": self.back.data.root_state_w[env_ids].clone(),
             "nuts": torch.stack([b.data.root_state_w[env_ids].clone() for b in self.nuts], dim=1),
             "welded": self.welded[env_ids].clone(),
             "order_violations": self.order_violations[env_ids].clone(),
             "viol_prev": self._viol_prev[env_ids].clone(),
+            **self._grasp_weld_state(env_ids),
+            **self._screw_state(env_ids),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         """Restore what `get_state` returned: write the bodies, then reconcile the welds to
         exactly the recorded flags — from the restored poses, since handle `.data` is stale
         right after a write."""
-        self.seat.write_root_state_to_sim(state["seat"], env_ids)
-        for i, b in enumerate(self.legs):
-            b.write_root_state_to_sim(state["legs"][:, i], env_ids)
+        self.base.write_root_state_to_sim(state["base"], env_ids)
         self.back.write_root_state_to_sim(state["back"], env_ids)
         for i, b in enumerate(self.nuts):
             b.write_root_state_to_sim(state["nuts"][:, i], env_ids)
         self.order_violations[env_ids] = state["order_violations"]
         self._viol_prev[env_ids] = state["viol_prev"]
         self._reconcile_welds(env_ids, state["welded"], saved=state)
+        self._grasp_weld_restore(state, env_ids)
+        self._screw_restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
         c = self.cfg
-        where = "on the ground" if c.surface_z <= 0 else "on a workbench"
+        where = "on the floor" if c.surface_z <= 0 else "on a workbench"
         return (
-            f"A flat-pack chair kit lies {where}: the seat slab "
-            f"({c.slab_size[0]:.2f} x {c.slab_size[1]:.2f} m) rests UPSIDE DOWN, underside "
-            f"up, showing two gray front leg sockets and two upright steel studs with dark "
-            f"threaded tips at the rear. Scattered around it lie two wooden legs (each with "
-            f"a dark pointed insertion tip and a dark foot cap at the other end), a "
-            f"backrest panel whose bottom flange carries two round holes matching the "
-            f"studs, and two red locking nuts (rings far wider than the flange holes).\n"
-            f"Goal: assemble the chair — fit each leg into a front socket (either one) "
-            f"until it seats and locks, lower the backrest so BOTH flange holes drop over "
-            f"both studs at once and the flange seats on the slab, then drop each nut over "
-            f"a protruding stud tip so it rests on the flange and locks the backrest. A "
-            f"nut placed on a bare stud first blocks the flange from seating and never "
-            f"counts before the backrest is on. The chair is assembled once both legs, "
-            f"the backrest and both nuts are locked (5 joints in all)."
+            f"A real beige tufted dining chair, partly assembled, stands upright {where} on its "
+            f"four wooden legs (seat top at {c.base_height:.2f} m). Two horizontal steel studs "
+            f"protrude backward from the seat's rear frame at (x = +/-{c.stud_x:.2f} m, "
+            f"z = {c.stud_z:.3f} m in the seat's frame): each is a smooth shank ending in an "
+            f"exposed threaded tip. Nearby lie the chair's tufted BACKREST, face-down — its "
+            f"lower shell carries two through-holes matching the studs — and two loose M16 "
+            f"nuts.\n"
+            f"Goal: assemble the backrest — lift it upright, slide BOTH holes over BOTH studs "
+            f"at once (its bottom face can ride the rear legs' top faces as a rail) until the "
+            f"shell seats against the seat's rear edge, then thread each nut onto an exposed "
+            f"stud tip (press toward the chair and turn about the stud axis) until it clamps. "
+            f"A nut spun onto a bare stud first blocks the backrest's holes and never counts "
+            f"before the backrest is on. The chair is assembled once the backrest and both "
+            f"nuts are locked (3 pairs in all)."
         )
 
     # ----- progress / the ported assembly graph ---------------------------------------------------
-    # `assembled()` is the sticky source-style label (= welded); `pair_seated()` is the live
-    # geometric predicate driving it. Both are ordered as in PAIRS.
     def assembled(self) -> torch.Tensor:
-        """(N, 5) bool, sticky: which `should_be_assembled` pairs are assembled (welded)."""
+        """(N, 3) bool, sticky: which pairs are assembled (welded), ordered as PAIRS."""
         return self.welded.clone()
 
     def pairs_assembled(self) -> torch.Tensor:
-        """(N,) int in 0..5: the source's cumulative assembly reward (+1 per pair)."""
+        """(N,) int in 0..3: the cumulative assembly progress (+1 per pair)."""
         return self.welded.sum(dim=1)
 
     def score(self) -> torch.Tensor:
-        """(N,) int: 20 per assembled pair -> 0..100."""
-        return 20 * self.pairs_assembled()
+        """(N,) int: 0..100, a third per assembled pair."""
+        return (100 * self.pairs_assembled()) // 3
 
     def success(self) -> torch.Tensor:
-        """(N,) bool: all 5 pairs assembled (scene-level success; the oracle's target)."""
+        """(N,) bool: all 3 pairs assembled (scene-level success; the oracle's target)."""
         return self.welded.all(dim=1)
 
     def pair_seated(self) -> torch.Tensor:
-        """(N, 5) bool, live geometry: each pair currently at a candidate mating pose (the
-        nut pairs gated on the (seat,back) pair — `should_assembled_first`, ported as
-        logic like the source's)."""
-        legs = self._legs_seated()  # (N, 2)
+        """(N, 3) bool, live geometry: each pair currently at its mating pose (nut pairs gated
+        on the (base,back) pair — `should_assembled_first`, ported as logic)."""
         back = self._back_seated()  # (N,)
         nuts = self._nuts_seated()  # (N, 2)
-        gate = (self.welded[:, 2] | back).unsqueeze(1)
-        return torch.cat([legs, back.unsqueeze(1), nuts & gate], dim=1)
+        gate = (self.welded[:, 0] | back).unsqueeze(1)
+        return torch.cat([back.unsqueeze(1), nuts & gate], dim=1)
 
-    # --- per-stage predicates, all in the SEAT's body frame ----------------------------------------
-    def _seat_frame(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        sp, sq = self.seat.data.root_pos_w, self.seat.data.root_quat_w
-        return sp, sq, self._axis_w(sq)
+    # --- per-stage predicates, all in the BASE's body frame ----------------------------------------
+    def _base_frame(self) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.base.data.root_pos_w, self.base.data.root_quat_w
 
-    def _axis_w(self, quat: torch.Tensor) -> torch.Tensor:
-        """Local +z of a batch of quats, world frame, shape (..., 3)."""
+    def _axes_w(self, quat: torch.Tensor, axis: tuple) -> torch.Tensor:
+        """A local axis of a batch of quats, world frame, shape (..., 3)."""
         from isaaclab.utils.math import quat_apply
 
         flat = quat.reshape(-1, 4)
-        ez = torch.tensor([0.0, 0.0, 1.0], device=quat.device).expand(flat.shape[0], 3)
-        return quat_apply(flat, ez).reshape(*quat.shape[:-1], 3)
-
-    def _legs_seated(self) -> torch.Tensor:
-        """(N, 2): each leg's bottom tip at a candidate socket in the SEAT frame — xy within
-        `tau_xy` of EITHER socket centre, tip z at the slab top within `tau_z`, and the leg
-        axis within `ori_cos` of the seat axis (insertion end down)."""
-        from isaaclab.utils.math import quat_apply_inverse
-
-        c = self.cfg
-        sp, sq, seat_up = self._seat_frame()
-        sockets = torch.tensor(c.leg_slots, device=sp.device)  # (2, 2)
-        cols = []
-        for leg in self.legs:
-            axis = self._axis_w(leg.data.root_quat_w)  # (N, 3)
-            tip = leg.data.root_pos_w - axis * (c.leg_l / 2)  # bottom end, world
-            loc = quat_apply_inverse(sq, tip - sp)  # (N, 3) seat frame
-            near = (loc[:, None, :2] - sockets[None]).norm(dim=-1).amin(dim=1) <= c.tau_xy
-            z_ok = (loc[:, 2] >= c.slab_top - 0.004) & (loc[:, 2] <= c.slab_top + c.tau_z)
-            ori_ok = (axis * seat_up).sum(dim=-1) >= c.ori_cos
-            cols.append(near & z_ok & ori_ok)
-        return torch.stack(cols, dim=1)
+        v = torch.tensor(axis, dtype=torch.float32, device=quat.device).expand(flat.shape[0], 3)
+        return quat_apply(flat, v).reshape(*quat.shape[:-1], 3)
 
     def _back_seated(self) -> torch.Tensor:
-        """(N,): BOTH flange holes around studs at depth in the SEAT frame (each hole centre
-        within `tau_xy` of some stud in xy, at the flange's seated height within `tau_z` —
-        the two-point insertion), and the back axis within `ori_cos` of the seat axis. The
-        flange is x-symmetric, so both yaws are valid candidates by construction."""
+        """(N,): BOTH of the back's holes around studs at depth in the BASE frame — the
+        two-point insertion term, per hole: its centre within `tau_xy` of SOME stud axis in
+        the xz-plane and at the seated insertion depth within `tau_z` (order-independent
+        across studs, the source's multi-candidate port; a 180-degree insertion is excluded
+        by the crown's lean-back colliding with the slab, not by the rubric) — plus the back
+        upright: its z-axis within `ori_cos` of the base's."""
         from isaaclab.utils.math import quat_apply, quat_apply_inverse
 
         c = self.cfg
-        sp, sq, seat_up = self._seat_frame()
-        bp, bq = self.back.data.root_pos_w, self.back.data.root_quat_w
-        back_up = self._axis_w(bq)
-        studs = torch.tensor(c.stud_slots, device=sp.device)  # (2, 2)
-        ok = (back_up * seat_up).sum(dim=-1) >= c.ori_cos
-        for sx in (-c.hole_sx, c.hole_sx):
-            off = torch.tensor([sx, 0.0, 0.0], device=sp.device).expand(bp.shape[0], 3)
-            hole = bp + quat_apply(bq, off)  # hole centre, world
-            loc = quat_apply_inverse(sq, hole - sp)  # seat frame
-            near = (loc[:, None, :2] - studs[None]).norm(dim=-1).amin(dim=1) <= c.tau_xy
-            z_ok = (loc[:, 2] - c.back_seat_z).abs() <= c.tau_z
-            ok = ok & near & z_ok
+        bp, bq = self._base_frame()
+        kp, kq = self.back.data.root_pos_w, self.back.data.root_quat_w
+        studs = torch.tensor([[-c.stud_x, c.stud_z], [c.stud_x, c.stud_z]], device=bp.device)
+        seat_y = c.back_seat_pos[1]  # holes lie on the back's y=0 plane
+        base_up = self._axes_w(bq, (0.0, 0.0, 1.0))
+        back_up = self._axes_w(kq, (0.0, 0.0, 1.0))
+        ok = (back_up * base_up).sum(dim=-1) >= c.ori_cos
+        for hx in (-c.stud_x, c.stud_x):
+            off = torch.tensor([hx, 0.0, c.back_hole_z], device=bp.device).expand(bp.shape[0], 3)
+            hole = kp + quat_apply(kq, off)  # hole centre, world
+            loc = quat_apply_inverse(bq, hole - bp)  # base frame
+            lat = (loc[:, None, [0, 2]] - studs[None]).norm(dim=-1).amin(dim=1)
+            ok = ok & (lat <= c.tau_xy) & ((loc[:, 1] - seat_y).abs() <= c.tau_z)
         return ok
 
-    def _nut_rel_seat(self) -> torch.Tensor:
-        """Each nut's origin in the SEAT's body frame, shape (N, 2, 3)."""
+    def _nut_rel_base(self) -> torch.Tensor:
+        """Each nut's origin in the BASE's body frame, shape (N, 2, 3)."""
         from isaaclab.utils.math import quat_apply_inverse
 
-        sp, sq, _up = self._seat_frame()
+        bp, bq = self._base_frame()
         return torch.stack(
-            [quat_apply_inverse(sq, nut.data.root_pos_w - sp) for nut in self.nuts], dim=1)
+            [quat_apply_inverse(bq, nut.data.root_pos_w - bp) for nut in self.nuts], dim=1)
 
     def _nut_stud_lat(self) -> torch.Tensor:
-        """Each nut's lateral distance to its NEAREST stud axis, seat frame, (N, 2)."""
+        """Each nut's lateral (xz-plane) distance to its NEAREST stud axis, (N, 2)."""
         c = self.cfg
-        loc = self._nut_rel_seat()  # (N, 2, 3)
-        studs = torch.tensor(c.stud_slots, device=loc.device)  # (2, 2)
-        return (loc[:, :, None, :2] - studs[None, None]).norm(dim=-1).amin(dim=-1)
+        loc = self._nut_rel_base()  # (N, 2, 3)
+        studs = torch.tensor([[-c.stud_x, c.stud_z], [c.stud_x, c.stud_z]], device=loc.device)
+        lat = loc[:, :, None, [0, 2]] - studs[None, None]  # (N, 2, 2, 2)
+        return lat.norm(dim=-1).amin(dim=-1)
 
     def _nuts_seated(self) -> torch.Tensor:
-        """(N, 2), geometry only (the ordering gate is applied in `pair_seated`): each nut's
-        origin within `tau_xy` of EITHER stud axis in the SEAT frame, at the clamp height
-        (resting on the flange top) within `tau_z`, ring axis within `ori_cos` of the seat
-        axis (|cos| — the annulus is flip-symmetric)."""
+        """(N, 2), geometry only (the ordering gate lives in `pair_seated`): each nut within
+        `tau_xy` of a stud axis, threaded to >= `nut_seat_depth` from the thread tip, its screw
+        axis within `ori_cos` of the stud axis (|cos| — the nut is flip-symmetric)."""
         c = self.cfg
-        loc = self._nut_rel_seat()
+        loc = self._nut_rel_base()
         near = self._nut_stud_lat() <= c.tau_xy
-        z_ok = (loc[..., 2] - c.nut_seat_z).abs() <= c.tau_z
-        _sp, _sq, seat_up = self._seat_frame()
-        nut_up = torch.stack([self._axis_w(nut.data.root_quat_w) for nut in self.nuts], dim=1)
-        ori_ok = (nut_up * seat_up[:, None, :]).sum(dim=-1).abs() >= c.ori_cos
-        return near & z_ok & ori_ok
+        depth_ok = (c.thread_y1 - loc[..., 1]) >= c.nut_seat_depth
+        bp, bq = self._base_frame()
+        base_fwd = self._axes_w(bq, (0.0, 1.0, 0.0))
+        nut_axis = torch.stack(
+            [self._axes_w(nut.data.root_quat_w, (0.0, 0.0, 1.0)) for nut in self.nuts], dim=1)
+        ori_ok = (nut_axis * base_fwd[:, None, :]).sum(dim=-1).abs() >= c.ori_cos
+        return near & depth_ok & ori_ok
 
     def _nut_on_stud(self) -> torch.Tensor:
-        """(N, 2): nut threaded anywhere along a stud's span (seat frame) — the ordering-
-        violation detector, deliberately looser than `_nuts_seated` (any height on the
-        stud counts as 'riding it', including resting on the slab around its base)."""
+        """(N, 2): nut riding anywhere along a stud's span — the ordering-violation detector,
+        deliberately looser than `_nuts_seated` (any depth on the shank or thread counts)."""
         c = self.cfg
-        loc = self._nut_rel_seat()
+        loc = self._nut_rel_base()
         lat = self._nut_stud_lat()
-        z_lo = c.slab_top
-        z_hi = c.slab_top + c.stud_l
-        return (lat <= c.nut_r_in + 0.006) & (loc[..., 2] >= z_lo - 0.004) & (loc[..., 2] <= z_hi)
+        y_ok = (loc[..., 1] >= c.shank_y0 - 0.004) & (loc[..., 1] <= c.thread_y1 + 0.004)
+        return (lat <= c.nut_r_in + 0.006) & y_ok
 
     # ----- weld machinery (private; auto-weld on seat, the ikea sim-hack) -------------------------
     # Every pair's FixedJoint is authored DISABLED before play and only toggled on/off; a
-    # runtime joint binds two DYNAMIC bodies (the seat is always dynamic). All pairs weld
-    # child->seat. Monotonic until reset.
+    # runtime joint binds two DYNAMIC bodies (the base is always dynamic). All pairs weld
+    # child->base. Monotonic until reset.
+    WELD_CHILD_BODIES: ClassVar[tuple] = ("Back", "Nut_0/factory_nut_loose", "Nut_1/factory_nut_loose")
+
     def _weld_targets(self) -> torch.Tensor:
-        """Which pairs SHOULD be welded now, (N, 5): already-welded stays; a live-seated pair
+        """Which pairs SHOULD be welded now, (N, 3): already-welded stays; a live-seated pair
         welds once its child is also settling (debounce); nut pairs additionally require the
-        (seat,back) pair to be WELDED already (`should_assembled_first`, hard form)."""
+        (base,back) pair to be WELDED already (`should_assembled_first`, hard form)."""
         c = self.cfg
-        legs, back, nuts = self._legs_seated(), self._back_seated(), self._nuts_seated()
+        back, nuts = self._back_seated(), self._nuts_seated()
         child_v = torch.stack(
-            [b.data.root_lin_vel_w.norm(dim=-1)
-             for b in (*self.legs, self.back, *self.nuts)], dim=1)  # (N, 5)
+            [b.data.root_lin_vel_w.norm(dim=-1) for b in (self.back, *self.nuts)], dim=1)
         settling = child_v < c.settle_speed
-        gate = self.welded[:, 2].unsqueeze(1)
-        live = torch.cat([legs, back.unsqueeze(1), nuts & gate], dim=1)
+        gate = self.welded[:, 0].unsqueeze(1)
+        live = torch.cat([back.unsqueeze(1), nuts & gate], dim=1)
         return self.welded | (live & settling)
 
     def _precreate_weld_joints(self) -> None:
         import omni.usd
         from pxr import UsdPhysics
 
-        children = ("Leg_0", "Leg_1", "Back", "Nut_0", "Nut_1")
         stage = omni.usd.get_context().get_stage()
         self._weld_paths: list[list[str]] = []
         for i in range(self.env.num_envs):
             base = f"/World/envs/env_{i}"
             paths = []
-            for k in range(5):
+            for k, child in enumerate(self.WELD_CHILD_BODIES):
                 jp = f"{base}/rweld_{k}"
                 j = UsdPhysics.FixedJoint.Define(stage, jp)
-                j.CreateBody0Rel().SetTargets([f"{base}/Seat"])
-                j.CreateBody1Rel().SetTargets([f"{base}/{children[k]}"])
+                j.CreateBody0Rel().SetTargets([f"{base}/ChairBase"])
+                j.CreateBody1Rel().SetTargets([f"{base}/{child}"])
                 j.CreateJointEnabledAttr(False)
                 paths.append(jp)
             self._weld_paths.append(paths)
 
     def _reconcile_welds(self, env_ids, target, *, saved: dict[str, Any] | None = None) -> None:
         """Bring every (env, pair) joint for `env_ids` into line with `target` (bool, rows
-        aligned to `env_ids`). Welds use `saved` poses when given (a set_state restore,
-        where handle `.data` is stale), else the live poses. Only changes are touched."""
+        aligned to `env_ids`). Welds use `saved` poses when given (a set_state restore, where
+        handle `.data` is stale right after a write), else the live poses."""
         have = self.welded[env_ids]
         to_weld = target & ~have
         to_unweld = have & ~target
         if to_weld.any():
             if saved is not None:
-                spos, squat = saved["seat"][:, 0:3], saved["seat"][:, 3:7]
+                ppos, pquat = saved["base"][:, 0:3], saved["base"][:, 3:7]
                 child_states = torch.stack(
-                    [saved["legs"][:, 0], saved["legs"][:, 1], saved["back"],
-                     saved["nuts"][:, 0], saved["nuts"][:, 1]], dim=1)
+                    [saved["back"], saved["nuts"][:, 0], saved["nuts"][:, 1]], dim=1)
             else:
-                spos = self.seat.data.root_pos_w[env_ids]
-                squat = self.seat.data.root_quat_w[env_ids]
+                ppos = self.base.data.root_pos_w[env_ids]
+                pquat = self.base.data.root_quat_w[env_ids]
                 child_states = torch.stack(
-                    [b.data.root_state_w[env_ids]
-                     for b in (*self.legs, self.back, *self.nuts)], dim=1)
+                    [b.data.root_state_w[env_ids] for b in (self.back, *self.nuts)], dim=1)
             cpos, cquat = child_states[..., 0:3], child_states[..., 3:7]
             for row, k in to_weld.nonzero(as_tuple=False).tolist():
-                self._weld_pair(int(env_ids[row]), k, spos[row], squat[row],
+                self._weld_pair(int(env_ids[row]), k, ppos[row], pquat[row],
                                 cpos[row, k], cquat[row, k])
         for row, k in to_unweld.nonzero(as_tuple=False).tolist():
             self._unweld_pair(int(env_ids[row]), k)
 
     def _weld_pair(self, env_i: int, k: int, pp, pq, cp, cq) -> None:
-        """Lock pair k in env_i at the relative pose implied by world poses pp/pq (seat)
-        and cp/cq (child)."""
+        """Lock pair k in env_i at the relative pose implied by world poses pp/pq (base) and
+        cp/cq (child)."""
         from isaaclab.utils.math import quat_apply, quat_conjugate, quat_mul
         from pxr import Gf, UsdPhysics
 
@@ -939,3 +735,446 @@ class ChairAssemblyScene(BaseScene):
         UsdPhysics.FixedJoint.Get(self.env.stage,
                                   self._weld_paths[env_i][k]).GetJointEnabledAttr().Set(False)
         self.welded[env_i, k] = False
+
+    # ----- screw-joint machinery (measured-rotation helix; private — not an agent action) -------
+    # An engaged nut stays dynamic; each substep its rotation about its stud's axis is
+    # measured and its AXIAL position is written from the accumulated screw-in rotation at
+    # true pitch (one-way through the lash, hard stop at the collar). Engagement is earned
+    # by real placement: on-tip within `screw_engage_lat`/`screw_engage_window`, axis
+    # aligned. A nut yanked off its written pose disengages (turn resets).
+    def _screw_bind(self) -> None:
+        from pxr import UsdPhysics
+
+        n = self.env.num_envs
+        dev = self.env.device
+        c = self.cfg
+        self._scr_eng = torch.zeros(n, 2, dtype=torch.bool, device=dev)
+        self._scr_turn = torch.zeros(n, 2, device=dev)
+        self._scr_coupled = torch.zeros(n, 2, device=dev)
+        self._scr_prev = torch.zeros(n, 2, device=dev)
+        self._scr_stud = torch.zeros(n, 2, dtype=torch.long, device=dev)
+        self._scr_prev_held = torch.zeros(n, 2, dtype=torch.bool, device=dev)
+        self._scr_turn_max = 2 * math.pi * (c.thread_y1 - c.thread_y0 - 0.0008) / c.screw_pitch
+        # The joint IS the thread (mb pattern): the stud threads' collision goes off at
+        # bind — before play — so the mechanic alone owns engaged-nut kinematics. The
+        # smooth shanks stay live (the back's holes ride them; a nut cannot pass one).
+        stage = self.env.stage
+        for e in range(n):
+            for k in range(2):
+                p = stage.GetPrimAtPath(
+                    f"/World/envs/env_{e}/ChairBase/stud_{k}/bolt/factory_bolt_loose/collisions")
+                if not p.IsValid():
+                    raise RuntimeError(f"[screw] stud thread prim missing: stud {k}, env {e}")
+                UsdPhysics.CollisionAPI(p).CreateCollisionEnabledAttr(False)
+
+    def _screw_reset(self, env_ids: torch.Tensor) -> None:
+        self._scr_eng[env_ids] = False
+        self._scr_turn[env_ids] = 0.0
+        self._scr_coupled[env_ids] = 0.0
+
+    def _screw_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
+        return {
+            "screw_engaged": self._scr_eng[env_ids].clone(),
+            "screw_turn": self._scr_turn[env_ids].clone(),
+            "screw_coupled": self._scr_coupled[env_ids].clone(),
+            "screw_prev": self._scr_prev[env_ids].clone(),
+            "screw_stud": self._scr_stud[env_ids].clone(),
+        }
+
+    def _screw_restore(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
+        if "screw_engaged" not in state:
+            return
+        self._scr_eng[env_ids] = state["screw_engaged"]
+        self._scr_turn[env_ids] = state["screw_turn"]
+        self._scr_coupled[env_ids] = state["screw_coupled"]
+        self._scr_prev[env_ids] = state["screw_prev"]
+        self._scr_stud[env_ids] = state["screw_stud"]
+
+    def _nuts_grasp_held(self) -> torch.Tensor:
+        """(N, 2) bool: which nuts are currently hand-welded (any hand). False everywhere
+        when the grasp contract is off (NullRobot)."""
+        if not getattr(self, "_gw_on", False) or not hasattr(self, "grasp_held"):
+            return torch.zeros(self.env.num_envs, 2, dtype=torch.bool, device=self.env.device)
+        # grasp sites are ordered (back, back_r, back_l, nut_0, nut_1)
+        return self.grasp_held[:, :, 3:5].any(dim=1)
+
+    def _nut_spin(self, bq: torch.Tensor) -> torch.Tensor:
+        """Each nut's rotation angle about the stud axis (+y, base frame), (N, 2). The
+        angle of the nut's local x-axis in the base's x/z plane — continuous tracking
+        handles the wrap."""
+        from isaaclab.utils.math import quat_apply_inverse
+
+        out = []
+        for nut in self.nuts:
+            ax = self._axes_w(nut.data.root_quat_w, (1.0, 0.0, 0.0))
+            ax_b = quat_apply_inverse(bq, ax)  # base frame
+            out.append(torch.atan2(ax_b[:, 2], ax_b[:, 0]))
+        return torch.stack(out, dim=1)
+
+    def _screw_step(self) -> None:
+        from isaaclab.utils.math import quat_apply
+
+        c = self.cfg
+        bp, bq = self._base_frame()
+        loc = self._nut_rel_base()  # (N, 2, 3)
+        studs = torch.tensor([[-c.stud_x, c.stud_z], [c.stud_x, c.stud_z]], device=loc.device)
+        lat_all = (loc[:, :, None, [0, 2]] - studs[None, None]).norm(dim=-1)  # (N, 2, 2)
+        lat, nearest = lat_all.min(dim=-1)
+        # _nut_spin measures -theta_y (atan2 of local-x in the base x/z plane flips the
+        # sense), so screw-in torque about -y RAISES the measured angle: accumulate it
+        # un-negated. (The first, mb-copied negation left `turn` at zero while the nut
+        # spun pinned at the tip until numeric drift tripped the yank release.)
+        spin = self._nut_spin(bq)
+        dspin = (spin - self._scr_prev + math.pi) % (2 * math.pi) - math.pi  # + = screw-in
+        self._scr_prev = spin
+
+        base_fwd = self._axes_w(bq, (0.0, 1.0, 0.0))
+        nut_axis = torch.stack(
+            [self._axes_w(nut.data.root_quat_w, (0.0, 0.0, 1.0)) for nut in self.nuts], dim=1)
+        aligned = (nut_axis * base_fwd[:, None, :]).sum(dim=-1).abs() >= c.ori_cos
+
+        # engage: on-tip, aligned, not already engaged, not welded
+        at_tip = (loc[..., 1] - c.thread_y1).abs() <= c.screw_engage_window
+        can = ~self._scr_eng & at_tip & (lat <= c.screw_engage_lat) & aligned \
+            & ~self.welded[:, 1:3]
+        if can.any():
+            self._scr_stud = torch.where(can, nearest, self._scr_stud)
+            self._scr_coupled = torch.where(can, torch.zeros_like(self._scr_coupled),
+                                            self._scr_coupled)
+            self._scr_eng |= can
+
+        # a hand-welded nut belongs to the GRASP joint: the mechanic accumulates its
+        # measured rotation but must not fight the weld with pose writes (two owners of
+        # one body explode); the helix pose is snapped back in on release
+        held = self._nuts_grasp_held()
+
+        # disengage: yanked far off the written pose (e.g. teleported away); a held nut
+        # gets a wider leash — the hand legitimately wiggles it on the stud
+        tgt_y = c.thread_y1 - c.screw_pitch * self._scr_turn / (2 * math.pi)
+        leash = torch.where(held, 0.025, 0.010)
+        off = (lat > leash) | ((loc[..., 1] - tgt_y).abs() > leash)
+        yanked = self._scr_eng & off
+        if yanked.any():
+            self._scr_eng &= ~yanked
+            self._scr_turn = torch.where(yanked, torch.zeros_like(self._scr_turn), self._scr_turn)
+
+        live = self._scr_eng & ~self.welded[:, 1:3]
+        if not live.any():
+            return
+        self._scr_coupled = torch.where(live, self._scr_coupled + dspin, self._scr_coupled)
+        lash = math.radians(c.screw_lash_deg)
+        # TWO-WAY: turn follows the coupled rotation through the lash in both directions
+        # (real nuts unscrew; mb's one-way ratchet would leave a premature nut permanently
+        # blocking its stud with no agent-side recovery).
+        follow = (self._scr_coupled - lash).clamp(min=0.0, max=self._scr_turn_max)
+        self._scr_turn = torch.where(live, follow, self._scr_turn)
+        # fully unscrewed and still counter-rotating -> release the joint at the tip (the
+        # nut is free to be lifted off)
+        backed_out = live & (self._scr_turn <= 0.0) & (self._scr_coupled < -math.radians(60.0))
+        if backed_out.any():
+            self._scr_eng &= ~backed_out
+
+        # write the engaged nuts: axial position from the turn, lateral pinned to the stud
+        # axis, orientation + spin left fully live (the twist is real). Hand-held nuts are
+        # skipped (the weld owns them) and snapped onto the helix as the hand lets go.
+        release_edge = self._scr_prev_held & ~held & self._scr_eng
+        self._scr_prev_held = held
+        tgt_y = c.thread_y1 - c.screw_pitch * self._scr_turn / (2 * math.pi)
+        for k, nut in enumerate(self.nuts):
+            rows = ((live[:, k] & ~held[:, k]) | release_edge[:, k]).nonzero(
+                as_tuple=False).flatten()
+            if not len(rows):
+                continue
+            st = nut.data.root_state_w[rows].clone()
+            sx = studs[self._scr_stud[rows, k]]  # (m, 2): x, z of the engaged stud
+            tgt = torch.stack([sx[:, 0], tgt_y[rows, k], sx[:, 1]], dim=1)
+            st[:, 0:3] = bp[rows] + quat_apply(bq[rows], tgt)
+            axis = self._axes_w(bq[rows], (0.0, 1.0, 0.0))
+            st[:, 7:10] = axis * (st[:, 7:10] * axis).sum(dim=-1, keepdim=True)
+            # spin stays live but only ABOUT the stud axis — off-axis angular drift
+            # accumulates against the per-substep position pin and ends in a yank release
+            st[:, 10:13] = axis * (st[:, 10:13] * axis).sum(dim=-1, keepdim=True)
+            nut.write_root_state_to_sim(st, rows)
+
+    # ----- grasp-weld machinery (weld-on-closure; private — not an agent action) ----------------
+    # The pc_motherboard contract generalized to EVERY hand on the stage (a bi-Franka env
+    # has two `panda_hand`s; hand h and site s get their own joint pool). Pre-authored,
+    # normally-disabled FixedJoint pools, toggled and never created mid-sim. PhysX latches
+    # a joint's local frames on FIRST enable, so every engage consumes a fresh pool joint.
+    # Engage (per hand, debounced): pinch point within `grasp_weld_dist` of a site's LIVE
+    # grip band + aperture inside the site's closure window + fingers STALLED. Release:
+    # aperture past window-top + margin. One hold per hand; one hand per part.
+    GRASP_HAND_BODY: ClassVar[str] = "panda_hand"
+    GRASP_FINGER_JOINTS: ClassVar[str] = "panda_finger_joint.*"
+    GRASP_PINCH_OFFSET: ClassVar[float] = 0.1034  # hand origin -> finger-pad centre
+    GRASP_POOL: ClassVar[int] = 64  # engages per (env, hand, site) per run (nut regrips are many)
+    GRASP_STALL: ClassVar[float] = 0.01  # max |finger vel| sum (m/s): fingers stopped ON the part
+    GRASP_DEBOUNCE: ClassVar[int] = 8  # consecutive qualifying substeps before the weld engages
+    # Release at window-top + this (m). MUST leave window-top + margin strictly below
+    # the jaw's 0.080 m max travel or a grip on a window-top-thick part can NEVER
+    # release (measured: a hand commanded open stayed welded through a whole phase —
+    # 0.072 window + 0.008 margin = exactly 0.080, reachable but never exceedable).
+    GRASP_RELEASE_MARGIN: ClassVar[float] = 0.006
+
+    def _grasp_weld_bind(self) -> None:
+        """Discover every hand, author the (disabled) joint pools, allocate the hold state.
+        Called from `bind()` — authoring must happen BEFORE the sim starts playing."""
+        env = self.env
+        n = env.num_envs
+        self._gw_on = bool(getattr(self.cfg, "grasp_weld", False))
+        self._gw_arts: list | None = None  # (articulation, hand_body_i, finger_ids) per hand
+        self._gw_sites: list = []
+        if not self._gw_on:
+            return
+        hands0 = self._gw_find_hand_prims()
+        if not hands0:  # no gripper in this embodiment (e.g. robot="null") -> no-op contract
+            self._gw_on = False
+            print(f"[grasp-weld] no '{self.GRASP_HAND_BODY}' on the stage — contract disabled",
+                  flush=True)
+            return
+        self._gw_hands0 = hands0
+        self._gw_sites = list(self.grasp_sites())
+        h, s = len(hands0), len(self._gw_sites)
+        dev = env.device
+        self.grasp_held = torch.zeros(n, h, s, dtype=torch.bool, device=dev)
+        self._gw_rel_p = torch.zeros(n, h, s, 3, device=dev)
+        self._gw_rel_q = torch.zeros(n, h, s, 4, device=dev)
+        self._gw_count = torch.zeros(n, h, s, dtype=torch.int32, device=dev)
+        self._gw_pool_i = [[[0] * s for _ in range(h)] for _ in range(n)]
+        self._gw_pool_warned: set = set()
+        self._gw_author_pools(hands0)
+
+    def _gw_find_hand_prims(self) -> list[str]:
+        """Every hand body's prim path under env_0 (clones are identical), sorted for a
+        stable hand order across runs."""
+        from pxr import Usd
+
+        root = self.env.stage.GetPrimAtPath("/World/envs/env_0")
+        if not root.IsValid():
+            return []
+        return sorted(str(p.GetPath()) for p in Usd.PrimRange(root)
+                      if p.GetName() == self.GRASP_HAND_BODY)
+
+    def _gw_part_path(self, obj, env_i: int) -> str:
+        """The part's RIGID-BODY prim path in env `env_i` (the asset root is not always the
+        body — the factory nut nests it one level down)."""
+        from pxr import Usd, UsdPhysics
+
+        p = obj.cfg.prim_path.replace("{ENV_REGEX_NS}", "/World/envs/env_.*")
+        root = p.replace("env_.*", f"env_{env_i}")
+        prim = self.env.stage.GetPrimAtPath(root)
+        if not prim.IsValid():
+            raise RuntimeError(f"[grasp-weld] part prim missing: {root}")
+        for child in Usd.PrimRange(prim):
+            if child.HasAPI(UsdPhysics.RigidBodyAPI):
+                return str(child.GetPath())
+        raise RuntimeError(f"[grasp-weld] no RigidBodyAPI prim under {root}")
+
+    def _gw_author_pools(self, hands0: list[str]) -> None:
+        from pxr import Gf, UsdPhysics
+
+        stage = self.env.stage
+        self._gw_paths: list[list[list[list[str]]]] = []  # [env][hand][site][k]
+        for i in range(self.env.num_envs):
+            per_hand = []
+            for hi, hand0 in enumerate(hands0):
+                hand = hand0.replace("env_0", f"env_{i}")
+                rows = []
+                for name, obj, _p0, _p1, _win in self._gw_sites:
+                    part = self._gw_part_path(obj, i)
+                    row = []
+                    for k in range(self.GRASP_POOL):
+                        jp = f"/World/envs/env_{i}/gweld_h{hi}_{name}_{k}"
+                        j = UsdPhysics.FixedJoint.Define(stage, jp)
+                        j.CreateBody0Rel().SetTargets([hand])
+                        j.CreateBody1Rel().SetTargets([part])
+                        j.CreateLocalPos0Attr(Gf.Vec3f(0.0, 0.0, 0.0))
+                        j.CreateLocalRot0Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+                        j.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))
+                        j.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+                        j.CreateJointEnabledAttr(False)
+                        j.CreateExcludeFromArticulationAttr(True)
+                        row.append(jp)
+                    rows.append(row)
+                per_hand.append(rows)
+            self._gw_paths.append(per_hand)
+
+    def _gw_resolve_hands(self) -> bool:
+        """Cache (articulation, hand body index, finger joint ids) per hand on first use.
+        With a MultiRobot the hands live on different child articulations; each hand prim
+        is matched to the articulation whose body list contains it."""
+        if self._gw_arts is not None:
+            return True
+        try:
+            robots = getattr(self.env.robot, "robots", None)
+            arts = ([r.articulation for r in robots.values()] if robots
+                    else [self.env.robot.articulation])
+            # subtree matching: the hand prim must live INSIDE the articulation's own
+            # subtree (root + '/'). No looser fallback: an earlier dirname-based clause
+            # stripped the robot segment itself and bound EVERY hand to the first-listed
+            # articulation (both hands read the left arm; the right pinch never counted).
+            resolved = []
+            for hand0 in self._gw_hands0:
+                match = None
+                for a in arts:
+                    root = str(a.root_physx_view.prim_paths[0])
+                    if hand0.startswith(root + "/") or hand0 == root:
+                        match = a
+                        break
+                if match is None:
+                    raise RuntimeError(
+                        f"[grasp-weld] no articulation owns hand {hand0}; roots="
+                        f"{[str(a.root_physx_view.prim_paths[0]) for a in arts]}")
+                hand_i = match.body_names.index(self.GRASP_HAND_BODY)
+                fingers = match.find_joints([self.GRASP_FINGER_JOINTS])[0]
+                assert len(fingers) == 2
+                resolved.append((match, hand_i, fingers))
+                print(f"[grasp-weld] hand {hand0} -> articulation root "
+                      f"{match.root_physx_view.prim_paths[0]}", flush=True)
+            self._gw_arts = resolved
+        except Exception as e:  # not a gripper we understand -> disable, loudly
+            self._gw_on = False
+            print(f"[grasp-weld] DISABLED after error: {e!r}", flush=True)
+            return False
+        return True
+
+    def _grasp_weld_step(self) -> None:
+        """Reconcile engages + releases against the closure criterion, per hand."""
+        if not getattr(self, "_gw_on", False) or not self._gw_sites or not self._gw_resolve_hands():
+            return
+        from isaaclab.utils.math import quat_apply
+
+        for hi, (art, hand_i, fingers) in enumerate(self._gw_arts):
+            hp = art.data.body_pos_w[:, hand_i]
+            hq = art.data.body_quat_w[:, hand_i]
+            gap = art.data.joint_pos[:, fingers].sum(dim=-1)
+            stalled = art.data.joint_vel[:, fingers].abs().sum(dim=-1) < self.GRASP_STALL
+            approach = torch.zeros_like(hp)
+            approach[:, 2] = self.GRASP_PINCH_OFFSET
+            pinch = hp + quat_apply(hq, approach)
+
+            for row, s in self.grasp_held[:, hi].nonzero(as_tuple=False).tolist():
+                if gap[row] > self._gw_sites[s][4][1] + self.GRASP_RELEASE_MARGIN:
+                    self._gw_release(row, hi, s)
+
+            hand_free = ~self.grasp_held[:, hi].any(dim=-1)
+            part_free = ~self.grasp_held.any(dim=1)  # (n, s): not held by ANY hand
+            dists = self._gw_site_dists(pinch)
+            cd = getattr(self.cfg, "grasp_weld_dist", 0.010)
+            if os.environ.get("GRASP_DEBUG"):
+                if not hasattr(self, "_gw_dbg"):
+                    self._gw_dbg = 0
+                    print(f"[grasp-weld dbg] hand order: {self._gw_hands0}", flush=True)
+                if hi == 0:
+                    self._gw_dbg += 1
+                if self._gw_dbg % 120 == 0:
+                    print(f"[grasp-weld dbg] hand {hi}: dists="
+                          f"{[f'{v * 1000:.0f}' for v in dists[0].tolist()]}mm "
+                          f"gap={float(gap[0]) * 1000:.1f}mm "
+                          f"fingervel={float(art.data.joint_vel[0, fingers].abs().sum()) * 1000:.1f}mm/s "
+                          f"stalled={bool(stalled[0])} free={bool(hand_free[0])}", flush=True)
+            ok = torch.stack(
+                [(dists[:, s] < cd) & (gap > win[0]) & (gap < win[1]) & stalled & part_free[:, s]
+                 for s, (_n, _o, _p0, _p1, win) in enumerate(self._gw_sites)],
+                dim=-1,
+            ) & hand_free.unsqueeze(-1)
+            self._gw_count[:, hi] = torch.where(
+                ok, self._gw_count[:, hi] + 1, torch.zeros_like(self._gw_count[:, hi]))
+            ready = (self._gw_count[:, hi] >= self.GRASP_DEBOUNCE).any(dim=-1) & hand_free
+            for row in ready.nonzero(as_tuple=False).flatten().tolist():
+                masked = torch.where(self._gw_count[row, hi] >= self.GRASP_DEBOUNCE,
+                                     dists[row], torch.full_like(dists[row], torch.inf))
+                s = int(masked.argmin())
+                self._gw_engage(row, hi, s, hp[row], hq[row], gap[row])
+
+    def _gw_site_dists(self, pinch: torch.Tensor) -> torch.Tensor:
+        """Pinch-point distance to every site's live grip band, (num_envs, num_sites)."""
+        from isaaclab.utils.math import quat_apply
+
+        n = pinch.shape[0]
+        out = []
+        for _name, obj, p0, p1, _win in self._gw_sites:
+            pp, pq = obj.data.root_pos_w, obj.data.root_quat_w
+            a = pp + quat_apply(pq, torch.tensor(p0, device=pinch.device).expand(n, 3))
+            b = pp + quat_apply(pq, torch.tensor(p1, device=pinch.device).expand(n, 3))
+            ab = b - a
+            t = ((pinch - a) * ab).sum(-1) / ab.pow(2).sum(-1).clamp_min(1e-12)
+            closest = a + t.clamp(0.0, 1.0).unsqueeze(-1) * ab
+            out.append((pinch - closest).norm(dim=-1))
+        return torch.stack(out, dim=-1)
+
+    def _gw_engage(self, env_i: int, hi: int, s: int, hp, hq, gap) -> None:
+        from isaaclab.utils.math import quat_apply_inverse, quat_conjugate, quat_mul
+
+        name, obj = self._gw_sites[s][0], self._gw_sites[s][1]
+        rel_p = quat_apply_inverse(hq.unsqueeze(0), (obj.data.root_pos_w[env_i] - hp).unsqueeze(0))[0]
+        rel_q = quat_mul(quat_conjugate(hq.unsqueeze(0)), obj.data.root_quat_w[env_i].unsqueeze(0))[0]
+        if not self._gw_set_joint(env_i, hi, s, rel_p, rel_q):
+            return
+        self._gw_rel_p[env_i, hi, s] = rel_p
+        self._gw_rel_q[env_i, hi, s] = rel_q
+        self.grasp_held[env_i, hi, s] = True
+        self._gw_count[env_i, hi] = 0
+        print(f"[grasp-weld] env {env_i} hand {hi}: GRIPPED {name} "
+              f"(aperture {float(gap) * 1000:.1f} mm)", flush=True)
+
+    def _gw_set_joint(self, env_i: int, hi: int, s: int, rel_p, rel_q) -> bool:
+        from pxr import Gf, UsdPhysics
+
+        k = self._gw_pool_i[env_i][hi][s]
+        if k >= self.GRASP_POOL:
+            if (env_i, hi, s) not in self._gw_pool_warned:
+                self._gw_pool_warned.add((env_i, hi, s))
+                print(f"[grasp-weld] env {env_i} hand {hi}: pool dry for "
+                      f"{self._gw_sites[s][0]} — no weld", flush=True)
+            return False
+        j = UsdPhysics.FixedJoint.Get(self.env.stage, self._gw_paths[env_i][hi][s][k])
+        p, q = rel_p.tolist(), rel_q.tolist()
+        j.GetLocalPos0Attr().Set(Gf.Vec3f(p[0], p[1], p[2]))
+        j.GetLocalRot0Attr().Set(Gf.Quatf(q[0], Gf.Vec3f(q[1], q[2], q[3])))
+        j.GetJointEnabledAttr().Set(True)
+        return True
+
+    def _gw_release(self, env_i: int, hi: int, s: int) -> None:
+        from pxr import UsdPhysics
+
+        k = self._gw_pool_i[env_i][hi][s]
+        if k < self.GRASP_POOL:
+            j = UsdPhysics.FixedJoint.Get(self.env.stage, self._gw_paths[env_i][hi][s][k])
+            j.GetJointEnabledAttr().Set(False)
+        self._gw_pool_i[env_i][hi][s] = k + 1
+        self.grasp_held[env_i, hi, s] = False
+        print(f"[grasp-weld] env {env_i} hand {hi}: RELEASED {self._gw_sites[s][0]}", flush=True)
+
+    def _grasp_weld_release_all(self, env_ids: torch.Tensor) -> None:
+        if not getattr(self, "_gw_on", False) or not hasattr(self, "grasp_held"):
+            return
+        for row, hi, s in self.grasp_held[env_ids].nonzero(as_tuple=False).tolist():
+            self._gw_release(int(env_ids[row]), hi, s)
+        self._gw_count[env_ids] = 0
+
+    def _grasp_weld_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
+        if not getattr(self, "_gw_on", False) or not hasattr(self, "grasp_held"):
+            return {}
+        return {
+            "grasp_held": self.grasp_held[env_ids].clone(),
+            "grasp_rel_p": self._gw_rel_p[env_ids].clone(),
+            "grasp_rel_q": self._gw_rel_q[env_ids].clone(),
+        }
+
+    def _grasp_weld_restore(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
+        if not getattr(self, "_gw_on", False) or "grasp_held" not in state:
+            return
+        for row in range(len(env_ids)):
+            i = int(env_ids[row])
+            for hi in range(self.grasp_held.shape[1]):
+                for s in range(len(self._gw_sites)):
+                    if self.grasp_held[i, hi, s]:
+                        self._gw_release(i, hi, s)
+                    if bool(state["grasp_held"][row, hi, s]) and self._gw_set_joint(
+                            i, hi, s, state["grasp_rel_p"][row, hi, s],
+                            state["grasp_rel_q"][row, hi, s]):
+                        self._gw_rel_p[i, hi, s] = state["grasp_rel_p"][row, hi, s]
+                        self._gw_rel_q[i, hi, s] = state["grasp_rel_q"][row, hi, s]
+                        self.grasp_held[i, hi, s] = True
+        self._gw_count[env_ids] = 0

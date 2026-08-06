@@ -39,8 +39,39 @@ _ap.add_argument("--max-steps", type=int, default=600, help="control steps per e
 _ap.add_argument("--replan", type=int, default=5, help="actions consumed before re-querying")
 _ap.add_argument("--out", default="/home/tiger/workspace/pi05")
 _ap.add_argument("--hdfs", default="")
-_ap.add_argument("--video-every", type=int, default=2)
+_ap.add_argument("--video-every", type=int, default=1,
+                 help="capture cadence in control steps; 1 is free (the base view "
+                      "is rendered every step for the policy anyway)")
 _ap.add_argument("--prompt", default="", help="VLA instruction; empty falls back to describe()")
+# ---- BC-checkpoint parity flags (2026-08-04). Defaults preserve the original
+# zero-shot pi05_base behavior byte-for-byte; the plated_meal BC eval sets all
+# of them to match how the training data was RECORDED (convention.json +
+# gen_batch.py of data_gen/plated_meal/gen_v1). ----
+_ap.add_argument("--task-module", default="",
+                 help="full dotted module registering the scene (overrides "
+                      "sim_gen.tasks.<task_dir>.scene); 'local:<file.py>' imports a file "
+                      "beside this script")
+_ap.add_argument("--scene-eye", default="", help="comma xyz, env-origin-relative")
+_ap.add_argument("--scene-tgt", default="", help="comma xyz, env-origin-relative")
+_ap.add_argument("--wrist-mode", default="behind", choices=("behind", "side6"),
+                 help="side6 = gen_batch's probed placement (fingertips top-center)")
+_ap.add_argument("--state-origin-relative", action="store_true",
+                 help="EE position relative to env origin (training convention)")
+_ap.add_argument("--gripper-mode", default="libero", choices=("libero", "meters"),
+                 help="meters = policy outputs a per-finger target in m (bc_v1 convention)")
+_ap.add_argument("--hold", type=int, default=1,
+                 help="control steps per policy action (data was recorded at 10fps; "
+                      "-1 = auto: round(ctrl_hz/10) like the generator's Recorder)")
+_ap.add_argument("--osc-preset", default="", choices=("", "plated_meal"),
+                 help="apply the generator's OSC gains/scales")
+_ap.add_argument("--robot-preset", default="", choices=("", "plated_meal"),
+                 help="apply the generator's FrankaRobotCfg (base pos, gripper limits)")
+_ap.add_argument("--obs-res", type=int, default=224,
+                 help="capture resolution (training data was 256; server resizes)")
+_ap.add_argument("--seed0", type=int, default=-1,
+                 help="episode ep resets with seed seed0+ep (like the generator); -1 keeps "
+                      "the unseeded legacy behavior. Sharded sweeps pass disjoint ranges so "
+                      "every checkpoint sees the same layouts exactly once")
 AppLauncher.add_app_launcher_args(_ap)
 ARGS = _ap.parse_args()
 ARGS.headless = True
@@ -60,7 +91,7 @@ from robobench.core import EnvCfg  # noqa: E402
 from openpi_client import image_tools  # noqa: E402
 from openpi_client import websocket_client_policy  # noqa: E402
 
-RES = 224
+RES = ARGS.obs_res
 
 
 def np3(t) -> np.ndarray:
@@ -104,33 +135,78 @@ class Views:
 
     def scene_view(self) -> np.ndarray:
         o = self.origin
-        return self._grab(o + np.array([1.1, -1.1, 0.9]), o + np.array([0.0, 0.0, 0.15]))
+        eye = (np.array([float(x) for x in ARGS.scene_eye.split(",")])
+               if ARGS.scene_eye else np.array([1.1, -1.1, 0.9]))
+        tgt = (np.array([float(x) for x in ARGS.scene_tgt.split(",")])
+               if ARGS.scene_tgt else np.array([0.0, 0.0, 0.15]))
+        return self._grab(o + eye, o + tgt)
 
     def wrist_view(self) -> np.ndarray:
-        """Look down the gripper's approach axis from just behind the hand."""
+        """Camera on the hand; placement mode must match how the data was recorded."""
         art = self.env.robot.articulation
         p = np3(art.data.body_pos_w[0, self.ee])
         q = art.data.body_quat_w[0, self.ee:self.ee + 1]
         from isaaclab.utils.math import quat_apply
         fwd = np3(quat_apply(q, torch.tensor([[0.0, 0.0, 1.0]], device=q.device))[0])
+        if ARGS.wrist_mode == "side6":
+            side = np3(quat_apply(q, torch.tensor([[1.0, 0.0, 0.0]], device=q.device))[0])
+            return self._grab(p - 0.02 * fwd + 0.06 * side, p + 0.22 * fwd)
         return self._grab(p - 0.12 * fwd, p + 0.25 * fwd)
 
 
 def main() -> int:
     out = Path(ARGS.out)
     out.mkdir(parents=True, exist_ok=True)
-    importlib.import_module(f"sim_gen.tasks.{ARGS.task_dir}.scene")   # registers the scene
+    if ARGS.task_module.startswith("local:"):
+        # a scene file shipped beside this script (e.g. the data_gen plated_meal scene)
+        import importlib.util
+        import sys as _sys
+        p = Path(__file__).resolve().parent / ARGS.task_module[len("local:"):]
+        spec = importlib.util.spec_from_file_location("bc_eval_scene", p)
+        m = importlib.util.module_from_spec(spec)
+        # dataclasses looks the module up by name at class-creation time;
+        # exec without registration dies with NoneType.__dict__
+        _sys.modules[spec.name] = m
+        spec.loader.exec_module(m)
+    elif ARGS.task_module:
+        importlib.import_module(ARGS.task_module)
+    else:
+        importlib.import_module(f"sim_gen.tasks.{ARGS.task_dir}.scene")   # registers the scene
     robobench.discover()
+    robot_cfg = None
+    if ARGS.robot_preset == "plated_meal":
+        # the generator's robot config (gen_batch.py, gen_strategy.BASE):
+        # state/action parity depends on it
+        from robobench.robots.franka import FrankaRobotCfg
+        robot_cfg = FrankaRobotCfg(base_pos=(-0.42, 0.0, 0.20), nullspace_dof_pos=(),
+                                   gripper_effort_limit=80.0, gripper_stiffness=4000.0)
     env = EnvCfg(scene=ARGS.scene, robot="franka", control_mode="osc",
-                 env_spacing=3).build(num_envs=1,
-                                      device="cuda:0" if torch.cuda.is_available() else "cpu")
+                 env_spacing=3, **({"robot_cfg": robot_cfg} if robot_cfg else {})).build(
+        num_envs=1, device="cuda:0" if torch.cuda.is_available() else "cpu")
     scene, robot = env.scene, env.robot
     art = robot.articulation
     ee = art.body_names.index("panda_hand")
     fj = art.find_joints(["panda_finger_joint1", "panda_finger_joint2"])[0]
     dim = robot.action_dim
     env.reset()
+    if ARGS.osc_preset == "plated_meal":
+        # the generator's controller tuning (gen_strategy.py) -- the recorded
+        # actions are normalized against THESE scales
+        osc = robot.controller.controllers[0]
+        osc._kp = torch.tensor([220.0, 220.0, 220.0, 600.0, 600.0, 600.0], device=env.device)
+        osc._kd = 2.0 * osc._kp.sqrt()
+        osc.cfg.rot_scale = 0.15
+        osc.cfg.kp_null = 3.0
+        osc.cfg.kd_null = 3.46
     views = Views(env)
+    ctrl_hz = 1.0 / (env.dt * robot.control_period)
+    if ARGS.hold == -1:
+        ARGS.hold = max(1, round(ctrl_hz / 10.0))
+        print(f"[pi05] hold=auto -> {ARGS.hold} (ctrl_hz={ctrl_hz:.1f})", flush=True)
+    # real-time playback: frames are captured every `video_every` control steps,
+    # so fps = ctrl_hz/video_every makes the mp4 run at wall-clock speed (the
+    # old hardcoded fps=20 played 1100-step episodes in 5s -- unwatchable)
+    video_fps = max(1.0, ctrl_hz / max(1, ARGS.video_every))
     prompt = ARGS.prompt or (scene.describe() if hasattr(scene, "describe")
                              else ARGS.scene.replace("_", " "))
     print(f"[pi05] prompt: {prompt[:600]}", flush=True)
@@ -141,9 +217,12 @@ def main() -> int:
     import imageio.v2 as imageio
     results = []
     for ep in range(ARGS.episodes):
-        env.reset()
+        if ARGS.seed0 >= 0:
+            env.reset(seed=ARGS.seed0 + ep)
+        else:
+            env.reset()
         plan: list[np.ndarray] = []
-        writer = imageio.get_writer(str(out / f"{ARGS.scene}_ep{ep}.mp4"), fps=20,
+        writer = imageio.get_writer(str(out / f"{ARGS.scene}_ep{ep}.mp4"), fps=video_fps,
                                     codec="libx264", pixelformat="yuv420p", macro_block_size=1)
         ok, t0, steps = False, time.time(), 0
         for t in range(ARGS.max_steps):
@@ -153,6 +232,8 @@ def main() -> int:
                 writer.append_data(base)
             if not plan:
                 p = np3(art.data.body_pos_w[0, ee])
+                if ARGS.state_origin_relative:
+                    p = p - views.origin
                 aa = np3(axis_angle_from_quat(art.data.body_quat_w[0, ee:ee + 1])[0])
                 grip = np3(art.data.joint_pos[0, fj])
                 obs = {"observation/image": base, "observation/wrist_image": wrist,
@@ -164,23 +245,36 @@ def main() -> int:
             act = torch.zeros(1, dim, device=env.device)
             act[0, 0:3] = torch.tensor(np.clip(a[0:3], -1, 1), device=env.device)
             act[0, 3:6] = torch.tensor(np.clip(a[3:6], -1, 1), device=env.device)
-            # LIBERO gripper: +1 closes, -1 opens. Ours takes finger targets in metres.
-            act[0, 6:8] = 0.0 if float(a[6]) > 0 else 0.04
-            env.step(act, render=False)
+            if ARGS.gripper_mode == "meters":
+                # bc_v1 convention: gripper is a per-finger position target in metres
+                act[0, 6:8] = float(np.clip(a[6], 0.0, 0.04))
+            else:
+                # LIBERO gripper: +1 closes, -1 opens. Ours takes finger targets in metres.
+                act[0, 6:8] = 0.0 if float(a[6]) > 0 else 0.04
+            for _ in range(max(1, ARGS.hold)):
+                env.step(act, render=False)
             steps = t + 1
             if bool(scene.success()[0]):
                 ok = True
                 break
         writer.close()
-        results.append({"episode": ep, "success": ok, "steps": steps,
+        # graded progress (0.15 plated / 0.25 loaded / 0.5 gathered / 0.75 assembled / 1.0):
+        # the scene latches milestones in post_step, so one read at episode end suffices.
+        # Binary success hides everything a BC policy does short of full completion.
+        score = float(scene.score()[0]) if hasattr(scene, "score") else None
+        results.append({"episode": ep, "success": ok, "score": score, "steps": steps,
+                        "seed": (ARGS.seed0 + ep if ARGS.seed0 >= 0 else None),
                         "wall_s": round(time.time() - t0, 1)})
-        print(f"[pi05] ep{ep} success={ok} steps={steps} "
+        print(f"[pi05] ep{ep} success={ok} score={score} steps={steps} "
               f"wall={results[-1]['wall_s']}s", flush=True)
 
     n_ok = sum(r["success"] for r in results)
+    scores = [r["score"] for r in results if r["score"] is not None]
     summary = {"scene": ARGS.scene, "task_dir": ARGS.task_dir, "model": "pi05_base",
                "episodes": ARGS.episodes, "successes": n_ok,
-               "rate": n_ok / max(1, ARGS.episodes), "prompt": prompt, "runs": results}
+               "rate": n_ok / max(1, ARGS.episodes),
+               "mean_score": (sum(scores) / len(scores)) if scores else None,
+               "prompt": prompt, "runs": results}
     (out / f"{ARGS.scene}_summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     print(f"[pi05] RESULT {ARGS.scene}: {n_ok}/{ARGS.episodes}", flush=True)
     if ARGS.hdfs:
@@ -209,6 +303,11 @@ if __name__ == "__main__":
             subprocess.run(["hdfs", "dfs", "-put", "-f",
                             str(Path(ARGS.out) / f"{ARGS.scene}_error.json"),
                             f"{ARGS.hdfs}/{ARGS.scene}_error.json"], capture_output=True)
+        # exit NONZERO immediately: app.close() must not mask the failure into
+        # rc=0 (it did -- pods reported "eval exited rc=0" on crashed runs and
+        # kept the job looking alive; user directive 2026-08-04: failed jobs
+        # must FAIL).
+        os._exit(1)
     finally:
         import threading
         threading.Timer(20.0, lambda: os._exit(rc)).start()

@@ -63,6 +63,9 @@ class TshirtFoldingSceneCfg(BaseCfg):
     self_contact: bool = tunable(True)  # folding lays cloth on cloth — keep self-contact ON
     self_contact_radius: float = tunable(0.002)
     self_contact_margin: float = tunable(0.002)
+    fold_footprint_max: float = tunable(0.30)  # footprint [m²] at or below which the shirt counts
+    # as folded (settled unfolded ~0.50; a completed 3-fold lands ~0.17-0.25; every observed
+    # failure mode stays >= 0.41)
     num_substeps: int = tunable(10)  # solver substeps per 1/60 s physics tick
     use_cuda_graph: bool = tunable(True)  # False -> slow but debuggable stepping
     collision_detection_interval: int = tunable(-1)  # [TUNE] self-contact pair refresh cadence, in
@@ -283,6 +286,11 @@ class TshirtFoldingScene(BaseScene):
         (settled unfolded ≈ 0.50, a completed fold ≈ 0.17-0.25)."""
         p = self.cloth.data.nodal_pos_w.torch  # (num_envs, P, 3); extents are env-origin invariant
         return (p[..., 0].amax(dim=1) - p[..., 0].amin(dim=1)) * (p[..., 1].amax(dim=1) - p[..., 1].amin(dim=1))
+
+    def success(self) -> torch.Tensor:
+        """(N,) bool: the shirt is folded — footprint at or below `fold_footprint_max`
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.footprint() <= self.cfg.fold_footprint_max
 
     def nodal_pos_local(self) -> torch.Tensor:
         """Nodal positions with the env origin removed (env-local frame, for bounds checks)."""

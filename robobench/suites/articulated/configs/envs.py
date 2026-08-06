@@ -249,11 +249,12 @@ register_env(SUITE, lambda: EnvCfg(scene="microwave", robot="null", env_spacing=
 # reach values at the same bench — re-verify with the per-binding stress smoke before
 # any agent run (only the null smoke validates the scene itself). The microwave faces
 # the robot (-y), bowls scatter front-left, the serving mat sits front-right; bowls are
-# grasped by the 7 mm rim (pinch) or palmed — both hand classes work.
+# grasped by the ~8.5 mm rim (pinch) or palmed — both hand classes work.
 def _mw_g1_cfg() -> MicrowaveMealSceneCfg:
     """G1 (short ~0.55 m arms): bench work pulled close; the deep reach to the
     turntable axis (~0.6 m) is the tight spot to verify."""
     return MicrowaveMealSceneCfg(
+        table="packing",  # kinematic, sinks cleanly to humanoid work height (ikea pattern)
         surface_z=0.7,
         mw_pos=(0.0, 0.14),
         mat_pos=(0.30, -0.14),
@@ -264,6 +265,7 @@ def _mw_g1_cfg() -> MicrowaveMealSceneCfg:
 def _mw_gr1t2_cfg() -> MicrowaveMealSceneCfg:
     """GR1-T2 (primary embodiment: door + keypad + carry): same bench, wider layout."""
     return MicrowaveMealSceneCfg(
+        table="packing",
         surface_z=0.7,
         mw_pos=(0.0, 0.20),
         mat_pos=(0.34, -0.10),
@@ -272,12 +274,35 @@ def _mw_gr1t2_cfg() -> MicrowaveMealSceneCfg:
 
 
 def _mw_franka_cfg() -> MicrowaveMealSceneCfg:
-    """Franka ablation: ground-level work in front of the base, everything inside the
-    ~0.75 m reach; bowls pinch-grasped by the rim (the 8 cm jaw cannot palm 110 mm)."""
+    """Franka ablation: work on the packing table at 0.55 m (the base rides at table
+    height, the repo's franka-binding convention), everything inside the ~0.75 m reach;
+    bowls pinch-grasped by the rim (the 8 cm jaw cannot palm 115 mm). The station is
+    RIGHT of the door's swing arc (see the binding's base_pos note): bowls spawn inside
+    the arc (the task hazard — clear them before opening), the mat sits WELL right of
+    the appliance, outside the arc, and every footprint stays fully on the deepened
+    2.47 x 1.14 m packing top (y edges +/-0.57) with >=0.11 m margin."""
     return MicrowaveMealSceneCfg(
+        surface_z=0.55,
         mw_pos=(0.0, 0.16),
-        mat_pos=(0.32, -0.12),
-        bowl_slots=((-0.26, -0.06), (-0.14, -0.18)),
+        # Mat pushed to comfortable mid-reach, clear of the appliance (user layout
+        # directive 2026-08-05): at (0.52,-0.06) the mat sat 6 cm off the appliance's
+        # right face and its slots 0.28-0.33 m from the base, LOW — reaching them
+        # folded the elbow around the base and wound the wrist trio ~140 deg (run 39
+        # footage + per-joint debt), killing every later door grasp. At (0.70,-0.16)
+        # the appliance-mat gap is 24 cm, slots sit 0.28-0.38 m out in FRONT-right,
+        # and the mat still ends 0.385 m inside the table's right edge.
+        mat_pos=(0.70, -0.16),
+        # Slots front-left of the robot on the deepened table: visible to the camera
+        # (the old between-base-and-appliance slots hid behind the arm), rim pinches
+        # 0.33-0.46 m from the base (the position channel degrades past ~0.5 m low),
+        # and INSIDE the door arc — the task's intended hazard (user-confirmed
+        # 2026-08-05): the solve must stage them clear before opening the door.
+        bowl_slots=((-0.02, -0.38), (0.11, -0.40)),
+        # the weld-on-closure grip contract (panda-hand pools; see the scene cfg).
+        # Engage radius covers the scan's rim FLARE: the pads stall on the flared lip
+        # ~1.5-2 cm off the analytic rim circle (run 27: real grip, no weld at 12 mm).
+        grasp_weld=True,
+        grasp_weld_dist=0.022,
     )
 
 
@@ -321,7 +346,16 @@ for _mode in ("osc", "joint"):
                 scene_cfg=_mw_franka_cfg(),
                 robot="franka",
                 control_mode=mode,
-                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.45, 0.0), base_rot=_FRANKA_ROT),
+                # base RIGHT of the door's swing zone: the bar's opening arc (radius
+                # 0.45 m about the hinge) passes within 0.14-0.19 m of any base parked
+                # at x 0-0.28 in front — inside the arm's fold limit (pull stalls at
+                # 23-32 deg, runs 16-17), and a fully open door would strike the robot.
+                # (0.42, -0.30) put the CLOSED bar at 0.27 m — folded at the arc START,
+                # latch never broke (run 18). From (0.44, -0.36) the arc spans
+                # 0.32-0.51 m, keypad 0.27 m, turntable axis 0.65 m: all in-band, and
+                # the base sits fully ON the deepened table (it overhung the 0.76 m
+                # top's front edge; user layout note 2026-08-05).
+                robot_cfg=FrankaRobotCfg(base_pos=(0.44, -0.36, 0.55), base_rot=_FRANKA_ROT),
                 env_spacing=3,
             )
         ),

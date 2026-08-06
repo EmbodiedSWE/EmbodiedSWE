@@ -208,6 +208,15 @@ class LatteSceneCfg(BaseCfg):
     auto_weld_release: float = tunable(0.02)  # release when aperture opens past this [m] (hysteresis)
     proxy_friction: float = tunable(0.5)  # ring + slab (MuJoCo-facing) tabletop friction; the
     # handle bars keep cup_friction (MPM-facing)
+    # --- success gates: the four the suite's own verified smoke asserts (it prints them, and
+    # passes at transfer 0.304 / kept 0.696 / retention 1.000 / spilled 0.000). The task is
+    # "fill the mug WITHOUT emptying the pitcher", so a partial pour is the intended outcome and
+    # both sides are gated. NOTE: `describe()` still tells the agent ">= 70% transferred", which
+    # this scene's pour design never produces — that text is stale.
+    success_transfer_min: float = tunable(0.15)  # min fraction of MILK inside the coffee cup
+    success_kept_min: float = tunable(0.15)  # min fraction of MILK still in the pitcher
+    success_retention_min: float = tunable(0.90)  # min fraction of COFFEE still in its cup
+    success_spilled_max: float = tunable(0.05)  # max fraction of MILK spilled on the table
     # --- rendering ---
     coffee_color: tuple[float, float, float] = info((0.36, 0.22, 0.12), doc="coffee particle display color")
     milk_color: tuple[float, float, float] = info((0.93, 0.90, 0.85), doc="milk particle display color")
@@ -740,6 +749,19 @@ class LatteScene(BaseScene):
     def retention_fraction(self) -> torch.Tensor:
         """Per-env fraction of COFFEE particles still inside the coffee cup."""
         return self._in_coffee_cup(self._local(self.coffee)).float().mean(dim=1)
+
+    def success(self) -> torch.Tensor:
+        """(N,) bool: the mug was filled without emptying the pitcher — the four gates the
+        suite's verified smoke asserts (milk transferred, milk kept back, coffee retained,
+        nothing spilled), all met at once (scene-level success alias, matching the other
+        suites' surface)."""
+        c = self.cfg
+        return (
+            (self.transfer_fraction() >= c.success_transfer_min)
+            & (self.milk_in_pitcher_fraction() >= c.success_kept_min)
+            & (self.retention_fraction() >= c.success_retention_min)
+            & (self.spilled_fraction() <= c.success_spilled_max)
+        )
 
     def spilled_fraction(self) -> torch.Tensor:
         """Per-env fraction of MILK particles resting on/below table level outside every cup:

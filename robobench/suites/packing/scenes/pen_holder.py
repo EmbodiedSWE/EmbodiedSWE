@@ -5,10 +5,10 @@ standing on the work surface and up to four pens lying flat, scattered on the ot
 **Goal (carried here, no task layer): put every present pen into the holder tip-up, then
 leave the holder standing upright on the surface.**
 
-This is a DIFFICULTY-FLOOR tier task (by design): meant to be SOLVABLE — a graded
-0-100 rubric so weak agents rank instead of flatlining — while still honest bimanual
-manipulation (the source robot picks the holder up with one hand and fills it with the
-other; every insertion targets a compliant, moving cup).
+This task is deliberately SOLVABLE — a graded 0-100 rubric so weak agents rank
+instead of flatlining — while still honest bimanual manipulation (the source robot
+picks the holder up with one hand and fills it with the other; every insertion
+targets a compliant, moving cup).
 
 Judged by the ported source rubric with verbatim thresholds, computed in the HOLDER'S
 BODY FRAME so a held / tilted holder judges identically to a standing one (the source
@@ -25,18 +25,22 @@ end-effectors back at their episode-start pose; those are EMBODIMENT clauses, ch
 the robot-binding/harness layer, deliberately not here (the scene is robot-agnostic —
 the stacking-toy return-to-origin precedent).
 
-Assets are fully procedural, one rigid body each, authored by custom compound spawners
-(the stacking-toy stacking-piece pattern — child colliders of one body never self-collide):
-  - holder: a bottom disc + 8 box wall segments forming an open octagonal cup
-    (inner inradius 44 mm, the xy_tol honesty limit: any pen physically inside the cup
-    counts, so the 3.5 cm tolerance is honest by construction, like stacking-toy's peg-enforced
-    concentricity; sized so FOUR pens fit on the floor, not just one). Grasp the 8 mm rim
-    with any jaw, or palm the ~10 cm body.
-  - pen: a cylinder barrel collider (r >= 10 mm — the thin-cylinder pinch audit knob)
-    plus a VISUAL-ONLY dark cone tip (the balance_scale needle pattern), so tip vs
-    bottom is visible to a skimming viewer and the rubric's tip-up clause is honest.
-Two families (2 `pen` + 2 `oil_pen`, the source's object set) differing in color and
-diameter only — identity is oracle-visible; there is no hidden state in the floor tier.
+Assets are vendored product models (one rigid body each, baked by
+scripts/vendor_pen_holder_assets.py — measured constants, canonical task frames):
+  - holder: a hexagonal cup (textured shell, outer flat-to-flat ~69 mm, corner width
+    80 mm, 120 mm tall). The shell is visual-only; physics is an invisible floor plate
+    + one wall box per hexagon flat at the measured inner surface (inradius 33.1 mm,
+    corner reach 38.2 mm — the xy_tol honesty limit: any pencil physically inside the
+    cup counts, so the 3.5 cm tolerance stays honest by construction; four pencils fit
+    on the floor). Grasp the ~1.5 mm rim with any jaw, or palm the ~69 mm body.
+  - pen: a mechanical pencil (150 mm long, 12 mm dia — the source model is a 211 mm
+    drafting pencil, scaled 0.71 at bake to standard pencil size; full-length pencils
+    protrude ~95 mm from this cup and pile transients eject/wedge neighbours), click
+    button frozen at rest, convexDecomposition collision true to the visual — the
+    graphite tip end IS the asset's +z, so the rubric's tip-up clause is honest with
+    tip_h = 0.
+One family of four identical pencils (the vendored set has one pencil model); identity
+is oracle-visible; there is no hidden state anywhere in the task.
 
 Per-episode randomization (task-family knobs): holder pose (xy jitter + yaw), pen
 scatter poses (arc slot + xy jitter + free yaw, lying FLAT — every pen must be
@@ -51,9 +55,9 @@ the scene — stays app-free.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
@@ -65,193 +69,6 @@ if TYPE_CHECKING:
     from robobench.core import BaseEnv
 
 
-# ----- custom compound spawners ---------------------------------------------------------------
-# One rigid body per object, several child colliders + visual-only decoration, authored with raw
-# pxr APIs; only `isaaclab.sim.utils.clone` is borrowed (the regex-resolve + per-env replicate
-# machinery every CuboidCfg spawn uses). Same fallback as the stacking piece: author into a /tmp
-# USD and return a UsdFileCfg if this ever fights the platform.
-
-_SPAWNER_CACHE: dict[str, Any] = {}
-
-
-def _spawn_pen_holder(prim_path: str, cfg: Any, translation=None, orientation=None):
-    """Author the open cup at `prim_path`: root Xform with RigidBodyAPI + explicit MassAPI
-    (overlapping wall segments would double-count density; the symmetric layout keeps the
-    auto-CoM on the axis, slightly low because of the bottom disc — good for stability), a
-    bottom cylinder collider, and 8 box wall segments forming an octagonal shell whose inner
-    aperture is a regular octagon of inradius `inner_r`. Explicit small contact offsets (the
-    pc_gpu precedent: the ~2 cm default would produce phantom wall contact on a 3 cm funnel)."""
-    import omni.usd
-    from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics
-
-    stage = omni.usd.get_context().get_stage()
-    xform = UsdGeom.Xform.Define(stage, prim_path)
-    root = xform.GetPrim()
-    xf = UsdGeom.Xformable(xform)
-    if translation is not None:
-        xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
-    if orientation is not None:
-        w, x, y, z = (float(v) for v in orientation)
-        xf.AddOrientOp().Set(Gf.Quatf(w, Gf.Vec3f(x, y, z)))
-    UsdPhysics.RigidBodyAPI.Apply(root)
-    UsdPhysics.MassAPI.Apply(root).CreateMassAttr(float(cfg.mass_props.mass))
-    # Cap the contact-solver pop (default max depenetration velocity is 3 m/s): an end-on
-    # pen impact penetrates a few mm in one 120 Hz step and the solver would otherwise eject
-    # it ballistically — the measured bounce-outs of the first two smoke runs. The factory-env
-    # insertion trick: resolve overlap gently.
-    PhysxSchema.PhysxRigidBodyAPI.Apply(root).CreateMaxDepenetrationVelocityAttr(0.5)
-
-    color = Gf.Vec3f(*cfg.color)
-
-    def collide(prim) -> None:
-        UsdPhysics.CollisionAPI.Apply(prim)
-        px = PhysxSchema.PhysxCollisionAPI.Apply(prim)
-        px.CreateContactOffsetAttr(float(cfg.contact_offset))
-        px.CreateRestOffsetAttr(0.0)
-
-    # bottom disc: floor of the cup, top face at (-h/2 + bot_t) in body frame
-    outer_r = cfg.inner_r + cfg.wall_t
-    bot = UsdGeom.Cylinder.Define(stage, f"{prim_path}/bottom")
-    bot.CreateRadiusAttr(outer_r)
-    bot.CreateHeightAttr(cfg.bot_t)
-    bot.CreateExtentAttr([Gf.Vec3f(-outer_r, -outer_r, -cfg.bot_t / 2),
-                          Gf.Vec3f(outer_r, outer_r, cfg.bot_t / 2)])
-    UsdGeom.Xformable(bot.GetPrim()).AddTranslateOp().Set(
-        Gf.Vec3d(0.0, 0.0, -cfg.height / 2 + cfg.bot_t / 2))
-    bot.CreateDisplayColorAttr([color])
-    collide(bot.GetPrim())
-
-    # 8 wall boxes: mid-plane at inradius inner_r + wall_t/2; segment length closes the OUTER
-    # octagon (adjacent segments overlap toward the outside — harmless inside one body); the
-    # aperture stays the exact intersection of the 8 inner half-planes (a regular octagon of
-    # inradius `inner_r`, circumradius inner_r/cos(pi/8) = 1.082*inner_r).
-    n = cfg.n_segments
-    r_mid = cfg.inner_r + cfg.wall_t / 2
-    seg_len = 2 * (cfg.inner_r + cfg.wall_t) * math.tan(math.pi / n) + 0.002
-    for k in range(n):
-        ang = 2 * math.pi * k / n
-        seg = UsdGeom.Cube.Define(stage, f"{prim_path}/wall_{k}")
-        seg.CreateSizeAttr(1.0)
-        sxf = UsdGeom.Xformable(seg.GetPrim())
-        sxf.AddTranslateOp().Set(Gf.Vec3d(r_mid * math.cos(ang), r_mid * math.sin(ang), 0.0))
-        sxf.AddRotateZOp().Set(math.degrees(ang))
-        sxf.AddScaleOp().Set(Gf.Vec3f(cfg.wall_t, seg_len, cfg.height))
-        seg.CreateDisplayColorAttr([color])
-        collide(seg.GetPrim())
-    return root
-
-
-def _spawn_pen(prim_path: str, cfg: Any, translation=None, orientation=None):
-    """Author one pen at `prim_path`: root Xform with RigidBodyAPI + explicit MassAPI, a
-    cylinder barrel collider along local +z, and a VISUAL-ONLY cone tip past the +z end (no
-    CollisionAPI — the balance_scale needle pattern; base radius = barrel radius, so a pen
-    lying flat shows no penetration). Pen local frame: axis = +z, tip end = +z."""
-    import omni.usd
-    from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics
-
-    stage = omni.usd.get_context().get_stage()
-    xform = UsdGeom.Xform.Define(stage, prim_path)
-    root = xform.GetPrim()
-    xf = UsdGeom.Xformable(xform)
-    if translation is not None:
-        xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
-    if orientation is not None:
-        w, x, y, z = (float(v) for v in orientation)
-        xf.AddOrientOp().Set(Gf.Quatf(w, Gf.Vec3f(x, y, z)))
-    UsdPhysics.RigidBodyAPI.Apply(root)
-    UsdPhysics.MassAPI.Apply(root).CreateMassAttr(float(cfg.mass_props.mass))
-    # Same depenetration cap as the holder (see there) + a whiff of damping so a 20 g pen
-    # rattling in the cup crosses the 0.05 m/s settle gate promptly instead of ringing.
-    pxrb = PhysxSchema.PhysxRigidBodyAPI.Apply(root)
-    pxrb.CreateMaxDepenetrationVelocityAttr(0.5)
-    pxrb.CreateLinearDampingAttr(0.05)
-    pxrb.CreateAngularDampingAttr(0.05)
-
-    barrel = UsdGeom.Cylinder.Define(stage, f"{prim_path}/barrel")
-    barrel.CreateRadiusAttr(cfg.pen_r)
-    barrel.CreateHeightAttr(cfg.barrel_l)
-    barrel.CreateExtentAttr([Gf.Vec3f(-cfg.pen_r, -cfg.pen_r, -cfg.barrel_l / 2),
-                             Gf.Vec3f(cfg.pen_r, cfg.pen_r, cfg.barrel_l / 2)])
-    barrel.CreateDisplayColorAttr([Gf.Vec3f(*cfg.color)])
-    UsdPhysics.CollisionAPI.Apply(barrel.GetPrim())
-    px = PhysxSchema.PhysxCollisionAPI.Apply(barrel.GetPrim())
-    px.CreateContactOffsetAttr(float(cfg.contact_offset))
-    px.CreateRestOffsetAttr(0.0)
-
-    tip = UsdGeom.Cone.Define(stage, f"{prim_path}/tip")  # visual only — NO CollisionAPI
-    tip.CreateRadiusAttr(cfg.pen_r)
-    tip.CreateHeightAttr(cfg.tip_h)
-    tip.CreateExtentAttr([Gf.Vec3f(-cfg.pen_r, -cfg.pen_r, -cfg.tip_h / 2),
-                          Gf.Vec3f(cfg.pen_r, cfg.pen_r, cfg.tip_h / 2)])
-    UsdGeom.Xformable(tip.GetPrim()).AddTranslateOp().Set(
-        Gf.Vec3d(0.0, 0.0, cfg.barrel_l / 2 + cfg.tip_h / 2))
-    tip.CreateDisplayColorAttr([Gf.Vec3f(*cfg.tip_color)])
-    return root
-
-
-def _holder_spawner_cfg(*, inner_r: float, wall_t: float, height: float, bot_t: float,
-                        mass: float, color: tuple, n_segments: int,
-                        contact_offset: float) -> Any:
-    """Build (lazily, app required) the holder spawner cfg — `clone` wraps
-    `_spawn_pen_holder` exactly like `spawn_cuboid` is wrapped."""
-    import isaaclab.sim as sim_utils
-    from isaaclab.sim.spawners.spawner_cfg import RigidObjectSpawnerCfg
-    from isaaclab.sim.utils import clone
-    from isaaclab.utils import configclass
-
-    if "holder" not in _SPAWNER_CACHE:
-
-        @configclass
-        class PenHolderSpawnerCfg(RigidObjectSpawnerCfg):
-            func: Callable = clone(_spawn_pen_holder)
-            inner_r: float = 0.04  # inner octagon INRADIUS (m)
-            wall_t: float = 0.008
-            height: float = 0.11
-            bot_t: float = 0.008
-            color: tuple = (0.25, 0.45, 0.45)
-            n_segments: int = 8
-            contact_offset: float = 0.002
-
-        _SPAWNER_CACHE["holder"] = PenHolderSpawnerCfg
-
-    return _SPAWNER_CACHE["holder"](
-        mass_props=sim_utils.MassPropertiesCfg(mass=mass),
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-        inner_r=inner_r, wall_t=wall_t, height=height, bot_t=bot_t,
-        color=color, n_segments=n_segments, contact_offset=contact_offset,
-    )
-
-
-def _pen_spawner_cfg(*, pen_r: float, barrel_l: float, tip_h: float, mass: float,
-                     color: tuple, tip_color: tuple, contact_offset: float) -> Any:
-    """Build (lazily, app required) the pen spawner cfg."""
-    import isaaclab.sim as sim_utils
-    from isaaclab.sim.spawners.spawner_cfg import RigidObjectSpawnerCfg
-    from isaaclab.sim.utils import clone
-    from isaaclab.utils import configclass
-
-    if "pen" not in _SPAWNER_CACHE:
-
-        @configclass
-        class PenSpawnerCfg(RigidObjectSpawnerCfg):
-            func: Callable = clone(_spawn_pen)
-            pen_r: float = 0.010
-            barrel_l: float = 0.135
-            tip_h: float = 0.015
-            color: tuple = (0.2, 0.35, 0.85)
-            tip_color: tuple = (0.08, 0.08, 0.08)
-            contact_offset: float = 0.001
-
-        _SPAWNER_CACHE["pen"] = PenSpawnerCfg
-
-    return _SPAWNER_CACHE["pen"](
-        mass_props=sim_utils.MassPropertiesCfg(mass=mass),
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-        pen_r=pen_r, barrel_l=barrel_l, tip_h=tip_h,
-        color=color, tip_color=tip_color, contact_offset=contact_offset,
-    )
-
-
 # ----- scene cfg -------------------------------------------------------------------------------
 @dataclass
 class PenHolderSceneCfg(BaseCfg):
@@ -261,8 +78,9 @@ class PenHolderSceneCfg(BaseCfg):
 
     # --- tunable: rubric thresholds (source values, verbatim) --------------------------------
     xy_tol: float = tunable(0.035)  # pen bottom within this of the holder axis (source 3.5 cm).
-    # Honest by construction: max physical in-cup offset = inner_r - min pen_r = 3.4 cm
-    # < xy_tol, so any pen physically inside counts; a pen leaning OUTSIDE is >= 5 cm away.
+    # Honest by construction: max physical in-cup offset = corner reach - pen r
+    # = 38.2 - 5.8 mm = 3.2 cm < xy_tol, so any pencil physically inside counts; a pen
+    # leaning OUTSIDE the shell is >= 4 cm away.
     depth_min: float = tunable(0.035)  # pen bottom below the rim by more than this (source 3.5 cm)
     holder_tilt_max_deg: float = tunable(45.0)  # holder axis within this of world-up (source 45)
     pen_align_max_deg: float = tunable(45.0)  # pen axis within this of the HOLDER axis, tip-up
@@ -278,59 +96,91 @@ class PenHolderSceneCfg(BaseCfg):
     subset_sample: bool = tunable(True)  # per-episode pen-count sampling (demo sets False)
     min_present: int = tunable(1)  # per-family lower bound of sampled pen count
 
-    # --- tunable: placement (robot embodiments raise the work onto a bench) ------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
+    # --- tunable: placement (table-relative xy; the table itself sits at TABLES pos) ---------
+    surface_z: float | None = tunable(None)  # work-surface height (m); None -> the preset's
     holder_pos: tuple = tunable((0.22, 0.0))  # holder centre on the surface (source: right half)
     pens_center: tuple = tunable((-0.10, 0.0))  # scatter-arc centre (source: pens on left half)
     spawn_radii: tuple = tunable((0.18,))  # scatter arc radii (robot cfgs: front arc)
     spawn_arc: tuple = tunable((90.0, 270.0))  # scatter arc (deg) around pens_center
 
-    # --- info: structure ----------------------------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))  # procedural bench top (x, y), used when surface_z > 0
-    # Inner inradius sized for FOUR pens, not one: at 40 mm (run 3/4) the fourth drop had no
-    # floor left — it rested on the pile of three, too shallow / past the tilt cone until a
-    # shake-down seated it. 44 mm is the honesty limit: inner_r - min pen_r = 34 mm < the
-    # 35 mm xy_tol, so the cup still enforces the tolerance by construction.
-    holder_inner_r: float = info(0.044)  # inner octagon inradius; funnel = inner_r - pen_r
-    holder_wall_t: float = info(0.008)  # rim width — the universal pinch-grasp affordance
-    # Height sized against LEAN: a pen with its bottom at the wall and shaft on the opposite
-    # rim leans atan((34+44)/108) ~= 36 deg — inside the 45 deg tip-up cone with margin.
+    # --- info: work surface (the ikea/motherboard/tool_packing vendored-table pattern) ---------
+    # Default = the general-purpose packing table (the ikea/microwave bench; the lab
+    # table is an industrial GPU-assembly bench and stays available as a preset).
+    table: str = info("packing")  # which work surface: "lab_table" | "packing"
+    table_depth_scale: float = info(1.5)  # y-stretch: the packing top is 2.47 x 0.76 m,
+    # and scatter + holder + an on-table robot base need ~0.9 m of depth (the microwave
+    # task's deepening, adopted with it)
+    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
+    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    # Same presets as the sibling scenes, with ONE local default position. The lab
+    # table's collision behaves as if rotated 180 deg from its authored orient (MEASURED
+    # by a pen ladder: the supported region is x in [pos-1.03, pos+0.25],
+    # y in [pos-0.46, pos+0.46] — pens beyond fell 1 m through the visual top; the
+    # motherboard/tool_packing layouts happen to fit that footprint either way, which is
+    # why it never showed there). (0.40, -0.03) puts the supported region at
+    # x [-0.63, 0.65], y [-0.49, 0.43]: the scatter/holder zone, the franka base
+    # (0, -0.40) and both multi bases (+/-0.55, 0) all land on real collision.
+    TABLES: ClassVar[dict[str, dict[str, Any]]] = {
+        "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
+                      "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0,
+                      "pos": (0.40, -0.03), "top_offset": 0.0, "height": 1.05,
+                      "kinematic": False},
+        "packing": {"usd": ("packing_table", "SM_HeavyDutyPackingTable_C02_01_physics.usd"),
+                    "scale": 0.01, "orient": (1.0, 0.0, 0.0, 0.0), "surface_z": 0.994,
+                    "pos": (0.0, 0.0), "top_offset": 0.994, "height": 0.994,
+                    "kinematic": True},
+    }
+
+    # --- info: structure (holder/pencil constants MEASURED at bake time by ---------------------
+    # scripts/vendor_pen_holder_assets.py — keep in sync with its printed "scene constants")
+    # The vendored hexagonal cup: wall-collider inner inradius (flats) and the corner
+    # reach (= inradius / cos 30). Funnel = inner_r - pen_r ~= 27 mm; honesty bound
+    # = corner reach - pen_r = 32 mm < the 35 mm xy_tol, so the shell still enforces
+    # the tolerance by construction. Four pencils fit on the floor.
+    holder_inner_r: float = info(0.0331)  # hexagon flat inradius (wall-collider inner face)
+    holder_corner_r: float = info(0.0382)  # hexagon corner reach from the axis
+    holder_outer_r: float = info(0.0400)  # outer corner radius (side-lying rest height)
+    # Height/lean: a pencil with its bottom at a wall and shaft on the opposite rim leans
+    # atan((33+38)/116) ~= 32 deg — inside the 45 deg tip-up cone with margin.
     holder_h: float = info(0.120)
-    # Floor thickness sized against TUNNELING (GPU PhysX has no CCD): a pen dropped end-on
-    # from the mouth hits at ~1.6 m/s = 13 mm/step at 120 Hz — an 8 mm floor was punched
-    # through in the first smoke run (pens ejected); 12 mm + the 5 mm contact offset gives
-    # ~17 mm of capture per step.
-    holder_bot_t: float = info(0.012)
+    floor_local_z: float = info(-0.0559)  # cup floor top, holder body frame (4.1 mm plate)
     holder_mass: float = info(0.20)
-    holder_color: tuple = info((0.25, 0.45, 0.45))
-    n_segments: int = info(8)
-    # Contact offset trades phantom contact against fast-contact capture: the 28 mm funnel
-    # tolerates a generous 5 mm speculative margin (unlike stacking's 5 mm clearance, which
-    # forced 2 mm), and the margin is what catches a 13 mm/step end-on pen impact.
+    # Contact offset trades phantom contact against fast-contact capture: the ~25 mm funnel
+    # tolerates a generous 5 mm speculative margin, and the margin is what catches a
+    # 13 mm/step end-on pen impact before the thin walls could be tunneled.
     contact_offset: float = info(0.005)
-    tip_h: float = info(0.015)  # visual cone tip past the +z barrel end
-    tip_color: tuple = info((0.08, 0.08, 0.08))
-    pen_mass: float = info(0.02)
-    # (family name, count, barrel radius, barrel length, rgb) — the source's 2 pens + 2 oil
-    # pens; radii pass the thin-cylinder pinch audit (scale-up knob lives here).
+    tip_h: float = info(0.0)  # the graphite tip IS the asset's +z end (no add-on cone)
+    pen_mass: float = info(0.012)  # a 150 mm mechanical pencil with its mechanism
+    # (family name, count, barrel radius, full length) — one family of four identical
+    # vendored mechanical pencils (r/l measured at bake time).
     families: tuple = info((
-        ("pen", 2, 0.010, 0.135, (0.20, 0.35, 0.85)),
-        ("oil_pen", 2, 0.012, 0.125, (0.85, 0.25, 0.20)),
+        ("pencil", 4, 0.0058, 0.1500),
     ))
-    # Off-camera ground depot for absent pens; grid extent 1.0 + 2*0.14 + pen 0.15 < half of
+    # Off-camera ground depot for absent pens; grid extent 1.0 + 2*0.14 + pen 0.21 < half of
     # env_spacing 3 (the stacking-toy depot analysis).
     parking_pos: tuple = info((1.0, 1.0))
+    # Asset USDs; empty -> the vendored assets committed under `assets/pen_holder/`.
+    asset_dir: str = info("")
+    holder_usd: str = info("")
+    pencil_usd: str = info("")
 
     # Derived (filled in __post_init__).
-    holder_outer_r: float = field(default=None, init=False)
-    floor_local_z: float = field(default=None, init=False)  # cup floor, holder body frame
     manifest: tuple = field(default=None, init=False)  # ((name, fam_idx, pen_r, barrel_l), ...)
 
     def __post_init__(self) -> None:
-        self.holder_outer_r = round(self.holder_inner_r + self.holder_wall_t, 4)
-        self.floor_local_z = round(-self.holder_h / 2 + self.holder_bot_t, 4)
+        assets = Path(__file__).resolve().parents[1] / "assets"
+        self.asset_dir = self.asset_dir or str(assets / "pen_holder")
+        self.holder_usd = self.holder_usd or str(Path(self.asset_dir) / "pen_holder.usd")
+        self.pencil_usd = self.pencil_usd or str(Path(self.asset_dir) / "pencil.usd")
+        preset = self.TABLES[self.table]
+        if self.surface_z is None:
+            self.surface_z = preset["surface_z"]
+        if self.workbench_pos is None:
+            self.workbench_pos = preset["pos"]
+        self.workbench_usd = self.workbench_usd or str(
+            assets.parents[1] / "assembly" / "assets" / "props" / preset["usd"][0] / preset["usd"][1])
         flat = []
-        for f, (fname, count, pen_r, barrel_l, _rgb) in enumerate(self.families):
+        for f, (fname, count, pen_r, barrel_l) in enumerate(self.families):
             for j in range(count):
                 flat.append((f"{fname}_{j}", f, pen_r, barrel_l))
         self.manifest = tuple(flat)
@@ -346,43 +196,78 @@ class PenHolderScene(BaseScene):
 
     # ----- assets -----------------------------------------------------------------------------
     def assets(self) -> dict[str, Any]:
-        """Ground, light, optional bench, the free-standing cup, and the pens lying flat at
-        their nominal scatter slots (reset() re-places everything)."""
+        """Floor, light, the vendored work table (ikea/motherboard pattern), the
+        free-standing cup, and the pens lying flat at their nominal scatter slots
+        (reset() re-places everything). Both vendored USDs get the physics armor at
+        spawn (depenetration cap; damping on the pens so a 12 g pencil rattling in the
+        cup crosses the 0.05 m/s settle gate promptly instead of ringing)."""
         import isaaclab.sim as sim_utils
         from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
 
         c = self.cfg
         z0 = c.surface_z
+        for usd in (c.holder_usd, c.pencil_usd):
+            if not Path(usd).is_file():
+                raise FileNotFoundError(
+                    f"{usd} not found — the pen_holder assets ship with the repo under "
+                    f"`suites/packing/assets/pen_holder/` (rebake: "
+                    f"scripts/vendor_pen_holder_assets.py)"
+                )
+        preset = c.TABLES[c.table]
+        wx, wy = c.workbench_pos
+        table_z = z0 - preset["top_offset"]
+        ground_z = z0 - preset["height"]
+        s = preset["scale"]
+        table_spawn = sim_utils.UsdFileCfg(usd_path=c.workbench_usd,
+                                           scale=(s, s * c.table_depth_scale, s))
+        if preset["kinematic"]:
+            table_spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
 
         out: dict[str, Any] = {
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
-                spawn=sim_utils.GroundPlaneCfg(),
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
+                spawn=sim_utils.GroundPlaneCfg(usd_path=str(
+                    Path(c.asset_dir).parents[2] / "assembly" / "assets" / "props"
+                    / "ground" / "default_ground.usd")),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, ground_z)),
             ),
             "light": AssetBaseCfg(
                 prim_path="/World/light",
                 spawn=sim_utils.DomeLightCfg(intensity=2500.0, color=(0.9, 0.9, 0.9)),
             ),
+            "workbench": AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/Table",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=preset["orient"]),
+                spawn=table_spawn,
+            ),
         }
-        if z0 > 0:  # procedural workbench (crate pattern): kinematic slab, top at surface_z
-            out["bench"] = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Bench",
+        if c.table == "lab_table":
+            # The lab table's collision covers only part of its visual top and sits
+            # 180 deg from the VISUAL, which follows the authored +90 (both measured —
+            # see the TABLES comment). Everything visual-but-unsupported is a phantom
+            # surface objects fall a metre through. Back the ENTIRE visual footprint
+            # (x [wx-1.20, wx+0.46], y [wy-0.315, wy+1.104]) with one invisible static
+            # slab whose top sits 0.5 mm below the real collision top: shadowed where
+            # real collision exists, a safety net where it does not.
+            out["table_backing"] = AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/TableBacking",
                 spawn=sim_utils.CuboidCfg(
-                    size=(c.bench_size[0], c.bench_size[1], z0),
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+                    size=(1.66, 1.42, 0.05),
                     collision_props=sim_utils.CollisionPropertiesCfg(),
-                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.35, 0.35, 0.38)),
+                    visible=False,
                 ),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, z0 / 2)),
+                init_state=AssetBaseCfg.InitialStateCfg(
+                    pos=(wx - 0.37, wy + 0.395, z0 - 0.0035 - 0.025)),
             )
 
         out["holder"] = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Holder",
-            spawn=_holder_spawner_cfg(
-                inner_r=c.holder_inner_r, wall_t=c.holder_wall_t, height=c.holder_h,
-                bot_t=c.holder_bot_t, mass=c.holder_mass, color=c.holder_color,
-                n_segments=c.n_segments, contact_offset=c.contact_offset,
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=c.holder_usd,
+                collision_props=sim_utils.CollisionPropertiesCfg(
+                    contact_offset=c.contact_offset, rest_offset=0.0),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(max_depenetration_velocity=0.5),
+                mass_props=sim_utils.MassPropertiesCfg(mass=c.holder_mass),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(
                 pos=(c.holder_pos[0], c.holder_pos[1], z0 + c.holder_h / 2 + 0.002)),
@@ -391,15 +276,25 @@ class PenHolderScene(BaseScene):
         a0, a1 = (math.radians(v) for v in c.spawn_arc)
         n_pens = len(c.manifest)
         cx, cy = c.pens_center
-        for i, (name, f, pen_r, barrel_l) in enumerate(c.manifest):
-            rgb = c.families[f][4]
+        for i, (name, _f, pen_r, _barrel_l) in enumerate(c.manifest):
             ang = a0 + (a1 - a0) * (i + 0.5) / n_pens
             r = c.spawn_radii[i % len(c.spawn_radii)]
             out[name] = RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Pen_" + name,
-                spawn=_pen_spawner_cfg(
-                    pen_r=pen_r, barrel_l=barrel_l, tip_h=c.tip_h, mass=c.pen_mass,
-                    color=rgb, tip_color=c.tip_color, contact_offset=0.003,
+                spawn=sim_utils.UsdFileCfg(
+                    usd_path=c.pencil_usd,
+                    collision_props=sim_utils.CollisionPropertiesCfg(
+                        contact_offset=0.003, rest_offset=0.0),
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                        # crowded-cup piles lever the thin shafts hard; iterate the
+                        # solver like the other contact-rich suites do
+                        solver_position_iteration_count=32,
+                        solver_velocity_iteration_count=1,
+                        max_depenetration_velocity=0.5,
+                        linear_damping=0.05,
+                        angular_damping=0.05,
+                    ),
+                    mass_props=sim_utils.MassPropertiesCfg(mass=c.pen_mass),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
                     pos=(cx + r * math.cos(ang), cy + r * math.sin(ang), z0 + pen_r + 0.003),
@@ -451,7 +346,7 @@ class PenHolderScene(BaseScene):
 
         # --- subset sampling (the task-family knob): per family, k ~ U{min_present..n} ---
         col0 = 0
-        for _fname, count, _r, _l, _rgb in c.families:
+        for _fname, count, _r, _l in c.families:
             if c.subset_sample:
                 k = torch.randint(c.min_present, count + 1, (m,), device=dev)
             else:
@@ -476,29 +371,68 @@ class PenHolderScene(BaseScene):
         self.holder.write_root_state_to_sim(st, env_ids)
 
         # --- pens: arc slot + jitter, lying FLAT with free yaw; absent -> parking depot ---
+        # Overlap-rejected placement: a lying pen is a barrel_l-long segment, and tight
+        # robot-binding arcs put slots closer than a pen length — free yaws can overlap
+        # tip-to-tip at spawn and the depenetration pop hurls a pen off the table
+        # (measured: 1 m displacement inside 0.1 s). Place pens sequentially; where a
+        # new pen's segment comes too close to an already-placed one, resample its yaw
+        # and jitter for that env.
         a0, a1 = (math.radians(v) for v in c.spawn_arc)
         n_pens = len(c.manifest)
         cx, cy = c.pens_center
         c45 = math.cos(math.pi / 4)  # q_pitch = 90 deg about y: pen local +z -> world +x
-        for i, (name, _f, pen_r, _l) in enumerate(c.manifest):
+
+        def seg_dist(p_c, p_y, p_h, q_c, q_y, q_h):
+            """Min distance between 2D segments (centre, yaw, half-length), batched (m,)."""
+            su = torch.stack([torch.cos(p_y), torch.sin(p_y)], dim=-1)
+            tv = torch.stack([torch.cos(q_y), torch.sin(q_y)], dim=-1)
+            best = torch.full_like(p_y, torch.inf)
+            for fa in (-1.0, -0.5, 0.0, 0.5, 1.0):  # sampled points on segment A
+                pa = p_c + su * (fa * p_h)
+                w = pa - q_c
+                t = (w * tv).sum(-1).clamp(-q_h, q_h)  # closest point on segment B
+                best = torch.minimum(best, (w - tv * t.unsqueeze(-1)).norm(dim=-1))
+            for fb in (-1.0, -0.5, 0.0, 0.5, 1.0):  # and the reverse direction
+                qb = q_c + tv * (fb * q_h)
+                w = qb - p_c
+                t = (w * su).sum(-1).clamp(-p_h, p_h)
+                best = torch.minimum(best, (w - su * t.unsqueeze(-1)).norm(dim=-1))
+            return best
+
+        placed: list[tuple[torch.Tensor, torch.Tensor, float, float]] = []  # (ctr, yaw, half, r)
+        for i, (name, _f, pen_r, barrel_l) in enumerate(c.manifest):
             ang = a0 + (a1 - a0) * (i + 0.5) / n_pens
             r = c.spawn_radii[i % len(c.spawn_radii)]
+            slot = torch.tensor([cx + r * math.cos(ang), cy + r * math.sin(ang)], device=dev)
+            ctr = slot + (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
+            yaw = (torch.rand(m, device=dev) * 2 - 1) * yaw_amp
+            for _try in range(12):
+                bad = torch.zeros(m, dtype=torch.bool, device=dev)
+                for (qc, qy, qh, qr) in placed:
+                    d = seg_dist(ctr, yaw, barrel_l / 2, qc, qy, qh)
+                    bad |= d < (pen_r + qr + 0.006)
+                if not bad.any():
+                    break
+                ctr[bad] = slot + (torch.rand(int(bad.sum()), 2, device=dev) * 2 - 1) * c.reset_pos_jitter
+                yaw[bad] = (torch.rand(int(bad.sum()), device=dev) * 2 - 1) * yaw_amp
+            placed.append((ctr, yaw, barrel_l / 2, pen_r))
+
             scat = torch.zeros(m, 3, device=dev)
-            scat[:, 0] = cx + r * math.cos(ang)
-            scat[:, 1] = cy + r * math.sin(ang)
-            scat[:, :2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
+            scat[:, 0:2] = ctr
             scat[:, 2] = c.surface_z + pen_r + 0.003
             park = torch.zeros(m, 3, device=dev)
             park[:, 0] = c.parking_pos[0] + (i % 2) * 0.14
             park[:, 1] = c.parking_pos[1] + (i // 2) * 0.14
-            park[:, 2] = pen_r + 0.003
+            # depot sits on the GROUND, which lies a full table height below the work
+            # surface (parking at pen_r above z=0 left pens airborne on tall presets)
+            park[:, 2] = c.surface_z - c.TABLES[c.table]["height"] + pen_r + 0.003
 
             pres = self.present[env_ids, i].unsqueeze(1)
             st = torch.zeros(m, 13, device=dev)
             st[:, 0:3] = origin + torch.where(pres, scat, park)
             # lying flat: q = qz(yaw) * qy(90 deg)  ->  (cy*c45, -sy*c45, cy*c45, sy*c45)
             # with cy=cos(yaw/2), sy=sin(yaw/2)  [qz=(cy,0,0,sy), qy=(c45,0,c45,0) components]
-            half = (torch.rand(m, device=dev) * 2 - 1) * yaw_amp / 2
+            half = yaw / 2
             st[:, 3] = torch.cos(half) * c45
             st[:, 4] = -torch.sin(half) * c45
             st[:, 5] = torch.cos(half) * c45
@@ -522,20 +456,22 @@ class PenHolderScene(BaseScene):
     # ----- description ---------------------------------------------------------------------------
     def describe(self) -> str:
         c = self.cfg
-        where = "on the ground" if c.surface_z <= 0 else "on a workbench"
+        where = "on a work table"
         fams = " and ".join(
             f"up to {count} {name.replace('_', ' ')}{'s' if count > 1 else ''} "
-            f"({2 * r * 1000:.0f} mm thick)"
-            for name, count, r, _l, _rgb in c.families)
+            f"({2 * r * 1000:.0f} mm thick, {l * 1000:.0f} mm long)"
+            for name, count, r, l in c.families)
         return (
-            f"An open cylindrical pen holder (a cup, ~{2 * c.holder_outer_r * 1000:.0f} mm wide, "
-            f"{c.holder_h * 1000:.0f} mm tall) stands {where}. Scattered on its other side lie "
-            f"pens, flat on the surface: {fams}, each with a dark cone tip at one end. Between "
-            f"one and all pens of each kind are present in any episode: count what you see.\n"
-            f"Goal: put every pen into the holder tip-up (dark tip pointing out of the cup), "
-            f"then leave the loaded holder standing upright on the surface. You may hold the "
-            f"holder while filling it; a pen dropped tip-down or left leaning outside the cup "
-            f"does not count, and a tipped-over holder scores nothing until it is stood up."
+            f"An open hexagonal pen holder (a cup, ~{2 * c.holder_outer_r * 1000:.0f} mm wide "
+            f"across its corners, {c.holder_h * 1000:.0f} mm tall) stands {where}. Scattered on "
+            f"its other side lie mechanical pencils, flat on the surface: {fams}, each with a "
+            f"pointed writing tip at one end and a click button at the other. Between one and "
+            f"all pencils are present in any episode: count what you see.\n"
+            f"Goal: put every pencil into the holder tip-up (writing tip pointing out of the "
+            f"cup), then leave the loaded holder standing upright on the surface. You may hold "
+            f"the holder while filling it; a pencil dropped tip-down or left leaning outside "
+            f"the cup does not count, and a tipped-over holder scores nothing until it is "
+            f"stood up."
         )
 
     # ----- progress / rubric ----------------------------------------------------------------------

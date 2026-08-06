@@ -1,0 +1,150 @@
+{
+ "attempted": 256,
+ "succeeded": 190,
+ "runs": [
+  {
+   "batch": "prod_params_f6_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 2600,
+   "successes": 11,
+   "rc": 1
+  },
+  {
+   "batch": "prod_nominal_f3_0",
+   "mode": "nominal",
+   "episodes": 15,
+   "seed0": 1300,
+   "successes": 12,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f5_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 2500,
+   "successes": 7,
+   "rc": 1
+  },
+  {
+   "batch": "prod_nominal_f0_0",
+   "mode": "nominal",
+   "episodes": 15,
+   "seed0": 1000,
+   "successes": 11,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f9_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 2900,
+   "successes": 8,
+   "rc": 1
+  },
+  {
+   "batch": "prod_nominal_f1_0",
+   "mode": "nominal",
+   "episodes": 15,
+   "seed0": 1100,
+   "successes": 15,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f4_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 2400,
+   "successes": 8,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f7_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 2700,
+   "successes": 12,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f8_0",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 2800,
+   "successes": 10,
+   "rc": 1
+  },
+  {
+   "batch": "prod_nominal_f2_0",
+   "mode": "nominal",
+   "episodes": 15,
+   "seed0": 1200,
+   "successes": 11,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f6_1",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 3600,
+   "successes": 12,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f3_1",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 2300,
+   "successes": 10,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f5_1",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 3500,
+   "successes": 10,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f9_1",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 3900,
+   "successes": 11,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f0_1",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 2000,
+   "successes": 11,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f4_1",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 3400,
+   "successes": 10,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f8_1",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 3800,
+   "successes": 11,
+   "rc": 1
+  },
+  {
+   "batch": "prod_params_f7_1",
+   "mode": "params",
+   "episodes": 14,
+   "seed0": 3700,
+   "successes": 10,
+   "rc": 1
+  }
+ ]
+}

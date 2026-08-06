@@ -1,34 +1,34 @@
-"""SpatulaFlipServeScene — flip a patty with a spatula, then serve it onto a plate (port).
+"""SpatulaFlipServeScene — flip a bread slice in a fry pan, then serve it onto a plate (port).
 
-The object world for the SimToolReal / DexToolBench "spatula flip & serve" port: a flat
-two-tone PATTY lies on a cutting board, a PLATE waits beside it, a SPATULA rests on the
-bench. **Goal (carried here, no task layer, per `cfg.goal` — the source curriculum):
-v0 `serve` = slide the blade under the patty, carry it on the blade and set it down flat
-on the plate; v1 `flip` = turn the patty over in place (it ends browned-side-up on the
-board); v2 `flip_serve` = the full chain, flip first, then serve.**
+The object world for the SimToolReal / DexToolBench "spatula flip & serve" port: a BREAD
+slice lies in a FRY PAN, a bamboo PLATE waits beside it, a SPATULA rests on the bench.
+**Goal (carried here, no task layer, per `cfg.goal` — the source curriculum):
+v0 `serve` = slide the blade under the bread, carry it on the blade and set it down flat
+on the plate; v1 `flip` = turn the bread over in place (it lands back in the pan);
+v2 `flip_serve` = the full chain, flip first, then serve.**
 
 This is the ported set's handheld-TOOL slot and its manipulation class is NON-PREHENSILE
-payload control: the patty is never grasped — it rides a tool the robot holds, so success
+payload control: the bread is never grasped — it rides a tool the robot holds, so success
 is managing an unsecured cargo through wedging, a commit-point flip, and a friction-only
-carry. TOOL-ONLY rule: finger/gripper contact with the patty disqualifies the episode —
+carry. TOOL-ONLY rule: finger/gripper contact with the bread disqualifies the episode —
 that is an EMBODIMENT clause, checked at the robot-binding/harness layer, deliberately
 not here (the scene is robot-agnostic — the pen-holder/stacking-toy return-to-origin precedent).
 
 Judged by OUTCOME (the one flagged fidelity deviation from the source, which scores 6D
 tool-pose trajectory following because it benchmarks policies; the deep survey showed the
-source has NO patty — all payload physics here is new work). Staged flags, latched in
-`post_step` (the microwave microwave pattern), all geometric checks in the relevant BODY frame
+source has NO payload — all payload physics here is new work). Staged flags, latched in
+`post_step` (the microwave pattern), all geometric checks in the relevant BODY frame
 (the pen-holder lesson):
   - `tool_lifted`  — the spatula blade is above the surface by `lift_gate` (the source's
                      own >5 cm lift-gate idea, kept);
-  - `blade_under`  — the patty rides the blade (patty pose in the BLADE frame: inside the
+  - `blade_under`  — the bread rides the blade (bread pose in the BLADE frame: inside the
                      blade footprint, bottom on the blade top, axes aligned) while still
-                     down at board level — the wedge;
-  - `flipped`      — the patty's body up-axis is inverted by >= `flip_min_deg` about a
-                     horizontal axis AND it rests flat on the board, settled (memoryless
-                     orientation test — the two-tone faces make it visible);
-  - `loaded`       — the patty rides the blade above `lift_gate` (the friction carry);
-  - `served`       — the patty rests flat on the plate, settled, AND it ARRIVED ON THE
+                     down at pan-floor level — the wedge;
+  - `flipped`      — the bread's body up-axis is inverted by >= `flip_min_deg` about a
+                     horizontal axis AND it rests flat in the pan, settled (memoryless
+                     orientation test);
+  - `loaded`       — the bread rides the blade above `lift_gate` (the friction carry);
+  - `served`       — the bread rests flat on the plate, settled, AND it ARRIVED ON THE
                      BLADE: the latch only fires within `arrival_window` steps of the last
                      loaded step (the contact-history clause — teleports, shoves and
                      lobbed tosses from across the bench never load at height, so they
@@ -39,34 +39,41 @@ Score tables per goal (transition rubric, monotone prefix over the latched stage
   flip_serve  [10 lifted, 25 wedged, 50 flipped, 70 loaded-after-flip, 100 served]
 Metrics for the brief: `max_carry_tilt_deg` (the blade's worst tilt while loaded — the
 finesse number; the smoke's calibration sweep publishes the tilt budget the carry
-tolerates) and `spills` (payload-drop events: the patty at rest on the bare bench after
+tolerates) and `spills` (payload-drop events: the bread at rest on the bare bench after
 having been loaded).
 
-Assets are fully procedural (checklist rule; the DexToolBench URDF checkout is not
-present in this environment and the source's own tables are fused static geometry):
-  - spatula: ONE rigid body via a custom compound spawner (the stacking-toy pattern — child
-    colliders of one body never self-collide): a bare flat 2 mm blade plate, an angled
-    riser and a pinch-sized handle cylinder (r 12 mm — passes the thin-cylinder
-    hand-hold audit for the 8 cm parallel jaw and both dex hands). The blade carries NO
-    climbing feature — GPU rounds 1-3 proved on-blade steps/ramps/slots either present
-    a bulldozing wall or drown in contact offsets; the wedge mechanic lives on the
-    patty's edge instead. Root frame at the BLADE-BOTTOM CENTER so the rubric and any
-    oracle work directly in blade coordinates.
-  - patty: one rigid body — a CHAMFERED-DISC CONVEX-HULL collider (45-deg rounded edge
-    top and bottom, the soft-food-edge approximation that makes wedging well-posed:
-    any tip contact on the chamfer, even offset-inflated speculative contact, has an
-    up-forward normal, so a sliding blade converts advance to lift by construction;
-    symmetric so a FLIPPED patty re-wedges) under two VISUAL-ONLY half-cylinders, tan
-    raw top over brown cooked bottom, so a flip is visible to a skimming viewer
-    (presentation principle; the balance-scale identity-color precedent). Three sizes
-    are spawned and ONE is present per episode (the pen-holder parking-depot pattern) — the
-    size randomization axis.
-  - cutting board + plate: kinematic slabs (the source fuses them into a 500 kg static
-    table); the plate's position is randomized per episode.
+Assets are SCANNED PRODUCT MODELS (assets/kitchen, authored by
+scripts/author_kitchen_rigs.py — the pc_motherboard visual+invisible-collider pattern;
+every number below is measured from the scans, see kitchen_parts.json):
+  - spatula (a molded red turner): origin at the BLADE-BOTTOM CENTER, +x toward the
+    blade tip, +z up — the scan's inclined blade plane is leveled at authoring so the
+    rubric and any oracle work directly in blade coordinates. Colliders: three thin
+    tapered blade boxes (the molded blade thickens heel-ward; the tip box stays the thin
+    leading edge the wedge needs), a neck box and a handle box on the 21 deg incline.
+    The blade carries NO climbing feature — the wedge mechanic lives on the payload's
+    rounded edge (GPU rounds 1-3 lesson, unchanged).
+  - bread (a scan of a real slice, laid flat, ~6.2 cm across, 2.2 cm thick): collider =
+    the slice's own CONVEX HULL (cooked from a face-subsampled proxy) — the scan's
+    rounded crust edge IS the chamfer that makes wedging well-posed: any tip contact on
+    it has an up-forward normal, so a sliding blade converts advance to lift by
+    construction; near-symmetric top/bottom, so a FLIPPED slice re-wedges. Three sizes
+    spawn (uniform scales of one scan) and ONE is present per episode (the pen-holder
+    parking-depot pattern) — the size randomization axis.
+  - fry pan (a 27 cm tri-ply pan, its lid dropped at authoring) and bamboo plate
+    (30 cm): KINEMATIC bodies with EXACT triangle-mesh colliders — the concave bowl,
+    rim and plate recess collide true to the scan. The pan replaces the flat cutting
+    board: its RIM (5.3 cm) walls the payload in, so the wedge becomes a pitched
+    over-the-rim entry and the wall itself is the anchor a jab pins the bread against
+    (a real pan-corner scoop), and every lift-out must clear the rim.
 
-Per-episode randomization (task-family knobs): patty size (one of three), patty pose on
-the board (xy jitter + yaw), plate position (xy jitter), spatula rest pose (xy jitter +
-yaw). `reset()` judges the sampled episode.
+Per-episode randomization (task-family knobs): bread size (one of three), bread pose in
+the pan (xy jitter + yaw), plate position (xy jitter), pan yaw, spatula rest pose (xy
+jitter + yaw). `reset()` judges the sampled episode.
+
+Embodied bindings hold the tool through the weld-on-closure grasp contract (the
+pc_motherboard pattern, ported verbatim; one site = the spatula's handle): close the
+fingers across the handle and the tool welds to the hand, open wide to release. No-op
+under robot="null" — the NullRobot smoke drives the tool kinematically instead.
 
 Heavy imports (isaaclab, pxr) are deferred so importing this module — and registering
 the scene — stays app-free.
@@ -75,9 +82,9 @@ the scene — stays app-free.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
@@ -91,288 +98,12 @@ if TYPE_CHECKING:
 GOALS = ("serve", "flip", "flip_serve")
 
 
-# ----- custom compound spawners ---------------------------------------------------------------
-# One rigid body per object, several child colliders + per-part physics materials, authored with
-# raw pxr APIs; only `isaaclab.sim.utils.clone` is borrowed (the regex-resolve + per-env
-# replicate machinery every CuboidCfg spawn uses). Same fallback as the stacking piece: author
-# into a /tmp USD and return a UsdFileCfg if this ever fights the platform.
-
-_SPAWNER_CACHE: dict[str, Any] = {}
-
-
-def _author_phys_material(stage, prim_path: str, friction: tuple):
-    """A UsdPhysics material prim under `prim_path` with explicit static/dynamic friction —
-    friction is THE tuned element of this task (the brief's feasibility spike), so it is
-    authored per part, never left to engine defaults."""
-    from pxr import UsdPhysics, UsdShade
-
-    mat = UsdShade.Material.Define(stage, f"{prim_path}/phys_mat")
-    mapi = UsdPhysics.MaterialAPI.Apply(mat.GetPrim())
-    mapi.CreateStaticFrictionAttr(float(friction[0]))
-    mapi.CreateDynamicFrictionAttr(float(friction[1]))
-    return mat
-
-
-def _bind_phys_material(prim, mat) -> None:
-    from pxr import UsdShade
-
-    UsdShade.MaterialBindingAPI.Apply(prim).Bind(
-        mat, UsdShade.Tokens.weakerThanDescendants, "physics")
-
-
-def _spawn_spatula(prim_path: str, cfg: Any, translation=None, orientation=None):
-    """Author the spatula at `prim_path`: root Xform with RigidBodyAPI + explicit MassAPI
-    (Isaac ignores URDF/authored density — the survey's own port note), ONE thin flat
-    blade plate, an angled riser box and a handle cylinder along the riser direction.
-    The blade is deliberately a bare 2 mm plate: rounds 1-3 on GPU proved that any
-    climbing feature ON THE BLADE (steps, ramps, slots) either presents a wall or drowns
-    in contact offsets — the climb geometry lives on the PATTY instead (its chamfered
-    convex-hull edge, see `_spawn_patty`), so the blade only needs to be thin. LOCAL
-    FRAME: origin at the blade-bottom center, +x toward the blade tip, +z up; the handle
-    leaves toward -x, pitched up by `handle_angle_deg`. Tight contact offsets: a default
-    ~2 cm offset would put the 2 mm plate in permanent phantom contact with the board."""
-    import omni.usd
-    from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics
-
-    stage = omni.usd.get_context().get_stage()
-    xform = UsdGeom.Xform.Define(stage, prim_path)
-    root = xform.GetPrim()
-    xf = UsdGeom.Xformable(xform)
-    if translation is not None:
-        xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
-    if orientation is not None:
-        w, x, y, z = (float(v) for v in orientation)
-        xf.AddOrientOp().Set(Gf.Quatf(w, Gf.Vec3f(x, y, z)))
-    UsdPhysics.RigidBodyAPI.Apply(root)
-    UsdPhysics.MassAPI.Apply(root).CreateMassAttr(float(cfg.mass_props.mass))
-    # Cap the contact-solver pop (the pen-holder factory-env insertion trick): a wedge tip driven
-    # a hair into the patty in one 120 Hz step must resolve gently, not eject the payload.
-    PhysxSchema.PhysxRigidBodyAPI.Apply(root).CreateMaxDepenetrationVelocityAttr(0.5)
-
-    blade_mat = _author_phys_material(stage, prim_path, cfg.blade_friction)
-    steel = Gf.Vec3f(*cfg.blade_color)
-    dark = Gf.Vec3f(*cfg.handle_color)
-
-    def collide(prim) -> None:
-        UsdPhysics.CollisionAPI.Apply(prim)
-        px = PhysxSchema.PhysxCollisionAPI.Apply(prim)
-        px.CreateContactOffsetAttr(float(cfg.contact_offset))
-        px.CreateRestOffsetAttr(0.0)
-        _bind_phys_material(prim, blade_mat)
-
-    # Blade: one thin flat box, bottom at z = 0.
-    plate = UsdGeom.Cube.Define(stage, f"{prim_path}/blade_plate")
-    plate.CreateSizeAttr(1.0)
-    pxf = UsdGeom.Xformable(plate.GetPrim())
-    pxf.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, cfg.plate_t / 2))
-    pxf.AddScaleOp().Set(Gf.Vec3f(cfg.blade_l, cfg.blade_w, cfg.plate_t))
-    plate.CreateDisplayColorAttr([steel])
-    collide(plate.GetPrim())
-
-    # Riser + handle along d = (-cos a, 0, +sin a) from the blade heel.
-    a = math.radians(cfg.handle_angle_deg)
-    d = (-math.cos(a), 0.0, math.sin(a))
-    p0 = (-cfg.blade_l / 2 + 0.005, 0.0, cfg.plate_t)
-
-    riser = UsdGeom.Cube.Define(stage, f"{prim_path}/riser")
-    riser.CreateSizeAttr(1.0)
-    rxf = UsdGeom.Xformable(riser.GetPrim())
-    rc = tuple(p0[i] + d[i] * cfg.riser_l / 2 for i in range(3))
-    rxf.AddTranslateOp().Set(Gf.Vec3d(*rc))
-    # box +x -> d: rotate about y by (angle - 180) deg (x-axis maps to (cos, 0, -sin))
-    rxf.AddRotateYOp().Set(cfg.handle_angle_deg - 180.0)
-    rxf.AddScaleOp().Set(Gf.Vec3f(cfg.riser_l, cfg.riser_w, cfg.riser_t))
-    riser.CreateDisplayColorAttr([dark])
-    collide(riser.GetPrim())
-
-    handle = UsdGeom.Cylinder.Define(stage, f"{prim_path}/handle")
-    handle.CreateRadiusAttr(cfg.handle_r)
-    handle.CreateHeightAttr(cfg.handle_l)
-    handle.CreateExtentAttr([Gf.Vec3f(-cfg.handle_r, -cfg.handle_r, -cfg.handle_l / 2),
-                             Gf.Vec3f(cfg.handle_r, cfg.handle_r, cfg.handle_l / 2)])
-    hxf = UsdGeom.Xformable(handle.GetPrim())
-    hc = tuple(p0[i] + d[i] * (cfg.riser_l + cfg.handle_l / 2) for i in range(3))
-    hxf.AddTranslateOp().Set(Gf.Vec3d(*hc))
-    # cylinder +z -> d: rotate about y by -(90 - angle) deg (z-axis maps to (sin, 0, cos))
-    hxf.AddRotateYOp().Set(-(90.0 - cfg.handle_angle_deg))
-    handle.CreateDisplayColorAttr([dark])
-    collide(handle.GetPrim())
-    return root
-
-
-def _spawn_patty(prim_path: str, cfg: Any, translation=None, orientation=None):
-    """Author one patty at `prim_path`: root Xform with RigidBodyAPI + explicit MassAPI,
-    ONE convex-hull mesh collider shaped like a chamfered disc (45-deg rounded edge top
-    AND bottom — a real patty's soft edge), and two VISUAL-ONLY cylinders (tan raw top /
-    brown cooked bottom, so 'which side is up' is readable from the raw video).
-
-    The chamfer is THE wedge mechanic (GPU rounds 1-3): every stepped/slotted variant
-    either presented a vertical wall (bulldozed — the tool shoves the patty across the
-    board) or relied on sub-mm clearances that speculative contact offsets swallow at
-    jab speeds. A chamfered CONVEX face fails neither way: any blade-tip contact on it —
-    including offset-inflated speculative contact — has an up-forward normal, so sliding
-    the plate against the patty converts to LIFT by construction. Symmetric top/bottom
-    because a FLIPPED patty must be re-wedgeable. Patty local frame: axis = +z, raw
-    face = +z."""
-    import omni.usd
-    from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics
-
-    stage = omni.usd.get_context().get_stage()
-    xform = UsdGeom.Xform.Define(stage, prim_path)
-    root = xform.GetPrim()
-    xf = UsdGeom.Xformable(xform)
-    if translation is not None:
-        xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
-    if orientation is not None:
-        w, x, y, z = (float(v) for v in orientation)
-        xf.AddOrientOp().Set(Gf.Quatf(w, Gf.Vec3f(x, y, z)))
-    UsdPhysics.RigidBodyAPI.Apply(root)
-    UsdPhysics.MassAPI.Apply(root).CreateMassAttr(float(cfg.mass_props.mass))
-    # The payload rides a 2 mm plate under SUSTAINED kinematic-drive contact, and PhysX
-    # clamps its position-correction (bias) velocity by maxDepenetrationVelocity — at the
-    # pen-holder anti-pop value (0.5) the correction cannot keep up with a lift and the patty
-    # settles ~2 mm INSIDE the plate, then shears off on the first lateral move (GPU
-    # round 5, the size-sample trace: riding at bf z = -2). A higher cap + more position
-    # iterations keep it ON the plate; the chamfered hull tolerates the livelier
-    # depenetration. Light damping so a 60 g patty crosses the settle gate promptly.
-    pxrb = PhysxSchema.PhysxRigidBodyAPI.Apply(root)
-    pxrb.CreateMaxDepenetrationVelocityAttr(1.5)
-    pxrb.CreateSolverPositionIterationCountAttr(12)
-    pxrb.CreateLinearDampingAttr(0.05)
-    pxrb.CreateAngularDampingAttr(0.05)
-
-    patty_mat = _author_phys_material(stage, prim_path, cfg.patty_friction)
-    r, h, ch = cfg.patty_r, cfg.patty_h, cfg.chamfer
-    segs = 24
-
-    # --- collider: chamfered-disc convex hull (render purpose "guide" = invisible) ---
-    rings = ((-h / 2, r - ch), (-h / 2 + ch, r), (h / 2 - ch, r), (h / 2, r - ch))
-    pts = []
-    for z_r, rr in rings:
-        for k in range(segs):
-            ang = 2.0 * math.pi * k / segs
-            pts.append(Gf.Vec3f(rr * math.cos(ang), rr * math.sin(ang), z_r))
-    i_bot = len(pts)
-    pts.append(Gf.Vec3f(0.0, 0.0, -h / 2))
-    i_top = len(pts)
-    pts.append(Gf.Vec3f(0.0, 0.0, h / 2))
-    idx: list[int] = []
-    cnt: list[int] = []
-    for band in range(3):  # quad strips between the 4 rings
-        for k in range(segs):
-            k2 = (k + 1) % segs
-            idx += [band * segs + k, band * segs + k2,
-                    (band + 1) * segs + k2, (band + 1) * segs + k]
-            cnt.append(4)
-    for k in range(segs):  # cap fans
-        k2 = (k + 1) % segs
-        idx += [i_bot, k2, k]
-        cnt.append(3)
-        idx += [i_top, 3 * segs + k, 3 * segs + k2]
-        cnt.append(3)
-    hull = UsdGeom.Mesh.Define(stage, f"{prim_path}/hull")
-    hull.CreatePointsAttr(pts)
-    hull.CreateFaceVertexIndicesAttr(idx)
-    hull.CreateFaceVertexCountsAttr(cnt)
-    hull.CreateExtentAttr([Gf.Vec3f(-r, -r, -h / 2), Gf.Vec3f(r, r, h / 2)])
-    hull.CreatePurposeAttr(UsdGeom.Tokens.guide)  # collider only — never rendered
-    UsdPhysics.CollisionAPI.Apply(hull.GetPrim())
-    UsdPhysics.MeshCollisionAPI.Apply(hull.GetPrim()).CreateApproximationAttr(
-        UsdPhysics.Tokens.convexHull)
-    px = PhysxSchema.PhysxCollisionAPI.Apply(hull.GetPrim())
-    px.CreateContactOffsetAttr(float(cfg.contact_offset))
-    px.CreateRestOffsetAttr(0.0)
-    _bind_phys_material(hull.GetPrim(), patty_mat)
-
-    # --- visuals: two-tone half-cylinders, NO CollisionAPI (they sit ~chamfer proud of
-    # the hull at the rim — invisible at video scale, and physics never sees them) ---
-    for name, z_c, rgb in (("look_bottom", -h / 4, cfg.cooked_color),
-                           ("look_top", h / 4, cfg.raw_color)):
-        cyl = UsdGeom.Cylinder.Define(stage, f"{prim_path}/{name}")
-        cyl.CreateRadiusAttr(r)
-        cyl.CreateHeightAttr(h / 2)
-        cyl.CreateExtentAttr([Gf.Vec3f(-r, -r, -h / 4), Gf.Vec3f(r, r, h / 4)])
-        UsdGeom.Xformable(cyl.GetPrim()).AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, z_c))
-        cyl.CreateDisplayColorAttr([Gf.Vec3f(*rgb)])
-    return root
-
-
-def _spatula_spawner_cfg(c: "SpatulaFlipServeSceneCfg") -> Any:
-    """Build (lazily, app required) the spatula spawner cfg — `clone` wraps
-    `_spawn_spatula` exactly like `spawn_cuboid` is wrapped."""
-    import isaaclab.sim as sim_utils
-    from isaaclab.sim.spawners.spawner_cfg import RigidObjectSpawnerCfg
-    from isaaclab.sim.utils import clone
-    from isaaclab.utils import configclass
-
-    if "spatula" not in _SPAWNER_CACHE:
-
-        @configclass
-        class SpatulaSpawnerCfg(RigidObjectSpawnerCfg):
-            func: Callable = clone(_spawn_spatula)
-            blade_l: float = 0.11
-            blade_w: float = 0.09
-            plate_t: float = 0.002
-            handle_angle_deg: float = 25.0
-            riser_l: float = 0.055
-            riser_w: float = 0.022
-            riser_t: float = 0.012
-            handle_r: float = 0.012
-            handle_l: float = 0.15
-            blade_color: tuple = (0.74, 0.76, 0.78)
-            handle_color: tuple = (0.16, 0.16, 0.18)
-            blade_friction: tuple = (0.15, 0.12)
-            contact_offset: float = 0.001
-
-        _SPAWNER_CACHE["spatula"] = SpatulaSpawnerCfg
-
-    return _SPAWNER_CACHE["spatula"](
-        mass_props=sim_utils.MassPropertiesCfg(mass=c.spatula_mass),
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-        blade_l=c.blade_l, blade_w=c.blade_w, plate_t=c.blade_plate_t,
-        handle_angle_deg=c.handle_angle_deg, riser_l=c.riser_l, riser_w=c.riser_w,
-        riser_t=c.riser_t, handle_r=c.handle_r, handle_l=c.handle_l,
-        blade_color=c.blade_color, handle_color=c.handle_color,
-        blade_friction=c.blade_friction, contact_offset=c.blade_contact_offset,
-    )
-
-
-def _patty_spawner_cfg(c: "SpatulaFlipServeSceneCfg", patty_r: float) -> Any:
-    """Build (lazily, app required) one patty spawner cfg."""
-    import isaaclab.sim as sim_utils
-    from isaaclab.sim.spawners.spawner_cfg import RigidObjectSpawnerCfg
-    from isaaclab.sim.utils import clone
-    from isaaclab.utils import configclass
-
-    if "patty" not in _SPAWNER_CACHE:
-
-        @configclass
-        class PattySpawnerCfg(RigidObjectSpawnerCfg):
-            func: Callable = clone(_spawn_patty)
-            patty_r: float = 0.045
-            patty_h: float = 0.012
-            chamfer: float = 0.004
-            raw_color: tuple = (0.87, 0.68, 0.38)
-            cooked_color: tuple = (0.42, 0.24, 0.12)
-            patty_friction: tuple = (0.5, 0.45)
-            contact_offset: float = 0.001
-
-        _SPAWNER_CACHE["patty"] = PattySpawnerCfg
-
-    return _SPAWNER_CACHE["patty"](
-        mass_props=sim_utils.MassPropertiesCfg(mass=c.patty_mass),
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-        patty_r=patty_r, patty_h=c.patty_h, chamfer=c.patty_chamfer,
-        raw_color=c.raw_color, cooked_color=c.cooked_color,
-        patty_friction=c.patty_friction, contact_offset=c.patty_contact_offset,
-    )
-
-
 # ----- scene cfg -------------------------------------------------------------------------------
 @dataclass
 class SpatulaFlipServeSceneCfg(BaseCfg):
     """Config for `SpatulaFlipServeScene`. Friction/mass are the brief's feasibility-spike
-    knobs; the smoke's calibration sweep publishes the carry tilt budget they produce."""
+    knobs; the smoke's calibration sweep publishes the carry tilt budget they produce.
+    Structure constants are MEASURED from the scanned assets (kitchen_parts.json)."""
 
     # --- tunable: the curriculum knob ---------------------------------------------------------
     goal: str = tunable("flip_serve")  # "serve" (v0) | "flip" (v1) | "flip_serve" (v2)
@@ -381,97 +112,146 @@ class SpatulaFlipServeSceneCfg(BaseCfg):
     lift_gate: float = tunable(0.05)  # blade/payload height above the surface = "lifted"
     # (the source's own >5 cm lift gate, kept)
     flip_min_deg: float = tunable(150.0)  # orientation change about a horizontal axis = flipped
-    blade_align_max_deg: float = tunable(30.0)  # patty axis vs blade axis while riding it
-    flat_tilt_max_deg: float = tunable(15.0)  # "resting flat" gate (board and plate)
-    rest_z_tol: float = tunable(0.012)  # patty bottom within this of the resting surface (m)
-    served_xy_frac: float = tunable(0.75)  # patty centre within this fraction of the plate radius
-    settle_speed: float = tunable(0.05)  # max |v| when judging a resting patty (m/s)
+    blade_align_max_deg: float = tunable(30.0)  # bread axis vs blade axis while riding it
+    flat_tilt_max_deg: float = tunable(15.0)  # "resting flat" gate (pan floor and plate)
+    rest_z_tol: float = tunable(0.012)  # bread bottom within this of the resting surface (m)
+    served_xy_frac: float = tunable(0.75)  # bread centre within this fraction of the plate radius
+    settle_speed: float = tunable(0.05)  # max |v| when judging a resting bread (m/s)
     spill_settle_steps: int = tunable(12)  # sustained bare-surface rest before one spill
-    arrival_window: int = tunable(360)  # served must fire within this many steps of the last
-    # loaded step (3 s at 120 Hz — the no-toss/no-shove contact-history clause; covers the
-    # lower-and-tip end game, where the payload dips under the lift gate)
-    wedge_low_band: float = tunable(0.03)  # blade_under counts only with the patty bottom
-    # within this of the board top (the wedge happens AT the board, not in mid-air)
+    arrival_window: int = tunable(600)  # served must fire within this many steps of the last
+    # loaded step (5 s at 120 Hz — the no-toss/no-shove contact-history clause; covers the
+    # lower-and-tip end game, where the payload dips under the lift gate). Sized for THIS
+    # plate: the bamboo dish is a slope, and a slice tipped off the blade can slide/settle
+    # for 3-4 s before it rests flat (measured) — a real toss still never counts, because
+    # a thrown slice was never loaded near the plate at all.
+    wedge_low_band: float = tunable(0.03)  # blade_under counts only with the bread bottom
+    # within this of the pan floor (the wedge happens IN the pan, not in mid-air)
 
     # --- tunable: physics (the feasibility-spike knobs) ----------------------------------------
     # Friction pair sized from BOTH ends (round-2 GPU lesson): PhysX combines by AVERAGE, so
-    # blade-patty ~ (0.33 static / 0.29 dynamic). Low enough that the wedge SLIPS under the
-    # payload instead of sticking to it and bulldozing (round 2: at a combined 0.68 the patty
-    # moved with the blade — diagnose x=96 mm = tip jammed on the foot wall, patty shoved
-    # 84 mm across the board); high enough that the carry has a real tilt budget:
-    # atan(0.33) ~ 18 deg — the brief's "tilt the blade 15 deg too far and dinner is on the
-    # floor". Patty-board stays grippier (~0.55 with the 0.6 board) so the board anchors the
-    # payload while the blade slides beneath.
-    patty_mass: float = tunable(0.06)
-    patty_friction: tuple = tunable((0.5, 0.45))  # static, dynamic (moist food)
-    blade_friction: tuple = tunable((0.15, 0.12))  # polished steel — the slippery half
+    # blade-bread ~ (0.33 static / 0.29 dynamic). Low enough that the wedge SLIPS under the
+    # payload instead of sticking to it and bulldozing; high enough that the carry has a real
+    # tilt budget: atan(0.33) ~ 18 deg. Bread-pan stays grippier (the pan rig bakes the old
+    # board's 0.6/0.55) so the pan anchors the payload while the blade slides beneath — and
+    # the pan WALL is now a hard anchor no jab can shove the payload past.
+    bread_mass: float = tunable(0.06)
+    bread_friction: tuple = tunable((0.5, 0.45))  # static, dynamic (moist crumb)
+    blade_friction: tuple = tunable((0.15, 0.12))  # molded slick face — the slippery half
     spatula_mass: float = tunable(0.15)
+    # Weld-on-closure grasping (the benchmark's auto-weld contract, the pc_motherboard
+    # pattern — the machinery at the end of this scene class): close the fingers across
+    # the spatula's handle and the tool welds to the hand; open wide to release. The
+    # TOOL-ONLY rule is untouched — the contract's one site is the handle, never the
+    # payload. Gripper envs only (no-op under robot="null").
+    grasp_weld: bool = tunable(True)
+    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
 
     # --- tunable: randomization (the task-family knobs) ----------------------------------------
-    patty_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the patty on the board
+    bread_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the bread in the pan
     plate_jitter: float = tunable(0.04)  # uniform +/- xy jitter of the plate
     spatula_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the spatula rest pose
     spatula_yaw_deg: float = tunable(15.0)  # uniform +/- yaw jitter of the spatula
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- patty yaw (physics-relevant only
-    # through collider tessellation, but it kills any memorizable pixel layout)
-    sample_size: bool = tunable(True)  # per-episode patty-size sampling (demo sets False)
+    reset_yaw_deg: float = tunable(180.0)  # uniform +/- bread yaw (kills any memorizable layout)
+    sample_size: bool = tunable(True)  # per-episode bread-size sampling (demo sets False)
 
-    # --- tunable: placement (robot embodiments raise the work onto a bench) --------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
-    board_pos: tuple = tunable((-0.16, 0.05))  # cutting-board centre on the surface
+    # --- tunable: placement -----------------------------------------------------------------
+    pan_pos: tuple = tunable((-0.16, 0.05))  # pan BOWL centre on the surface
+    pan_yaw_deg: float = tunable(90.0)  # pan yaw; at 0 the handle points +x, default +y
+    # (away from a robot working at -y — out of the wedge corridor)
     plate_pos: tuple = tunable((0.17, 0.06))  # plate centre (before jitter)
     spatula_pos: tuple = tunable((0.02, -0.20))  # spatula rest (blade-bottom centre)
 
-    # --- info: structure ------------------------------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))  # procedural bench top (x, y), used when surface_z > 0
-    board_size: tuple = info((0.30, 0.24, 0.015))  # kinematic cutting board (x, y, t)
-    plate_r: float = info(0.11)
-    plate_h: float = info(0.012)
-    # Blade: ONE bare flat 2 mm plate (GPU rounds 1-3 — every climbing feature ON the
-    # blade either presents a wall that bulldozes the payload or relies on sub-mm slot
-    # clearances that speculative contact offsets swallow at jab speeds; the climb
-    # geometry lives on the PATTY's chamfered convex edge instead, which keeps working
-    # inside the offset band because inflation preserves an inclined face's normal).
-    # Width 90 mm just covers the mid patty.
-    blade_l: float = info(0.11)
-    blade_w: float = info(0.09)
-    blade_plate_t: float = info(0.002)
-    handle_angle_deg: float = info(25.0)
-    riser_l: float = info(0.055)
-    riser_w: float = info(0.022)
-    riser_t: float = info(0.012)
-    handle_r: float = info(0.012)  # the thin-cylinder pinch-audit knob (>= 10 mm rule)
-    handle_l: float = info(0.15)
-    blade_color: tuple = info((0.74, 0.76, 0.78))
-    handle_color: tuple = info((0.16, 0.16, 0.18))
-    blade_contact_offset: float = info(0.001)  # below the 2 mm plate thickness
-    patty_contact_offset: float = info(0.001)
-    patty_h: float = info(0.012)
-    # 45-deg edge chamfer of the convex-hull collider (see `_spawn_patty`) — the rounded
-    # food edge that makes wedging well-posed: bigger = easier scoop, smaller = closer to
-    # a sharp cylinder. Symmetric top/bottom (a flipped patty re-wedges).
-    patty_chamfer: float = info(0.004)
-    raw_color: tuple = info((0.87, 0.68, 0.38))  # tan — up at spawn
-    cooked_color: tuple = info((0.42, 0.24, 0.12))  # brown — up after the flip
-    # (family name, radius): three sizes, ONE present per episode (size randomization axis).
-    families: tuple = info((("patty_s", 0.040), ("patty_m", 0.045), ("patty_l", 0.050)))
-    # Off-camera ground depot for absent patties (the pen-holder depot analysis: extent well under
-    # half of env_spacing 3).
+    # --- info: selectable work surface (the pc_motherboard presets, ported verbatim) ----------
+    table: str = info("packing")  # which work surface: "lab_table" | "packing"
+    # ("packing" = the microwave_meal look, requested 2026-08-05; Franka bindings pin
+    # surface_z=0.0 — the table-mounted-arm-at-ground-level pattern from envs.py)
+    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
+    workbench_pos: tuple | None = info(None)  # xy the table sits at; None -> preset
+    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    TABLES: ClassVar[dict[str, dict[str, Any]]] = {
+        "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
+                      "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.0, 0.0),
+                      "top_offset": 0.0, "height": 1.05, "kinematic": False},
+        "packing": {"usd": ("packing_table", "SM_HeavyDutyPackingTable_C02_01_physics.usd"), "scale": 0.01,
+                    "orient": (1.0, 0.0, 0.0, 0.0), "surface_z": 0.994, "pos": (0.0, 0.0),
+                    "top_offset": 0.994, "height": 0.994, "kinematic": True},
+    }
+
+    # --- info: structure (measured from the scans; see kitchen_parts.json) ---------------------
+    # spatula: blade footprint + thickness (the rubric's blade-frame constants), handle incline
+    blade_l: float = info(0.1168)
+    blade_w: float = info(0.0893)
+    blade_t: float = info(0.0055)  # molded blade max thickness (tip box is thinner)
+    handle_angle_deg: float = info(21.1)
+    # fry pan: interior floor disc, rim, bowl/handle extents (bowl centre = body origin)
+    pan_floor_top: float = info(0.0035)  # interior floor above the pan's base plane
+    pan_r_floor: float = info(0.1095)  # flat interior floor radius
+    pan_rim_top: float = info(0.0532)  # rim height above the base plane
+    pan_r_rim_in: float = info(0.1304)  # rim inner radius
+    pan_r_out: float = info(0.1361)  # bowl outer radius (the bare-surface exclusion)
+    # bamboo plate: recess floor + rim
+    plate_r: float = info(0.1504)
+    plate_floor_top: float = info(0.0126)  # recess floor above the plate's base plane
+    plate_rim_top: float = info(0.0476)
+    # bread: base scan dims (half-extent / thickness) x the per-family uniform scales
+    bread_r0: float = info(0.0308)
+    bread_h0: float = info(0.0215)
+    # (family name, uniform scale): three sizes, ONE present per episode.
+    families: tuple = info((("bread_s", 1.15), ("bread_m", 1.30), ("bread_l", 1.45)))
+    # Off-camera ground depot for absent breads (the pen-holder depot analysis: extent well
+    # under half of env_spacing 3).
     parking_pos: tuple = info((1.0, 1.0))
-    # On-blade z band for the patty bottom in the blade frame: a riding patty rests on
-    # the 2 mm plate top; the upper margin absorbs offset/chamfer slop. The lower bound
-    # EXCLUDES a patty the blade merely slid under while it rests on the support surface
-    # (bottom ~ -1 mm in the blade frame) — round 1's false-positive wedge check.
+    # On-blade z band for the bread bottom in the blade frame: a riding slice rests on the
+    # tapered blade top (1.5-5.5 mm); the upper margin absorbs offset slop. The lower bound
+    # EXCLUDES a slice the blade merely slid toward while it rests on the pan floor
+    # (bottom ~ -0/+0.5 mm in the blade frame) — round 1's false-positive wedge check.
     on_blade_z_band: tuple = info((0.0005, 0.015))
+    blade_contact_offset: float = info(0.001)  # below the thin tip box thickness
+    bread_contact_offset: float = info(0.001)
+    pan_contact_offset: float = info(0.002)
+    # DYNAMIC pan: real contact response against a KINEMATICALLY driven tool (a
+    # kinematic-vs-kinematic pair generates no contacts, so a pose-pinned tool clips
+    # straight through a kinematic pan — the NullRobot smoke's penetration bug). Heavy
+    # + heavily damped so jab reactions nudge it millimetres, not across the table.
+    pan_dynamic: bool = info(False)
+    pan_mass: float = info(2.5)
+    # Asset USDs; empty -> the authored rigs committed under `assets/kitchen/`.
+    asset_dir: str = info("")
+    spatula_usd: str = info("")
+    bread_usd: str = info("")
+    pan_usd: str = info("")
+    plate_usd: str = info("")
 
     # Derived (filled in __post_init__).
-    board_top: float = field(default=None, init=False)
-    plate_top: float = field(default=None, init=False)
+    pan_floor_z: float = field(default=None, init=False)  # bread rest height in the pan
+    plate_rest_z: float = field(default=None, init=False)  # bread rest height on the plate
 
     def __post_init__(self) -> None:
         assert self.goal in GOALS, f"goal must be one of {GOALS}, got {self.goal!r}"
-        self.board_top = round(self.surface_z + self.board_size[2], 4)
-        self.plate_top = round(self.surface_z + self.plate_h, 4)
+        assets = Path(__file__).resolve().parents[1] / "assets"
+        self.asset_dir = self.asset_dir or str(assets / "kitchen")
+        self.spatula_usd = self.spatula_usd or str(Path(self.asset_dir) / "spatula.usd")
+        self.bread_usd = self.bread_usd or str(Path(self.asset_dir) / "bread.usd")
+        self.pan_usd = self.pan_usd or str(Path(self.asset_dir) / "fry_pan.usd")
+        self.plate_usd = self.plate_usd or str(Path(self.asset_dir) / "bamboo_plate.usd")
+        preset = self.TABLES[self.table]
+        if self.surface_z is None:
+            self.surface_z = preset["surface_z"]
+        if self.workbench_pos is None:
+            self.workbench_pos = preset["pos"]
+        # the vendored table props are shared from the assembly suite's assets
+        props = Path(__file__).resolve().parents[2] / "assembly" / "assets" / "props"
+        self.workbench_usd = self.workbench_usd or str(
+            props / preset["usd"][0] / preset["usd"][1])
+        self.pan_floor_z = round(self.surface_z + self.pan_floor_top, 4)
+        self.plate_rest_z = round(self.surface_z + self.plate_floor_top, 4)
+
+    # per-family bread dims (uniform scale on one scan)
+    def bread_r(self, i: int) -> float:
+        return self.bread_r0 * self.families[i][1]
+
+    def bread_h(self, i: int) -> float:
+        return self.bread_h0 * self.families[i][1]
 
 
 # ----- scene -----------------------------------------------------------------------------------
@@ -484,81 +264,134 @@ class SpatulaFlipServeScene(BaseScene):
 
     # ----- assets -----------------------------------------------------------------------------
     def assets(self) -> dict[str, Any]:
-        """Ground, light, optional bench, kinematic board + plate, the spatula at rest and
-        the three patties at their nominal slots (reset() re-places everything)."""
+        """Ground, light, optional bench, the kinematic pan + plate (exact trimesh
+        colliders), the spatula at rest and the three bread sizes (reset() re-places
+        everything; the PhysX-side tuning rides the spawn cfg modifiers — the
+        pc_motherboard pattern for shipped USDs)."""
         import isaaclab.sim as sim_utils
         from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
 
         c = self.cfg
         z0 = c.surface_z
+        for usd in (c.spatula_usd, c.bread_usd, c.pan_usd, c.plate_usd):
+            if not Path(usd).is_file():
+                raise FileNotFoundError(
+                    f"{usd} not found — run scripts/author_kitchen_rigs.py to build the "
+                    f"kitchen assets"
+                )
+
+        # the vendored work table (the pc_motherboard preset pattern): ground drops to
+        # the table's foot, the kitchen work sits on its top at surface_z
+        preset = c.TABLES[c.table]
+        wx, wy = c.workbench_pos
+        table_z = c.surface_z - preset["top_offset"]
+        ground_z = c.surface_z - preset["height"]
+        table_spawn = sim_utils.UsdFileCfg(usd_path=c.workbench_usd,
+                                           scale=(preset["scale"],) * 3)
+        if preset["kinematic"]:
+            table_spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
 
         out: dict[str, Any] = {
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
                 spawn=sim_utils.GroundPlaneCfg(),
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, ground_z)),
             ),
             "light": AssetBaseCfg(
                 prim_path="/World/light",
                 spawn=sim_utils.DomeLightCfg(intensity=2500.0, color=(0.9, 0.9, 0.9)),
             ),
+            "workbench": AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/Table",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z),
+                                                        rot=preset["orient"]),
+                spawn=table_spawn,
+            ),
         }
-        if z0 > 0:  # procedural workbench (crate pattern): kinematic slab, top at surface_z
-            out["bench"] = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Bench",
-                spawn=sim_utils.CuboidCfg(
-                    size=(c.bench_size[0], c.bench_size[1], z0),
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-                    collision_props=sim_utils.CollisionPropertiesCfg(),
-                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.35, 0.35, 0.38)),
-                ),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, z0 / 2)),
-            )
 
-        # Cutting board: kinematic slab (the source fuses it into a 500 kg table — static by
-        # construction, and the wedge needs an unmovable substrate to push against).
-        out["board"] = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/Board",
-            spawn=sim_utils.CuboidCfg(
-                size=c.board_size,
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+        half = math.radians(c.pan_yaw_deg) / 2
+        # Pan: kinematic by default (the wedge needs an unmovable substrate to push
+        # against — and now a wall to pin the payload on). `pan_dynamic` swaps it to a
+        # heavy, heavily damped free body so a kinematically driven tool gets real
+        # contact response instead of clipping through (see the cfg comment).
+        if c.pan_dynamic:
+            pan_props = sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=False, disable_gravity=False,
+                linear_damping=5.0, angular_damping=5.0,
+                max_depenetration_velocity=0.5,
+                solver_position_iteration_count=16)
+            pan_mass = sim_utils.MassPropertiesCfg(mass=c.pan_mass)
+        else:
+            pan_props = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
+            pan_mass = None
+        out["pan"] = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Pan",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=c.pan_usd,
+                rigid_props=pan_props,
+                mass_props=pan_mass,
                 collision_props=sim_utils.CollisionPropertiesCfg(
-                    contact_offset=0.002, rest_offset=0.0),
-                physics_material=sim_utils.RigidBodyMaterialCfg(
-                    static_friction=0.6, dynamic_friction=0.55),
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.58, 0.40, 0.22)),
+                    contact_offset=c.pan_contact_offset, rest_offset=0.0),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=(c.board_pos[0], c.board_pos[1], z0 + c.board_size[2] / 2)),
+                pos=(c.pan_pos[0], c.pan_pos[1], z0),
+                rot=(math.cos(half), 0.0, 0.0, math.sin(half))),
         )
-        # Plate: kinematic disc; its POSITION is a reset randomization axis (kinematic bodies
+        # Plate: kinematic; its POSITION is a reset randomization axis (kinematic bodies
         # take pose writes — the turntable/board precedent; nothing ever needs to move it).
         out["plate"] = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Plate",
-            spawn=sim_utils.CylinderCfg(
-                radius=c.plate_r, height=c.plate_h, axis="Z",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=c.plate_usd,
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
                 collision_props=sim_utils.CollisionPropertiesCfg(
-                    contact_offset=0.002, rest_offset=0.0),
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.92, 0.92, 0.95)),
+                    contact_offset=c.pan_contact_offset, rest_offset=0.0),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=(c.plate_pos[0], c.plate_pos[1], z0 + c.plate_h / 2)),
+                pos=(c.plate_pos[0], c.plate_pos[1], z0)),
         )
 
+        # Spatula: the pen-holder anti-pop armor on the tool (a wedge tip driven a hair
+        # into the payload in one 120 Hz step must resolve gently, not eject it).
         out["spatula"] = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Spatula",
-            spawn=_spatula_spawner_cfg(c),
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=c.spatula_usd,
+                mass_props=sim_utils.MassPropertiesCfg(mass=c.spatula_mass),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    max_depenetration_velocity=0.5),
+                collision_props=sim_utils.CollisionPropertiesCfg(
+                    contact_offset=c.blade_contact_offset, rest_offset=0.0),
+            ),
             init_state=RigidObjectCfg.InitialStateCfg(
                 pos=(c.spatula_pos[0], c.spatula_pos[1], z0 + 0.003)),
         )
-        for i, (name, patty_r) in enumerate(c.families):
+        # Breads: the payload rides a thin plate under SUSTAINED kinematic-drive contact.
+        # PhysX clamps position-correction velocity by maxDepenetrationVelocity — at the
+        # anti-pop 0.5 the correction cannot keep up with a lift and the payload settles
+        # INSIDE the plate, then shears off on the first lateral move (GPU round 5). The
+        # higher cap + more position iterations keep it ON the plate; the convex-hull
+        # crust edge tolerates the livelier depenetration. Light damping so a 60 g slice
+        # crosses the settle gate promptly.
+        for i, (name, scale) in enumerate(c.families):
             out[name] = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Patty_" + name,
-                spawn=_patty_spawner_cfg(c, patty_r),
+                prim_path="{ENV_REGEX_NS}/Bread_" + name,
+                spawn=sim_utils.UsdFileCfg(
+                    usd_path=c.bread_usd,
+                    scale=(scale, scale, scale),
+                    mass_props=sim_utils.MassPropertiesCfg(mass=c.bread_mass),
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                        max_depenetration_velocity=1.5,
+                        solver_position_iteration_count=12,
+                        linear_damping=0.05,
+                        angular_damping=0.05,
+                    ),
+                    collision_props=sim_utils.CollisionPropertiesCfg(
+                        contact_offset=c.bread_contact_offset, rest_offset=0.0),
+                ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(c.board_pos[0], c.board_pos[1] + (i - 1) * 0.0,
-                         c.board_top + c.patty_h / 2 + 0.002 + i * 0.02)),
+                    pos=(c.pan_pos[0], c.pan_pos[1],
+                         c.pan_floor_z + c.bread_h(i) / 2 + 0.002 + i * 0.03)),
             )
         return out
 
@@ -579,26 +412,53 @@ class SpatulaFlipServeScene(BaseScene):
 
     # ----- lifecycle ----------------------------------------------------------------------------
     def bind(self, env: BaseEnv) -> None:
-        """Grab handles + allocate the presence mask and the latched stage/metric tensors.
-        No joints to author; the mechanics are passive physics + the post_step latches."""
+        """Grab handles, set the tuned frictions (the shipped rigs carry placeholder
+        physics materials; the tunables are authoritative), allocate the presence mask
+        and the latched stage/metric tensors."""
         super().bind(env)
         c = self.cfg
         self.spatula: RigidObject = env.iscene["spatula"]
-        self.board: RigidObject = env.iscene["board"]
+        self.pan: RigidObject = env.iscene["pan"]
         self.plate: RigidObject = env.iscene["plate"]
-        self.patties: dict[str, RigidObject] = {
-            name: env.iscene[name] for name, _r in c.families}
+        self.breads: dict[str, RigidObject] = {
+            name: env.iscene[name] for name, _s in c.families}
         self.env_origins = env.iscene.env_origins
+        self._set_friction(self.spatula, c.blade_friction)
+        for b in self.breads.values():
+            self._set_friction(b, c.bread_friction)
         self._alloc(env.num_envs, env.device)
+        self._grasp_weld_bind()
+
+    def grasp_sites(self) -> list:
+        """One grip band: the spatula's molded HANDLE, spanning the mid 9 cm of the
+        stick along its 21 deg incline (spatula-local; centre (-0.216, 0, 0.076)). The
+        fingers close across its 21 mm width."""
+        a = math.radians(self.cfg.handle_angle_deg)
+        cx, cz, half = -0.216, 0.076, 0.045
+        dx, dz = -math.cos(a) * half, math.sin(a) * half
+        return [("spatula", self.spatula, (cx - dx, 0.0, cz - dz),
+                 (cx + dx, 0.0, cz + dz), (0.014, 0.028))]
+
+    def _set_friction(self, asset, friction: tuple) -> None:
+        """Overwrite static/dynamic friction on every shape of `asset` (all envs) — the
+        motherboard scene's pattern, tuple form."""
+        mats = asset.root_physx_view.get_material_properties()
+        mats[..., 0] = friction[0]
+        mats[..., 1] = friction[1]
+        asset.root_physx_view.set_material_properties(
+            mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def _alloc(self, n: int, dev: str) -> None:
         """Mechanic-state tensors (separated from bind so the app-free rubric test can
         allocate them against stub handles — the stacking-toy stubbed-quat test pattern)."""
         c = self.cfg
-        # present[e, i]: patty i is THE patty of episode e (one-hot; sampled at reset).
+        # present[e, i]: bread i is THE payload of episode e (one-hot; sampled at reset).
         self._present = torch.zeros(n, len(c.families), dtype=torch.bool, device=dev)
         self._present[:, 1] = True
-        self._patty_r = torch.tensor([r for _n, r in c.families], device=dev)
+        self._bread_r = torch.tensor([c.bread_r(i) for i in range(len(c.families))],
+                                     device=dev)
+        self._bread_h = torch.tensor([c.bread_h(i) for i in range(len(c.families))],
+                                     device=dev)
         # latched stage flags
         self._lifted = torch.zeros(n, dtype=torch.bool, device=dev)
         self._wedged = torch.zeros(n, dtype=torch.bool, device=dev)
@@ -614,15 +474,16 @@ class SpatulaFlipServeScene(BaseScene):
         self._prev_lost = torch.zeros(n, dtype=torch.bool, device=dev)
 
     def reset(self, env_ids: torch.Tensor) -> None:
-        """Fresh episode: sample the patty size (one-hot), place it flat raw-side-up on the
-        board with jitter + yaw, park the absent patties in the ground depot, jitter the
-        plate (kinematic pose write) and the spatula rest pose, zero every latch/metric."""
+        """Fresh episode: sample the bread size (one-hot), place it flat in the pan with
+        jitter + yaw, park the absent breads in the ground depot, jitter the plate
+        (kinematic pose write), re-pin the pan, jitter the spatula rest pose, zero every
+        latch/metric."""
         c = self.cfg
         dev = self.env.device
         m = len(env_ids)
         origin = self.env_origins[env_ids]
 
-        # --- patty-size sampling (the task-family knob) ---
+        # --- bread-size sampling (the task-family knob) ---
         n_fam = len(c.families)
         pick = (torch.randint(0, n_fam, (m,), device=dev) if c.sample_size
                 else torch.full((m,), 1, dtype=torch.long, device=dev))
@@ -630,31 +491,42 @@ class SpatulaFlipServeScene(BaseScene):
 
         yaw_amp = math.radians(c.reset_yaw_deg)
 
-        # --- patties: the present one flat on the board (raw side up), the rest parked ---
-        for i, (name, _r) in enumerate(c.families):
-            on_board = torch.zeros(m, 3, device=dev)
-            on_board[:, 0] = c.board_pos[0]
-            on_board[:, 1] = c.board_pos[1]
-            on_board[:, :2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.patty_jitter
-            on_board[:, 2] = c.board_top + c.patty_h / 2 + 0.002
+        # --- breads: the present one flat in the pan, the rest parked ---
+        for i, (name, _s) in enumerate(c.families):
+            in_pan = torch.zeros(m, 3, device=dev)
+            in_pan[:, 0] = c.pan_pos[0]
+            in_pan[:, 1] = c.pan_pos[1]
+            in_pan[:, :2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.bread_jitter
+            in_pan[:, 2] = c.pan_floor_z + c.bread_h(i) / 2 + 0.002
             park = torch.zeros(m, 3, device=dev)
             park[:, 0] = c.parking_pos[0] + i * 0.16
             park[:, 1] = c.parking_pos[1]
-            park[:, 2] = c.patty_h / 2 + 0.003
+            park[:, 2] = c.bread_h(i) / 2 + 0.003
             pres = (self._present[env_ids, i]).unsqueeze(1)
             st = torch.zeros(m, 13, device=dev)
-            st[:, 0:3] = origin + torch.where(pres, on_board, park)
+            st[:, 0:3] = origin + torch.where(pres, in_pan, park)
             half = (torch.rand(m, device=dev) * 2 - 1) * yaw_amp / 2
             st[:, 3] = torch.cos(half)
             st[:, 6] = torch.sin(half)
-            self.patties[name].write_root_state_to_sim(st, env_ids)
+            self.breads[name].write_root_state_to_sim(st, env_ids)
+
+        # --- pan: re-pin at its configured pose (kinematic write; yaw is a layout knob) ---
+        half_p = math.radians(c.pan_yaw_deg) / 2
+        st = torch.zeros(m, 13, device=dev)
+        st[:, 0] = c.pan_pos[0]
+        st[:, 1] = c.pan_pos[1]
+        st[:, 2] = c.surface_z
+        st[:, 3] = math.cos(half_p)
+        st[:, 6] = math.sin(half_p)
+        st[:, 0:3] += origin
+        self.pan.write_root_state_to_sim(st, env_ids)
 
         # --- plate: kinematic pose write with xy jitter ---
         st = torch.zeros(m, 13, device=dev)
         st[:, 0] = c.plate_pos[0]
         st[:, 1] = c.plate_pos[1]
         st[:, :2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.plate_jitter
-        st[:, 2] = c.surface_z + c.plate_h / 2
+        st[:, 2] = c.surface_z
         st[:, 3] = 1.0
         st[:, 0:3] += origin
         self.plate.write_root_state_to_sim(st, env_ids)
@@ -671,7 +543,7 @@ class SpatulaFlipServeScene(BaseScene):
         st[:, 0:3] += origin
         self.spatula.write_root_state_to_sim(st, env_ids)
 
-        # --- zero the latches / clocks / metrics ---
+        # --- zero the latches / clocks / metrics; a fresh episode starts empty-handed ---
         for name in ("_lifted", "_wedged", "_flipped", "_loaded", "_loaded_pf", "_served",
                      "_prev_lost"):
             getattr(self, name)[env_ids] = False
@@ -679,21 +551,22 @@ class SpatulaFlipServeScene(BaseScene):
         self._max_carry_tilt[env_ids] = 0.0
         self._spills[env_ids] = 0
         self._lost_streak[env_ids] = 0
+        self._grasp_weld_release_all(env_ids)
 
     # ----- kinematics helpers -------------------------------------------------------------------
-    def _patty_tensors(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """(pos_w (N,P,3), quat (N,P,4), |lin_vel| (N,P)) for all patties, family order."""
-        pos = torch.stack([b.data.root_pos_w for b in self.patties.values()], dim=1)
-        quat = torch.stack([b.data.root_quat_w for b in self.patties.values()], dim=1)
+    def _bread_tensors(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """(pos_w (N,P,3), quat (N,P,4), |lin_vel| (N,P)) for all breads, family order."""
+        pos = torch.stack([b.data.root_pos_w for b in self.breads.values()], dim=1)
+        quat = torch.stack([b.data.root_quat_w for b in self.breads.values()], dim=1)
         vel = torch.stack([b.data.root_lin_vel_w.norm(dim=-1)
-                           for b in self.patties.values()], dim=1)
+                           for b in self.breads.values()], dim=1)
         return pos, quat, vel
 
-    def _patty_up(self) -> torch.Tensor:
-        """(N, P, 3): each patty's body up-axis (raw-face normal) in world frame."""
+    def _bread_up(self) -> torch.Tensor:
+        """(N, P, 3): each bread's body up-axis (spawn-top normal) in world frame."""
         from isaaclab.utils.math import quat_apply
 
-        _p, quat, _v = self._patty_tensors()
+        _p, quat, _v = self._bread_tensors()
         n, p = quat.shape[0], quat.shape[1]
         ez = torch.tensor([0.0, 0.0, 1.0], device=quat.device).expand(n * p, 3)
         return quat_apply(quat.reshape(n * p, 4), ez).reshape(n, p, 3)
@@ -705,13 +578,13 @@ class SpatulaFlipServeScene(BaseScene):
         ez = torch.tensor([0.0, 0.0, 1.0], device=self.env.device).expand(self.env.num_envs, 3)
         return quat_apply(self.spatula.data.root_quat_w, ez)
 
-    def _patty_in_blade_frame(self) -> torch.Tensor:
-        """(N, P, 3): patty centres in the SPATULA body frame (origin = blade-bottom centre).
+    def _bread_in_blade_frame(self) -> torch.Tensor:
+        """(N, P, 3): bread centres in the SPATULA body frame (origin = blade-bottom centre).
         The on-blade rubric lives in this frame so a tilted, moving, held blade judges its
         cargo identically to a level one (the pen-holder holder-frame lesson)."""
         from isaaclab.utils.math import quat_apply_inverse
 
-        pos, _q, _v = self._patty_tensors()
+        pos, _q, _v = self._bread_tensors()
         n, p = pos.shape[0], pos.shape[1]
         sq = self.spatula.data.root_quat_w[:, None, :].expand(n, p, 4).reshape(n * p, 4)
         sp = self.spatula.data.root_pos_w[:, None, :]
@@ -725,97 +598,94 @@ class SpatulaFlipServeScene(BaseScene):
         return z > c.surface_z + c.lift_gate
 
     def on_blade(self) -> torch.Tensor:
-        """(N, P) bool, blade-frame: patty centre inside the blade footprint, its bottom in
+        """(N, P) bool, blade-frame: bread centre inside the blade footprint, its bottom in
         the on-blade z band, its axis within `blade_align_max_deg` of the blade normal
-        (either face — a flipped patty rides the blade too)."""
+        (either face — a flipped slice rides the blade too)."""
         c = self.cfg
-        loc = self._patty_in_blade_frame()
+        loc = self._bread_in_blade_frame()
         in_x = loc[:, :, 0].abs() < c.blade_l / 2
         in_y = loc[:, :, 1].abs() < c.blade_w / 2
-        bottom = loc[:, :, 2] - c.patty_h / 2
+        bottom = loc[:, :, 2] - self._bread_h.unsqueeze(0) / 2
         in_z = (bottom > c.on_blade_z_band[0]) & (bottom < c.on_blade_z_band[1])
-        up = self._patty_up()
+        up = self._bread_up()
         blade_up = self._blade_up().unsqueeze(1)
         aligned = (up * blade_up).sum(-1).abs() >= math.cos(math.radians(c.blade_align_max_deg))
         return in_x & in_y & in_z & aligned
 
-    def on_board(self) -> torch.Tensor:
-        """(N, P) bool: patty resting flat (either face) on the cutting board, in bounds."""
+    def on_pan(self) -> torch.Tensor:
+        """(N, P) bool: bread resting flat (either face) on the pan's interior floor."""
         c = self.cfg
-        pos, _q, _v = self._patty_tensors()
-        bp = self.board.data.root_pos_w.unsqueeze(1)
-        in_x = (pos[:, :, 0] - bp[:, :, 0]).abs() < c.board_size[0] / 2
-        in_y = (pos[:, :, 1] - bp[:, :, 1]).abs() < c.board_size[1] / 2
+        pos, _q, _v = self._bread_tensors()
+        pp = self.pan.data.root_pos_w.unsqueeze(1)
+        in_r = (pos[:, :, :2] - pp[:, :, :2]).norm(dim=-1) < c.pan_r_floor
         z_rel = (pos - self.env_origins.unsqueeze(1))[:, :, 2]
-        resting = (z_rel - c.patty_h / 2 - c.board_top).abs() < c.rest_z_tol
-        flat = self._patty_up()[:, :, 2].abs() >= math.cos(math.radians(c.flat_tilt_max_deg))
-        return in_x & in_y & resting & flat
+        resting = (z_rel - self._bread_h.unsqueeze(0) / 2 - c.pan_floor_z).abs() < c.rest_z_tol
+        flat = self._bread_up()[:, :, 2].abs() >= math.cos(math.radians(c.flat_tilt_max_deg))
+        return in_r & resting & flat
 
     def flipped_now(self) -> torch.Tensor:
-        """(N, P) bool: the patty's raw-face normal is inverted by >= `flip_min_deg` from
-        world-up (cooked side up) — the memoryless orientation half of the flip check."""
+        """(N, P) bool: the bread's spawn-top normal is inverted by >= `flip_min_deg` from
+        world-up — the memoryless orientation half of the flip check."""
         c = self.cfg
-        return self._patty_up()[:, :, 2] <= -math.cos(math.radians(180.0 - c.flip_min_deg))
+        return self._bread_up()[:, :, 2] <= -math.cos(math.radians(180.0 - c.flip_min_deg))
 
     def on_plate(self) -> torch.Tensor:
-        """(N, P) bool: patty resting flat (either face) on the plate, near its centre."""
+        """(N, P) bool: bread resting flat (either face) in the plate's recess, near centre."""
         c = self.cfg
-        pos, _q, _v = self._patty_tensors()
+        pos, _q, _v = self._bread_tensors()
         pp = self.plate.data.root_pos_w.unsqueeze(1)
         near = (pos[:, :, :2] - pp[:, :, :2]).norm(dim=-1) < c.served_xy_frac * c.plate_r
         z_rel = (pos - self.env_origins.unsqueeze(1))[:, :, 2]
-        resting = (z_rel - c.patty_h / 2 - c.plate_top).abs() < c.rest_z_tol
-        flat = self._patty_up()[:, :, 2].abs() >= math.cos(math.radians(c.flat_tilt_max_deg))
+        resting = (z_rel - self._bread_h.unsqueeze(0) / 2 - c.plate_rest_z).abs() < c.rest_z_tol
+        flat = self._bread_up()[:, :, 2].abs() >= math.cos(math.radians(c.flat_tilt_max_deg))
         return near & resting & flat
 
     def settled(self) -> torch.Tensor:
-        """(N, P) bool: patty |lin vel| below `settle_speed`."""
-        _p, _q, vel = self._patty_tensors()
+        """(N, P) bool: bread |lin vel| below `settle_speed`."""
+        _p, _q, vel = self._bread_tensors()
         return vel < self.cfg.settle_speed
 
     def on_bare_surface(self) -> torch.Tensor:
-        """(N, P) bool: patty sustained by the bare bench/ground, not furniture or blade.
+        """(N, P) bool: bread sustained by the bare bench/ground — not the pan, the plate
+        or the blade.
 
-        Unlike `on_board`/`on_plate`, this accepts any orientation. The vertical extent
-        therefore includes both the disc half-height and the radius projected onto world z.
+        Unlike `on_pan`/`on_plate`, this accepts any orientation. The vertical extent
+        therefore includes both the slab half-height and the radius projected onto world z.
         """
         c = self.cfg
-        pos, _q, _v = self._patty_tensors()
+        pos, _q, _v = self._bread_tensors()
         z_rel = (pos - self.env_origins.unsqueeze(1))[:, :, 2]
-        up_z = self._patty_up()[:, :, 2].abs().clamp(0.0, 1.0)
-        radius = self._patty_r.unsqueeze(0)
-        half_extent_z = (up_z * (c.patty_h / 2)
+        up_z = self._bread_up()[:, :, 2].abs().clamp(0.0, 1.0)
+        radius = self._bread_r.unsqueeze(0)
+        half_extent_z = (up_z * (self._bread_h.unsqueeze(0) / 2)
                          + torch.sqrt((1.0 - up_z.square()).clamp_min(0.0)) * radius)
         at_surface = (z_rel - half_extent_z - c.surface_z).abs() < c.rest_z_tol
 
-        bp = self.board.data.root_pos_w.unsqueeze(1)
-        over_board = (
-            ((pos[:, :, 0] - bp[:, :, 0]).abs() < c.board_size[0] / 2)
-            & ((pos[:, :, 1] - bp[:, :, 1]).abs() < c.board_size[1] / 2)
-        )
-        pp = self.plate.data.root_pos_w.unsqueeze(1)
-        over_plate = (pos[:, :, :2] - pp[:, :, :2]).norm(dim=-1) < c.plate_r
-        return at_surface & ~over_board & ~over_plate & ~self.on_blade() & self.settled()
+        pp = self.pan.data.root_pos_w.unsqueeze(1)
+        over_pan = (pos[:, :, :2] - pp[:, :, :2]).norm(dim=-1) < c.pan_r_out
+        pl = self.plate.data.root_pos_w.unsqueeze(1)
+        over_plate = (pos[:, :, :2] - pl[:, :, :2]).norm(dim=-1) < c.plate_r
+        return at_surface & ~over_pan & ~over_plate & ~self.on_blade() & self.settled()
 
     def loaded_now(self) -> torch.Tensor:
-        """(N,) bool: the present patty rides the blade with its bottom above `lift_gate` —
-        the friction carry, judged on the sampled patty."""
+        """(N,) bool: the present bread rides the blade with its bottom above `lift_gate` —
+        the friction carry, judged on the sampled payload."""
         c = self.cfg
-        pos, _q, _v = self._patty_tensors()
-        bottom = (pos - self.env_origins.unsqueeze(1))[:, :, 2] - c.patty_h / 2
+        pos, _q, _v = self._bread_tensors()
+        bottom = (pos - self.env_origins.unsqueeze(1))[:, :, 2] - self._bread_h.unsqueeze(0) / 2
         high = bottom > c.surface_z + c.lift_gate
         return (self.on_blade() & high & self._present).any(dim=1)
 
     def served_now(self) -> torch.Tensor:
-        """(N,) bool: the present patty rests flat on the plate, settled — with the face
-        gate per goal: `serve` (v0, no flip) demands raw side up (the source's right-side-up
-        clause); `flip_serve` accepts either face (tipping off a blade edge makes the final
-        face genuinely ambiguous — the flip stage already proved orientation control), the
-        flip itself being enforced through the `flipped` stage latch."""
+        """(N,) bool: the present bread rests flat on the plate, settled — with the face
+        gate per goal: `serve` (v0, no flip) demands spawn-side up (the source's
+        right-side-up clause); `flip_serve` accepts either face (tipping off a blade edge
+        makes the final face genuinely ambiguous — the flip stage already proved
+        orientation control), the flip itself being enforced through the `flipped` latch."""
         c = self.cfg
         ok = self.on_plate() & self.settled() & self._present
         if c.goal == "serve":
-            right_side_up = self._patty_up()[:, :, 2] >= math.cos(
+            right_side_up = self._bread_up()[:, :, 2] >= math.cos(
                 math.radians(c.flat_tilt_max_deg))
             ok = ok & right_side_up
         return ok.any(dim=1)
@@ -827,15 +697,16 @@ class SpatulaFlipServeScene(BaseScene):
 
     # ----- mechanics: the latches (run every physics substep) --------------------------------------
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
+        self._grasp_weld_step()
         c = self.cfg
-        pos, _q, _v = self._patty_tensors()
+        pos, _q, _v = self._bread_tensors()
         z_rel = (pos - self.env_origins.unsqueeze(1))[:, :, 2]
-        bottom = z_rel - c.patty_h / 2
+        bottom = z_rel - self._bread_h.unsqueeze(0) / 2
         onb = self.on_blade() & self._present
 
         self._lifted |= self.tool_lifted_now()
-        # the wedge: blade under the patty while the patty is still down at board level
-        self._wedged |= (onb & (bottom <= c.board_top + c.wedge_low_band)).any(dim=1)
+        # the wedge: blade under the bread while the bread is still down at pan level
+        self._wedged |= (onb & (bottom <= c.pan_floor_z + c.wedge_low_band)).any(dim=1)
 
         loaded = self.loaded_now()
         self._loaded |= loaded
@@ -844,9 +715,9 @@ class SpatulaFlipServeScene(BaseScene):
             loaded, torch.zeros_like(self._since_loaded),
             (self._since_loaded + 1).clamp(max=10**6))
 
-        # the flip: inverted AND at rest on the board (both halves must hold at once —
-        # a patty sailing through 180 deg mid-air has not flipped until it lands flat)
-        self._flipped |= (self.flipped_now() & self.on_board() & self.settled()
+        # the flip: inverted AND at rest in the pan (both halves must hold at once —
+        # a slice sailing through 180 deg mid-air has not flipped until it lands flat)
+        self._flipped |= (self.flipped_now() & self.on_pan() & self.settled()
                           & self._present).any(dim=1)
 
         # the serve: resting on the plate within the arrival window of the last carry
@@ -854,8 +725,8 @@ class SpatulaFlipServeScene(BaseScene):
 
         # Metrics: worst blade tilt while carrying; spill = sustained rest on the actual
         # bare surface after loading. Furniture transitions are deliberately excluded:
-        # `not on_board()` is not enough because that predicate is false while a patty
-        # tumbles on the board, and likewise `not on_plate()` while it tips onto the plate.
+        # `not on_pan()` is not enough because that predicate is false while a slice
+        # tumbles in the pan, and likewise `not on_plate()` while it tips onto the plate.
         tilt = self.carry_tilt_deg()
         self._max_carry_tilt = torch.where(
             loaded, torch.maximum(self._max_carry_tilt, tilt), self._max_carry_tilt)
@@ -872,8 +743,8 @@ class SpatulaFlipServeScene(BaseScene):
 
     # ----- state (full, restorable) -----------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
-        bodies = {"spatula": self.spatula, "plate": self.plate,
-                  **{n: b for n, b in self.patties.items()}}
+        bodies = {"spatula": self.spatula, "pan": self.pan, "plate": self.plate,
+                  **{n: b for n, b in self.breads.items()}}
         return {
             "bodies": {n: b.data.root_state_w[env_ids].clone() for n, b in bodies.items()},
             "machine": {k: getattr(self, k)[env_ids].clone()
@@ -881,45 +752,55 @@ class SpatulaFlipServeScene(BaseScene):
                                   "_loaded_pf", "_served", "_since_loaded",
                                   "_max_carry_tilt", "_spills", "_lost_streak",
                                   "_prev_lost")},
+            **self._grasp_weld_state(env_ids),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
-        bodies = {"spatula": self.spatula, "plate": self.plate,
-                  **{n: b for n, b in self.patties.items()}}
+        bodies = {"spatula": self.spatula, "pan": self.pan, "plate": self.plate,
+                  **{n: b for n, b in self.breads.items()}}
         for n, b in bodies.items():
             b.write_root_state_to_sim(state["bodies"][n], env_ids)
         for k, v in state["machine"].items():
             getattr(self, k)[env_ids] = v
+        self._grasp_weld_restore(state, env_ids)
 
     # ----- description ------------------------------------------------------------------------------
     def describe(self) -> str:
         c = self.cfg
-        where = "on the ground" if c.surface_z <= 0 else "on a workbench"
+        where = "on a sturdy table"
         goal_text = {
             "serve": (
-                "Goal: slide the blade under the patty, carry the patty ON THE BLADE — "
-                "nothing holds it there but friction, so keep the blade level — and set "
-                "it down flat on the plate, raw (tan) side still up."),
+                "Goal: slide the blade under the bread, carry the slice ON THE BLADE — "
+                "nothing holds it there but friction, so keep the blade level — lift it "
+                "clear of the pan's rim and set it down flat on the plate, same side up."),
             "flip": (
-                "Goal: flip the patty over IN PLACE with the spatula — slide the blade "
-                "under it, turn it past vertical and let it land flat on the cutting "
-                "board, browned (dark) side up."),
+                "Goal: flip the bread over IN PLACE with the spatula — slide the blade "
+                "under it, turn it past vertical and let it land flat back in the pan."),
             "flip_serve": (
-                "Goal: first FLIP the patty on the cutting board (browned side ends up), "
-                "then slide the blade under it again, carry it on the blade and set it "
-                "down flat on the plate."),
+                "Goal: first FLIP the bread in the pan (the browned underside ends up), "
+                "then slide the blade under it again, carry it over the pan's rim and "
+                "set it down flat on the plate."),
         }[c.goal]
+        d_lo = 2 * c.bread_r(0) * 100
+        d_hi = 2 * c.bread_r(len(c.families) - 1) * 100
         return (
-            f"A flat two-tone patty (tan raw side up, dark browned side down, "
-            f"{2 * c.families[0][1] * 100:.0f}-{2 * c.families[-1][1] * 100:.0f} cm across) "
-            f"lies on a wooden cutting board {where}; an empty white plate "
-            f"({2 * c.plate_r * 100:.0f} cm) waits beside it. A steel spatula with a dark "
-            f"handle (thin {c.blade_w * 100:.0f} cm blade) rests on the "
-            f"surface.\n{goal_text}\n"
-            f"TOOL ONLY: never touch the patty with fingers or gripper — it disqualifies "
-            f"the episode. The patty must ARRIVE on the blade: a patty pushed, shoved or "
-            f"thrown onto the plate does not count. A patty spilled onto the bare surface "
+            f"A slice of bread ({d_lo:.0f}-{d_hi:.0f} cm across) lies in a stainless fry "
+            f"pan ({2 * c.pan_r_rim_in * 100:.0f} cm across, rim "
+            f"{c.pan_rim_top * 100:.0f} cm high) {where}; an empty bamboo plate "
+            f"({2 * c.plate_r * 100:.0f} cm) waits beside it. A red-handled spatula "
+            f"(thin {c.blade_w * 100:.0f} cm blade) rests on the surface.\n{goal_text}\n"
+            f"The pan's rim walls the slice in: enter over the rim, and the wall is a "
+            f"backstop a slide can pin the slice against.\n"
+            f"TOOL ONLY: never touch the bread with fingers or gripper — it disqualifies "
+            f"the episode. The bread must ARRIVE on the blade: a slice pushed, shoved or "
+            f"thrown onto the plate does not count. A slice spilled onto the bare surface "
             f"is a failure you can recover from — wedge it up and continue."
+            + (
+                " The spatula holds in a firm pinch: close the fingers across its handle "
+                "and the grip locks; open wide to release."
+                if self.cfg.grasp_weld
+                else ""
+            )
         )
 
     # ----- progress / rubric ------------------------------------------------------------------------
@@ -950,14 +831,270 @@ class SpatulaFlipServeScene(BaseScene):
     def success(self) -> torch.Tensor:
         """(N,) bool, goal-dependent and judged on the CURRENT resting state (latches prove
         the journey, the live predicate proves the destination):
-          serve       — served latched AND the patty rests on the plate now;
-          flip        — flipped latched AND the patty rests flipped on the board now;
-          flip_serve  — flipped AND served latched AND the patty rests on the plate now."""
+          serve       — served latched AND the bread rests on the plate now;
+          flip        — flipped latched AND the bread rests flipped in the pan now;
+          flip_serve  — flipped AND served latched AND the bread rests on the plate now."""
         g = self.cfg.goal
         if g == "serve":
             return self._served & self.served_now()
         if g == "flip":
-            now = (self.flipped_now() & self.on_board() & self.settled()
+            now = (self.flipped_now() & self.on_pan() & self.settled()
                    & self._present).any(dim=1)
             return self._flipped & now
         return self._flipped & self._served & self.served_now()
+
+    # ----- grasp-weld machinery (the weld-on-closure contract; private — not an agent action) ----
+    # Pre-authored, normally-disabled FixedJoint pools, toggled and never created mid-sim — the
+    # ikea/chair toggle pattern aimed hand<->part, with the pouring suite's closure criterion.
+    # Ported verbatim from the pc_motherboard scene. PhysX latches a joint's local frames on
+    # FIRST enable and ignores rewrites on a re-enable, so every engage consumes a fresh pool
+    # joint: the live hand->part pose is written while the joint is still disabled, it is
+    # enabled once, and on release it is retired for good.
+    # Engage (reconciled every physics substep, debounced): pinch point within `grasp_weld_dist`
+    # of a site's LIVE grip band + aperture inside the site's closure window (below = closed on
+    # air, above = nothing snagged) + fingers STALLED (a closing sweep passes through the window;
+    # a real pinch stops in it). Release: aperture past window-top + margin (hysteresis). One
+    # hold per env (a parallel jaw pinches one part). Embodiment-agnostic: no hand on the stage
+    # (e.g. robot="null") -> no joints, no-op contract. Holds ride get_state/set_state.
+    GRASP_HAND_BODY: ClassVar[str] = "panda_hand"
+    GRASP_FINGER_JOINTS: ClassVar[str] = "panda_finger_joint.*"
+    GRASP_PINCH_OFFSET: ClassVar[float] = 0.1034  # hand origin -> finger-pad centre, along approach
+    GRASP_POOL: ClassVar[int] = 8  # engages per (env, site) per run; exhausted -> warn, no weld
+    GRASP_STALL: ClassVar[float] = 0.01  # max |finger vel| sum (m/s): fingers stopped ON the part
+    GRASP_DEBOUNCE: ClassVar[int] = 8  # consecutive qualifying substeps before the weld engages
+    GRASP_RELEASE_MARGIN: ClassVar[float] = 0.008  # release at window-top + this (m), hysteresis
+
+    def _grasp_weld_bind(self) -> None:
+        """Discover the hand, author the (disabled) joint pools, allocate the hold state. Called
+        from `bind()` — authoring must happen BEFORE the sim starts playing, or PhysX only picks
+        the joints up after a full `sim.reset()`."""
+        env = self.env
+        n = env.num_envs
+        self._gw_on = bool(getattr(self.cfg, "grasp_weld", False))
+        self._gw_art = None  # articulation handle, resolved lazily (the robot binds after us)
+        self._gw_sites: list = []
+        if not self._gw_on:
+            return
+        hand0 = self._gw_find_hand_prim()
+        if hand0 is None:  # no gripper in this embodiment (e.g. robot="null") -> no-op contract
+            self._gw_on = False
+            print(f"[grasp-weld] no '{self.GRASP_HAND_BODY}' on the stage — contract disabled", flush=True)
+            return
+        self._gw_sites = list(self.grasp_sites())
+        s = len(self._gw_sites)
+        dev = env.device
+        self.grasp_held = torch.zeros(n, s, dtype=torch.bool, device=dev)
+        self._gw_rel_p = torch.zeros(n, s, 3, device=dev)
+        self._gw_rel_q = torch.zeros(n, s, 4, device=dev)
+        self._gw_count = torch.zeros(n, s, dtype=torch.int32, device=dev)
+        self._gw_pool_i = [[0] * s for _ in range(n)]
+        self._gw_pool_warned: set = set()
+        self._gw_author_pools(hand0)
+
+    def _gw_find_hand_prim(self) -> str | None:
+        """The hand body's prim path under env_0 (clones are identical), or None if absent."""
+        from pxr import Usd
+
+        root = self.env.stage.GetPrimAtPath("/World/envs/env_0")
+        if not root.IsValid():
+            return None
+        for prim in Usd.PrimRange(root):
+            if prim.GetName() == self.GRASP_HAND_BODY:
+                return str(prim.GetPath())
+        return None
+
+    def _gw_part_path(self, obj, env_i: int) -> str:
+        """The part's RIGID-BODY prim path in env `env_i`. The asset root from the cfg is not
+        always the body, so walk the subtree for the first `RigidBodyAPI` prim — the joint must
+        bind the body, or PhysX ignores it."""
+        from pxr import Usd, UsdPhysics
+
+        p = obj.cfg.prim_path.replace("{ENV_REGEX_NS}", "/World/envs/env_.*")
+        root = p.replace("env_.*", f"env_{env_i}")
+        prim = self.env.stage.GetPrimAtPath(root)
+        if not prim.IsValid():
+            raise RuntimeError(f"[grasp-weld] part prim missing: {root}")
+        for child in Usd.PrimRange(prim):
+            if child.HasAPI(UsdPhysics.RigidBodyAPI):
+                return str(child.GetPath())
+        raise RuntimeError(f"[grasp-weld] no RigidBodyAPI prim under {root}")
+
+    def _gw_author_pools(self, hand0: str) -> None:
+        """One pool of disabled FixedJoints per (env, site): body0 = the hand, body1 = the part,
+        frames identity until an engage writes the live relative pose."""
+        from pxr import Gf, UsdPhysics
+
+        stage = self.env.stage
+        self._gw_paths: list[list[list[str]]] = []  # [env][site][k]
+        for i in range(self.env.num_envs):
+            hand = hand0.replace("env_0", f"env_{i}")
+            rows = []
+            for name, obj, _p0, _p1, _win in self._gw_sites:
+                part = self._gw_part_path(obj, i)
+                row = []
+                for k in range(self.GRASP_POOL):
+                    jp = f"/World/envs/env_{i}/gweld_{name}_{k}"
+                    j = UsdPhysics.FixedJoint.Define(stage, jp)
+                    j.CreateBody0Rel().SetTargets([hand])
+                    j.CreateBody1Rel().SetTargets([part])
+                    j.CreateLocalPos0Attr(Gf.Vec3f(0.0, 0.0, 0.0))
+                    j.CreateLocalRot0Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+                    j.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))
+                    j.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+                    j.CreateJointEnabledAttr(False)
+                    j.CreateExcludeFromArticulationAttr(True)  # maximal-coordinate, not an arm DOF
+                    row.append(jp)
+                rows.append(row)
+            self._gw_paths.append(rows)
+
+    def _gw_resolve_hand(self) -> bool:
+        """Cache the articulation handle + indices on first use (the robot binds after the scene)."""
+        if self._gw_art is not None:
+            return True
+        try:
+            art = self.env.robot.articulation
+            self._gw_hand_i = art.body_names.index(self.GRASP_HAND_BODY)
+            self._gw_fingers = art.find_joints([self.GRASP_FINGER_JOINTS])[0]
+            assert len(self._gw_fingers) == 2
+        except Exception as e:  # articulated but not a gripper we understand -> disable, loudly
+            self._gw_on = False
+            print(f"[grasp-weld] DISABLED after error: {e!r}", flush=True)
+            return False
+        self._gw_art = art
+        return True
+
+    def _grasp_weld_step(self) -> None:
+        """Reconcile engages + releases against the closure criterion. Called from `post_step()`."""
+        if not getattr(self, "_gw_on", False) or not self._gw_sites or not self._gw_resolve_hand():
+            return
+        from isaaclab.utils.math import quat_apply
+
+        art = self._gw_art
+        hp = art.data.body_pos_w[:, self._gw_hand_i]
+        hq = art.data.body_quat_w[:, self._gw_hand_i]
+        gap = art.data.joint_pos[:, self._gw_fingers].sum(dim=-1)
+        stalled = art.data.joint_vel[:, self._gw_fingers].abs().sum(dim=-1) < self.GRASP_STALL
+        approach = torch.zeros_like(hp)
+        approach[:, 2] = self.GRASP_PINCH_OFFSET
+        pinch = hp + quat_apply(hq, approach)
+
+        # Releases first (a re-grasp in the same step then sees a free hand).
+        for row, s in self.grasp_held.nonzero(as_tuple=False).tolist():
+            if gap[row] > self._gw_sites[s][4][1] + self.GRASP_RELEASE_MARGIN:
+                self._gw_release(row, s)
+
+        free = ~self.grasp_held.any(dim=-1)  # (n,)
+        dists = self._gw_site_dists(pinch)  # (n, s)
+        c = getattr(self.cfg, "grasp_weld_dist", 0.010)
+        ok = torch.stack(
+            [
+                (dists[:, s] < c) & (gap > win[0]) & (gap < win[1]) & stalled
+                for s, (_n, _o, _p0, _p1, win) in enumerate(self._gw_sites)
+            ],
+            dim=-1,
+        ) & free.unsqueeze(-1)
+        self._gw_count = torch.where(ok, self._gw_count + 1, torch.zeros_like(self._gw_count))
+        ready = (self._gw_count >= self.GRASP_DEBOUNCE).any(dim=-1) & free
+        for row in ready.nonzero(as_tuple=False).flatten().tolist():
+            masked = torch.where(
+                self._gw_count[row] >= self.GRASP_DEBOUNCE, dists[row], torch.full_like(dists[row], torch.inf)
+            )
+            s = int(masked.argmin())
+            self._gw_engage(row, s, hp[row], hq[row], gap[row])
+
+    def _gw_site_dists(self, pinch: torch.Tensor) -> torch.Tensor:
+        """Pinch-point distance to every site's live grip band, shape (num_envs, num_sites)."""
+        from isaaclab.utils.math import quat_apply
+
+        n = pinch.shape[0]
+        out = []
+        for _name, obj, p0, p1, _win in self._gw_sites:
+            pp, pq = obj.data.root_pos_w, obj.data.root_quat_w
+            a = pp + quat_apply(pq, torch.tensor(p0, device=pinch.device).expand(n, 3))
+            b = pp + quat_apply(pq, torch.tensor(p1, device=pinch.device).expand(n, 3))
+            ab = b - a
+            t = ((pinch - a) * ab).sum(-1) / ab.pow(2).sum(-1).clamp_min(1e-12)
+            closest = a + t.clamp(0.0, 1.0).unsqueeze(-1) * ab
+            out.append((pinch - closest).norm(dim=-1))
+        return torch.stack(out, dim=-1)
+
+    def _gw_engage(self, env_i: int, s: int, hp: torch.Tensor, hq: torch.Tensor, gap: torch.Tensor) -> None:
+        """Weld (env_i, site s) to the hand at the live relative pose, on a fresh pool joint."""
+        from isaaclab.utils.math import quat_apply_inverse, quat_conjugate, quat_mul
+
+        name, obj = self._gw_sites[s][0], self._gw_sites[s][1]
+        rel_p = quat_apply_inverse(hq.unsqueeze(0), (obj.data.root_pos_w[env_i] - hp).unsqueeze(0))[0]
+        rel_q = quat_mul(quat_conjugate(hq.unsqueeze(0)), obj.data.root_quat_w[env_i].unsqueeze(0))[0]
+        if not self._gw_set_joint(env_i, s, rel_p, rel_q):
+            return
+        self._gw_rel_p[env_i, s] = rel_p
+        self._gw_rel_q[env_i, s] = rel_q
+        self.grasp_held[env_i, s] = True
+        self._gw_count[env_i] = 0
+        print(f"[grasp-weld] env {env_i}: GRIPPED {name} (aperture {float(gap) * 1000:.1f} mm)", flush=True)
+
+    def _gw_set_joint(self, env_i: int, s: int, rel_p: torch.Tensor, rel_q: torch.Tensor) -> bool:
+        """Write the hand-frame pose onto the next fresh pool joint and enable it. False = pool dry."""
+        from pxr import Gf, UsdPhysics
+
+        k = self._gw_pool_i[env_i][s]
+        if k >= self.GRASP_POOL:
+            if (env_i, s) not in self._gw_pool_warned:
+                self._gw_pool_warned.add((env_i, s))
+                print(f"[grasp-weld] env {env_i}: pool dry for {self._gw_sites[s][0]} — no weld", flush=True)
+            return False
+        j = UsdPhysics.FixedJoint.Get(self.env.stage, self._gw_paths[env_i][s][k])
+        p, q = rel_p.tolist(), rel_q.tolist()
+        j.GetLocalPos0Attr().Set(Gf.Vec3f(p[0], p[1], p[2]))
+        j.GetLocalRot0Attr().Set(Gf.Quatf(q[0], Gf.Vec3f(q[1], q[2], q[3])))
+        j.GetJointEnabledAttr().Set(True)
+        return True
+
+    def _gw_release(self, env_i: int, s: int) -> None:
+        """Cut (env_i, site s): disable the joint and retire it (frames latched — never reused)."""
+        from pxr import UsdPhysics
+
+        k = self._gw_pool_i[env_i][s]
+        if k < self.GRASP_POOL:
+            j = UsdPhysics.FixedJoint.Get(self.env.stage, self._gw_paths[env_i][s][k])
+            j.GetJointEnabledAttr().Set(False)
+        self._gw_pool_i[env_i][s] = k + 1
+        self.grasp_held[env_i, s] = False
+        print(f"[grasp-weld] env {env_i}: RELEASED {self._gw_sites[s][0]}", flush=True)
+
+    def _grasp_weld_release_all(self, env_ids: torch.Tensor) -> None:
+        """Cut every hold for `env_ids` (a fresh episode starts empty-handed). Called from `reset()`."""
+        if not getattr(self, "_gw_on", False):
+            return
+        for row, s in self.grasp_held[env_ids].nonzero(as_tuple=False).tolist():
+            self._gw_release(int(env_ids[row]), s)
+        self._gw_count[env_ids] = 0
+
+    def _grasp_weld_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
+        """The contract's restorable state (empty when the contract is off)."""
+        if not getattr(self, "_gw_on", False):
+            return {}
+        return {
+            "grasp_held": self.grasp_held[env_ids].clone(),
+            "grasp_rel_p": self._gw_rel_p[env_ids].clone(),
+            "grasp_rel_q": self._gw_rel_q[env_ids].clone(),
+        }
+
+    def _grasp_weld_restore(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
+        """Re-arm the holds `get_state` recorded, at their RECORDED hand-frame poses (the bodies
+        were just written, so live measurement is redundant), on fresh pool joints. Called from
+        `set_state()` after the bodies are restored."""
+        if not getattr(self, "_gw_on", False) or "grasp_held" not in state:
+            return
+        for row in range(len(env_ids)):
+            i = int(env_ids[row])
+            for s in range(len(self._gw_sites)):
+                if self.grasp_held[i, s]:
+                    self._gw_release(i, s)
+                if bool(state["grasp_held"][row, s]) and self._gw_set_joint(
+                    i, s, state["grasp_rel_p"][row, s], state["grasp_rel_q"][row, s]
+                ):
+                    self._gw_rel_p[i, s] = state["grasp_rel_p"][row, s]
+                    self._gw_rel_q[i, s] = state["grasp_rel_q"][row, s]
+                    self.grasp_held[i, s] = True
+        self._gw_count[env_ids] = 0

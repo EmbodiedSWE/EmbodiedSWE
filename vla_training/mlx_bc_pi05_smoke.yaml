@@ -1,0 +1,119 @@
+# =============================================================================
+# mlx job submitv2: SimGen-BC pi05 pipeline smoke -- ONE 8xH20 node.
+#   mlx job submitv2 -p CoSiGen/vla_training/mlx_bc_pi05_smoke.yaml  (cn-seed)
+#
+# Recipe: openpi's OWN standard pi0.5 BC recipe (pi05_libero), registered as
+# pi05_simgen_bc in the openpi checkout with ONLY the data source (mock
+# LeRobot dataset, libero schema) and the weight path (local pi05_base
+# mirror) changed -- the repo's documented custom-dataset workflow. Full
+# fine-tune from pi05_base, batch 256, cosine 5e-5.
+#
+# SCALE NOTE (user ask: 64/128/256 H20): openpi's JAX trainer is SINGLE-NODE
+# ONLY (README: "the current training script does not yet support multi-node
+# training"). This smoke = the canonical 8-GPU path validating data/weights/
+# env end to end. Scaling beyond one node = the repo's official PyTorch
+# torchrun path (scripts/train_pytorch.py; no EMA/FSDP) -- pending user
+# decision on which scale to commit.
+#
+# Artifacts come from HDFS (CoSiGen/vla_training/sync_to_hdfs.py ships them):
+#   openpi_repo.tgz / openpi_venv.tgz / pi05_base/ / lerobot_home/
+# The venv transplants because it builds on /usr/bin/python3.11 (same
+# interpreter family as this image) and jax's cuda12 pip wheels bundle CUDA.
+# =============================================================================
+caption: '[SimGen-BC] pi05 mock BC smoke (8xH20, pi05_libero recipe)'
+namespace: /user/zeyu.shen
+
+jobDefVersion:
+  entrypointMode: FULL_SCRIPT
+  name: '[SimGen-BC] pi05 smoke'
+  lazyDownloadCode: true
+  gitRepo:
+    # Dummy pin (single-file jobs still need a repo); nothing imports from it.
+    commitSha: eba665296fbb353876907cffd1a742a9c647c951
+    mnt: /opt/tiger/alpha-seed
+    repoName: seed/alpha-seed
+  imageMeta:
+    # Same image as the RL H20 jobs: python 3.11 + recent NVIDIA driver.
+    imageVid: d5iru9jc77ud71mhoe1g
+  pip3: []
+  resource:
+    backend: ARNOLD
+    arnoldConfig:
+      clusterName: soil-wlby
+      groupIds:
+        - 2006   # coding_webdev (H20 access)
+      quotaPool: nvidia-h20.hpccluster-yecd0gve6pioxhtqvap6.ai
+      preemptible: false
+      keepMins: 120
+      hdfsVolumes:
+        - accessMode: RW
+          extra: ""
+          mnt: /mnt/hdfs/__MERLIN_USER_DIR__
+          path: hdfs://harunawl/home/byte_data_seed_wl/code_agent/zeyu.shen
+          roles: []
+      roles:
+        - name: worker
+          num: 1
+          gpu: 8
+          gpuv: NVIDIA-H20
+          cpu: 176
+          memory: 1859584
+          ports: 5
+
+jobRunParams:
+  entrypointFullScript: |
+    set -x
+    BASE=/mnt/hdfs/__MERLIN_USER_DIR__/simgen_bc
+    nvidia-smi -L
+
+    # cv2 (pulled in by lerobot's image pipeline) needs system GL/GLib that
+    # this training image doesn't ship (first run died at import: libGL.so.1).
+    # Same apt recipe the render pods use, minimal subset.
+    sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+      libgl1 libglib2.0-0 libsm6 libxext6 || { echo "BC_GATE_APT_FAILED"; exit 1; }
+
+    # ---- stage artifacts to local disk (FUSE reads are fine once) ----
+    # The repo+venv MUST land at the SAME absolute path as on the devbox:
+    # the venv installs openpi/openpi-client EDITABLE, and its .pth finders
+    # hardcode /home/tiger/cap-x/relevant_repos/openpi/... (first smoke died
+    # at BC_GATE_IMPORTS_FAILED staging to /opt/tiger instead).
+    REPO_DIR=/home/tiger/cap-x/relevant_repos
+    mkdir -p ${REPO_DIR}
+    time tar xzf ${BASE}/openpi_repo.tgz -C ${REPO_DIR}
+    time tar xzf ${BASE}/openpi_venv.tgz -C ${REPO_DIR}/openpi
+    time cp -r ${BASE}/pi05_base /opt/tiger/pi05_base
+    time cp -r ${BASE}/lerobot_home /opt/tiger/lerobot_home
+
+    cd ${REPO_DIR}/openpi
+    PY=${REPO_DIR}/openpi/.venv/bin/python
+
+    # ---- fail-fast gates: interpreter, jax-on-gpu, lerobot, config, data ----
+    ${PY} -c "import sys; print(sys.version)" || { echo "BC_GATE_VENV_BROKEN"; exit 1; }
+    ${PY} -c "import jax; ds=jax.devices(); print(ds); assert len(ds)==8 and 'cuda' in str(ds[0]).lower()" \
+      || { echo "BC_GATE_JAX_GPU_FAILED"; exit 1; }
+    ${PY} -c "import lerobot, openpi; print('imports ok')" || { echo "BC_GATE_IMPORTS_FAILED"; exit 1; }
+    ${PY} -c "
+    from openpi.training import config as c
+    cfg = c.get_config('pi05_simgen_bc')
+    print('config ok:', cfg.name, cfg.batch_size, cfg.weight_loader)
+    " || { echo "BC_GATE_CONFIG_FAILED"; exit 1; }
+    ls /opt/tiger/pi05_base/params >/dev/null || { echo "BC_GATE_WEIGHTS_MISSING"; exit 1; }
+    ls /opt/tiger/lerobot_home/simgen/mock_bc >/dev/null || { echo "BC_GATE_DATA_MISSING"; exit 1; }
+
+    # ---- train (canonical launch, README flags) ----
+    export HF_LEROBOT_HOME=/opt/tiger/lerobot_home
+    export OPENPI_DATA_HOME=/opt/tiger/openpi_cache
+    export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
+    export WANDB_MODE=disabled
+    ${PY} scripts/train.py pi05_simgen_bc \
+      --exp-name smoke_h20 \
+      --overwrite \
+      --no-wandb-enabled \
+      --checkpoint-base-dir ${BASE}/checkpoints
+    RC=$?
+    echo "TRAIN_EXITED rc=${RC}"
+    exit ${RC}
+
+  envsList:
+    ARNOLD_ROBUST_TRAINING: "0"
+    NVIDIA_DRIVER_CAPABILITIES: all

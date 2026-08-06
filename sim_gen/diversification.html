@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>data_engine — README</title>
+<style>
+  :root {
+    --bg: #F5F8F8; --panel: #FFFFFF; --panel2: #ECF2F2;
+    --ink: #17252C; --mut: #4C5E68; --faint: #7E8E96; --line: #DDE6E7;
+    --acc: #0B6B70; --acc-ink: #095A5E; --acc-bg: #DFF0F0;
+    --good: #2E7C4B; --good-bg: #E3F2E9; --warn: #93660A; --warn-bg: #F7EFDB;
+    --code-bg: #EEF3F3;
+    --shadow: 0 1px 2px rgba(23,37,44,.05), 0 6px 18px rgba(23,37,44,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0D1418; --panel: #151D22; --panel2: #1B252B;
+      --ink: #E6ECEF; --mut: #AAB8C0; --faint: #71818B; --line: #28343B;
+      --acc: #4EC3C9; --acc-ink: #7FD4D9; --acc-bg: #0F3237;
+      --good: #5FC084; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
+      --code-bg: #1B252B;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F5F8F8; --panel: #FFFFFF; --panel2: #ECF2F2;
+    --ink: #17252C; --mut: #4C5E68; --faint: #7E8E96; --line: #DDE6E7;
+    --acc: #0B6B70; --acc-ink: #095A5E; --acc-bg: #DFF0F0;
+    --good: #2E7C4B; --good-bg: #E3F2E9; --warn: #93660A; --warn-bg: #F7EFDB;
+    --code-bg: #EEF3F3;
+    --shadow: 0 1px 2px rgba(23,37,44,.05), 0 6px 18px rgba(23,37,44,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0D1418; --panel: #151D22; --panel2: #1B252B;
+    --ink: #E6ECEF; --mut: #AAB8C0; --faint: #71818B; --line: #28343B;
+    --acc: #4EC3C9; --acc-ink: #7FD4D9; --acc-bg: #0F3237;
+    --good: #5FC084; --good-bg: #16301F; --warn: #DFA83E; --warn-bg: #322710;
+    --code-bg: #1B252B;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.25);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px; line-height: 1.7; -webkit-font-smoothing: antialiased; }
+  code, .mono, .num { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; }
+  code { font-size: .84em; background: var(--code-bg); padding: .12em .4em; border-radius: 5px; }
+  a { color: var(--acc-ink); }
+  :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 6px; }
+  h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- header ---------- */
+  header { padding: 48px 0 24px; }
+  .eyebrow { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--acc-ink); margin: 0 0 12px; }
+  header h1 { font-size: clamp(26px, 4vw, 32px); font-weight: 750; letter-spacing: -.025em; }
+
+  /* ---------- tab bar ---------- */
+  nav.bar { position: sticky; top: 0; z-index: 10; background: var(--bg);
+    border-bottom: 1px solid var(--line); }
+  nav.bar .row { display: flex; gap: 6px; overflow-x: auto; padding: 10px 0; }
+  nav.bar a { flex: none; display: flex; gap: 8px; align-items: baseline; text-decoration: none;
+    color: var(--mut); font-size: 14px; font-weight: 550; padding: 7px 15px; border-radius: 999px; }
+  nav.bar a .num { font-size: 11px; color: var(--faint); font-weight: 650; }
+  nav.bar a:hover { background: var(--panel2); color: var(--ink); }
+  nav.bar a.on { background: var(--acc-bg); color: var(--acc-ink); font-weight: 650;
+    box-shadow: inset 0 0 0 1.5px var(--acc); }
+  nav.bar a.on .num { color: var(--acc-ink); }
+
+  /* ---------- sections (tab panels) ---------- */
+  main { padding-bottom: 48px; }
+  section { padding: 34px 0 8px; }
+  section[hidden] { display: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    section { animation: rise .22s ease; }
+    @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  }
+  h2 { font-size: 24px; font-weight: 720; letter-spacing: -.02em;
+       display: flex; gap: 12px; align-items: center; }
+  h2 .num { font-size: 12px; font-weight: 650; color: var(--acc-ink); background: var(--acc-bg);
+            padding: 3px 9px; border-radius: 7px; letter-spacing: .05em; }
+  .lede { color: var(--mut); font-size: 17px; margin: 14px 0 20px; }
+  .lede b { color: var(--acc-ink); font-weight: 650; }
+  h3 { font-size: 14px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase;
+       color: var(--ink); margin: 34px 0 14px; display: flex; align-items: center; gap: 10px; }
+  h3::before { content: ""; flex: none; width: 18px; height: 4px; border-radius: 2px; background: var(--acc); }
+  h3::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  h4 { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+       color: var(--mut); margin: 24px 0 10px 8px; line-height: 1.25;
+       display: flex; align-items: center; gap: 9px; }
+  h4::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%;
+       background: var(--acc); opacity: .75; }
+  p { margin: 0 0 12px; }
+  .note { color: var(--mut); font-size: 13.5px; margin: 10px 0 16px; }
+  ul.tight { margin: 0 0 16px; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  ul.tight li::marker { color: var(--acc); }
+  .cols2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 12px 32px; margin-bottom: 16px; }
+
+  /* ---------- procedure strip (auto-numbered) ---------- */
+  .pipe { display: flex; align-items: stretch; overflow-x: auto; margin: 6px 0 16px;
+          border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+          box-shadow: var(--shadow); counter-reset: step; }
+  .pipe .step { flex: 1 1 0; min-width: 150px; padding: 14px 16px;
+                border-right: 1px solid var(--line); counter-increment: step; }
+  .pipe .step:last-child { border-right: 0; }
+  .pipe .step b { display: block; font-size: 14.5px; font-weight: 650; margin-bottom: 4px; }
+  .pipe .step b::before { content: counter(step); font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px; font-weight: 700; color: var(--acc-ink); background: var(--acc-bg);
+    border-radius: 6px; padding: 1px 7px; margin-right: 8px; vertical-align: 2px; }
+  .pipe .step span { display: block; color: var(--mut); font-size: 13px; line-height: 1.55; }
+  .pipe .step.hot { background: linear-gradient(180deg, var(--acc-bg), transparent 160%); }
+  .pipe .step.hot b { color: var(--acc-ink); }
+  .pipe .step .freq { display: block; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 7px; }
+  .pipe .step.hot .freq { color: var(--acc-ink); opacity: .8; }
+  .pipe .step.open b, .pipe .step.open span { opacity: .6; }
+  .pipe .step.open .freq { color: var(--warn); opacity: 1; }
+
+  /* ---------- lifecycle timeline ---------- */
+  .flow { list-style: none; margin: 10px 0 20px; padding: 0; position: relative;
+          display: flex; flex-direction: column; gap: 14px; }
+  .flow::before { content: ""; position: absolute; left: 20px; top: 14px; bottom: 14px;
+                  width: 2px; background: var(--line); }
+  .flow li { display: flex; gap: 18px; align-items: flex-start; }
+  .flow .dot { position: relative; z-index: 1; flex: none; width: 42px; height: 42px;
+               border-radius: 50%; display: grid; place-items: center;
+               font-family: ui-monospace, Consolas, monospace; font-size: 15px; font-weight: 700;
+               background: var(--panel); color: var(--faint); border: 2px solid var(--line); }
+  .flow li.hot .dot { background: var(--acc-bg); color: var(--acc-ink); border-color: var(--acc); }
+  .flow li.open .dot { border-style: dashed; border-color: var(--warn); color: var(--warn); }
+  .flow .card { flex: 1; background: var(--panel); border: 1px solid var(--line);
+                border-radius: 14px; padding: 14px 18px; box-shadow: var(--shadow); }
+  .flow li.hot .card { border-color: var(--acc); }
+  .flow li.open .card { border-style: dashed; }
+  .flow .card .freq { display: block; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint);
+    margin-bottom: 4px; }
+  .flow li.hot .card .freq { color: var(--acc-ink); }
+  .flow li.open .card .freq { color: var(--warn); }
+  .flow .card b { display: block; font-size: 16px; font-weight: 680; margin-bottom: 4px; }
+  .flow li.hot .card b { color: var(--acc-ink); }
+  .flow .card p { margin: 0; color: var(--mut); font-size: 14px; line-height: 1.6; }
+  .flow li.open .card p, .flow li.open .card b { opacity: .75; }
+
+  /* ---------- fact cards ---------- */
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+           gap: 12px; margin: 0 0 18px; }
+  .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+          padding: 16px 18px; font-size: 14.5px; color: var(--mut); box-shadow: var(--shadow); }
+  .fact b { display: block; color: var(--ink); font-size: 15.5px; margin-bottom: 5px; }
+
+  /* ---------- tables ---------- */
+  .twrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+           background: var(--panel); margin: 0 0 16px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint);
+       background: var(--panel2); font-weight: 700; white-space: nowrap; }
+  td.name { font-weight: 650; white-space: nowrap; }
+  td.t { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--mut); }
+
+  /* ---------- code / tree blocks ---------- */
+  .block { background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px;
+           padding: 16px 20px; overflow-x: auto; margin: 0 0 16px; white-space: pre;
+           font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px; line-height: 1.9; }
+  .block i { color: var(--mut); font-style: normal; }
+  .block b { color: var(--acc-ink); font-weight: 650; }
+  .block .x { color: var(--faint); }
+
+  /* ---------- pills ---------- */
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px;
+          font-weight: 650; letter-spacing: .02em; white-space: nowrap; }
+  .pill.done { background: var(--good-bg); color: var(--good); }
+  .pill.tbd  { background: var(--warn-bg); color: var(--warn); }
+  .pill.dim  { background: var(--panel2); color: var(--mut); }
+
+  /* ---------- mount map ---------- */
+  .mount { display: grid; grid-template-columns: minmax(0,1fr) 46px minmax(0,1.15fr); gap: 5px 8px;
+           align-items: baseline; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+           font-size: 13px; border: 1px solid var(--line); border-radius: 12px;
+           background: var(--panel); padding: 14px 18px; margin: 0 0 16px; overflow-x: auto;
+           box-shadow: var(--shadow); }
+  .mount .h { text-align: right; color: var(--mut); }
+  .mount .a { text-align: center; color: var(--acc-ink); font-weight: 700; }
+  .mount .c b { color: var(--acc-ink); }
+  .mount .c span { color: var(--mut); }
+  .mount .full { grid-column: 1 / -1; color: var(--faint); font-family: system-ui, sans-serif;
+                 font-size: 12.5px; text-align: center; padding-top: 8px; border-top: 1px dashed var(--line); margin-top: 8px; }
+
+  footer { color: var(--faint); font-size: 13px; padding: 26px 0 60px; }
+
+  @media (max-width: 640px) {
+    header { padding-top: 30px; }
+    .pipe { flex-direction: column; }
+    .pipe .step { border-right: 0; border-bottom: 1px solid var(--line); }
+    .pipe .step:last-child { border-bottom: 0; }
+    .mount { grid-template-columns: 1fr; }
+    .mount .h { text-align: left; }
+    .mount .a { text-align: left; }
+    .mount .c { margin-bottom: 6px; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">CoSiGen · robobench · data_engine</p>
+    <h1>Turn one solved benchmark into a verified demonstration dataset</h1>
+  </header>
+</div>
+
+<nav class="bar" aria-label="Sections">
+  <div class="wrap">
+    <div class="row">
+      <a href="#overview"><span class="num">01</span>Overview</a>
+      <a href="#quickstart"><span class="num">02</span>Quick start</a>
+      <a href="#levels"><span class="num">03</span>Diversification levels</a>
+      <a href="#generate"><span class="num">04</span>Generating data</a>
+      <a href="#todo"><span class="num">05</span>TODO</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <main>
+
+    <!-- 01 OVERVIEW ---------------------------------------------------- -->
+    <section id="overview">
+      <h2><span class="num">01</span>Overview</h2>
+      <p class="lede">A coding agent solves a robobench task once. The data engine multiplies that single verified solve into a <b>large, diverse, per-episode-verified demonstration dataset</b>.</p>
+      <p>Three decoupled stages: <b>diversify</b> — agents write the code that adds diversity (scenes, strategies, phases, resets); <b>generate</b> — one generic launcher mass-produces batched episodes from whatever is authored; <b>verify</b> — the scene's grader stamps a verdict on every episode. Verification is also the <b>feedback on the code</b>: agents test-launch small batches mid-session, and each batch's success rate is documented — informing further authoring and repair.</p>
+
+      <h3>Hierarchical diversification</h3>
+      <p>The engine diversifies the <b>scene</b> and the <b>solve</b> along a hierarchy where each level contains the next: one scene hosts many strategies; each strategy breaks into phases, re-enterable from many sampled states; dynamics perturb every rollout; every rollout re-renders visually. <b>Each level can be run independently</b> — none is mandatory, none waits on another, and the downstream experiment picks the subset it needs.</p>
+
+      <div class="twrap"><table>
+        <thead><tr><th>level</th><th>what varies</th><th>diversity</th><th>agent involvement</th></tr></thead>
+        <tbody>
+          <tr><td class="name">L1 · scene</td><td>the world: distractor objects, more target objects, layout</td><td>world</td><td class="t">heavy</td></tr>
+          <tr><td class="name">L2 · strategy</td><td>the plan: grasp site, subtask order, arm roles, timing, preferences</td><td>behavior</td><td class="t">heavy</td></tr>
+          <tr><td class="name">L3 · phase</td><td>where each phase starts: checkpoints + perturbed re-entry</td><td>state coverage</td><td class="t">light</td></tr>
+          <tr><td class="name">L4 · dynamics</td><td>action noise; physical parameters: friction, mass, etc.</td><td>recovery</td><td class="t">none</td></tr>
+          <tr><td class="name">L5 · visual</td><td>pixels only: lighting, textures, background, camera</td><td>appearance</td><td class="t">none</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Example of layout</h3>
+      <p>Each <code>data_gen/</code> rides alongside one successful eval run: the solution and grader next to it <em>are</em> the reference.</p>
+      <div class="block">experiments/&lt;exp&gt;/runs/&lt;run_name&gt;/
+├─ task/  workspace/  run.json …   <i>the eval run as-is — solution + grader, in place, untouched</i>
+└─ data_gen/
+    └─ &lt;gen_name&gt;/                 <i>one named generation campaign — several can coexist</i>
+        ├─ scenes/                 <i>the generators — code only, laid out below</i>
+        └─ data/                   <i>raw trajectories only — one folder per batch, append-only</i>
+            ├─ &lt;batch_1&gt;/          <i>a nominal batch (no noise, no sampling) makes a good first one: the baseline other batches' yields are read against</i>
+            │   ├─ ep_0000/
+            │   │   ├─ traj.npz    <i>state/action arrays at control rate</i>
+            │   │   ├─ meta.json   <i>lineage (scene · strategy · phase · noise · seed) + verdict + sampled parameters</i>
+            │   │   └─ imgs/       <i>optional — frames rendered from the states on demand</i>
+            │   ├─ ep_0001/
+            │   └─ meta.json       <i>batch meta: config, seeds, yield + failure-mode summary</i>
+            └─ &lt;batch_2&gt;/
+
+scenes/
+├─ scene_0/                        <i>the unmodified benchmark scene — the nominal control</i>
+│   ├─ .agent/                     <i>authoring trace: per-session transcripts + SUMMARY.md (what changed, why)</i>
+│   ├─ meta.json                   <i>metadata: episodes generated, success rate, …</i>
+│   ├─ scene/
+│   │   └─ scene.py                <i>full standalone scene — repo suite copy, edited; its cfg's tunables ARE the sampling declaration</i>
+│   ├─ grader/
+│   │   └─ grader.py               <i>the grader this scene's episodes are verified with — the suite's, modified to match the scene changes</i>
+│   └─ strategies/
+│       ├─ strategy_0/
+│       │   ├─ .agent/             <i>authoring trace of the strategy session (incl. its phases + resets)</i>
+│       │   ├─ meta.json           <i>metadata: episodes generated, success rate, …</i>
+│       │   ├─ solve.py            <i>the solve as delivered — never modified</i>
+│       │   ├─ solve_by_phase.py   <i>optional — created by an L3 session: the phase-enterable version; enters at any declared phase, runs to task-done</i>
+│       │   └─ phases/            <i>optional — created with solve_by_phase.py by an L3 session; until then the solve runs from the scene's own reset</i>
+│       │       ├─ phase_0/        <i>the from-scratch entry — the full solve</i>
+│       │       │   ├─ meta.json   <i>metadata: episodes generated, success rate, …</i>
+│       │       │   ├─ phase.yaml  <i>name + what it does (episodes' per-step phase codes refer to these) + reset strategies to sample: bands, weights</i>
+│       │       │   └─ reset.py    <i>implements the declared reset strategies; the runner samples among them</i>
+│       │       ├─ phase_1/
+│       │       └─ phase_2/
+│       └─ strategy_1/
+├─ scene_1/
+└─ scene_2/</div>
+
+    </section>
+
+
+    <!-- 02 LEVELS ------------------------------------------------------ -->
+    <!-- 02 QUICKSTART ---------------------------------------------------- -->
+    <section id="quickstart" hidden>
+      <h2><span class="num">02</span>Quick start</h2>
+      <p class="note">TODO — to be written.</p>
+    </section>
+
+    <section id="levels" hidden>
+      <h2><span class="num">03</span>Diversification levels</h2>
+      <p class="lede">One subsection per level of the hierarchy — the rules, the examples, and the checks each level runs at acceptance.</p>
+
+      <h3>L1 · scene</h3>
+      <p><b>Gentle modifications of the world</b> — editing the scene code, optionally the configs and grader; parts that need dedicated expert checks stay untouched. In scope: <b>irrelevant objects</b> (an apple beside the bulb — collision-safe placement, assets from the prebuilt pipeline); <b>the work surface</b> (a different table height or condition, or a more task-suited table). Where a change shifts what success looks like, the scene's <b>check functions and grader are rewritten to match</b>. <b>Out of scope for now</b>: the hard parts — thread mechanics, physics config, and mechanisms like the weld gate stay as the suite ships them.</p>
+
+      <h3>L2 · strategy</h3>
+      <p><b>A strategy is a way to do the task, delivered in its <code>solve.py</code></b>, usually separated into several phases, e.g. pick → place → thread. It varies at three grains: <b>parameters</b> of the solve, e.g. forces, speeds, clearances, declared as <code>tunable</code> fields on a <code>Params</code> cfg inside the solve itself — the same mechanism as the scene cfg, so one uniform sampler covers both; a new strategy keeps the base strategy's param names, adding its own (no Params = nominal only, e.g. the delivered solve); <b>small modifications</b>, e.g. execution order where several are valid, preference choices, grasp site; <b>big changes</b>: a genuinely new way to solve the task, e.g. assembling a table with two arms, one strategy has a single arm do the assembly while the other only reorients the table; a new strategy hands the leg over and both arms thread.</p>
+
+      <h3>L3 · phase</h3>
+      <p><b>Once a strategy is finished, each of its phases becomes an entry point</b>: the strategy's <code>solve.py</code> enters there and runs to task-done, and the phase's <code>reset.py</code> proposes what the entry state looks like, e.g. restore a recorded mid-task state and jitter it, relocate a free object alone, or move a grasped object rigidly together with the hand. Phases are <b>established, not assumed</b>: init bakes no <code>phases/</code> folder at all — the solve as delivered runs unmodified from the scene's own reset, whatever its shape. An L3 agent session creates <code>phases/</code> and a <code>solve_by_phase.py</code> beside the original — <code>solve.py</code> itself is never modified — accepted only if the nominal batch still yields.</p>
+
+      <h3>L4 · dynamics</h3>
+      <p><b>Random perturbations to actions and physical parameters</b>, e.g. actuation noise, friction, mass. The solve's own feedback control mitigates them, and that recovery behavior is what gets recorded: the perturbed action is executed, the clean action is the label. No agent involved, just batched solves.</p>
+
+      <h3>L5 · visual</h3>
+      <p><b>Generic, cheap, and free of physics</b>: once a trajectory is solved and recorded, replaying its states lets visual changes apply without affecting the dynamics, e.g. camera position, textures, lighting, background. Each variant costs render time only, and it works retroactively on every episode ever recorded.</p>
+    </section>
+
+    <!-- 03 GENERATE ------------------------------------------------------ -->
+    <section id="generate" hidden>
+      <h2><span class="num">04</span>Generating data</h2>
+      <p class="lede">Generation takes a <b>scene</b>, a <b>solver</b> (strategy + phase entry), and <b>sampled parameters</b> from their yamls, and turns them into many trajectories — one generic launcher, batched rollouts, every episode graded. No task-specific logic anywhere in the launcher.</p>
+
+      <p class="note">TODO — sections to be rewritten: init, sampling, batch flow, runner &amp; solver, properties.</p>
+
+    </section>
+
+
+    <!-- 05 TODO ------------------------------------------------------ -->
+    <section id="todo" hidden>
+      <h2><span class="num">05</span>TODO</h2>
+
+      <h3>Rebuild <code>tunable</code> in the config</h3>
+      <p><b>Today (2026-08-03):</b> declared across scene/robot/controller cfgs, consumed by nothing — documentation only. Remove all current <code>tunable</code> marks from the scene cfgs and rethink which fields truly belong, e.g. grading thresholds like <code>seat_z</code> never do.</p>
+      <p><b>Rebuild:</b> make it THE sampling declaration, two clients: L4 domain randomization, e.g. friction, mass; L2 solver parameters via the <code>Params</code> cfg. Needs bands, e.g. <code>tunable(0.4, band=(0.30, 0.55))</code>. Note: reset/initialization randomization, e.g. spawn jitter, is not a tunable — it belongs to the scene's own reset and the phase <code>reset.py</code>.</p>
+    </section>
+
+
+
+
+
+
+
+
+
+  </main>
+
+</div>
+
+<script>
+  (function () {
+    var row = document.querySelector("nav.bar .row");
+    row.setAttribute("role", "tablist");
+    var links = Array.prototype.slice.call(document.querySelectorAll("nav.bar a"));
+    var ids = links.map(function (a) { return a.getAttribute("href").slice(1); });
+    links.forEach(function (a, i) {
+      a.setAttribute("role", "tab");
+      var panel = document.getElementById(ids[i]);
+      if (panel) { panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-label", a.textContent.trim()); }
+    });
+    function show(id, focus) {
+      ids.forEach(function (s) { var el = document.getElementById(s); if (el) el.hidden = (s !== id); });
+      links.forEach(function (a) {
+        var on = a.getAttribute("href") === "#" + id;
+        a.classList.toggle("on", on);
+        a.setAttribute("aria-selected", on ? "true" : "false");
+        a.setAttribute("tabindex", on ? "0" : "-1");
+        if (on && focus) a.focus();
+      });
+      try { history.replaceState(null, "", "#" + id); } catch (e) {}
+      window.scrollTo(0, 0);
+    }
+    Array.prototype.forEach.call(document.querySelectorAll("main a[href^='#']"), function (a) {
+      var id = a.getAttribute("href").slice(1);
+      if (ids.indexOf(id) >= 0) a.addEventListener("click", function (e) { e.preventDefault(); show(id); });
+    });
+    links.forEach(function (a, i) {
+      a.addEventListener("click", function (e) { e.preventDefault(); show(ids[i]); });
+      a.addEventListener("keydown", function (e) {
+        var d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (d) { e.preventDefault(); show(ids[(i + d + ids.length) % ids.length], true); }
+      });
+    });
+    var initial = (location.hash || "").slice(1);
+    show(ids.indexOf(initial) >= 0 ? initial : ids[0]);
+  })();
+</script>
+</html>

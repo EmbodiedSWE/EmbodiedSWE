@@ -1,0 +1,161 @@
+# =============================================================================
+# mlx job submitv2: SimGen-BC pi05 MULTI-NODE -- 8 x 8 = 64 H20 (first
+# multi-node validation; user 2026-08-02: prove 64, then scaling to 256 is
+# just `num: 8` -> `num: 32` below -- torchrun wiring reads the node count
+# from arnold env at runtime).
+#   mlx job submitv2 -p CoSiGen/vla_training/mlx_bc_pi05_multinode.yaml  (cn-seed)
+#
+# Path: openpi's OFFICIAL multi-node route (README "Multi-Node Training"):
+# scripts/train_pytorch.py under torchrun, same pi05_simgen_bc recipe config
+# as the JAX smoke (README notes the PyTorch path has no EMA/FSDP; weights
+# come from the repo's own JAX->PyTorch conversion of pi05_base).
+#
+# BATCH SEMANTICS (train_pytorch.py): config.batch_size is GLOBAL and split
+# as batch_size // world_size per GPU. Recipe batch 256 on 256 GPUs = 1
+# sample/GPU/step -- recipe-exact but GPU-thin. Raising global batch (and LR)
+# would deviate from the recipe -> USER DECISION; override here via
+# `--batch_size N` on the torchrun line once decided.
+#
+# torchrun wiring uses arnold's per-pod env: every pod runs this entrypoint;
+# node_rank=ARNOLD_ID, rendezvous at worker-0's first allocated port.
+# =============================================================================
+caption: '[SimGen-BC] pi05 bc_v1 REAL data (8x8 H20, torchrun, pi05_libero recipe)'
+namespace: /user/zeyu.shen
+
+jobDefVersion:
+  entrypointMode: FULL_SCRIPT
+  name: '[SimGen-BC] pi05 multinode'
+  lazyDownloadCode: true
+  gitRepo:
+    # Dummy pin (single-file jobs still need a repo); nothing imports from it.
+    commitSha: eba665296fbb353876907cffd1a742a9c647c951
+    mnt: /opt/tiger/alpha-seed
+    repoName: seed/alpha-seed
+  imageMeta:
+    imageVid: d5iru9jc77ud71mhoe1g
+  pip3: []
+  resource:
+    backend: ARNOLD
+    arnoldConfig:
+      clusterName: soil-wlby
+      groupIds:
+        - 2006   # coding_webdev (H20 access)
+      quotaPool: nvidia-h20.hpccluster-yecd0gve6pioxhtqvap6.ai
+      preemptible: false
+      keepMins: 120
+      hdfsVolumes:
+        - accessMode: RW
+          extra: ""
+          mnt: /mnt/hdfs/__MERLIN_USER_DIR__
+          path: hdfs://harunawl/home/byte_data_seed_wl/code_agent/zeyu.shen
+          roles: []
+      roles:
+        - name: worker
+          num: 8
+          gpu: 8
+          gpuv: NVIDIA-H20
+          cpu: 176
+          memory: 1859584
+          ports: 10
+
+jobRunParams:
+  entrypointFullScript: |
+    set -x
+    BASE=/mnt/hdfs/__MERLIN_USER_DIR__/simgen_bc
+    nvidia-smi -L
+
+    # cv2 (via lerobot) needs system GL/GLib absent from this image (mirrors
+    # the smoke yaml; first smoke attempt died at import: libGL.so.1).
+    sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+      libgl1 libglib2.0-0 libsm6 libxext6 || { echo "BC_GATE_APT_FAILED"; exit 1; }
+
+    # ---- stage artifacts to local disk on EVERY node ----
+    # Repo+venv at the SAME absolute path as the devbox: the venv's editable
+    # .pth finders hardcode /home/tiger/cap-x/relevant_repos/openpi/... (see
+    # the smoke yaml note; BC_GATE_IMPORTS_FAILED otherwise).
+    REPO_DIR=/home/tiger/cap-x/relevant_repos
+    mkdir -p ${REPO_DIR}
+    time tar xzf ${BASE}/openpi_repo.tgz -C ${REPO_DIR}
+    time tar xzf ${BASE}/openpi_venv.tgz -C ${REPO_DIR}/openpi
+    time cp -r ${BASE}/pi05_base_pytorch /opt/tiger/pi05_base_pytorch
+    time cp -r ${BASE}/lerobot_home /opt/tiger/lerobot_home
+
+    cd ${REPO_DIR}/openpi
+    PY=${REPO_DIR}/openpi/.venv/bin/python
+
+    # ---- fail-fast gates (any node failing kills the gang; robust off) ----
+    ${PY} -c "import sys; print(sys.version)" || { echo "BC_GATE_VENV_BROKEN"; exit 1; }
+    ${PY} -c "import torch; assert torch.cuda.device_count()==8, torch.cuda.device_count(); print('cuda:', torch.cuda.device_count())" \
+      || { echo "BC_GATE_TORCH_GPU_FAILED"; exit 1; }
+    ${PY} -c "
+    from openpi.training import config as c
+    cfg = c.get_config('pi05_simgen_bc_v1')
+    assert cfg.pytorch_weight_path == '/opt/tiger/pi05_base_pytorch', cfg.pytorch_weight_path
+    assert cfg.data.repo_id == 'simgen/bc_v1', cfg.data.repo_id
+    print('config ok:', cfg.name, cfg.batch_size)
+    " || { echo "BC_GATE_CONFIG_FAILED"; exit 1; }
+    ls /opt/tiger/pi05_base_pytorch >/dev/null || { echo "BC_GATE_WEIGHTS_MISSING"; exit 1; }
+    ls /opt/tiger/lerobot_home/simgen/bc_v1 >/dev/null || { echo "BC_GATE_DATA_MISSING"; exit 1; }
+    # norm stats for the REAL dataset ride in the repo tarball
+    ls assets/pi05_simgen_bc_v1/simgen/bc_v1/norm_stats.json >/dev/null || { echo "BC_GATE_NORMSTATS_MISSING"; exit 1; }
+
+    # ---- NCCL config: adopt the platform's own fabric guidance ----
+    # The pod env carries ARNOLD_NCCL_* (SOCKET_FAMILY=AF_INET6,
+    # SOCKET_IFNAME==eth0, IB_TC=236, ...) -- byted-ray translates these to
+    # real NCCL_* for its workers; plain torchrun does not, and stock NCCL
+    # with defaults on this IPv6 RDMA fabric first HUNG the DDP broadcast
+    # (job fe3bc26534bfc5e9) and then SEGFAULTED with hand-copied knobs
+    # (job bce24bb11ba8217a). Mirror the platform translation verbatim.
+    while IFS='=' read -r k v; do
+      case "$k" in ARNOLD_NCCL_*)
+        n="${k#ARNOLD_}"
+        [ "$n" = "NCCL_NET_PLUGIN" ] && [ "$v" = "none" ] && continue
+        export "$n=$v"
+        echo "nccl-env: $n=$v" ;;
+      esac
+    done < <(env)
+
+    # ---- torchrun rendezvous from arnold pod env ----
+    MASTER_ADDR=${ARNOLD_WORKER_0_HOST}
+    MASTER_PORT=${ARNOLD_WORKER_0_PORT%%,*}
+    NODE_RANK=${ARNOLD_ID}
+    NNODES=${ARNOLD_WORKER_NUM}
+    echo "torchrun: nnodes=${NNODES} rank=${NODE_RANK} master=${MASTER_ADDR}:${MASTER_PORT}"
+
+    export HF_LEROBOT_HOME=/opt/tiger/lerobot_home
+    export OPENPI_DATA_HOME=/opt/tiger/openpi_cache
+    export WANDB_MODE=disabled
+    ${PY} -m torch.distributed.run \
+      --nnodes=${NNODES} \
+      --nproc_per_node=8 \
+      --node_rank=${NODE_RANK} \
+      --master_addr=${MASTER_ADDR} \
+      --master_port=${MASTER_PORT} \
+      scripts/train_pytorch.py pi05_simgen_bc_v1 \
+      --exp_name bc_v1_h20x64 \
+      --no-wandb-enabled \
+      --checkpoint_base_dir ${BASE}/checkpoints_pytorch
+    RC=$?
+    echo "TRAIN_EXITED rc=${RC}"
+    exit ${RC}
+
+  envsList:
+    ARNOLD_ROBUST_TRAINING: "0"
+    ARNOLD_IPV6: "1"
+    NVIDIA_DRIVER_CAPABILITIES: all
+    # NCCL_* comes from the ARNOLD_NCCL_* translation in the entrypoint (the
+    # platform's own fabric guidance); only debug + torch-level safety here.
+    NCCL_DEBUG: INFO
+    TORCH_NCCL_AVOID_RECORD_STREAMS: "1"
+    # STOCK NCCL (torch 2.7.1 wheel) cannot bring up RoCE on this fabric even
+    # with the platform's interface hints: 64-rank comm init ran 15 min with
+    # zero warnings and no COMPLETE (job 53195c61b58d61b9); the byted jobs
+    # work because they ship their own NCCL build. TCP transport instead:
+    # ~6GB bf16 grad allreduce => ~1-2s/step overhead on ~5s compute steps.
+    # TODO(optimization): retry IB via LD_PRELOAD of the platform NCCL scm
+    # (data/rdma/nccl) once the pipeline is validated end to end.
+    NCCL_IB_DISABLE: "1"
+    # Ranks have segfaulted flakily in EARLY startup (before NCCL init; rank 0
+    # on one attempt, rank 7 on another, none on a third) -- print the Python
+    # stack on SIGSEGV instead of guessing at the race.
+    PYTHONFAULTHANDLER: "1"

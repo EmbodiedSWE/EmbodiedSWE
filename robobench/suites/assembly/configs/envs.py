@@ -620,13 +620,49 @@ def _chair_franka_cfg() -> ChairAssemblySceneCfg:
 
 
 def _chair_multi_cfg() -> ChairAssemblySceneCfg:
-    """Dual Franka flanking the work: seat centred between the bases; parts scatter on a
-    ring both arms can partition. The two-post backrest insertion is the genuinely
-    bimanual-friendly stage (steady the seat with one arm, insert with the other)."""
+    """Dual Franka on a DOUBLE-WIDTH packing table (2.47 x 1.52 top, sunk to 0.25 m),
+    one arm at each end of the long axis. BOTH chair components sit in the middle
+    between the arms, split across the WIDTH and facing each other: the chair body on
+    the back half, yawed 180 so its studs point across the table at the backrest lying
+    face-up on the front half — the assembly reads directly off the layout (carry the
+    back ~35 cm across the width onto the studs, then thread a nut from each side).
+    Reach audit from the (+/-0.55, -0.05) bases: panel near-band pinch 0.50 m, stud
+    tips 0.42 m each arm, seated side grips 0.42-0.53 m, nut pinches 0.42 m."""
     return ChairAssemblySceneCfg(
-        seat_pos=(0.0, 0.0),
-        spawn_radii=(0.30,),
-        spawn_arc=(0.0, 360.0),
+        seat_pos=(0.0, 0.32),
+        seat_yaw_base=180.0,
+        seat_yaw_deg=5.0,
+        # bench widened 2x IN WIDTH ONLY (2.47 x 1.52 top, same length and height):
+        # the 0.46 m chair body and the 0.69 x 0.46 lying panel share the width with
+        # ~20 cm of lane between them and ~19 cm of rim margin on the panel side
+        workbench_scale=(0.01, 0.02, 0.01),
+        # manifest [back, nut_0, nut_1], SEAT-RELATIVE x/y (world = slot + (0, 0.32)):
+        # back LEANING against the rack DIRECTLY SOUTH OF THE SEAT (base ~11 cm from
+        # the seat's south face), a SIDE band facing each arm head-on. The lean
+        # replaces the arm-powered erect (welded-wrist rotations beyond ~25 deg
+        # stall, measured across 8 variants), and the SEAT ANCHORS the erect: the
+        # base slides north under the swing (base friction ~12 N < the ~17 N the
+        # pivot needs — measured as a 25 cm skid at the old far staging) until it
+        # meets the seat face, which both stops the skid and self-aligns the panel
+        # at the studs. Staging at the work zone also removes the long drag whose
+        # pitch moment felled the panel twice. Nuts OUTBOARD beside each robot
+        # (closer slots sat in the cramped inner zone, the pinch failed).
+        spawn_slots=((0.0, -0.34, 180.0), (0.85, -0.62, 0.0), (-0.85, -0.62, 0.0)),
+        # -88: spawn STANDING, biased 2 deg SOUTH (the sign flips the tip direction)
+        # so the panel tip-falls AWAY from the seat onto the rack edge and the
+        # contact finds its own angle. The earlier +88/rack-at--0.45 staging leaned
+        # the panel NORTH onto a rack sitting at world y -0.13 — INSIDE the drag
+        # lane to the studs: every drag jammed on the rack after ~2 cm (measured,
+        # invariant to kp 100 vs 500). Leaning south clears the whole north lane.
+        # Baking the touching angle directly is a ~1 deg window: 71 missed the rack
+        # by 3 cm and toppled onto the seat; 66 spawned interpenetrated and blasted
+        # the panel 6 m (both preview-measured) — so spawn near-standing and let it
+        # fall onto the rack.
+        back_lean_deg=-88.0,
+        # rack SOUTH of the panel slot by the same 0.26 m offset that produced the
+        # proven ~60-70 deg settle at the far staging (slot -0.54 / rack -0.80),
+        # translated with the slot to the seat-front staging.
+        rack_pos=(0.0, -0.60),
     )
 
 
@@ -689,9 +725,57 @@ for _mode in ("osc", "joint"):
                 robot="multi",
                 control_mode=mode,
                 robot_cfg=MultiRobotCfg(robots={
-                    "left": ("franka", FrankaRobotCfg(base_pos=(-0.55, 0.0, 0.0))),
-                    "right": ("franka", FrankaRobotCfg(base_pos=(0.55, 0.0, 0.0),
-                                                       base_rot=(0.0, 0.0, 0.0, 1.0))),
+                    # one arm at each END of the table's long axis, facing each other,
+                    # centred (-0.05 in y) between the two work zones (body at +0.32,
+                    # panel lane at -0.38). TUCKED home pose: the stock forward "ready"
+                    # pose dangles the hand ~0.49 m ahead of the base — measured
+                    # resting ON the chair seat (scooted it 2 cm). Wrist joint 5 is
+                    # held OFF ZERO: j5=0 is the Franka wrist singularity (j4/j6 axes
+                    # coplanar, one rotational DOF lost) and every commanded
+                    # reorientation that needed the lost axis stalled 116-159 deg
+                    # from target, measured across five grasp geometries
+                    # disable_arm_gravity: the OSC torque law has no gravity term, so
+                    # with gravity on, low extended poses spend the gains carrying the
+                    # arm and commanded reorientations stall 56-76 deg out (measured;
+                    # the real Panda gravity-compensates internally). kp_null 1.0
+                    # keeps the posture spring from also fighting the task.
+                    # control_mode "impedance": the OSC form shapes the task force by
+                    # the op-space inertia Λ=(J M⁻¹ Jᵀ)⁻¹, and from the work configs
+                    # its z-rotation channel dies (74-76 deg stalls, invariant to
+                    # gravity, posture gain, and joint margins — measured); the
+                    # impedance form applies kp*err directly and has no Λ to corrupt
+                    # pos gains 500 on BOTH arms: the task-space spring is measured
+                    # exactly F = kp * gap (panel hang sag 24.5 cm at kp=100, 4.9 cm
+                    # at kp=500 under the 2.5 kg panel), so kp=100 tops out at the
+                    # panel's own weight and every drag/lift stalled; kp=500 holds
+                    # it with ~5 cm sag and transported it (measured). Orientation
+                    # under load is held ONLY by a dual grip (the rot channel's
+                    # authority cannot brace the side-held panel's 4.6 Nm gravity
+                    # moment — solo carry toppled it 88 deg, measured), so both
+                    # arms carry, both need the force. Rot gains 90 (3x stock).
+                    # bases at y -0.15: split the difference between the staging
+                    # (y ~-0.22..-0.28, where the pick force lives) and the studs
+                    # (y ~-0.01); at y -0.05 the arms couldn't drag the leaning panel
+                    # left base y 0.0: the staging moved 20 cm north (to the seat
+                    # front), and each relocation re-rolls the wrist-feasibility
+                    # pocket — so the base FOLLOWS the band, preserving the exact
+                    # proven hand-to-band relative transform (+0.36, -0.21, +0.25)
+                    # of the passing far-staging grasp (the unmoved base missed
+                    # with qerr 0.98, measured).
+                    "left": ("franka", FrankaRobotCfg(
+                        base_pos=(-0.55, 0.0, 0.25), kp_null=1.0,
+                        disable_arm_gravity=True, control_mode="impedance",
+                        task_prop_gains=(500.0, 500.0, 500.0, 90.0, 90.0, 90.0),
+                        default_dof_pos=(0.0, -1.05, 0.0, -2.55, 0.75, 1.65, 0.5))),
+                    # the right base is yawed 180, so the LEFT's joint tuck puts its
+                    # wrist in a world-MIRRORED pose (measured: the right's grasp
+                    # stalled 50 deg where the left latched). True mirror = negate the
+                    # yaw-type joints (1, 3, 5, 7).
+                    "right": ("franka", FrankaRobotCfg(
+                        base_pos=(0.55, -0.15, 0.25), base_rot=(0.0, 0.0, 0.0, 1.0),
+                        kp_null=1.0, disable_arm_gravity=True, control_mode="impedance",
+                        task_prop_gains=(500.0, 500.0, 500.0, 90.0, 90.0, 90.0),
+                        default_dof_pos=(0.0, -1.05, 0.0, -2.55, -0.75, 1.65, -0.5))),
                 }),
                 env_spacing=3,
             )

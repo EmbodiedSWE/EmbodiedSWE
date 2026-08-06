@@ -1,0 +1,66 @@
+# Tolerance analysis of examples/solve_pen_holder.py (packing.pen_holder.franka.osc).
+#
+# Bands cite the solution's own record. Unlike nut_thread this task has real STRUCTURE to sample:
+# the plan is already an explicit list (`order = sorted(present, key=-radius)`) and the grasp is
+# already chosen by argmin over enumerated candidates, so both are one-line lifts.
+
+env:
+  # cfg.tunables(), minus the fields that ARE the rubric (xy_tol, depth_min, holder_tilt_max_deg,
+  # pen_align_max_deg, settle_speed, placed_*).
+  # All world dims PERTURB the registered franka preset (holder_pos (0.12,0.18), pens_center
+  # (-0.10,0.15), spawn_radii (0.14,), reset_pos_jitter 0.04). Writing absolutes here replaced the
+  # preset with the scene class defaults and silently changed the task.
+  jitter_mult: {nominal: 1.0, range: [0.6, 1.4]}
+  holder_dx:  {nominal: 0.0, range: [-0.03, 0.03]}
+  holder_dy:  {nominal: 0.0, range: [-0.03, 0.03]}
+  pens_dx:    {nominal: 0.0, range: [-0.03, 0.03]}
+  pens_dy:    {nominal: 0.0, range: [-0.03, 0.03]}
+  # Scatter arc radius delta. Bounded upward more than downward: solve_pen skips a pen inside
+  # 0.22 m of the base ("UNREACHABLE") and rakes one inside 0.30 m, so shrinking the arc throws
+  # pens away.
+  spawn_radius_delta: {nominal: 0.0, range: [-0.01, 0.04]}
+  seed: {range: [0, 1000000]}
+
+policy:
+  travel_z:   {nominal: 0.32, range: [0.28, 0.38]}   # empty transit; only has to clear the 0.12 m cup
+  carry_z:    {nominal: 0.34, range: [0.30, 0.40]}   # loaded transit; the 0.15 m pen hangs below
+  # "pen bottom above the rim at release (smoke-calibrated)": a deep gripped insert made the FAT
+  # pens bounce clear out, so this stays a release ABOVE the rim, never below.
+  drop_h:     {nominal: 0.015, range: [0.010, 0.025]}
+  # "wall-slide release offset": rubbing the wall sheds speed, dead-centre drops are the flaky
+  # spot. Lower bound keeps a real offset; upper bound stays inside the 44 mm inradius.
+  slide_off:  {nominal: 0.020, range: [0.012, 0.028]}
+  carry_gain: {nominal: 1.35, range: [1.0, 1.7]}     # carry correction gain on pen-bottom error
+  carry_clamp: {nominal: 0.012, range: [0.008, 0.018]}  # "jerky saturated steps" is why it is clamped
+  centred_tol: {nominal: 0.006, range: [0.005, 0.009]}  # carry gate before lowering
+  oblique_penalty: {nominal: 1.0, range: [0.5, 1.6]}    # how hard off-perpendicular jaws are punished
+  pen_sec:    {nominal: 60.0, range: [45.0, 90.0]}   # per-pen budget
+  max_sec:    {nominal: 600.0, range: [600.0, 600.0]}
+
+strategy:
+  # THE PLAN. The solution's order is fat_first, and its reason is written down: "the last pen
+  # threads the leftover gap, so give it the thinnest body". success() is a conjunction over the
+  # final state, so every rule below is legal; the verifier says which ones work. Two mechanisms
+  # can make order matter — crowding (44 mm inradius, pens 10/12 mm) and reachability (a pen can
+  # roll inside the 0.22 m dead zone while an earlier pen is being placed).
+  order_rule: {choices: [fat_first, thin_first, near_first, far_first, shuffled], nominal: fat_first}
+  # THE GRASP. solve_pen enumerates jaw candidates (perpendicular +/-25 deg, both branches) and
+  # takes the argmin. Taking another feasible one grasps the same pen differently and changes the
+  # whole carry. The holder-clearance veto (+10) is never overridden.
+  grasp_pick: {choices: [best, second, random_feasible], nominal: best}
+  # Release spread. Coupled to POSITION IN THE ORDER, not to the pen: slide_ang = base + step * k.
+  slide_base_deg: {choices: [0.0, 45.0, 90.0], nominal: 45.0}
+  slide_step_deg: {choices: [90.0, 120.0, -90.0], nominal: 90.0}
+  # Pen count: sampled subset (the scene's own default) or all four.
+  all_pens: {choices: [false, true], nominal: false}
+
+frozen:
+  FINGER_LEN: "0.112 — measured panda_hand -> fingertip"
+  osc_gains: "kp 220/600, rot_scale 0.15, kp_null 3.0 — P12-proven; retuning changes every phase gate"
+  gripper: "stiffness 4000, effort 120 — pinch force is stiffness * overshoot, so this rescales every grip"
+  nullspace: "nullspace_dof_pos=() — the default posture winds the arm (P12)"
+  surface_z: "0.0 — ground-level layout this was solved at"
+  wall_slide: "the offset must stay > 0; dead-centre drops are the flaky spot"
+  clearance_veto: "+10 penalty for fingers landing within holder_outer_r + 20 mm (run3: finger jammed on the wall)"
+  no_re_pick: "a standing-but-uncounted pen is left alone rather than re-picked (re-picking topples it)"
+  rubric: "xy_tol 3.5 cm / depth_min 3.5 cm / tilt gates / settle_speed — that is the verifier"
