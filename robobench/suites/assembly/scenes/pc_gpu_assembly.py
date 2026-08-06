@@ -6,8 +6,9 @@ RTX 2060 (extracted from the PC model as its own rigid body, backplate down). Go
 no task layer): stand the card upright over the primary x16 slot, line its PCB edge up with the
 slot, and press it straight down until it seats.
 
-The case is one kinematic body that never moves — the PC model stays visual-only; its physics is
-an invisible fixture inside the case body: a channel whose walls grip the card's 4 mm PCB tab at
+The case is one kinematic body that never moves — the PC model's meshes stay visual-only; its
+physics is an invisible fixture inside the case body (plus the base case's `shell_fixture`
+walls: invisible colliders on the case shell's four standing sides): a channel whose walls grip the card's 4 mm PCB tab at
 0.15 mm/side (flaring to a 1.2 mm/side funnel mouth — idealizing the real slot's spring
 contacts, and capping the unscrewed card's gravity roll at ~2 deg), a floor whose top is the
 model's own seated tab height, end stops (~1.6 mm play), a flush board plate so a dropped card
@@ -79,15 +80,11 @@ class PcGpuAssemblySceneCfg(BaseCfg):
     card_init_xy: tuple[float, float] = info((0.28, 0.0))  # card start xy (table-rel.)
     card_init_z: float = info(0.0022)  # origin height lying backplate-down (backplate plane -2 mm)
     card_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
-    card_contact_offset: float = info(0.0001)  # well below the 0.15 mm/side channel grip
-    case_contact_offset: float = info(0.0001)  # ditto for the slot fixture's walls
+    card_contact_offset: float = info(0.0001)  # collision contact offsets (m), set at spawn
+    case_contact_offset: float = info(0.0001)
     # Optional foam holder (a floor pad + two rails flanking the card's 36 mm body slab) that
-    # presents the card UPRIGHT for a parallel-jaw grasp. The lying default is ungraspable by a
-    # Franka gripper: flat on its backplate the card's only sub-80 mm dimension (the 36 mm body
-    # thickness) points UP, so no top-down or side pinch can straddle it. Enable together with an
-    # upright `card_init_quat` (identity = the seated orientation) and `card_init_z` = the
-    # holder's floor top; the rails cap the free card's lean at ~3 deg and the pick pulls
-    # straight up out of them.
+    # presents the card UPRIGHT. Enable together with an upright `card_init_quat` (identity =
+    # the seated orientation) and `card_init_z` = the holder's floor top.
     card_stand: bool = info(False)
     card_stand_gap: float = info(0.0025)  # rail clearance per side around the body slab (m)
     # Selectable work surface (same presets as the sibling scenes).

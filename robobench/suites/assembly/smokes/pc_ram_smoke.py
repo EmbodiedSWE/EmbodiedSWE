@@ -7,13 +7,8 @@ Each stick <-> fixture contact is LIVE (per-slot grip channel + end stops + boar
 sticks are driven purely by forces: a PD "hand" (with a weight feedforward — gravity stays ON,
 so the final hold-check is a real retention test) lifts the lying stick off the table, rights
 it, carries it over the case rim (the walls stand 195 mm above the board face), descends over
-the slot to a hover just above the latch-block end stops, and presses straight down. The
-invisible channel (a 1.2 mm/side funnel mouth narrowing to a 0.15 mm/side grip on the 1.6 mm PCB
-blade) guides the last 4.4 mm. Then the hand lets go and moves to the next stick: each seated
-stick must hold its seat on its own. Unlike the pc_gpu card there is no rear-panel cutout to
-negotiate — but also no roll driver: the stick's COM sits on its blade plane, so it stands
-near-vertical in the channel (the seated-tilt gate still allows the ~5 deg wall-lean rest state
-the shallow band permits).
+the slot to a hover just above the latch-block end stops, and presses straight down. Then the
+hand lets go and moves to the next stick: each seated stick must hold its seat on its own.
 
 The far slot (nearer the CPU socket) is inserted first, the near slot second, so the camera
 never watches an insertion behind an already-standing stick.
@@ -70,9 +65,7 @@ PRESS_TGT = -0.0005     # press z target below the seated origin (sustained push
 PRESS_DONE = 0.0042     # blade depth below the slot mouth to call the press finished (stroke 4.44)
 MAX_RETRIES = 2         # press re-tries per stick (raise back up to the hover, re-align, press)
 ORDER = (1, 0)          # slot insertion order: far-from-camera slot 1 first (x -73.7), then 0
-# PD "hand" gains, carried over from the proven pc_gpu smoke (the stick asset authors an inflated
-# 1e-3 rotational inertia precisely so these rotation gains stay in their proven stability class;
-# its rigid props carry 2.0 linear/angular damping):
+# PD "hand" gains (the stick's rigid props carry 2.0 linear/angular damping):
 KP_XY, KD_XY = 600.0, 50.0    # N/m, N s/m — holds the origin on the carry/slot axis
 KP_Z, KD_Z = 200.0, 30.0      # N/m, N s/m — vertical carry/press servo
 KP_ROT, KD_ROT = 4.0, 0.4     # N m/rad, N m s/rad — rights the stick to the seated orientation
