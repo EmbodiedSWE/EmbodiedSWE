@@ -80,15 +80,11 @@ class PcGpuAssemblySceneCfg(BaseCfg):
     card_init_xy: tuple[float, float] = info((0.28, 0.0))  # card start xy (table-rel.)
     card_init_z: float = info(0.0022)  # origin height lying backplate-down (backplate plane -2 mm)
     card_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
-    card_contact_offset: float = info(0.0001)  # well below the 0.15 mm/side channel grip
-    case_contact_offset: float = info(0.0001)  # ditto for the slot fixture's walls
+    card_contact_offset: float = info(0.0001)  # collision contact offsets (m), set at spawn
+    case_contact_offset: float = info(0.0001)
     # Optional foam holder (a floor pad + two rails flanking the card's 36 mm body slab) that
-    # presents the card UPRIGHT for a parallel-jaw grasp. The lying default is ungraspable by a
-    # Franka gripper: flat on its backplate the card's only sub-80 mm dimension (the 36 mm body
-    # thickness) points UP, so no top-down or side pinch can straddle it. Enable together with an
-    # upright `card_init_quat` (identity = the seated orientation) and `card_init_z` = the
-    # holder's floor top; the rails cap the free card's lean at ~3 deg and the pick pulls
-    # straight up out of them.
+    # presents the card UPRIGHT. Enable together with an upright `card_init_quat` (identity =
+    # the seated orientation) and `card_init_z` = the holder's floor top.
     card_stand: bool = info(False)
     card_stand_gap: float = info(0.0025)  # rail clearance per side around the body slab (m)
     # Selectable work surface (same presets as the sibling scenes).
