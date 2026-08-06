@@ -4,14 +4,14 @@ The same gaming-PC case as `pc_gpu`/`pc_ram` lies on its side on the table, open
 motherboard facing the ceiling — and BOTH work sites are open at once: the board's primary PCIe
 x16 slot is empty (with the rear I/O panel's expansion-slot cutout), and all four memory slots
 sit empty. Beside the case lie one loose RTX 2060 and two loose TridentZ sticks. Goal (carried
-here, no task layer): install the card the way `pc_gpu` proved — place it inside the case
-forward of the rear panel, slide it rearward so the bracket/ports pass through the cutout, press
-it straight down to seat — and press each stick straight down into its DIMM slot the way
-`pc_ram` proved, into the outermost and second-from-socket slots (the alternating pair a 2-stick
-dual-channel kit populates).
+here, no task layer): install the card — place it inside the case forward of the rear panel,
+slide it rearward so the bracket/ports pass through the cutout, press it straight down to
+seat — and press each stick straight down into its DIMM slot, into the outermost and
+second-from-socket slots (the alternating pair a 2-stick dual-channel kit populates).
 
-The case is one kinematic body that never moves — the PC model stays visual-only; its physics is
-the union of the two proven invisible fixtures inside the case body (this scene's case USD
+The case is one kinematic body that never moves — the PC model's meshes stay visual-only; its
+physics is the union of the two invisible fixtures inside the case body (plus the base
+case's `shell_fixture` walls: invisible colliders on the case shell's four standing sides) (this scene's case USD
 composes both single-task overlays over the same base case): the PCIe channel + end stops +
 rear-panel cutout frame from `pc_gpu`, and the two DIMM channels + end stops from `pc_ram`, each
 gripping its part's PCB edge at 0.15 mm/side with a 1.2 mm/side funnel mouth, over a flush board
@@ -44,8 +44,7 @@ if TYPE_CHECKING:
 @dataclass
 class PcGpuRamAssemblySceneCfg(BaseCfg):
     """Config for `PcGpuRamAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial
-    or an `info()` structural constant (see `robobench.core.BaseCfg`). The gpu_* and ram_* gates
-    and geometry carry the single-task scenes' proven values verbatim."""
+    or an `info()` structural constant (see `robobench.core.BaseCfg`)."""
 
     # --- tunable: the curriculum / difficulty dials -----------------------------------------------
     # Seating gates, per part family (see `pc_gpu_assembly`/`pc_ram_assembly` for their rationale;
@@ -85,22 +84,20 @@ class PcGpuRamAssemblySceneCfg(BaseCfg):
     board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
     case_lift: float = info(0.0289)  # board face above the side panel the case lies on
     card_mass: float = info(1.0)  # dual-fan RTX 2060 (kg)
-    ram_mass: float = info(0.25)  # keeps the press PD/solver in the proven stability class
+    ram_mass: float = info(0.25)  # stick mass (kg)
     light_intensity: float = info(2500.0)
-    # Loose part start poses (table-relative xy; see the single-task scenes for the lying
-    # defaults' rationale — a gripper env instead stages every part upright in a foam holder).
+    # Loose part start poses (table-relative xy).
     card_init_xy: tuple[float, float] = info((0.28, 0.0))
     card_init_z: float = info(0.0022)
     card_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
     ram_init_xy: tuple[tuple[float, float], ...] = info(((0.27, -0.085), (0.27, 0.085)))
     ram_init_z: float = info(0.0042)
     ram_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # flat
-    card_contact_offset: float = info(0.0001)  # well below the 0.15 mm/side channel grips
+    card_contact_offset: float = info(0.0001)  # collision contact offsets (m), set at spawn
     ram_contact_offset: float = info(0.0001)
     case_contact_offset: float = info(0.0001)
-    # Optional foam holders that present the parts UPRIGHT for a parallel-jaw grasp (each part's
-    # lying default is ungraspable: flat, its only sub-80 mm dimension points up). Enable together
-    # with upright init quats (identity = seated orientation) and init z = the holders' floor top.
+    # Optional foam holders that present the parts UPRIGHT. Enable together with upright init
+    # quats (identity = seated orientation) and init z = the holders' floor top.
     card_stand: bool = info(False)
     card_stand_gap: float = info(0.0025)  # rail clearance per side around the card's body slab (m)
     ram_stand: bool = info(False)

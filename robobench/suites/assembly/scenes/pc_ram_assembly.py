@@ -8,8 +8,9 @@ stick upright over its target slot — the outermost and the second-from-socket,
 pair a 2-stick dual-channel kit populates — line its PCB edge up with the slot, and press it
 straight down until it seats.
 
-The case is one kinematic body that never moves — the PC model stays visual-only; its physics is
-an invisible fixture inside the case body: per empty slot a channel whose walls grip the stick's
+The case is one kinematic body that never moves — the PC model's meshes stay visual-only; its
+physics is an invisible fixture inside the case body (plus the base case's `shell_fixture`
+walls: invisible colliders on the case shell's four standing sides): per empty slot a channel whose walls grip the stick's
 1.6 mm PCB blade at 0.15 mm/side (flaring to a 1.2 mm/side funnel mouth — idealizing the real
 slot's spring contacts), a floor whose top is the model's own seated blade height, end stops
 (0.5 mm play, hidden inside the slot's latch blocks), and a flush board plate so a dropped stick
@@ -82,21 +83,17 @@ class PcRamAssemblySceneCfg(BaseCfg):
     slot_mouth_z: float = info(0.0046456)  # channel wall top in the case frame: depth datum
     board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
     case_lift: float = info(0.0289)  # board face above the side panel the case lies on
-    ram_mass: float = info(0.25)  # a real stick is ~45 g; 0.25 kg keeps the PD/solver in the
-    # proven stability class (the asset also authors an inflated rotational inertia — see module
-    # docstring)
+    ram_mass: float = info(0.25)  # stick mass (kg); a real stick is ~45 g
     light_intensity: float = info(2500.0)
     # Loose stick start poses: lying flat (heat-spreader face down, RGB bar pointing away from the
     # case) on the table beside the case, end-to-end along y with a 34 mm tip gap.
     ram_init_xy: tuple[tuple[float, float], ...] = info(((0.27, -0.085), (0.27, 0.085)))
     ram_init_z: float = info(0.0042)  # origin height lying face-down (slab half 3.6 mm + pad)
     ram_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # flat
-    ram_contact_offset: float = info(0.0001)  # well below the 0.15 mm/side channel grip
-    case_contact_offset: float = info(0.0001)  # ditto for the slot fixtures' walls
+    ram_contact_offset: float = info(0.0001)  # collision contact offsets (m), set at spawn
+    case_contact_offset: float = info(0.0001)
     # Optional foam holders (per stick: a floor pad + two rails flanking the 7.3 mm body slab)
-    # that present the sticks UPRIGHT for a parallel-jaw grasp. The lying default is ungraspable
-    # by a Franka gripper: flat on its face a stick's only sub-80 mm dimension (its thickness)
-    # points UP, so no top-down or side pinch can straddle it. Enable together with upright
+    # that present the sticks UPRIGHT. Enable together with upright
     # `ram_init_quat` (identity = the seated orientation) and `ram_init_z` = the holders' floor
     # top; the rails cap a free stick's lean at ~5 deg and the pick pulls straight up out of them.
     ram_stand: bool = info(False)
