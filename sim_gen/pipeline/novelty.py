@@ -97,7 +97,7 @@ def main() -> None:
                    ANTHROPIC_API_KEY=""
                    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") else "relay-session")
     else:
-        sys.path.insert(0, str(SIM_GEN_ROOT / "legacy_mujoco"))
+        sys.path.insert(0, str(SIM_GEN_ROOT / "legacy"))  # legacy_mujoco was renamed
         from spawn_agent import RELAY_PORT, oauth_token, start_relay
         start_relay()  # judge traffic is logged through the same relay
         env = dict(os.environ,

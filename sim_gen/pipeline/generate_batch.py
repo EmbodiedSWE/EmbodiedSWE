@@ -381,14 +381,20 @@ def main() -> None:
         t.start()
     for t in threads:
         t.join()
-    # export the construction trajectories (the campaign's data product);
-    # super_relay lives in relevant_repos (moved out of sim_gen 2026-08)
+    # export the construction trajectories (the campaign's data product). The vendored
+    # copy is the one that ships with the repo; the sibling checkout is a local override.
     out = CAMP / "training_trajs.jsonl"
-    subprocess.run([os.environ.get("SIM_GEN_PYTHON", "python3"),
-                    str(COSIGEN_ROOT.parent / "relevant_repos" / "super_relay"
-                        / "build_training_trajs.py"),
-                    "--raw-log", str(RELAY_LOG), "--output", str(out),
-                    "--min-messages", "4"], check=False)
+    builders = [SIM_GEN_ROOT / "super_relay" / "build_training_trajs.py",
+                COSIGEN_ROOT.parent / "relevant_repos" / "super_relay"
+                / "build_training_trajs.py"]
+    builder = next((p for p in builders if p.is_file()), None)
+    if builder is None:
+        print(f"[campaign] no build_training_trajs.py found (looked in {builders}); "
+              f"raw trajectories remain at {RELAY_LOG}")
+    else:
+        subprocess.run([os.environ.get("SIM_GEN_PYTHON", "python3"), str(builder),
+                        "--raw-log", str(RELAY_LOG), "--output", str(out),
+                        "--min-messages", "4"], check=False)
     print(f"[campaign] trajectories -> {out}")
     print(f"[campaign] DONE: {json.dumps(camp.totals)}")
 

@@ -23,7 +23,7 @@ Two backend notes:
   and state snapshot/restore — not guaranteed there yet. Decision: generate on PhysX
   now; authoring stays at the robobench layer, so a later Newton switch is a backend
   swap, not a rewrite.
-- **`legacy_mujoco/` is the retired MuJoCo variant**, kept as reference only; its task
+- **`legacy/` is the retired MuJoCo variant**, kept as reference only; its task
   contract (MJCF `xml()` etc.) does NOT apply to generated tasks.
 
 ```
@@ -53,13 +53,29 @@ seed (RoboVerse task file)
 admitted task + artifacts (video, checks report, solve trajectory, agent trajectory)
 ```
 
+## Setup (a fresh clone needs both)
+
+```bash
+# 1. the seed corpus is a SUBMODULE (public repo, ~600 MB) — without it stage 1
+#    samples an empty pool:
+git submodule update --init sim_gen/RoboVerse
+
+# 2. the execution layer is cluster-specific: scripts/launch_cosigen_render_pool.py
+#    submits Arnold/mlx jobs whose forges register their URLs to HDFS, and
+#    isaac/forge_server.py runs the Isaac build at /home/tiger/isaaclab_build.
+#    On another cluster, replace those two with an equivalent that (a) starts
+#    forge_server.py next to an Isaac Lab install and (b) publishes each forge URL
+#    where pipeline/generate_batch.py's forge_urls() can read it. Everything above
+#    the forge (seeds, prompt, acceptance, judges, ledger) is substrate-independent.
+```
+
 ## Directory layout
 
 | Path | What |
 |---|---|
-| `RoboVerse/` | Vendored seed corpus (declarative task files under `roboverse_pack/tasks/`). Read-only; never imported, only read as source text. |
+| `RoboVerse/` | Seed corpus, a git submodule (`.gitmodules` -> RoboVerseOrg/RoboVerse): declarative task files under `roboverse_pack/tasks/`. Read-only; never imported, only read as source text. |
 | `super_relay/` | Vendored logging relay: CC agents point `ANTHROPIC_BASE_URL` at it; it forwards upstream and logs every request/response for trajectory export + cost accounting. Runs in auth-passthrough mode (client's own credentials) or relay-owned-key mode (`SUPER_RELAY_API_KEY` + `--force-model`). |
-| `legacy_mujoco/` | The retired MuJoCo variant — reference only, see its README. |
+| `legacy/` | The retired MuJoCo variant (was `legacy_mujoco/`) — reference only, see its README. |
 | `isaac/` | `forge_server.py` — the per-agent GPU forge: an HTTP service on a warm L20 pod that runs a task package's modules as fresh Isaac subprocesses (submit / run / fetch). Deployed via `scripts/launch_cosigen_render_pool.py --forge N`. |
 | `tasks/` | One package per task: `scene.py`, `solve.py` (teleport solution), `smoke.py` (rubric battery), `TASK.md` (task card). |
 | `pipeline/` | `seeds.py` (deduplicated seed pool + sampling) · `prompt.py` (construction prompt) · `forge_client.py` (agent<->forge CLI) · `generate_batch.py` (campaign orchestrator: parallel agents, count quota, cost ledger) · `novelty.py` (novelty judge) · `judges.py` (solution-legitimacy + description-clarity judges). |
