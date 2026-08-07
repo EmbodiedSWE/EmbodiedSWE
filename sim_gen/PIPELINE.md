@@ -53,7 +53,27 @@ seed (RoboVerse task file)
 admitted task + artifacts (video, checks report, solve trajectory, agent trajectory)
 ```
 
-## Setup (a fresh clone needs both)
+## Setup
+
+The pipeline has **two sides with different environments**. The forge pods need the
+full Isaac stack (repo `README.md` — the `cosigen` venv: Isaac Sim 5.1 + Isaac Lab
+2.3.2 + `uv pip install -e .`); nothing else does. The orchestrator side — seeds,
+prompts, agents, judges, ledger, relay — runs on plain Python 3.11 and never imports
+Isaac:
+
+```bash
+# orchestrator host (no GPU, no Isaac):
+pip install httpx fastapi uvicorn        # the trajectory relay (sim_gen/super_relay)
+pip install numpy imageio-ffmpeg         # acceptance encodes each task's video
+npm install -g @anthropic-ai/claude-code # the construction agent + the three judges
+
+# credentials: either a subscription token (`claude setup-token` ->
+# CLAUDE_CODE_OAUTH_TOKEN, path via SIM_GEN_OAUTH_ENV) or an API key held by the
+# relay (`server.py --api-key ...`); generate_batch.py picks the mode by whether
+# the OAuth env file exists.
+```
+
+Then, in the clone:
 
 ```bash
 # 1. the seed corpus is a SUBMODULE (public repo, ~600 MB) — without it stage 1
