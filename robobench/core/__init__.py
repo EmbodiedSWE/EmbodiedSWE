@@ -5,7 +5,7 @@ Base abstractions (import-light — safe without AppLauncher):
   BaseRobotCfg                     (thin robot-cfg base carrying `control_mode`)
   BaseEnv                          (the open env shell; its build needs AppLauncher)
   config.py — the whole config layer (one module):
-    BaseCfg · tunable · info       (scene/robot cfg base: tunable difficulty dials vs fixed info)
+    BaseCfg                        (shared scene/robot cfg base — plain dataclasses, plain fields)
     SimCfg                         (sim substrate dt+PhysX; declared by the scene, patchable per env)
     EnvCfg · register_env          (binds scene+robot+mode+sim; loaded by name from ENVS; `.build()`)
   describe_stage · usd_text        (generic USD introspection — works on any stage)
@@ -14,7 +14,7 @@ Base abstractions (import-light — safe without AppLauncher):
 Still TODO (filled later): a Sim wrapper, sensors, gym_wrapper, a grader registry.
 """
 
-from .config import BaseCfg, EnvCfg, SimCfg, info, register_env, tunable
+from .config import BaseCfg, EnvCfg, SimCfg, register_env
 from .controller import BaseController, BaseControllerCfg
 from .env import BaseEnv
 from .introspection import describe_stage, usd_text
@@ -36,8 +36,6 @@ __all__ = [
     "register_env",
     "SimCfg",
     "BaseCfg",
-    "tunable",
-    "info",
     "describe_stage",
     "usd_text",
     "SCENES",

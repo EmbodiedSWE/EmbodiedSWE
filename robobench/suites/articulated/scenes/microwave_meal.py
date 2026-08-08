@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -326,71 +326,71 @@ def _door_spawner_cfg(*, width: float, thickness: float, height: float, mass: fl
 class MicrowaveMealSceneCfg(BaseCfg):
     """Config for `MicrowaveMealScene`."""
 
-    # --- tunable: appliance rules (difficulty dials) -----------------------------------------
-    r_tol: float = tunable(0.030)  # centred = bowl centre within this of the turntable axis
-    unit_steps: int = tunable(300)  # cook substeps per keyed time unit (~2.5 s at 120 Hz)
-    requested_lo: int = tunable(1)  # sampled program lower bound (TIME presses)
-    requested_hi: int = tunable(3)  # sampled program upper bound
-    press_depth: float = tunable(0.005)  # button depression that registers a press (m)
-    rearm_depth: float = tunable(0.002)  # button must pop back above this to re-arm
-    door_open_deg: float = tunable(50.0)  # swing that counts as "open" (bowl fits through)
-    door_close_deg: float = tunable(2.0)  # |angle| below this counts as latched closed
-    spin_rate_dps: float = tunable(120.0)  # turntable target rate while RUNNING
-    settle_speed: float = tunable(0.05)  # max |v| when judging placement (m/s)
-    served_tilt_deg: float = tunable(20.0)  # bowl upright gate on the mat
-    served_z_tol: float = tunable(0.015)  # bowl bottom within this of the mat top (m)
+    # --- appliance rules (difficulty dials) ---------------------------------------------------
+    r_tol: float = 0.030  # centred = bowl centre within this of the turntable axis
+    unit_steps: int = 300  # cook substeps per keyed time unit (~2.5 s at 120 Hz)
+    requested_lo: int = 1  # sampled program lower bound (TIME presses)
+    requested_hi: int = 3  # sampled program upper bound
+    press_depth: float = 0.005  # button depression that registers a press (m)
+    rearm_depth: float = 0.002  # button must pop back above this to re-arm
+    door_open_deg: float = 50.0  # swing that counts as "open" (bowl fits through)
+    door_close_deg: float = 2.0  # |angle| below this counts as latched closed
+    spin_rate_dps: float = 120.0  # turntable target rate while RUNNING
+    settle_speed: float = 0.05  # max |v| when judging placement (m/s)
+    served_tilt_deg: float = 20.0  # bowl upright gate on the mat
+    served_z_tol: float = 0.015  # bowl bottom within this of the mat top (m)
 
-    # --- tunable: randomization (the task-family knobs) --------------------------------------
-    reset_pos_jitter: float = tunable(0.03)  # uniform +/- xy jitter on each bowl at reset
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- yaw per bowl at reset
+    # --- randomization (the task-family knobs) ------------------------------------------------
+    reset_pos_jitter: float = 0.03  # uniform +/- xy jitter on each bowl at reset
+    reset_yaw_deg: float = 180.0  # uniform +/- yaw per bowl at reset
 
-    # --- tunable: placement (robot embodiments raise the work onto a bench) ------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
-    mw_pos: tuple = tunable((0.0, 0.18))  # microwave centre on the surface (door faces -y)
-    mat_pos: tuple = tunable((0.42, -0.08))  # serving-mat centre on the surface
-    bowl_slots: tuple = tunable(((-0.32, -0.04), (-0.18, -0.16)))  # nominal bowl spawn slots
+    # --- placement (robot embodiments raise the work onto a bench) ----------------------------
+    surface_z: float = 0.0  # work-surface height; 0 = on the ground (null smoke)
+    mw_pos: tuple = (0.0, 0.18)  # microwave centre on the surface (door faces -y)
+    mat_pos: tuple = (0.42, -0.08)  # serving-mat centre on the surface
+    bowl_slots: tuple = ((-0.32, -0.04), (-0.18, -0.16))  # nominal bowl spawn slots
 
-    # --- info: structure ----------------------------------------------------------------------
-    bench_size: tuple = info((1.2, 0.9))
-    outer: tuple = info((0.46, 0.36, 0.32))  # microwave outer (x, y, z)
-    wall_t: float = info(0.02)
-    panel_w: float = info(0.11)  # keypad column width on the right of the front face
-    door_t: float = info(0.02)
-    door_gap: float = info(0.003)
-    door_mass: float = info(1.2)
-    latch_deg: float = info(6.0)  # latch spring acts within this of closed
-    latch_k: float = info(8.0)  # latch spring stiffness (N*m/rad)
-    tt_radius: float = info(0.12)  # turntable disc radius
-    tt_h: float = info(0.012)
-    tt_clear: float = info(0.004)  # hub gap between cavity floor and disc bottom
-    tt_mass: float = info(0.25)
+    # --- structure (applied masses / spring + damping constants) -----------------
+    bench_size: tuple = (1.2, 0.9)
+    outer: tuple = (0.46, 0.36, 0.32)  # microwave outer (x, y, z)
+    wall_t: float = 0.02
+    panel_w: float = 0.11  # keypad column width on the right of the front face
+    door_t: float = 0.02
+    door_gap: float = 0.003
+    door_mass: float = 1.2
+    latch_deg: float = 6.0  # latch spring acts within this of closed
+    latch_k: float = 8.0  # latch spring stiffness (N*m/rad)
+    tt_radius: float = 0.12  # turntable disc radius
+    tt_h: float = 0.012
+    tt_clear: float = 0.004  # hub gap between cavity floor and disc bottom
+    tt_mass: float = 0.25
     # Buttons: real prismatic travel + spring return. Spring sized for 120 Hz stability
     # (the syringe lesson: 200 N/m on an 80 g body limit-cycles): m=0.05 kg, k=120 N/m
     # -> ~7.8 Hz, ~15 substeps/period; press force at threshold = 120*0.005 = 0.6 N, so
     # a firm fingertip poke registers and a brushing contact (~0.2 N -> 1.7 mm) does not.
-    btn_size: float = info(0.016)  # square face (~15 mm, the source's small keys)
-    btn_travel: float = info(0.008)
-    btn_body_d: float = info(0.018)  # button body depth along y
+    btn_size: float = 0.016  # square face (~15 mm, the source's small keys)
+    btn_travel: float = 0.008
+    btn_body_d: float = 0.018  # button body depth along y
     # Standoff between the button's back face and the panel front at rest: the button
     # sits fully PROUD of the panel (no rest overlap; a dark bezel frame makes the gap
     # read as a recessed housing), and at press_depth it is still 1 mm clear — so the
     # mechanism survives even if the joint's pair-collision disable ever fails.
-    btn_standoff: float = info(0.006)
-    btn_mass: float = info(0.05)
-    btn_k: float = info(120.0)  # spring return (N/m)
-    btn_c: float = info(4.0)  # damping (N*s/m), ~critical
-    bowl_wall_t: float = info(0.007)  # rim width — the universal pinch-grasp affordance
-    bowl_h: float = info(0.052)
-    bowl_bot_t: float = info(0.010)
-    bowl_mass: float = info(0.15)
-    bowl_inner_r: float = info(0.048)  # outer radius 55 mm — fits the door aperture easily
-    n_segments: int = info(8)
-    contact_offset: float = info(0.003)
-    bowl_colors: tuple = info(((0.25, 0.42, 0.72), (0.30, 0.60, 0.35)))  # blue / green
-    food_cold: tuple = info((0.48, 0.33, 0.26))  # dull brown — cold food
-    food_hot: tuple = info((0.95, 0.55, 0.12))  # bright orange — heated (cycle done)
-    mat_size: tuple = info((0.30, 0.24, 0.006))
-    n_stages: int = info(12)  # 6 staged flags per bowl x 2 bowls
+    btn_standoff: float = 0.006
+    btn_mass: float = 0.05
+    btn_k: float = 120.0  # spring return (N/m)
+    btn_c: float = 4.0  # damping (N*s/m), ~critical
+    bowl_wall_t: float = 0.007  # rim width — the universal pinch-grasp affordance
+    bowl_h: float = 0.052
+    bowl_bot_t: float = 0.010
+    bowl_mass: float = 0.15
+    bowl_inner_r: float = 0.048  # outer radius 55 mm — fits the door aperture easily
+    n_segments: int = 8
+    contact_offset: float = 0.003
+    bowl_colors: tuple = ((0.25, 0.42, 0.72), (0.30, 0.60, 0.35))  # blue / green
+    food_cold: tuple = (0.48, 0.33, 0.26)  # dull brown — cold food
+    food_hot: tuple = (0.95, 0.55, 0.12)  # bright orange — heated (cycle done)
+    mat_size: tuple = (0.30, 0.24, 0.006)
+    n_stages: int = 12  # 6 staged flags per bowl x 2 bowls
 
     # Derived (filled in __post_init__).
     door_w: float = field(default=None, init=False)

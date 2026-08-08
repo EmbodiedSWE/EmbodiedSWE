@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from robobench.core import SCENES, BaseCfg, BaseScene, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene
 from robobench.suites.pouring.newton_sim import MpmSimCfg
 
 if TYPE_CHECKING:
@@ -143,21 +143,22 @@ def cylinder_lattice(
 @dataclass
 class LatteSceneCfg(BaseCfg):
     """Liquid, cup, and layout dials. Liquid values are the in-tree MPM pour demo's proven fluid
-    recipe; both liquids share one material at v1 (only the color differs)."""
+    recipe; both liquids share one material at v1 (only the color differs). Nothing is locked — a
+    variant is just a copy with a few fields changed."""
 
     # --- MPM solver / seeding ---
-    voxel_size: float = tunable(0.003)  # [TUNE] MPM grid voxel [m]; finer = crisper liquid, slower
-    particles_per_cell: float = tunable(2.0)  # [TUNE] lattice density vs grid (2.0 = demo value; LOWER
+    voxel_size: float = 0.003  # [TUNE] MPM grid voxel [m]; finer = crisper liquid, slower
+    particles_per_cell: float = 2.0  # [TUNE] lattice density vs grid (2.0 = demo value; LOWER
     # under-resolves the constitutive model — at 1.6 a deep narrow fill collapsed into a sticky blob)
     # --- liquid material (shared by coffee + milk) ---
-    liquid_density: float = tunable(1000.0)
-    liquid_viscosity: float = tunable(3.0)  # [TUNE] creamy (steamed-milk-ish): the compacted MPM liquid
+    liquid_density: float = 1000.0
+    liquid_viscosity: float = 3.0  # [TUNE] creamy (steamed-milk-ish): the compacted MPM liquid
     # avalanches out of deep vessels at ~90 deg when watery (0.1) — viscosity 3 makes the outflow a
     # controllable ooze so a partial pour can actually stop
-    liquid_damping: float = tunable(0.02)
-    liquid_friction: float = tunable(0.0)
-    yield_pressure: float = tunable(1.0e15)  # huge -> never yields as a granular (stays liquid)
-    tensile_yield_ratio: float = tunable(1.0)  # [TUNE] cohesion; 5.0 clings to deep vessel walls and exits late
+    liquid_damping: float = 0.02
+    liquid_friction: float = 0.0
+    yield_pressure: float = 1.0e15  # huge -> never yields as a granular (stays liquid)
+    tensile_yield_ratio: float = 1.0  # [TUNE] cohesion; 5.0 clings to deep vessel walls and exits late
     # --- coffee mug (textured USD asset, VISUAL-ONLY; the invisible tapered collider below is
     # the physics). The vendored BlackCeramicMug/mug_black_zup.usd is the original model with the
     # fix-up BAKED INTO THE GEOMETRY (this render stack's Fabric delegate drops USD xform
@@ -165,54 +166,54 @@ class LatteSceneCfg(BaseCfg):
     # axis centered on the origin, base at z=0. Baked dimensions: tapered interior r 0.034 (near
     # floor) -> 0.046 (rim), interior floor ~16 mm above the base, rim at 0.0832, handle on -x.
     # The dials below match that bake. ---
-    mug_usd: str = info("", doc="'' -> the vendored assets/BlackCeramicMug/mug_black_zup.usd (base origin)")
-    mug_scale: float = info(1.0, doc="extra runtime scale — WARNING: dropped by the Fabric renderer; bake instead")
-    coffee_cup_r: float = tunable(0.045)  # [TUNE] collider/metric radius at the RIM (mug cavity - 1 mm)
-    coffee_cup_r_floor: float = tunable(0.034)  # [TUNE] collider radius at the FLOOR (tapered interior)
-    coffee_cup_h: float = tunable(0.0832)  # rim height above the table (trajectory anchor)
-    coffee_floor_z: float = tunable(0.016)  # interior floor height above the table
+    mug_usd: str = ""  # '' -> the vendored assets/BlackCeramicMug/mug_black_zup.usd (base origin)
+    mug_scale: float = 1.0  # extra runtime scale — WARNING: dropped by the Fabric renderer; bake instead
+    coffee_cup_r: float = 0.045  # [TUNE] collider/metric radius at the RIM (mug cavity - 1 mm)
+    coffee_cup_r_floor: float = 0.034  # [TUNE] collider radius at the FLOOR (tapered interior)
+    coffee_cup_h: float = 0.0832  # rim height above the table (trajectory anchor)
+    coffee_floor_z: float = 0.016  # interior floor height above the table
     # --- milk pitcher (textured USD asset, VISUAL-ONLY; the invisible straight collider below is
     # the physics). assets/Pitcher/pitcher_zup.usd is the original model with the composed
     # transform baked into the geometry: base at z=0, body axis centered, HANDLE toward +x (the
     # grasp side — the plain rim pours toward -x / the mug). Measured: body outer 0.040 -> 0.036,
     # interior ~straight r 0.030 above a thick base (usable floor at z ~0.030), rim at 0.0927,
     # wall ~5 mm, handle bar out to x=0.068 spanning z 0.027..0.081. ---
-    pitcher_usd: str = info("", doc="'' -> the vendored assets/Pitcher/pitcher_zup.usd (base origin)")
-    pitcher_r: float = tunable(0.030)  # [TUNE] collider/fill/metric radius (interior cavity - margin)
-    pitcher_h: float = tunable(0.0927)  # rim height above the base (trajectory lip anchor)
-    pitcher_floor_z: float = tunable(0.030)  # interior floor height above the base (thick bottom)
-    pitcher_wall: float = tunable(0.005)  # collider wall; outer 0.035 hides inside the visual body
-    cup_friction: float = tunable(0.05)  # low, like the demo bowl — liquid slides off ceramic
-    cup_contact_margin: float = tunable(0.001)
+    pitcher_usd: str = ""  # '' -> the vendored assets/Pitcher/pitcher_zup.usd (base origin)
+    pitcher_r: float = 0.030  # [TUNE] collider/fill/metric radius (interior cavity - margin)
+    pitcher_h: float = 0.0927  # rim height above the base (trajectory lip anchor)
+    pitcher_floor_z: float = 0.030  # interior floor height above the base (thick bottom)
+    pitcher_wall: float = 0.005  # collider wall; outer 0.035 hides inside the visual body
+    cup_friction: float = 0.05  # low, like the demo bowl — liquid slides off ceramic
+    cup_contact_margin: float = 0.001
     # --- fills ---
-    coffee_depth: float = tunable(0.048)  # [TUNE] SEEDED depth; implicit MPM settles ~x0.53 of seeded,
+    coffee_depth: float = 0.048  # [TUNE] SEEDED depth; implicit MPM settles ~x0.53 of seeded,
     # leaving the mug roughly half full (surface ~0.044 of the 0.083 rim; ~66k particles)
-    milk_depth: float = tunable(0.042)  # [TUNE] SEEDED depth; settles to ~60% of the pitcher (~28k particles)
+    milk_depth: float = 0.042  # [TUNE] SEEDED depth; settles to ~60% of the pitcher (~28k particles)
     # --- layout ---
-    pitcher_pos: tuple[float, float] = info((0.16, 0.0), doc="pitcher center xy [m]; coffee mug is at (0,0)")
-    table_size: tuple[float, float, float] = info((0.7, 0.7, TABLE_TOP_Z), doc="table box extents [m]; top at z=0.04")
-    table_friction: float = tunable(0.5)
-    light_intensity: float = tunable(2500.0)
+    pitcher_pos: tuple[float, float] = (0.16, 0.0)  # pitcher center xy [m]; coffee mug is at (0,0)
+    table_size: tuple[float, float, float] = (0.7, 0.7, TABLE_TOP_Z)  # table box extents [m]; top at z=0.04
+    table_friction: float = 0.5
+    light_intensity: float = 2500.0
     # --- dynamic vessels + rigid proxies ---
-    mug_mass: float = tunable(0.30)  # authored total mass [kg]; inertia computed from geometry
-    pitcher_mass: float = tunable(0.25)
-    proxy_segments: int = info(10, doc="boxes per rigid-proxy ring")
-    proxy_thickness: float = tunable(0.005)  # ring box radial thickness [m]
+    mug_mass: float = 0.30  # authored total mass [kg]; inertia computed from geometry
+    pitcher_mass: float = 0.25
+    proxy_segments: int = 10  # boxes per rigid-proxy ring
+    proxy_thickness: float = 0.005  # ring box radial thickness [m]
     # 1.5-way liquid feedback (vessels weigh what they hold). ALWAYS on for physics runs; the
     # OFFLINE replay renderer builds scenery with it off (that build spins under the
     # kit-visualizer app) — scenery builds never step physics, so nothing behavioral differs.
-    liquid_feedback: bool = info(True, doc="apply MPM collider impulses back onto the vessels")
+    liquid_feedback: bool = True  # apply MPM collider impulses back onto the vessels
     # --- agent auto-grasp: weld engages on proximity + closure ---
-    auto_weld_dist: float = tunable(0.03)  # pinch-point-to-bar-center engage radius [m]
-    auto_weld_close_margin: float = tunable(0.003)  # engage when aperture < bar half-width + this [m]
-    auto_weld_release: float = tunable(0.02)  # release when aperture opens past this [m] (hysteresis)
-    proxy_friction: float = tunable(0.5)  # ring + slab (MuJoCo-facing) tabletop friction; the
+    auto_weld_dist: float = 0.03  # pinch-point-to-bar-center engage radius [m]
+    auto_weld_close_margin: float = 0.003  # engage when aperture < bar half-width + this [m]
+    auto_weld_release: float = 0.02  # release when aperture opens past this [m] (hysteresis)
+    proxy_friction: float = 0.5  # ring + slab (MuJoCo-facing) tabletop friction; the
     # handle bars keep cup_friction (MPM-facing)
     # --- rendering ---
-    coffee_color: tuple[float, float, float] = info((0.36, 0.22, 0.12), doc="coffee particle display color")
-    milk_color: tuple[float, float, float] = info((0.93, 0.90, 0.85), doc="milk particle display color")
-    visual_update_frequency: int = info(4, doc="Kit particle visual update period [render frames]")
-    visual_width_scale: float = tunable(2.2)  # [TUNE] Kit display width vs physical particle diameter:
+    coffee_color: tuple[float, float, float] = (0.36, 0.22, 0.12)  # coffee particle display color
+    milk_color: tuple[float, float, float] = (0.93, 0.90, 0.85)  # milk particle display color
+    visual_update_frequency: int = 4  # Kit particle visual update period [render frames]
+    visual_width_scale: float = 2.2  # [TUNE] Kit display width vs physical particle diameter:
     # at 1x the ~1.4 mm particles read as sparse mist; ~2.2x closes the lattice gaps so the surface
     # reads as liquid. Keep scaled width < cup_wall or particles bulge through the cup exterior.
 

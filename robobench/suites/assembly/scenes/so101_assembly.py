@@ -53,7 +53,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
@@ -63,103 +63,103 @@ if TYPE_CHECKING:
 
 @dataclass
 class SO101SceneCfg(BaseCfg):
-    """Config for `SO101AssemblyScene`. `tunable()` fields are curriculum/difficulty dials;
-    `info()` fields are structural constants (see `robobench.core.BaseCfg`)."""
+    """Config for `SO101AssemblyScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed."""
 
-    # --- tunable: the fastening gate + drive dials (see _fasten_rule for THE RULE) -----------------
-    drive_rate: float = tunable(0.020)  # screw advance speed while driving (m/s)
-    min_drive_s: float = tunable(0.25)  # minimum accumulated drive time before the weld engages (s)
-    gate_axis_deg: float = tunable(15.0)  # max screw-vs-hole axis misalignment (deg)
-    gate_radial: float = tunable(0.0025)  # max head-center offset from the hole axis (m)
-    gate_window: float = tunable(0.014)  # engagement window above the seat, along the axis (m)
-    gate_window_below: float = tunable(0.008)  # engagement window BELOW the seat (m): a screw
+    # --- the fastening gate + drive dials (see _fasten_rule for THE RULE) --------------------------
+    drive_rate: float = 0.020  # screw advance speed while driving (m/s)
+    min_drive_s: float = 0.25  # minimum accumulated drive time before the weld engages (s)
+    gate_axis_deg: float = 15.0  # max screw-vs-hole axis misalignment (deg)
+    gate_radial: float = 0.0025  # max head-center offset from the hole axis (m)
+    gate_window: float = 0.014  # engagement window above the seat, along the axis (m)
+    gate_window_below: float = 0.008  # engagement window BELOW the seat (m): a screw
     # that slid deep into its hole still drives. Below the seat the bore itself constrains the
     # screw, so the axis check is waived there — inside the hole, messy is acceptable; only
     # what happens above the surface must be precise.
-    motor_align_pos: float = tunable(0.004)  # max servo-vs-pocket position error to fasten (m)
-    motor_align_deg: float = tunable(10.0)  # max servo-vs-pocket orientation error to fasten (deg)
-    bit_on_head: float = tunable(0.004)  # bit tip -> screw head-top distance for the gate (m)
-    bit_axis_deg: float = tunable(30.0)  # max bit-vs-screw axis misalignment (deg)
-    spin_min: float = tunable(3.0)  # bit speed that counts as "spinning" (rad/s)
-    weld_snap: float = info(0.005)  # fastened part farther than this off its weld frame snaps back (m)
+    motor_align_pos: float = 0.004  # max servo-vs-pocket position error to fasten (m)
+    motor_align_deg: float = 10.0  # max servo-vs-pocket orientation error to fasten (deg)
+    bit_on_head: float = 0.004  # bit tip -> screw head-top distance for the gate (m)
+    bit_axis_deg: float = 30.0  # max bit-vs-screw axis misalignment (deg)
+    spin_min: float = 3.0  # bit speed that counts as "spinning" (rad/s)
+    weld_snap: float = 0.005  # fastened part farther than this off its weld frame snaps back (m)
 
-    # --- info: the drill (powered screwdriver) -----------------------------------------------------
-    bit_speed: float = info(15.0)  # bit spin speed while the trigger is squeezed (rad/s)
-    trigger_swing: float = info(math.radians(14.0))  # trigger travel, rest -> full squeeze (rad)
-    bit_tip: tuple[float, float, float] = info((0.0, 0.055, 0.0))  # bit tip point, in the bit's own link frame
+    # --- the drill (powered screwdriver) ------------------------------------------------------------
+    bit_speed: float = 15.0  # bit spin speed while the trigger is squeezed (rad/s)
+    trigger_swing: float = math.radians(14.0)  # trigger travel, rest -> full squeeze (rad)
+    bit_tip: tuple[float, float, float] = (0.0, 0.055, 0.0)  # bit tip point, in the bit's own link frame
 
-    # --- info: fastening welds — where each screw seats in the upper_arm (LINK frame) --------------
+    # --- fastening welds — where each screw seats in the upper_arm (LINK frame) --------------------
     # Per-joint convention: each joint's screw(s) carry its <joint>_ prefix; adding wrist_*/shoulder_*
     # later is additive. Pose-agnostic — a screw seats relative to its link, wherever the arm is.
     # One loose screw is spawned per hole (identical screws — any screw may take any hole).
     # Each seat is the driven head-top, placed so the seated screw rests contact-free (the weld
     # holds it): the near heads sit ~2 mm proud of the countersunk wall, the far heads sit
     # inside the ring bosses with the tips just above the servo's far tab.
-    elbow_screw_seat_pts: tuple[tuple[float, float, float], ...] = info((
+    elbow_screw_seat_pts: tuple[tuple[float, float, float], ...] = (
         (-0.1227, 0.0010, -0.0040),  # near pair: the countersunk holes in the -Z wall
         (-0.1022, 0.0010, -0.0040),
         (-0.1228, 0.0052, 0.0428),   # far pair: the ring-boss holes through the +Z wall
         (-0.1023, 0.0052, 0.0428),
-    ))
-    elbow_screw_seat_quats: tuple[tuple[float, float, float, float], ...] = info((
+    )
+    elbow_screw_seat_quats: tuple[tuple[float, float, float, float], ...] = (
         (0.0, 0.0, 1.0, 0.0),  # near: screw +Z (out of the head) -> link -Z
         (0.0, 0.0, 1.0, 0.0),
         (1.0, 0.0, 0.0, 0.0),  # far: screw +Z -> link +Z
         (1.0, 0.0, 0.0, 0.0),
-    ))
+    )
     # free spawn xy of each loose screw (env frame, resting on the workbench top; z from the asset)
-    screw_spawn_pts: tuple[tuple[float, float], ...] = info(
-        ((0.25, -0.15), (0.31, -0.15), (0.25, -0.22), (0.31, -0.22)))
+    screw_spawn_pts: tuple[tuple[float, float], ...] = (
+        (0.25, -0.15), (0.31, -0.15), (0.25, -0.22), (0.31, -0.22))
 
-    # --- info: the elbow HORN fastening — the lower_arm clips onto the motor's output horn ---
+    # --- the elbow HORN fastening — the lower_arm clips onto the motor's output horn ---
     # Seated lower_arm pose in the MOTOR (upper_arm-link) frame: the elbow_flex joint transform
     # at joint zero. The lower_arm origin sits ON the elbow axis, so this pose is also where the
     # pre-authored elbow JOINT is framed.
-    elbow_lower_arm_seat_pos: tuple[float, float, float] = info((-0.11257, -0.028, 0.0))
-    elbow_lower_arm_seat_quat: tuple[float, float, float, float] = info(
-        (0.7071068, 0.0, 0.0, 0.7071068))
+    elbow_lower_arm_seat_pos: tuple[float, float, float] = (-0.11257, -0.028, 0.0)
+    elbow_lower_arm_seat_quat: tuple[float, float, float, float] = (
+        0.7071068, 0.0, 0.0, 0.7071068)
     # Fastening the horn screws doesn't weld the forearm rigid — it closes the REAL elbow
     # joint: a revolute about the horn axis, driven with the URDF elbow_flex servo drive.
     # Enabled while any horn screw is fastened; command it via set_elbow_target().
-    elbow_joint_stiffness: float = info(5.2859)  # USD angular drive units (per-degree); the
+    elbow_joint_stiffness: float = 5.2859  # USD angular drive units (per-degree); the
     # URDF elbow_flex servo stiffness
-    elbow_joint_damping: float = info(0.025)  # near-critical for the forearm about this axis —
+    elbow_joint_damping: float = 0.025  # near-critical for the forearm about this axis —
     # the URDF's 0.0021 is tuned for the implicit articulation solver and leaves this LOOSE
     # joint ~10x underdamped (the forearm rings as a pendulum)
-    elbow_joint_max_force: float = info(10.0)
-    elbow_joint_limit_deg: float = info(96.83)
+    elbow_joint_max_force: float = 10.0  # drive force cap (USD units), applied via CreateMaxForceAttr
+    elbow_joint_limit_deg: float = 96.83  # joint travel (structural kinematics, not a physics dial)
     # The M3 horn screws' seats (driven head-top poses), in the LOWER_ARM link frame: the FOUR
     # peripheral screw lines around the elbow axis, on EACH side of the fork (the center bore is
     # only driver access). NEAR (horn) side, holes 0-3: the head seats on the fork's inner plate
     # — reached through the outer skin's access channels — and the shaft threads into the horn's
     # metal holes; out-of-hole is lower_arm -Z. FAR side, holes 4-7: the head seats on the far
     # plate's outer face, threading into the servo's case-back holes; out-of-hole is +Z.
-    elbow_horn_screw_seat_pts: tuple[tuple[float, float, float], ...] = info((
+    elbow_horn_screw_seat_pts: tuple[tuple[float, float, float], ...] = (
         (0.00497, -0.00497, -0.0066), (-0.00495, -0.00498, -0.0066),   # near (horn) side
         (0.00498, 0.00495, -0.0066), (-0.00490, 0.00495, -0.0066),
         (0.00497, -0.00497, 0.0431), (-0.00495, -0.00498, 0.0431),     # far (case-back) side
-        (0.00498, 0.00495, 0.0431), (-0.00490, 0.00495, 0.0431)))
-    elbow_horn_screw_seat_quats: tuple[tuple[float, float, float, float], ...] = info((
+        (0.00498, 0.00495, 0.0431), (-0.00490, 0.00495, 0.0431))
+    elbow_horn_screw_seat_quats: tuple[tuple[float, float, float, float], ...] = (
         (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 1.0, 0.0),    # near: screw +Z (out of head) -> link -Z
         (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 1.0, 0.0),
         (1.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0),    # far: screw +Z -> link +Z
-        (1.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)))
+        (1.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0))
     # eight loose M3s spawn (one per horn-line hole, near + far)
-    horn_screw_spawn_pts: tuple[tuple[float, float], ...] = info(
-        ((0.37, -0.15), (0.43, -0.15), (0.37, -0.22), (0.43, -0.22),
-         (0.49, -0.15), (0.55, -0.15), (0.49, -0.22), (0.55, -0.22)))
+    horn_screw_spawn_pts: tuple[tuple[float, float], ...] = (
+        (0.37, -0.15), (0.43, -0.15), (0.37, -0.22), (0.43, -0.22),
+        (0.49, -0.15), (0.55, -0.15), (0.49, -0.22), (0.55, -0.22))
 
-    # --- info: scene assets ------------------------------------------------------------------------
-    light_intensity: float = info(2500.0)
+    # --- scene assets -------------------------------------------------------------------------------
+    light_intensity: float = 2500.0
     # Selectable work surface (the same vendored presets as bulb/nut_thread). All spawn poses are
     # env-frame xy with heights ABOVE the top, so the whole layout rides `surface_z`. Default:
     # the ikea_table scene's Heavy-Duty packing table standing on the floor (top at 0.994 m —
     # per Haoxiang's preference); "lab_table" (top at z = 0, ground sunk to its feet) stays an
     # option. The smokes read `surface_z` too, so their choreography rides along.
-    table: str = info("packing")  # which work surface: "packing" | "lab_table"
-    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    table: str = "packing"  # which work surface: "packing" | "lab_table"
+    surface_z: float | None = None  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = None  # xy the table sits at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     # so101 defaults differ from bulb/nut_thread: identity orient lays the lab table's LONG side
     # (1.28 m vs 0.91 m) along the arm->parts spread (x in [-0.3, 0.62]), and `pos` centres the
     # physical top under the layout. MEASURED (physics probe, 2026-07-09): the spawner REPLACES
@@ -175,13 +175,13 @@ class SO101SceneCfg(BaseCfg):
                     "orient": (1.0, 0.0, 0.0, 0.0), "surface_z": 0.994, "pos": (0.2, 0.0),
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
-    asset_dir: str = info("")
-    proximal_usd: str = info("")  # floating-base build
-    distal_usd: str = info("")
-    motor_usd: str = info("")
-    screw_usd: str = info("")
-    horn_screw_usd: str = info("")
-    drill_usd: str = info("")
+    asset_dir: str = ""
+    proximal_usd: str = ""  # floating-base build
+    distal_usd: str = ""
+    motor_usd: str = ""
+    screw_usd: str = ""
+    horn_screw_usd: str = ""
+    drill_usd: str = ""
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parents[1] / "assets"

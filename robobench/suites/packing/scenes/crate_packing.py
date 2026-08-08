@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
@@ -37,44 +37,45 @@ if TYPE_CHECKING:
 @dataclass
 class CratePackingSceneCfg(BaseCfg):
     """Config for `CratePackingScene`. Interior dims are DERIVED from the manifest with a
-    designed slack (`oversize`), so required packing precision is a dial, not an accident."""
+    designed slack (`oversize`), so required packing precision is a dial, not an accident. Nothing is
+    locked — a variant is just a copy with a few fields changed."""
 
-    # --- tunable: difficulty dials -----------------------------------------------------------
+    # --- difficulty dials ----------------------------------------------------------------------
     # 1.12 measured TOO FORGIVING (lid seated 3/3 at 25mm jitter, sweep 2026-07-14);
     # tightened to 1.06 with a slimmer rim clearance to move the knee toward ~1.5cm.
-    oversize: float = tunable(1.06)  # interior = reference-packing bbox * oversize (1.05 hard)
-    lid_close_deg: float = tunable(2.0)  # lid counts as closed at/below this hinge angle
-    lid_seat_tol: float = tunable(0.012)  # max lid-center height above rim when closed (m)
-    settle_speed: float = tunable(0.05)  # max lid |v| when judging lid_seated (m/s; cargo is not speed-checked)
-    reset_pos_jitter: float = tunable(0.02)  # uniform +/- xy jitter per part at reset (m)
+    oversize: float = 1.06  # interior = reference-packing bbox * oversize (1.05 hard)
+    lid_close_deg: float = 2.0  # lid counts as closed at/below this hinge angle
+    lid_seat_tol: float = 0.012  # max lid-center height above rim when closed (m)
+    settle_speed: float = 0.05  # max lid |v| when judging lid_seated (m/s; cargo is not speed-checked)
+    reset_pos_jitter: float = 0.02  # uniform +/- xy jitter per part at reset (m)
 
-    # --- tunable: placement (robot embodiments raise the work onto a bench) ------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
+    # --- placement (robot embodiments raise the work onto a bench) ----------------------------
+    surface_z: float = 0.0  # work-surface height; 0 = on the ground (null smoke)
 
-    # --- info: manifest + crate structure ----------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))  # procedural bench top (x, y), used when surface_z > 0
+    # --- manifest + crate structure ------------------------------------------------------------
+    bench_size: tuple = (1.1, 0.9)  # procedural bench top (x, y), used when surface_z > 0
     # Cargo spawn arc (deg): full circle for the null smoke; robot bindings use a front arc
     # so every part lands on the reachable side of the bench.
-    spawn_arc: tuple = info((0.0, 360.0))
+    spawn_arc: tuple = (0.0, 360.0)
     # v0 procedural manifest: name -> ("box", (sx, sy, sz)) or ("cyl", (radius, length)).
     # Dimensioned so: reference packing = slab flat, 4 tubes side-by-side on the slab, box on
     # the tubes; flat single-layer footprint (~0.20 m^2) exceeds the floor (~0.14 m^2).
-    manifest: tuple = info((
+    manifest: tuple = (
         ("slab", "box", (0.40, 0.30, 0.04)),
         ("tube_0", "cyl", (0.025, 0.28)),
         ("tube_1", "cyl", (0.025, 0.28)),
         ("tube_2", "cyl", (0.025, 0.28)),
         ("tube_3", "cyl", (0.025, 0.28)),
         ("brick", "box", (0.16, 0.12, 0.08)),
-    ))
+    )
     # Reference packing heights: slab (0.04) + tube layer (0.05) + brick (0.08) = 0.17.
-    ref_stack_h: float = info(0.17)
-    wall_t: float = info(0.015)  # crate wall/floor thickness
-    lid_t: float = info(0.02)
-    part_mass: float = info(0.4)  # per cargo part (slab gets 2x)
-    crate_pos: tuple = info((0.0, 0.0))  # crate centre on the ground plane
+    ref_stack_h: float = 0.17
+    wall_t: float = 0.015  # crate wall/floor thickness
+    lid_t: float = 0.02
+    part_mass: float = 0.4  # per cargo part (slab gets 2x)
+    crate_pos: tuple = (0.0, 0.0)  # crate centre on the ground plane
     # Cargo spawn ring: parts scattered around the crate at this radius, angle-indexed.
-    spawn_radius: float = info(0.65)
+    spawn_radius: float = 0.65
 
     # Derived (filled in __post_init__): interior (ix, iy, iz), rim height.
     interior: tuple = field(default=None, init=False)

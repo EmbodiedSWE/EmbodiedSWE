@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -41,13 +41,14 @@ if TYPE_CHECKING:
 
 @dataclass
 class SyringeDosingSceneCfg(BaseCfg):
-    """Config for `SyringeDosingScene`."""
+    """Config for `SyringeDosingScene`. Nothing is locked — a variant is just a copy with a few fields
+    changed."""
 
-    # --- tunable: difficulty dials -----------------------------------------------------------
-    seat_tol: float = tunable(0.006)  # max lateral tip offset that still counts as seated (m)
-    seat_band: float = tunable(0.012)  # tip must hover within this above the well rim (m)
-    dose_band: tuple = tunable((0.28, 0.38))  # per-well acceptance band (fraction of capacity)
-    draw_min: float = tunable(0.95)  # min drawn fraction for the draw stage
+    # --- difficulty dials ------------------------------------------------------------------------
+    seat_tol: float = 0.006  # max lateral tip offset that still counts as seated (m)
+    seat_band: float = 0.012  # tip must hover within this above the well rim (m)
+    dose_band: tuple = (0.28, 0.38)  # per-well acceptance band (fraction of capacity)
+    draw_min: float = 0.95  # min drawn fraction for the draw stage
     # O-ring friction = INTERNAL action-reaction PAIR between plunger and barrel:
     # a position lock (anchor spring) while not firmly driven, viscous drag while
     # driven. MEASURED (v9): applying these as one-sided external forces levitated the
@@ -56,45 +57,45 @@ class SyringeDosingSceneCfg(BaseCfg):
     # pairs cannot exert a net force on the assembly, by construction.
     # Small viscous drag (explicit force, clamped in post_step). STABILITY: must
     # stay far under 2*m/dt = 2*0.05*120 = 12 N*s/m.
-    plunger_visc: float = tunable(3.0)  # viscous drag while driven (N per m/s)
-    plunger_break_free: float = tunable(1.5)  # o-ring joint friction: drive above this slides (N)
-    reset_jitter: float = tunable(0.015)  # +/- xy jitter of the well plate per episode (m)
-    debug_forensics: bool = tunable(False)  # per-substep draw-loss ledgers (smoke diagnosis only)
+    plunger_visc: float = 3.0  # viscous drag while driven (N per m/s)
+    plunger_break_free: float = 1.5  # o-ring joint friction: drive above this slides (N)
+    reset_jitter: float = 0.015  # +/- xy jitter of the well plate per episode (m)
+    debug_forensics: bool = False  # per-substep draw-loss ledgers (smoke diagnosis only)
 
-    # --- tunable: placement -------------------------------------------------------------------
-    surface_z: float = tunable(0.0)
+    # --- placement -------------------------------------------------------------------------------
+    surface_z: float = 0.0
     # Stand moved +x/-y (was (0.16,-0.02)): its collar sat 11 cm from well 2 and
     # blocked the glide corridor — v37/38 never converged on well 2's seat and the
     # jammed nozzle bled the remaining load to `spilled`.
-    stand_pos: tuple = tunable((0.22, -0.06))  # syringe stand centre on the surface
-    plate_pos: tuple = tunable((-0.06, 0.10))  # well-plate centre
+    stand_pos: tuple = (0.22, -0.06)  # syringe stand centre on the surface
+    plate_pos: tuple = (-0.06, 0.10)  # well-plate centre
 
-    # --- info: structure ----------------------------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))
-    barrel_r: float = info(0.025)
-    barrel_l: float = info(0.20)
-    nozzle_r: float = info(0.006)
-    nozzle_l: float = info(0.05)
-    stroke: float = info(0.12)  # plunger travel = syringe capacity
-    plunger_r: float = info(0.010)
+    # --- structure --------------------------------------------------------------------------------
+    bench_size: tuple = (1.1, 0.9)
+    barrel_r: float = 0.025
+    barrel_l: float = 0.20
+    nozzle_r: float = 0.006
+    nozzle_l: float = 0.05
+    stroke: float = 0.12  # plunger travel = syringe capacity
+    plunger_r: float = 0.010
     # Plunger length/seat chosen so its lower end NEVER reaches the nozzle: plunger and
     # nozzle are not jointed to each other, so an overlap makes PhysX fight the fixed
     # joints (measured 2026-07-14: the assembly sank 19 mm and crept sideways).
-    plunger_l: float = info(0.18)
-    plunger_seat: float = info(0.03)  # plunger-centre offset above barrel centre at travel 0
-    plunger_mass: float = info(0.05)  # single source for assets() AND gravity comp
-    ring_mass: float = info(0.01)
-    flange_z: float = info(0.09)  # barrel-local height of the finger flanges
-    post_h: float = info(0.26)
-    post_sq: float = info(0.014)
-    pocket_r: float = info(0.037)  # stand pocket radius (posts at +/- this)
-    res_r: float = info(0.035)  # reservoir puck radius
-    res_h: float = info(0.05)
-    well_r: float = info(0.018)  # sample-well puck radius
-    well_h: float = info(0.012)
+    plunger_l: float = 0.18
+    plunger_seat: float = 0.03  # plunger-centre offset above barrel centre at travel 0
+    plunger_mass: float = 0.05  # single source for assets() AND gravity comp
+    ring_mass: float = 0.01
+    flange_z: float = 0.09  # barrel-local height of the finger flanges
+    post_h: float = 0.26
+    post_sq: float = 0.014
+    pocket_r: float = 0.037  # stand pocket radius (posts at +/- this)
+    res_r: float = 0.035  # reservoir puck radius
+    res_h: float = 0.05
+    well_r: float = 0.018  # sample-well puck radius
+    well_h: float = 0.012
     # sample wells in a row along x, plate-local:
-    well_dx: tuple = info(((-0.03, -0.05), (0.05, -0.05), (0.13, -0.05)))
-    res_d: tuple = info((-0.03, 0.07))  # reservoir, plate-local
+    well_dx: tuple = ((-0.03, -0.05), (0.05, -0.05), (0.13, -0.05))
+    res_d: tuple = (-0.03, 0.07)  # reservoir, plate-local
 
     # Derived: home barrel-centre height over the surface.
     barrel_home_h: float = field(default=None, init=False)
