@@ -45,8 +45,8 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
     align_xy: float = 0.004  # max lateral distance (m) of the bolt tip from the hole axis
     align_axis_deg: float = 5.0  # max tilt of the bolt axis off the hole axis (deg)
     reset_pos_jitter: float = 0.01  # uniform +/- xy jitter per bolt at reset (m); 0 = none
-    # Part friction (static = dynamic), set on every shape at bind. The MOVING threaded part runs
-    # slick (0.01) against a grippier fixed part (0.75); the key gets the proven hex-cup friction.
+    # Part friction (static = dynamic), set on every shape at bind. The MOVING threaded part
+    # runs slick (0.01) against a grippier fixed part (0.75).
     bolt_friction: float = 0.01
     platform_friction: float = 0.75
     key_friction: float = 0.6
