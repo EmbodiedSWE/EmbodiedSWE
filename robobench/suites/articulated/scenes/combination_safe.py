@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -62,53 +62,53 @@ def _twist_deg(q_rel: torch.Tensor, axis: int) -> torch.Tensor:
 class CombinationSafeSceneCfg(BaseCfg):
     """Config for `CombinationSafeScene`."""
 
-    # --- tunable: difficulty dials -----------------------------------------------------------
-    dial_radius: float = tunable(0.07)  # bigger dial = easier fingertip work (curriculum knob)
-    stop_tol_deg: float = tunable(6.0)  # rest-within-this of a target counts as "stopped at it"
-    pass_slack_deg: float = tunable(14.0)  # overshoot past a stage target that triggers the reset
+    # --- difficulty dials (dial mass/friction + detent brake) -------
+    dial_radius: float = 0.07  # bigger dial = easier fingertip work (curriculum knob)
+    stop_tol_deg: float = 6.0  # rest-within-this of a target counts as "stopped at it"
+    pass_slack_deg: float = 14.0  # overshoot past a stage target that triggers the reset
     # Measured (smoke 2026-07-14, brake 0.05/window 3.0): a 30 deg/s sweep STOPS DEAD in
     # the window (contrast 0.00 — unambiguous) but a 240 deg/s sweep still dipped to 0.11x
     # median rate. Window narrowed so fast sweeps smear closer to noise while slow stays
     # crisp; brake kept strong enough to be a real drag against a firm turner.
-    detent_window_deg: float = tunable(2.5)  # half-width of the braking zone around each number
-    detent_brake: float = tunable(0.05)  # brake torque magnitude (N*m) — the "click"
+    detent_window_deg: float = 2.5  # half-width of the braking zone around each number
+    detent_brake: float = 0.05  # brake torque magnitude (N*m) — the "click"
     # Plant scaling (v4 finding): with a light dial (I~4e-4) any torque that beats the
     # brake also spins the dial to 500+ deg/s in one substep. A heavy, well-damped dial
     # (mass 0.6 -> I~1.5e-3, friction 0.08) turns at ~36 deg/s under a 0.05 N*m push —
     # finger-scale torques give finger-scale speeds, and the detent is a crisp stall.
-    dial_mass: float = tunable(0.6)
-    dial_friction: float = tunable(0.08)  # viscous friction on the dial (N*m per rad/s)
-    handle_open_deg: float = tunable(60.0)  # handle angle that withdraws the door bolt
-    door_open_deg: float = tunable(70.0)  # door angle that counts as open
+    dial_mass: float = 0.6
+    dial_friction: float = 0.08  # viscous friction on the dial (N*m per rad/s)
+    handle_open_deg: float = 60.0  # handle angle that withdraws the door bolt
+    door_open_deg: float = 70.0  # door angle that counts as open
     # A "stop" must be truly stationary: at 0.08 rad/s (4.6 deg/s) threshold, slow entry
     # approaches and detent stall-creep (~2 deg/s) registered PHANTOM stops that reset
     # the sequence mid-entry (v2 smoke). 0.03 rad/s = 1.7 deg/s + 0.75 s dwell fixes it.
-    rest_speed: float = tunable(0.03)  # |omega| below this (rad/s) counts toward "resting"
-    rest_dwell_steps: int = tunable(90)  # consecutive resting substeps (~0.75 s) to register a stop
+    rest_speed: float = 0.03  # |omega| below this (rad/s) counts toward "resting"
+    rest_dwell_steps: int = 90  # consecutive resting substeps (~0.75 s) to register a stop
 
-    # --- tunable: placement -------------------------------------------------------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
-    safe_pos: tuple = tunable((0.0, 0.15))  # safe centre on the surface (door faces -y)
+    # --- placement ------------------------------------------------------------------------------
+    surface_z: float = 0.0  # work-surface height; 0 = on the ground (null smoke)
+    safe_pos: tuple = (0.0, 0.15)  # safe centre on the surface (door faces -y)
 
-    # --- tunable: presentation ------------------------------------------------------------------
+    # --- presentation -----------------------------------------------------------------------------
     # Demo-only stage lamps + visual hand (human-facing renders). NEVER enable for
     # agent evals — the lamps leak lock state.
-    demo_lamps: bool = tunable(False)
+    demo_lamps: bool = False
 
-    # --- info: structure ----------------------------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))
-    outer: tuple = info((0.42, 0.34, 0.40))  # safe outer (x, y, z)
-    wall_t: float = info(0.02)
-    door_t: float = info(0.02)
-    door_gap: float = info(0.003)  # closed-door clearance off the front rim
-    dial_th: float = info(0.03)  # dial cylinder thickness (its axis is y)
-    spoke_len: float = info(0.16)  # full length of each cross spoke (tips clear the mark nub)
-    spoke_w: float = info(0.016)
-    handle_len: float = info(0.12)
-    prize_size: float = info(0.07)
-    combo_len: int = info(3)
-    number_step: int = info(10)  # dial numbers live on multiples of this (deg)
-    min_sep_deg: float = info(30.0)  # min separation between combination numbers
+    # --- structure ------------------------------------------------------------------------------
+    bench_size: tuple = (1.1, 0.9)
+    outer: tuple = (0.42, 0.34, 0.40)  # safe outer (x, y, z)
+    wall_t: float = 0.02
+    door_t: float = 0.02
+    door_gap: float = 0.003  # closed-door clearance off the front rim
+    dial_th: float = 0.03  # dial cylinder thickness (its axis is y)
+    spoke_len: float = 0.16  # full length of each cross spoke (tips clear the mark nub)
+    spoke_w: float = 0.016
+    handle_len: float = 0.12
+    prize_size: float = 0.07
+    combo_len: int = 3
+    number_step: int = 10  # dial numbers live on multiples of this (deg)
+    min_sep_deg: float = 30.0  # min separation between combination numbers
 
     # Derived (filled in __post_init__): dial/handle mount points in DOOR-local coords.
     dial_mount: tuple = field(default=None, init=False)

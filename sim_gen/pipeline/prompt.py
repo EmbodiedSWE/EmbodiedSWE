@@ -54,7 +54,7 @@ requirement is that every contact the task REQUIRES is one the arm can actually 
 1. scene.py — robobench scene module (exemplar of the format:
    {cosigen_root}/robobench/suites/packing/scenes/pen_holder.py — same KIND of code;
    your content should NOT mirror the exemplar's design):
-   - a SceneCfg dataclass holding every tunable init parameter, with real
+   - a SceneCfg dataclass holding every adjustable init parameter, with real
      randomization (different seeds -> different instances);
    - a BaseScene subclass implementing assets() / reset(env_ids) / get_state /
      set_state / describe(), plus success() and score();

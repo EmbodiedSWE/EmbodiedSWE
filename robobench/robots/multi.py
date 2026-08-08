@@ -41,10 +41,10 @@ app-free.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg, info
+from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg
 
 if TYPE_CHECKING:
     import torch
@@ -61,7 +61,7 @@ class MultiRobotCfg(BaseRobotCfg):
     every child (each validates it against its own `control_modes`)."""
 
     #: {child_name: (ROBOTS name, child cfg | None)} — the children, in action-slice order.
-    robots: dict[str, tuple[str, Any]] = info(factory=dict, doc="{name: (ROBOTS name, cfg|None)} children, in action order")
+    robots: dict[str, tuple[str, Any]] = field(default_factory=dict)  # {name: (ROBOTS name, cfg|None)} children, in action order
 
 
 @ROBOTS.register("multi")

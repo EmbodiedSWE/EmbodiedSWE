@@ -57,7 +57,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -257,69 +257,70 @@ def _pen_spawner_cfg(*, pen_r: float, barrel_l: float, tip_h: float, mass: float
 class PenHolderSceneCfg(BaseCfg):
     """Config for `PenHolderScene`. The source thresholds (`xy_tol`, `depth_min`,
     `holder_tilt_max_deg`) are ported verbatim and stay SOFT by design — this is a floor
-    task; harden only for curriculum variants."""
+    task; harden only for curriculum variants. Nothing is locked — a variant is just a copy with a few
+    fields changed."""
 
-    # --- tunable: rubric thresholds (source values, verbatim) --------------------------------
-    xy_tol: float = tunable(0.035)  # pen bottom within this of the holder axis (source 3.5 cm).
+    # --- rubric thresholds (source values, verbatim) -------------------------------------------
+    xy_tol: float = 0.035  # pen bottom within this of the holder axis (source 3.5 cm).
     # Honest by construction: max physical in-cup offset = inner_r - min pen_r = 3.4 cm
     # < xy_tol, so any pen physically inside counts; a pen leaning OUTSIDE is >= 5 cm away.
-    depth_min: float = tunable(0.035)  # pen bottom below the rim by more than this (source 3.5 cm)
-    holder_tilt_max_deg: float = tunable(45.0)  # holder axis within this of world-up (source 45)
-    pen_align_max_deg: float = tunable(45.0)  # pen axis within this of the HOLDER axis, tip-up
+    depth_min: float = 0.035  # pen bottom below the rim by more than this (source 3.5 cm)
+    holder_tilt_max_deg: float = 45.0  # holder axis within this of world-up (source 45)
+    pen_align_max_deg: float = 45.0  # pen axis within this of the HOLDER axis, tip-up
     # (port interpretation of the source's tip-below-root clause, in our tip-up convention;
     # geometry already bounds an in-cup pen's lean — this clause rejects tip-DOWN insertions).
-    settle_speed: float = tunable(0.05)  # max |v| (pen AND holder) when judging (m/s)
-    placed_tilt_deg: float = tunable(10.0)  # "standing upright" gate for the 100-score set-down
-    placed_z_tol: float = tunable(0.010)  # holder bottom within this of the surface (m)
+    settle_speed: float = 0.05  # max |v| (pen AND holder) when judging (m/s)
+    placed_tilt_deg: float = 10.0  # "standing upright" gate for the 100-score set-down
+    placed_z_tol: float = 0.010  # holder bottom within this of the surface (m)
 
-    # --- tunable: randomization (the task-family knobs) --------------------------------------
-    reset_pos_jitter: float = tunable(0.04)  # uniform +/- xy jitter (holder AND pens) at reset
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- yaw per body at reset (pens lie flat)
-    subset_sample: bool = tunable(True)  # per-episode pen-count sampling (demo sets False)
-    min_present: int = tunable(1)  # per-family lower bound of sampled pen count
+    # --- randomization (the task-family knobs) -------------------------------------------------
+    reset_pos_jitter: float = 0.04  # uniform +/- xy jitter (holder AND pens) at reset
+    reset_yaw_deg: float = 180.0  # uniform +/- yaw per body at reset (pens lie flat)
+    subset_sample: bool = True  # per-episode pen-count sampling (demo sets False)
+    min_present: int = 1  # per-family lower bound of sampled pen count
 
-    # --- tunable: placement (robot embodiments raise the work onto a bench) ------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
-    holder_pos: tuple = tunable((0.22, 0.0))  # holder centre on the surface (source: right half)
-    pens_center: tuple = tunable((-0.10, 0.0))  # scatter-arc centre (source: pens on left half)
-    spawn_radii: tuple = tunable((0.18,))  # scatter arc radii (robot cfgs: front arc)
-    spawn_arc: tuple = tunable((90.0, 270.0))  # scatter arc (deg) around pens_center
+    # --- placement (robot embodiments raise the work onto a bench) ----------------------------
+    surface_z: float = 0.0  # work-surface height; 0 = on the ground (null smoke)
+    holder_pos: tuple = (0.22, 0.0)  # holder centre on the surface (source: right half)
+    pens_center: tuple = (-0.10, 0.0)  # scatter-arc centre (source: pens on left half)
+    spawn_radii: tuple = (0.18,)  # scatter arc radii (robot cfgs: front arc)
+    spawn_arc: tuple = (90.0, 270.0)  # scatter arc (deg) around pens_center
 
-    # --- info: structure ----------------------------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))  # procedural bench top (x, y), used when surface_z > 0
+    # --- structure ------------------------------------------------------------------------------
+    bench_size: tuple = (1.1, 0.9)  # procedural bench top (x, y), used when surface_z > 0
     # Inner inradius sized for FOUR pens, not one: at 40 mm (run 3/4) the fourth drop had no
     # floor left — it rested on the pile of three, too shallow / past the tilt cone until a
     # shake-down seated it. 44 mm is the honesty limit: inner_r - min pen_r = 34 mm < the
     # 35 mm xy_tol, so the cup still enforces the tolerance by construction.
-    holder_inner_r: float = info(0.044)  # inner octagon inradius; funnel = inner_r - pen_r
-    holder_wall_t: float = info(0.008)  # rim width — the universal pinch-grasp affordance
+    holder_inner_r: float = 0.044  # inner octagon inradius; funnel = inner_r - pen_r
+    holder_wall_t: float = 0.008  # rim width — the universal pinch-grasp affordance
     # Height sized against LEAN: a pen with its bottom at the wall and shaft on the opposite
     # rim leans atan((34+44)/108) ~= 36 deg — inside the 45 deg tip-up cone with margin.
-    holder_h: float = info(0.120)
+    holder_h: float = 0.120
     # Floor thickness sized against TUNNELING (GPU PhysX has no CCD): a pen dropped end-on
     # from the mouth hits at ~1.6 m/s = 13 mm/step at 120 Hz — an 8 mm floor was punched
     # through in the first smoke run (pens ejected); 12 mm + the 5 mm contact offset gives
     # ~17 mm of capture per step.
-    holder_bot_t: float = info(0.012)
-    holder_mass: float = info(0.20)
-    holder_color: tuple = info((0.25, 0.45, 0.45))
-    n_segments: int = info(8)
+    holder_bot_t: float = 0.012
+    holder_mass: float = 0.20
+    holder_color: tuple = (0.25, 0.45, 0.45)
+    n_segments: int = 8
     # Contact offset trades phantom contact against fast-contact capture: the 28 mm funnel
     # tolerates a generous 5 mm speculative margin (unlike stacking's 5 mm clearance, which
     # forced 2 mm), and the margin is what catches a 13 mm/step end-on pen impact.
-    contact_offset: float = info(0.005)
-    tip_h: float = info(0.015)  # visual cone tip past the +z barrel end
-    tip_color: tuple = info((0.08, 0.08, 0.08))
-    pen_mass: float = info(0.02)
+    contact_offset: float = 0.005
+    tip_h: float = 0.015  # visual cone tip past the +z barrel end
+    tip_color: tuple = (0.08, 0.08, 0.08)
+    pen_mass: float = 0.02
     # (family name, count, barrel radius, barrel length, rgb) — the source's 2 pens + 2 oil
     # pens; radii pass the thin-cylinder pinch audit (scale-up knob lives here).
-    families: tuple = info((
+    families: tuple = (
         ("pen", 2, 0.010, 0.135, (0.20, 0.35, 0.85)),
         ("oil_pen", 2, 0.012, 0.125, (0.85, 0.25, 0.20)),
-    ))
+    )
     # Off-camera ground depot for absent pens; grid extent 1.0 + 2*0.14 + pen 0.15 < half of
     # env_spacing 3 (the stacking-toy depot analysis).
-    parking_pos: tuple = info((1.0, 1.0))
+    parking_pos: tuple = (1.0, 1.0)
 
     # Derived (filled in __post_init__).
     holder_outer_r: float = field(default=None, init=False)
