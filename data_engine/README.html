@@ -260,7 +260,7 @@
             │   │   ├─ meta.json   <i>lineage (scene · strategy · phase · noise · seed) + verdict + sampled parameters</i>
             │   │   └─ imgs/       <i>optional — frames rendered from the states on demand</i>
             │   ├─ ep_0001/
-            │   └─ meta.json       <i>batch meta: config, seeds, yield + failure-mode summary</i>
+            │   └─ meta.json       <i>batch meta: config, seeds, the RESOLVED params declaration (scene ← strategy merge), yield + failure-mode summary</i>
             └─ &lt;batch_2&gt;/
 
 scenes/
@@ -268,8 +268,9 @@ scenes/
 ├─ scene_0/                        <i>the unmodified benchmark scene — the nominal control</i>
 │   ├─ SUMMARY.md                  <i>this cell's record: what changed, why, measured yields</i>
 │   ├─ meta.json                   <i>metadata: episodes generated, success rate, …</i>
+│   ├─ params.yaml                 <i>optional — the sampling declaration, env level: L4 physics bands (friction, mass, …), dist + reason per entry; no file → nominal-only</i>
 │   ├─ scene/
-│   │   └─ scene.py                <i>full standalone scene — repo suite copy, edited; its cfg's tunables ARE the sampling declaration</i>
+│   │   └─ scene.py                <i>full standalone scene — repo suite copy, edited; its cfg is plain — bands live in params.yaml, never in code</i>
 │   ├─ grader/
 │   │   └─ grader.py               <i>the grader this scene's episodes are verified with — the suite's, modified to match the scene changes</i>
 │   └─ strategies/
@@ -277,6 +278,7 @@ scenes/
 │       ├─ strategy_0/
 │       │   ├─ SUMMARY.md          <i>this cell's record</i>
 │       │   ├─ meta.json           <i>metadata: episodes generated, success rate, …</i>
+│       │   ├─ params.yaml         <i>optional — sampling declaration, solve level: policy/strategy bands → solve kwargs; may override the scene's env bands (reason required); no file → nominal solve</i>
 │       │   ├─ solve.py            <i>the solve as delivered — never modified</i>
 │       │   └─ phases/            <i>optional — created by an L3 session (its ledger in phases/.agent/); until then the solve runs from the scene's own reset</i>
 │       │       ├─ phase_0/        <i>ONE proposal of how to divide/enter the solve — self-contained</i>
@@ -307,7 +309,7 @@ scenes/
       <p><b>Gentle modifications of the world</b> — editing the scene code, optionally the configs and grader; parts that need dedicated expert checks stay untouched. In scope: <b>irrelevant objects</b> (an apple beside the bulb — collision-safe placement, assets from the prebuilt pipeline); <b>the work surface</b> (a different table height or condition, or a more task-suited table). Where a change shifts what success looks like, the scene's <b>check functions and grader are rewritten to match</b>. <b>Out of scope for now</b>: the hard parts — thread mechanics, physics config, and mechanisms like the weld gate stay as the suite ships them.</p>
 
       <h3>L2 · strategy</h3>
-      <p><b>A strategy is a way to do the task, delivered in its <code>solve.py</code></b>, usually separated into several phases, e.g. pick → place → thread. It varies at three grains: <b>parameters</b> of the solve, e.g. forces, speeds, clearances, declared as <code>tunable</code> fields on a <code>Params</code> cfg inside the solve itself — the same mechanism as the scene cfg, so one uniform sampler covers both; a new strategy keeps the base strategy's param names, adding its own (no Params = nominal only, e.g. the delivered solve); <b>small modifications</b>, e.g. execution order where several are valid, preference choices, grasp site; <b>big changes</b>: a genuinely new way to solve the task, e.g. assembling a table with two arms, one strategy has a single arm do the assembly while the other only reorients the table; a new strategy hands the leg over and both arms thread.</p>
+      <p><b>A strategy is a way to do the task, delivered in its <code>solve.py</code></b>, usually separated into several phases, e.g. pick → place → thread. It varies at three grains: <b>parameters</b> of the solve, e.g. forces, speeds, clearances, surfaced as kwargs of the solve (nominal defaults) and banded in the strategy cell's <code>params.yaml</code> — the same file mechanism as the scene cell, so one uniform sampler covers both; a new strategy keeps the base strategy's param names, adding its own (no <code>params.yaml</code> = nominal only, e.g. the delivered solve); <b>small modifications</b>, e.g. execution order where several are valid, preference choices, grasp site; <b>big changes</b>: a genuinely new way to solve the task, e.g. assembling a table with two arms, one strategy has a single arm do the assembly while the other only reorients the table; a new strategy hands the leg over and both arms thread.</p>
 
       <h3>L3 · phase</h3>
       <p><b>Once a strategy is finished, each of its phases becomes an entry point</b>: the strategy's <code>solve.py</code> enters there and runs to task-done, and the phase's reset conditions (<code>reset/&lt;name&gt;.py</code>) propose what the entry state looks like, e.g. restore a recorded mid-task state and jitter it, relocate a free object alone, or move a grasped object rigidly together with the hand. Phases are <b>established, not assumed</b>: init bakes no <code>phases/</code> folder at all — the solve as delivered runs unmodified from the scene's own reset, whatever its shape. An L3 agent session creates phase cells (<code>phases/phase_N/</code>), each a self-contained proposal of how to divide and enter the solve, carrying its own <code>solve_by_phase.py</code> — <code>solve.py</code> itself is never modified — accepted only if the phase's test batch yields.</p>
@@ -332,10 +334,6 @@ scenes/
     <!-- 05 TODO ------------------------------------------------------ -->
     <section id="todo" hidden>
       <h2><span class="num">05</span>TODO</h2>
-
-      <h3>Rebuild <code>tunable</code> in the config</h3>
-      <p><b>Today (2026-08-03):</b> declared across scene/robot/controller cfgs, consumed by nothing — documentation only. Remove all current <code>tunable</code> marks from the scene cfgs and rethink which fields truly belong, e.g. grading thresholds like <code>seat_z</code> never do.</p>
-      <p><b>Rebuild:</b> make it THE sampling declaration, two clients: L4 domain randomization, e.g. friction, mass; L2 solver parameters via the <code>Params</code> cfg. Needs bands, e.g. <code>tunable(0.4, band=(0.30, 0.55))</code>. Note: reset/initialization randomization, e.g. spawn jitter, is not a tunable — it belongs to the scene's own reset and the phase reset conditions (<code>reset/&lt;name&gt;.py</code>).</p>
 
       <h3>Generate batches across machines</h3>
       <p>One <code>generate</code> run = one process, one GPU, one batch — fan-out needs only a dispatcher, since cells are independent, batches are append-only and seeds are explicit. Shard by index (machine k owns seed slice k, à la zeyu's <code>launch_pool.py</code>: rerunning worker k reproduces the same draw); executors = forge-style servers (<code>sim_gen/isaac/forge_server.py</code>); orchestrate with a ledger like <code>sim_gen/pipeline/generate_batch.py</code>. Merge = copy batch folders into <code>data/</code> + <code>refresh_metas</code>.</p>

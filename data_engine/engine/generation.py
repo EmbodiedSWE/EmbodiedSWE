@@ -26,8 +26,23 @@ is the solve's commanded (clean) one — the noise wrapper perturbs only what ex
 Episode states come from env.get_states(), so any recorded step can later be
 restored with set_states (phase resets draw their entry states from these).
 
-Needs a running AppLauncher (see scripts/generate.py). Sampling is nominal-only
-for now: engine/sampler.py is a placeholder until the tunable rebuild.
+Needs a running AppLauncher (see scripts/generate.py). Sampling (engine/sampler.py)
+is driven by the cells' optional params.yaml files; a yaml present means every index
+is a genuine draw (`--nominal` ignores the yamls — the baseline batch mechanism):
+
+  - WORLD (scene cell's yaml): if the cell's scene class defines
+    `apply_world_params(env, values)`, worlds vary PER ENV in one parallel batch —
+    env slot 0 keeps the nominal world (the in-batch canary), slot e >= 1 draws index
+    `env_draw + e - 1`, and the hook writes the per-env values through the PhysX views
+    (mass / material friction are per-env settable; the cfg-field -> view mapping is
+    the cell's own knowledge). Without the hook: one draw (`env_draw`) patches the
+    scene cfg before build — world physics becomes a per-batch axis.
+  - SOLVE (strategy cell's yaml): drawn ONCE per rollout (one batched solve() call
+    parameterizes all its envs together), rollout r drawing index `index0 + r`,
+    passed as solve(...) kwargs — banded names must be kwargs of the solve.
+
+Drawn values land in every episode meta; the full declarations land in the batch
+meta. No params.yaml -> everything nominal, exactly as before.
 """
 
 from __future__ import annotations
@@ -56,22 +71,54 @@ def _load(name: str, path: Path):
     return mod
 
 
-def build_env(scene_dir: Path, num_envs: int, device: str, seed: int):
-    """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene."""
+def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
+              env_decl=None, env_draw: int = 0):
+    """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene.
+
+    `env_decl` (the scene cell's parsed params.yaml) picks the world physics. Two modes
+    (see the module docstring): the cell's scene class defining `apply_world_params`
+    gets PER-ENV worlds — nominal build, slot 0 stays nominal, slots 1.. drawn from
+    `env_draw` on, values written through the hook after build; otherwise ONE draw
+    (`env_draw`) patches the scene cfg before build. Returns (env, gen, drawn, per_env)
+    where `drawn` is the per-slot list (per-env mode, slot 0 = {}) or the single dict.
+    Validation is against the LOCAL scene's own cfg class, so a band naming a
+    nonexistent field fails here — before the expensive build."""
     import dataclasses
 
     import robobench
     import yaml
 
+    from .sampler import sample, validate_env_keys
+
     robobench.discover()
-    from robobench.core.registries import ENVS
+    from robobench.core.registries import ENVS, SCENES
 
     _load("datagen_local_scene", scene_dir / "scene" / "scene.py")
     scene_name = re.search(r'@SCENES\.register\("([\w.]+)"\)',
                            (scene_dir / "scene" / "scene.py").read_text()).group(1)
     gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
-    cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
-    return cfg.build(num_envs=num_envs, device=device, seed=seed), gen
+    drawn: dict | list = {}
+    scene_cfg = None
+    per_env = False
+    cfg_cls = None
+    if env_decl is not None and (env_decl.params or env_decl.frozen):
+        scene_cls = SCENES.get(scene_name)
+        cfg_cls = type(scene_cls().cfg)
+        validate_env_keys(env_decl, cfg_cls())
+        per_env = bool(env_decl.params) and hasattr(scene_cls, "apply_world_params")
+        if per_env:  # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1
+            drawn = [{}] + [sample(env_decl, env_draw + e) for e in range(num_envs - 1)]
+        else:
+            drawn = sample(env_decl, env_draw)
+            if drawn:
+                scene_cfg = cfg_cls(**drawn)  # fresh cfg so __post_init__ derives from the draw
+    cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name, scene_cfg=scene_cfg)
+    env = cfg.build(num_envs=num_envs, device=device, seed=seed)
+    if per_env:
+        nominal = cfg_cls()
+        values = {n: [getattr(nominal, n)] + [d[n] for d in drawn[1:]] for n in env_decl.params}
+        env.scene.apply_world_params(env, values)
+    return env, gen, drawn, per_env
 
 
 def load_grader_cls(scene_dir: Path):
@@ -133,12 +180,13 @@ class Recorder:
 def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scene_0",
               strategy: str = "strategy_0", phase: str | None = None,
               num_envs: int = 4, rounds: int = 1, seed: int = 0,
-              noise: dict | None = None, device: str = "cuda:0") -> Path:
+              noise: dict | None = None, device: str = "cuda:0",
+              env_draw: int = 0, index0: int = 0, nominal: bool = False) -> Path:
     import numpy as np
     import torch
 
-
     from .noise import NoisyActionEnv
+    from .sampler import Declaration, load_declaration, sample
 
     noise = noise or {}
     gen_root = Path(gen_root)
@@ -154,7 +202,13 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     if out.exists():
         raise SystemExit(f"{out} already exists — batches are append-only")
 
-    env, gen = build_env(scene_dir, num_envs, device, seed)
+    env_decl = Declaration() if nominal else load_declaration(scene_dir)
+    solve_decl = Declaration() if nominal else load_declaration(strategy_dir)
+    env, gen, env_drawn, per_env_world = build_env(scene_dir, num_envs, device, seed,
+                                                   env_decl, env_draw)
+    if env_decl.params:
+        mode = "per-env (slot 0 nominal)" if per_env_world else "per-batch"
+        print(f"[batch {batch}] world params {mode}: {env_drawn}", flush=True)
     grader_cls = load_grader_cls(scene_dir)
     if phase is None:
         solve = _load("datagen_solve", strategy_dir / "solve.py").solve
@@ -222,10 +276,12 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                                sigma=noise.get("sigma", 0.0), prob=noise.get("prob", 1.0),
                                duration=noise.get("duration", 0.0), seed=seed + rnd)
         rec = Recorder(stack, env)
+        solve_params = sample(solve_decl, index0 + rnd)
         print(f"[batch {batch}] rollout {rnd + 1}/{rollouts}"
               + (f" ({reset_name})" if reset_name else "")
+              + (f" solve_params={solve_params}" if solve_params else "")
               + f": solve on {num_envs} envs …", flush=True)
-        solve(rec) if entry is None else solve(rec, entry=entry)
+        solve(rec, **solve_params) if entry is None else solve(rec, entry=entry, **solve_params)
 
         verdicts = grader.verdict()
         T = len(rec.actions)
@@ -240,7 +296,9 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             meta = {
                 "episode": ep, "round": rnd, "env_index": e,
                 "success": verdicts[e]["success"], "score": verdicts[e]["score"],
-                "parameters": {},  # nominal — sampler is a placeholder
+                # the actual draws this episode ran under ({} = nominal on that axis)
+                "parameters": {"env": env_drawn[e] if per_env_world else env_drawn,
+                               "solve": solve_params},
                 "reset": reset_name, "reset_fn": (fn_of_env[e] if fn_of_env else None),
                 "entry": entry,
                 "seed": seed + rnd, "steps": T,
@@ -261,6 +319,10 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         "batch": batch, "cell": cell,
         "preset": gen["preset"], "num_envs": num_envs, "rounds": rounds, "seed": seed,
         "noise": {k: v for k, v in noise.items() if v},
+        # the full declarations + this batch's slice of the index space (provenance)
+        "params": {"scene": env_decl.to_meta(), "strategy": solve_decl.to_meta(),
+                   "env_draw": env_draw, "index0": index0, "nominal": nominal,
+                   "per_env_world": per_env_world, "world_drawn": env_drawn},
         "episodes": len(verdicts_all), "successes": n_ok,
         "success_rate": round(n_ok / max(1, len(verdicts_all)), 4),
         "verdicts": verdicts_all,
