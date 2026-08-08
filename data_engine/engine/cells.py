@@ -14,7 +14,7 @@ import shutil
 from pathlib import Path
 
 
-RESET_PY_STUB = '''"""One file per phase, named as the phase: each round sweeps all the files,
+RESET_PY_STUB = '''"""One file per phase, named as the phase: each batch sweeps all the files,
 one rollout per file — a file chooses the entry and builds its state via
 reset_0(env), reset_1(env), … (all applied, envs divided evenly among them)."""
 
