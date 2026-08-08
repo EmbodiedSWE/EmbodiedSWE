@@ -49,7 +49,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -183,68 +183,69 @@ def _piece_spawner_cfg(*, outer_half: float, hole_r: float, thickness: float, ma
 # ----- scene cfg -----------------------------------------------------------------------------------
 @dataclass
 class StackingToySceneCfg(BaseCfg):
-    """Config for `StackingToyScene`. The difficulty knob (`clearance`) stays SOFT by design —
-    this is the floor task; harden it only for curriculum variants."""
+    """Config for `StackingToyScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed. The difficulty knob (`clearance`) stays SOFT by design — this is the floor
+    task; harden it only for curriculum variants."""
 
-    # --- tunable: difficulty dials -----------------------------------------------------------
-    clearance: float = tunable(0.005)  # radial hole-peg clearance (m); hole_r = peg_r + this
-    xy_tol: float = tunable(0.012)  # max piece-centre dist from peg axis to count on-peg (m).
+    # --- difficulty dials ---------------------------------------------------------------------
+    clearance: float = 0.005  # radial hole-peg clearance (m); hole_r = peg_r + this
+    xy_tol: float = 0.012  # max piece-centre dist from peg axis to count on-peg (m).
     # Honest port of the source's 1 mm concentricity: the peg enforces it — max physical
     # on-peg offset = hole_r/cos(22.5) - peg_r ~= 7.1 mm; off-peg is >= ~45 mm away.
-    z_thr: float = tunable(0.005)  # depth-seated tolerance (m) — source z_threshold, verbatim
-    tilt_max_deg: float = tunable(12.0)  # max piece tilt off horizontal to count seated;
+    z_thr: float = 0.005  # depth-seated tolerance (m) — source z_threshold, verbatim
+    tilt_max_deg: float = 12.0  # max piece tilt off horizontal to count seated;
     # a piece cocked on the peg geometrically binds at ~15 deg, a rested one lies at ~0.
-    settle_speed: float = tunable(0.05)  # max |v| when judging (m/s)
-    reset_pos_jitter: float = tunable(0.04)  # uniform +/- xy jitter per piece at reset (m)
-    reset_yaw_deg: float = tunable(45.0)  # uniform +/- yaw per piece at reset (source: 45)
-    subset_sample: bool = tunable(True)  # per-episode piece-subset sampling (demo sets False)
-    min_present: int = tunable(1)  # per-group lower bound of sampled piece count
+    settle_speed: float = 0.05  # max |v| when judging (m/s)
+    reset_pos_jitter: float = 0.04  # uniform +/- xy jitter per piece at reset (m)
+    reset_yaw_deg: float = 45.0  # uniform +/- yaw per piece at reset (source: 45)
+    subset_sample: bool = True  # per-episode piece-subset sampling (demo sets False)
+    min_present: int = 1  # per-group lower bound of sampled piece count
 
-    # --- tunable: placement (robot embodiments raise the work onto a bench) ------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
-    base_pos: tuple = tunable((0.0, 0.0))  # toy-base centre on the surface
-    spawn_radii: tuple = tunable((0.45,))  # scatter ring radii (robot cfgs: two staggered)
-    spawn_arc: tuple = tunable((0.0, 360.0))  # scatter arc (deg); robot cfgs use a front arc
+    # --- placement (robot embodiments raise the work onto a bench) ---------------------------
+    surface_z: float = 0.0  # work-surface height; 0 = on the ground (null smoke)
+    base_pos: tuple = (0.0, 0.0)  # toy-base centre on the surface
+    spawn_radii: tuple = (0.45,)  # scatter ring radii (robot cfgs: two staggered)
+    spawn_arc: tuple = (0.0, 360.0)  # scatter arc (deg); robot cfgs use a front arc
 
-    # --- info: structure ----------------------------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))  # procedural bench top (x, y), used when surface_z > 0
-    base_size: tuple = info((0.30, 0.30, 0.02))  # wooden base slab
-    peg_r: float = info(0.02)
-    peg_h: float = info(0.16)  # holds the 4-ring stack (4 x 0.03) + 40 mm headroom
-    peg_half_spacing: float = info(0.075)  # pegs at (+/-s, +/-s): 0.15 m apart > max piece 0.12
+    # --- structure ------------------------------------------------------------------------------
+    bench_size: tuple = (1.1, 0.9)  # procedural bench top (x, y), used when surface_z > 0
+    base_size: tuple = (0.30, 0.30, 0.02)  # wooden base slab
+    peg_r: float = 0.02
+    peg_h: float = 0.16  # holds the 4-ring stack (4 x 0.03) + 40 mm headroom
+    peg_half_spacing: float = 0.075  # pegs at (+/-s, +/-s): 0.15 m apart > max piece 0.12
     # Guide-cone base FLUSH with the peg (was 0.019, 1 mm under): the exposed peg-top rim
     # annulus + 2x2 mm contact offsets formed a phantom shelf that deterministically
     # perched the last small ring at the peg top (oracle smoke failed on ring_3, 2/2 runs
     # instead of letting it fall through.
-    tip_r: float = info(0.020)
-    tip_h: float = info(0.025)
-    piece_t: float = info(0.03)  # uniform thickness = the stack-grid pitch (keeps `seated` exact)
-    piece_mass: float = info(0.08)
-    n_segments: int = info(8)
+    tip_r: float = 0.020
+    tip_h: float = 0.025
+    piece_t: float = 0.03  # uniform thickness = the stack-grid pitch (keeps `seated` exact)
+    piece_mass: float = 0.08  # applied via MassPropertiesCfg in the piece spawner
+    n_segments: int = 8
     # Pieces AND pegs; rest offset 0. 0.5 mm, NOT the 2 mm first shipped: contact offsets
     # act on BOTH bodies, so 2+2 mm of phantom contact ate 4 of the 5 mm radial hole-peg
     # clearance — a 1 mm-effective press fit 30 mm deep. The oracle deterministically
     # jammed the last ring at the peg mouth (3/3 runs, incl. a flush-cone control run
     # that acquitted the peg-top rim), and the funnel sweep knee sat at 4 mm.
-    contact_offset: float = info(0.0005)
+    contact_offset: float = 0.0005
     # (family name, piece count, rgb) — peg k wears groups[k]'s color: the visible matching cue.
-    groups: tuple = info((
+    groups: tuple = (
         ("ring", 4, (0.85, 0.15, 0.15)),
         ("square", 3, (0.20, 0.35, 0.85)),
         ("star", 2, (0.90, 0.80, 0.15)),
         ("crown", 1, (0.55, 0.20, 0.70)),
-    ))
+    )
     # Outer octagon inradius per piece, size-graded within each family (visual grading only —
     # soft order by decision: the rubric never requires size order).
-    piece_outer: tuple = info((
+    piece_outer: tuple = (
         (0.060, 0.055, 0.050, 0.046),
         (0.055, 0.050, 0.046),
         (0.050, 0.046),
         (0.046,),
-    ))
+    )
     # Off-camera ground depot for absent pieces. Depot grid (4 x 3 at 0.14 m pitch) must stay
     # inside the env cell: max extent 1.0 + 3*0.14 + piece 0.06 = 1.48 < half of env_spacing 3.
-    parking_pos: tuple = info((1.0, 1.0))
+    parking_pos: tuple = (1.0, 1.0)
 
     # Derived (filled in __post_init__).
     hole_r: float = field(default=None, init=False)

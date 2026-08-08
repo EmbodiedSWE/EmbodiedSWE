@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
@@ -30,47 +30,46 @@ if TYPE_CHECKING:
 
 @dataclass
 class NutThreadAssemblySceneCfg(BaseCfg):
-    """Config for `NutThreadAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial
-    or an `info()` structural constant (see `robobench.core.BaseCfg`); `cfg.tunables()` lists the
-    dials. Nothing is locked — a curriculum/debug variant is just a `.copy()` with a few changed.
+    """Config for `NutThreadAssemblyScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed.
     """
 
-    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
+    # --- grading thresholds + reset jitter ---------------------------------------------------------
     # A nut is "seated on a bolt" when — all measured in that bolt's own frame — it is threaded down to
     # at/below `seat_z` above the bolt origin, within `align_xy` of the bolt axis, and tilted
     # <= `align_axis_deg` off it (order-independent: any nut may seat on any bolt).
-    seat_z: float = tunable(0.012)  # max nut-origin height above the bolt origin (m) to count as seated.
+    seat_z: float = 0.012  # max nut-origin height above the bolt origin (m) to count as seated.
     # Calibrated to the asset (the nut USD's origin sits 10 mm below its bottom face): 12 mm puts the
     # nut's top face at/below the bolt's thread top — fully threaded on. Resting on the bolt top is
     # ~25 mm, true bottom-out ~1 mm; gripper pads graze the bolt head below ~4 mm.
-    align_xy: float = tunable(0.015)  # max lateral distance (m) of the nut from the nearest bolt axis
-    align_axis_deg: float = tunable(10.0)  # max tilt of the nut's screw axis off the bolt axis (deg)
-    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter per nut at reset (m); 0 = none
+    align_xy: float = 0.015  # max lateral distance (m) of the nut from the nearest bolt axis
+    align_axis_deg: float = 10.0  # max tilt of the nut's screw axis off the bolt axis (deg)
+    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter per nut at reset (m); 0 = none
     # Part friction (static = dynamic), applied to every shape at bind.
-    nut_friction: float = tunable(0.01)
-    bolt_friction: float = tunable(0.75)
+    nut_friction: float = 0.01
+    bolt_friction: float = 0.75
 
-    # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
-    num_pairs: int = info(1)  # number of bolt+nut pairs
+    # --- layout, structure, masses, asset paths ----------------------------------------------------
+    num_pairs: int = 1  # number of bolt+nut pairs
     # Bolt xy slots, relative to the table centre. One bolt per slot.
-    bolt_slots: tuple[tuple[float, float], ...] = info(((0.0, 0.0),))
-    bolt_height: float = info(0.025)  # informational; the real value is baked into the bolt USD
-    nut_mass: float = info(0.03)  # M16 nut mass (kg)
-    light_intensity: float = info(2500.0)
+    bolt_slots: tuple[tuple[float, float], ...] = ((0.0, 0.0),)
+    bolt_height: float = 0.025  # informational; the real value is baked into the bolt USD
+    nut_mass: float = 0.03  # M16 nut mass (kg)
+    light_intensity: float = 2500.0
     # Nuts' start pose. Default: each nut resting flat (identity quat -> screw axis up) in a row on the
     # +x side of the bolts. A curriculum/robot may set `nut_init_xy` to override the row.
-    nut_init_xy: tuple[tuple[float, float], ...] = info(())  # per-nut start xy (table-rel.); () -> the row below
-    nut_row_x0: float = info(0.12)  # x of nut0 (the loose nuts sit to the +x side of the bolts)
-    nut_row_y: float = info(0.0)  # y of the row
-    nut_spacing: float = info(0.1)  # x gap between adjacent nuts (nut k at x0 + k*spacing)
-    nut_init_z: float = info(0.02)  # [TUNE: to the asset] nut-origin height above the surface when resting flat
-    nut_init_quat: tuple[float, float, float, float] = info((1.0, 0.0, 0.0, 0.0))  # wxyz; identity -> axis up
+    nut_init_xy: tuple[tuple[float, float], ...] = ()  # per-nut start xy (table-rel.); () -> the row below
+    nut_row_x0: float = 0.12  # x of nut0 (the loose nuts sit to the +x side of the bolts)
+    nut_row_y: float = 0.0  # y of the row
+    nut_spacing: float = 0.1  # x gap between adjacent nuts (nut k at x0 + k*spacing)
+    nut_init_z: float = 0.02  # [TUNE: to the asset] nut-origin height above the surface when resting flat
+    nut_init_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # wxyz; identity -> axis up
     # Selectable work surface. `table` picks a preset in `TABLES`; the three fields below default to it
     # when left None/empty, or override it (e.g. raise `surface_z` so a standing robot can reach).
-    table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
-    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = info(None)  # xy the table (and bolts) sit at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    table: str = "lab_table"  # which work surface: "lab_table" | "packing"
+    surface_z: float | None = None  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = None  # xy the table (and bolts) sit at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     # Work-surface presets (vendored under assets/props/). Per table: usd (subdir, file), scale, orient
     # (wxyz), surface_z (top height) + pos (xy) defaults, top_offset (top above the USD origin), height
     # (top->feet, sinks the ground to the table's feet), kinematic (load as a fixed rigid body).
@@ -83,9 +82,9 @@ class NutThreadAssemblySceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
     # Bolt + nut USDs. Empty -> the packaged M16 bolt (with head) and M16 nut under assets/factory/.
-    asset_dir: str = info("")
-    bolt_usd: str = info("")
-    nut_usd: str = info("")
+    asset_dir: str = ""
+    bolt_usd: str = ""
+    nut_usd: str = ""
 
     def __post_init__(self) -> None:
         if not self.nut_init_xy:  # default: nuts resting in a row to the +x side of the bolts

@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -39,37 +39,37 @@ if TYPE_CHECKING:
 class BalanceScaleSceneCfg(BaseCfg):
     """Config for `BalanceScaleScene`."""
 
-    # --- tunable: difficulty dials -----------------------------------------------------------
-    n_boxes: int = tunable(5)
-    mass_lo: float = tunable(0.25)  # per-episode masses sampled in [lo, hi] (kg)
-    mass_hi: float = tunable(0.95)
-    mass_min_gap: float = tunable(0.08)  # min pairwise gap — the instrument's resolution target
-    beam_damping: float = tunable(0.6)  # pivot viscous damping (N*m per rad/s)
-    beam_limit_deg: float = tunable(8.0)  # hard stops; a verdict = beam resting at a stop
-    settle_speed: float = tunable(0.03)  # |omega| (rad/s) below which the beam counts as settled
-    read_min_deg: float = tunable(2.0)  # |angle| below this at rest = "balanced/unreadable"
+    # --- difficulty dials (mass band + pivot damping) ---------------
+    n_boxes: int = 5
+    mass_lo: float = 0.25  # per-episode masses sampled in [lo, hi] (kg)
+    mass_hi: float = 0.95
+    mass_min_gap: float = 0.08  # min pairwise gap — the instrument's resolution target
+    beam_damping: float = 0.6  # pivot viscous damping (N*m per rad/s)
+    beam_limit_deg: float = 8.0  # hard stops; a verdict = beam resting at a stop
+    settle_speed: float = 0.03  # |omega| (rad/s) below which the beam counts as settled
+    read_min_deg: float = 2.0  # |angle| below this at rest = "balanced/unreadable"
 
-    # --- tunable: placement -------------------------------------------------------------------
-    surface_z: float = tunable(0.0)
-    scale_pos: tuple = tunable((0.0, 0.10))  # post centre on the surface
-    shelf_pos: tuple = tunable((0.0, 0.42))  # shelf front-centre
-    box_row_y: float = tunable(-0.25)  # boxes start in a row on this line
+    # --- placement ------------------------------------------------------------------------------
+    surface_z: float = 0.0
+    scale_pos: tuple = (0.0, 0.10)  # post centre on the surface
+    shelf_pos: tuple = (0.0, 0.42)  # shelf front-centre
+    box_row_y: float = -0.25  # boxes start in a row on this line
 
-    # --- info: structure ----------------------------------------------------------------------
-    bench_size: tuple = info((1.4, 1.1))
-    beam_len: float = info(0.36)
-    beam_sec: tuple = info((0.03, 0.02))  # beam cross-section (y, z)
-    post_h: float = info(0.16)  # post top above the surface
-    pivot_gap: float = info(0.006)  # AIR between post top and beam bottom: jointed
+    # --- structure ------------------------------------------------------------------------------
+    bench_size: tuple = (1.4, 1.1)
+    beam_len: float = 0.36
+    beam_sec: tuple = (0.03, 0.02)  # beam cross-section (y, z)
+    post_h: float = 0.16  # post top above the surface
+    pivot_gap: float = 0.006  # AIR between post top and beam bottom: jointed
     # pairs must NEVER overlap — the pivot probe proved the beam was RESTING on the
     # post (rose 1 cm at boot, contact-welded 'hinge') through v1-v7.
-    post_sq: float = info(0.05)
-    tray_size: tuple = info((0.13, 0.13, 0.008))
-    tray_drop: float = info(0.06)  # trays hang this far below the beam axis (pendulum stability)
-    box_size: tuple = info((0.09, 0.09, 0.07))
-    box_gap: float = info(0.16)  # spacing of the start row
-    shelf_slot_w: float = info(0.13)
-    shelf_depth: float = info(0.16)
+    post_sq: float = 0.05
+    tray_size: tuple = (0.13, 0.13, 0.008)
+    tray_drop: float = 0.06  # trays hang this far below the beam axis (pendulum stability)
+    box_size: tuple = (0.09, 0.09, 0.07)
+    box_gap: float = 0.16  # spacing of the start row
+    shelf_slot_w: float = 0.13
+    shelf_depth: float = 0.16
 
     # Derived: tray centre x offset (the lever arm).
     lever: float = field(default=None, init=False)
