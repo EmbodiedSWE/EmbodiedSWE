@@ -2,12 +2,12 @@
 
     .venv/bin/python data_engine/scripts/generate.py --headless \\
         <…/data_gen/<gen_name>> [--scene scene_0] [--strategy strategy_0] [--phase phase_1] \\
-        [--batch default] [--num_envs 4] [--rounds 1] [--seed 0] \\
+        [--batch default] [--num_envs 4] [--seed 0] \\
         [--sigma 0.05 --prob 0.01 --duration 0.5 --dims 0:6]
 
 The cell is the (scene × strategy × phase) triple; phase is optional — without it
 the strategy's solve.py runs from scratch, with it solve_by_phase.py enters at the
-phase's declared entries: each round sweeps ALL the cell's reset/ files, one rollout
+phase's declared entries: the batch sweeps ALL the cell's reset/ files, one rollout
 per file, and within a rollout every reset_N builder in the file shapes an even share
 of the envs. Noise defaults to off (the
 nominal configuration); --dims (e.g. 0:6 = franka-osc arm) is required when
@@ -31,7 +31,6 @@ parser.add_argument("--phase", default=None,
                     help="phase cell under the strategy's phases/ (no cell = from scratch)")
 parser.add_argument("--batch", default=None, help="batch name under data/ (default: batch_<timestamp>)")
 parser.add_argument("--num_envs", type=int, default=4)
-parser.add_argument("--rounds", type=int, default=1)
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--env_draw", type=int, default=0,
                     help="world-draw index: per-env hook -> slice start (slot e uses env_draw+e-1, "
@@ -60,7 +59,7 @@ from engine.generation import run_batch  # noqa: E402
 noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
          "dims": tuple(int(x) for x in args.dims.split(":")) if args.dims else None}
 run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
-          phase=args.phase, num_envs=args.num_envs, rounds=args.rounds, seed=args.seed,
+          phase=args.phase, num_envs=args.num_envs, seed=args.seed,
           noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu",
           env_draw=args.env_draw, index0=args.index0, nominal=args.nominal)
 
