@@ -3,15 +3,16 @@
 A cell is a (scene × strategy × phase) triple in a campaign; the phase is optional —
 without one the strategy's solve.py runs from scratch off the scene's own reset. With
 one, the phase cell declares itself in code: reset/ holds one file per phase of the
-cell's division, named exactly as the phase — each round sweeps ALL the files, one
-rollout per file (in name order), so every entry is covered whatever rounds is: a
+cell's division, named exactly as the phase — each batch sweeps ALL the files, one
+rollout per file (in name order), so every entry is covered: a
 file both chooses which phase to enter and builds its entry state via one or more
 initial-condition builders reset_0(env), reset_1(env), … — a rollout runs them ALL,
 dividing the batch's envs evenly among them (remainder to the earliest; fewer envs
 than builders fills them in order); each episode's meta records its (file, builder)
 lineage. Their randomness uses the globally seeded RNGs. No port in the
 cell = plain solve.py from its natural start. One batch =
-rounds × reset-files × num_envs episodes (no phase: rounds × num_envs):
+reset-files × num_envs episodes (no phase: num_envs — scale comes from MORE
+BATCHES, each with fresh world draws, not from repeating rollouts in one boot):
 
     build the env from the campaign preset on the cell's LOCAL scene copy
     per rollout: reset(seed+rollout) [→ phase reset] → grader → noise → recorder → solve
@@ -179,7 +180,7 @@ class Recorder:
 
 def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scene_0",
               strategy: str = "strategy_0", phase: str | None = None,
-              num_envs: int = 4, rounds: int = 1, seed: int = 0,
+              num_envs: int = 4, seed: int = 0,
               noise: dict | None = None, device: str = "cuda:0",
               env_draw: int = 0, index0: int = 0, nominal: bool = False) -> Path:
     import numpy as np
@@ -214,7 +215,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         solve = _load("datagen_solve", strategy_dir / "solve.py").solve
         entry, conditions = None, []
     else:
-        # reset/ holds one file per phase, named as the phase: each round
+        # reset/ holds one file per phase, named as the phase: each batch
         # sweeps all the files, one rollout per file — a file chooses the
         # entry and builds its state. No port = plain solve.py.
         phase_dir = strategy_dir / "phases" / phase
@@ -230,9 +231,9 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     dims = noise.get("dims")
 
     verdicts_all = []
-    # a round sweeps ALL the cell's reset files, one rollout per file (no
-    # phase = one rollout per round) — every entry is covered whatever rounds is
-    rollouts = rounds * max(1, len(conditions))
+    # one rollout per reset file (no phase = a single rollout) — every entry
+    # covered once per batch; more episodes = more batches
+    rollouts = max(1, len(conditions))
     for rnd in range(rollouts):
         env.reset(seed=seed + rnd)
         reset_name, fn_of_env = None, None
@@ -294,7 +295,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             np.savez_compressed(ep_dir / "traj.npz",
                                 **{k: v[:, e] for k, v in arrays.items()})
             meta = {
-                "episode": ep, "round": rnd, "env_index": e,
+                "episode": ep, "rollout": rnd, "env_index": e,
                 "success": verdicts[e]["success"], "score": verdicts[e]["score"],
                 # the actual draws this episode ran under ({} = nominal on that axis)
                 "parameters": {"env": env_drawn[e] if per_env_world else env_drawn,
@@ -317,7 +318,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     n_ok = sum(v["success"] for v in verdicts_all)
     (out / "meta.json").write_text(json.dumps({
         "batch": batch, "cell": cell,
-        "preset": gen["preset"], "num_envs": num_envs, "rounds": rounds, "seed": seed,
+        "preset": gen["preset"], "num_envs": num_envs, "seed": seed,
         "noise": {k: v for k, v in noise.items() if v},
         # the full declarations + this batch's slice of the index space (provenance)
         "params": {"scene": env_decl.to_meta(), "strategy": solve_decl.to_meta(),
