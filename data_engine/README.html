@@ -334,6 +334,12 @@ scenes/
     <section id="todo" hidden>
       <h2><span class="num">05</span>TODO</h2>
 
+      <h3>Language descriptions in the generated data</h3>
+      <p>Study eval's <b>checkpoint tree</b> (<code>eval/prompts/tools/checkpoint_tree.md</code>, the <code>cosigen-checkpoint-tree</code> skill): every saved node carries natural-language annotations — the state reached, the action attempted, measured notes, plus computed state diffs. Generated episodes carry none of that today. Work out how data gen attaches language to what it records (per-episode and per-phase descriptions, sourced from the solve's visible phases and checkpoint-tree-style annotation), so the dataset can feed language-conditioned training without a separate labeling pass.</p>
+
+      <h3>Unify solver-parameter generation with eval's parameter search</h3>
+      <p>eval already tunes solve constants: <code>eval/tools/parameter_search.py</code> (the <code>cosigen-parameter-optimize</code> skill) runs CMA-ES over a <code>space={"NAME": (lo, hi)}</code> declaration with per-env parameter arrays in ~512 parallel envs. The engine's <code>SOLVE_PARAMS</code> draws one set per batch from hand-set bands over the same kind of constants. Study unifying the two: shared constant names and space/band declaration, and the search's converged region as the evidence that sets <code>SOLVE_PARAMS</code> bands — search finds the safe region, generation samples inside it.</p>
+
       <h3>Generate batches across machines</h3>
       <p>One <code>generate</code> run = one process, one GPU, one batch — fan-out needs only a dispatcher, since cells are independent, batches are append-only and seeds are explicit. Shard by index (machine k owns seed slice k, à la zeyu's <code>launch_pool.py</code>: rerunning worker k reproduces the same draw); executors = forge-style servers (<code>sim_gen/isaac/forge_server.py</code>); orchestrate with a ledger like <code>sim_gen/pipeline/generate_batch.py</code>. Merge = copy batch folders into <code>data/</code> + <code>refresh_metas</code>.</p>
 
