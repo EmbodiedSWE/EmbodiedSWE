@@ -42,6 +42,25 @@ _KEYS = {
 _PRIMES = (2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71)
 
 
+def solve_bands(solve_module: Any) -> dict[str, dict[str, Any]]:
+    """The solve's validated sampling declaration: `SOLVE_PARAMS` maps module-level
+    CONSTANTS of solve.py to distribution specs (None = declared, not sampled). The
+    value assigned in the file IS the nominal; `solve(env)` never changes signature —
+    the engine writes the drawn values onto the module before calling it. One set is
+    drawn PER BATCH (`--solve_draw`). No `SOLVE_PARAMS` -> nominal, solves run
+    unchanged."""
+    src = f"{getattr(solve_module, '__name__', 'solve')}.SOLVE_PARAMS"
+    declared = getattr(solve_module, "SOLVE_PARAMS", {}) or {}
+    bands: dict[str, dict[str, Any]] = {}
+    for name, spec in declared.items():
+        if not hasattr(solve_module, name):
+            raise ValueError(f"{src}: '{name}' is not a module-level constant of the solve")
+        if spec is None:
+            continue
+        bands[name] = _check_spec(src, name, spec)
+    return bands
+
+
 def scene_bands(scene_cls: type, scene_cfg: Any) -> dict[str, dict[str, Any]]:
     """The scene's validated sampling declaration: the `PHYSICAL_PARAMS` entries that carry
     a spec (None entries are appliable-but-not-sampled). Fails loudly — a bad band must
