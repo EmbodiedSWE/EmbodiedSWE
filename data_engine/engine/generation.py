@@ -28,22 +28,14 @@ Episode states come from env.get_states(), so any recorded step can later be
 restored with set_states (phase resets draw their entry states from these).
 
 Needs a running AppLauncher (see scripts/generate.py). Sampling (engine/sampler.py)
-is driven by the cells' optional params.yaml files; a yaml present means every index
-is a genuine draw (`--nominal` ignores the yamls — the baseline batch mechanism):
-
-  - WORLD (scene cell's yaml): if the cell's scene class defines
-    `apply_world_params(env, values)`, worlds vary PER ENV in one parallel batch —
-    env slot 0 keeps the nominal world (the in-batch canary), slot e >= 1 draws index
-    `env_draw + e - 1`, and the hook writes the per-env values through the PhysX views
-    (mass / material friction are per-env settable; the cfg-field -> view mapping is
-    the cell's own knowledge). Without the hook: one draw (`env_draw`) patches the
-    scene cfg before build — world physics becomes a per-batch axis.
-  - SOLVE (strategy cell's yaml): drawn ONCE per rollout (one batched solve() call
-    parameterizes all its envs together), rollout r drawing index `index0 + r`,
-    passed as solve(...) kwargs — banded names must be kwargs of the solve.
-
-Drawn values land in every episode meta; the full declarations land in the batch
-meta. No params.yaml -> everything nominal, exactly as before.
+is driven by the LOCAL scene's own `PHYSICAL_PARAMS` bands — no side files: worlds vary
+PER ENV in one parallel batch. Env slot 0 keeps the nominal world (the in-batch
+canary), slot e >= 1 draws index `env_draw + e - 1`, written after the build via
+`scene.apply_physical_params(env, values)` (the scene owns its cfg-field -> PhysX-view
+mapping; `bind()` routes the nominal application through the same hook, so the code
+path is exercised by every batch ever run). `--nominal` skips sampling (the baseline
+batch). Drawn values land in every episode meta; the band specs land in the batch
+meta. A scene with no bands is nominal at every index, exactly as before.
 """
 
 from __future__ import annotations
@@ -73,23 +65,21 @@ def _load(name: str, path: Path):
 
 
 def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
-              env_decl=None, env_draw: int = 0):
+              env_draw: int = 0, nominal: bool = False):
     """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene.
 
-    `env_decl` (the scene cell's parsed params.yaml) picks the world physics. Two modes
-    (see the module docstring): the cell's scene class defining `apply_world_params`
-    gets PER-ENV worlds — nominal build, slot 0 stays nominal, slots 1.. drawn from
-    `env_draw` on, values written through the hook after build; otherwise ONE draw
-    (`env_draw`) patches the scene cfg before build. Returns (env, gen, drawn, per_env)
-    where `drawn` is the per-slot list (per-env mode, slot 0 = {}) or the single dict.
-    Validation is against the LOCAL scene's own cfg class, so a band naming a
-    nonexistent field fails here — before the expensive build."""
+    World physics comes from the LOCAL scene's own `PHYSICAL_PARAMS` bands (see the module
+    docstring): slot 0 nominal, slot e >= 1 at index `env_draw + e - 1`, written through
+    `scene.apply_physical_params` after the build. `nominal=True` skips sampling. Returns
+    (env, gen, bands, slot_drawn): the validated band specs and the per-slot draws
+    (slot 0 = {}; both empty when nominal or band-less). A bad band fails here — before
+    the expensive build."""
     import dataclasses
 
     import robobench
     import yaml
 
-    from .sampler import sample, validate_env_keys
+    from .sampler import sample, scene_bands
 
     robobench.discover()
     from robobench.core.registries import ENVS, SCENES
@@ -98,28 +88,17 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
     scene_name = re.search(r'@SCENES\.register\("([\w.]+)"\)',
                            (scene_dir / "scene" / "scene.py").read_text()).group(1)
     gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
-    drawn: dict | list = {}
-    scene_cfg = None
-    per_env = False
-    cfg_cls = None
-    if env_decl is not None and (env_decl.params or env_decl.frozen):
-        scene_cls = SCENES.get(scene_name)
-        cfg_cls = type(scene_cls().cfg)
-        validate_env_keys(env_decl, cfg_cls())
-        per_env = bool(env_decl.params) and hasattr(scene_cls, "apply_world_params")
-        if per_env:  # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1
-            drawn = [{}] + [sample(env_decl, env_draw + e) for e in range(num_envs - 1)]
-        else:
-            drawn = sample(env_decl, env_draw)
-            if drawn:
-                scene_cfg = cfg_cls(**drawn)  # fresh cfg so __post_init__ derives from the draw
-    cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name, scene_cfg=scene_cfg)
+    scene_cls = SCENES.get(scene_name)
+    bands = {} if nominal else scene_bands(scene_cls, scene_cls().cfg)
+    # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1
+    slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)] if bands else []
+    cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
     env = cfg.build(num_envs=num_envs, device=device, seed=seed)
-    if per_env:
-        nominal = cfg_cls()
-        values = {n: [getattr(nominal, n)] + [d[n] for d in drawn[1:]] for n in env_decl.params}
-        env.scene.apply_world_params(env, values)
-    return env, gen, drawn, per_env
+    if slot_drawn:
+        c = env.scene.cfg  # nominal source for slot 0
+        values = {n: [getattr(c, n)] + [d[n] for d in slot_drawn[1:]] for n in bands}
+        env.scene.apply_physical_params(env, values)
+    return env, gen, bands, slot_drawn
 
 
 def load_grader_cls(scene_dir: Path):
@@ -182,12 +161,11 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
               strategy: str = "strategy_0", phase: str | None = None,
               num_envs: int = 4, seed: int = 0,
               noise: dict | None = None, device: str = "cuda:0",
-              env_draw: int = 0, index0: int = 0, nominal: bool = False) -> Path:
+              env_draw: int = 0, nominal: bool = False) -> Path:
     import numpy as np
     import torch
 
     from .noise import NoisyActionEnv
-    from .sampler import Declaration, load_declaration, sample
 
     noise = noise or {}
     gen_root = Path(gen_root)
@@ -203,13 +181,10 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     if out.exists():
         raise SystemExit(f"{out} already exists — batches are append-only")
 
-    env_decl = Declaration() if nominal else load_declaration(scene_dir)
-    solve_decl = Declaration() if nominal else load_declaration(strategy_dir)
-    env, gen, env_drawn, per_env_world = build_env(scene_dir, num_envs, device, seed,
-                                                   env_decl, env_draw)
-    if env_decl.params:
-        mode = "per-env (slot 0 nominal)" if per_env_world else "per-batch"
-        print(f"[batch {batch}] world params {mode}: {env_drawn}", flush=True)
+    env, gen, bands, slot_drawn = build_env(scene_dir, num_envs, device, seed,
+                                            env_draw, nominal)
+    if slot_drawn:
+        print(f"[batch {batch}] physical params per-env (slot 0 nominal): {slot_drawn}", flush=True)
     grader_cls = load_grader_cls(scene_dir)
     if phase is None:
         solve = _load("datagen_solve", strategy_dir / "solve.py").solve
@@ -277,12 +252,10 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                                sigma=noise.get("sigma", 0.0), prob=noise.get("prob", 1.0),
                                duration=noise.get("duration", 0.0), seed=seed + rnd)
         rec = Recorder(stack, env)
-        solve_params = sample(solve_decl, index0 + rnd)
         print(f"[batch {batch}] rollout {rnd + 1}/{rollouts}"
               + (f" ({reset_name})" if reset_name else "")
-              + (f" solve_params={solve_params}" if solve_params else "")
               + f": solve on {num_envs} envs …", flush=True)
-        solve(rec, **solve_params) if entry is None else solve(rec, entry=entry, **solve_params)
+        solve(rec) if entry is None else solve(rec, entry=entry)
 
         verdicts = grader.verdict()
         T = len(rec.actions)
@@ -297,9 +270,8 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             meta = {
                 "episode": ep, "rollout": rnd, "env_index": e,
                 "success": verdicts[e]["success"], "score": verdicts[e]["score"],
-                # the actual draws this episode ran under ({} = nominal on that axis)
-                "parameters": {"env": env_drawn[e] if per_env_world else env_drawn,
-                               "solve": solve_params},
+                # the world draws this episode ran under ({} = the nominal world)
+                "parameters": slot_drawn[e] if slot_drawn else {},
                 "reset": reset_name, "reset_fn": (fn_of_env[e] if fn_of_env else None),
                 "entry": entry,
                 "seed": seed + rnd, "steps": T,
@@ -320,10 +292,9 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         "batch": batch, "cell": cell,
         "preset": gen["preset"], "num_envs": num_envs, "seed": seed,
         "noise": {k: v for k, v in noise.items() if v},
-        # the full declarations + this batch's slice of the index space (provenance)
-        "params": {"scene": env_decl.to_meta(), "strategy": solve_decl.to_meta(),
-                   "env_draw": env_draw, "index0": index0, "nominal": nominal,
-                   "per_env_world": per_env_world, "world_drawn": env_drawn},
+        # the scene's band specs + this batch's slice of the index space (provenance)
+        "params": {"physical_params": bands, "env_draw": env_draw, "nominal": nominal,
+                   "per_env": slot_drawn},
         "episodes": len(verdicts_all), "successes": n_ok,
         "success_rate": round(n_ok / max(1, len(verdicts_all)), 4),
         "verdicts": verdicts_all,

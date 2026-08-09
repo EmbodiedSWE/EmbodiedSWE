@@ -148,6 +148,13 @@ class PcGpuRamAssemblySceneCfg(BaseCfg):
 class PcGpuRamAssemblyScene(BaseScene):
     cfg: PcGpuRamAssemblySceneCfg
 
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "card_friction": {"dist": "uniform", "lo": 0.20, "hi": 0.40},
+        "ram_friction": {"dist": "uniform", "lo": 0.20, "hi": 0.40},
+        "case_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
+    }
+
     # Part-local extents of the body collision slabs (they match the visual shells): the card's
     # along its local y, a stick's along its local x. The holders' rails flank THESE faces — the
     # same pairs a parallel-jaw grasp pinches.
@@ -340,6 +347,32 @@ class PcGpuRamAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, on every shape of the asset),
+        `values[name]` one value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the
+        nominal application through here with uniform values, so this is THE friction path —
+        per-env sampling reuses it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        if "case_friction" in values:
+            col = torch.tensor(values["case_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.case.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col  # [static, dynamic, restitution]
+            self.case.root_physx_view.set_material_properties(mats, ids)
+        if "card_friction" in values:
+            col = torch.tensor(values["card_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.card.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col
+            self.card.root_physx_view.set_material_properties(mats, ids)
+        if "ram_friction" in values:
+            col = torch.tensor(values["ram_friction"], dtype=torch.float32).view(-1, 1, 1)
+            for ram in self.rams:
+                mats = ram.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col
+                ram.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the case + part handles, cache env origins, and set the part frictions."""
         super().bind(env)
@@ -347,10 +380,9 @@ class PcGpuRamAssemblyScene(BaseScene):
         self.card: RigidObject = env.iscene["card"]
         self.rams: list[RigidObject] = [env.iscene[f"ram_{k}"] for k in range(self.cfg.num_slots)]
         self.env_origins = env.iscene.env_origins
-        self._set_friction(self.case, self.cfg.case_friction)
-        self._set_friction(self.card, self.cfg.card_friction)
-        for ram in self.rams:
-            self._set_friction(ram, self.cfg.ram_friction)
+        # Nominal friction, all envs — through the same hook per-env sampling uses.
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
         self._grasp_weld_bind()
 
     def grasp_sites(self) -> list:
@@ -368,12 +400,6 @@ class PcGpuRamAssemblyScene(BaseScene):
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
         """Reconcile the weld-on-closure grasp contract every physics substep."""
         self._grasp_weld_step()
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the case pinned at spawn, the card and both sticks loose on

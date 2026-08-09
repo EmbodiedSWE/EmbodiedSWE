@@ -137,6 +137,13 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
 class AllenBoltAssemblyScene(BaseScene):
     cfg: AllenBoltAssemblySceneCfg
 
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "bolt_friction": {"dist": "uniform", "lo": 0.005, "hi": 0.02},
+        "platform_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
+        "key_friction": {"dist": "uniform", "lo": 0.45, "hi": 0.75},
+    }
+
     def __init__(self, cfg: AllenBoltAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or AllenBoltAssemblySceneCfg())
 
@@ -256,6 +263,27 @@ class AllenBoltAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, every shape), `values[name]` one
+        value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the nominal application
+        through here with uniform values, so this is THE friction path — per-env sampling reuses
+        it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        for name, assets in (
+            ("bolt_friction", self.bolts),
+            ("platform_friction", self.platforms),
+            ("key_friction", self.keys),
+        ):
+            if name in values:
+                col = torch.tensor(values[name], dtype=torch.float32).view(-1, 1, 1)
+                for asset in assets:
+                    mats = asset.root_physx_view.get_material_properties()
+                    mats[..., 0:2] = col  # [static, dynamic, restitution]
+                    asset.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the platform + bolt + key handles, cache env origins, and set the part frictions."""
         super().bind(env)
@@ -263,12 +291,9 @@ class AllenBoltAssemblyScene(BaseScene):
         self.bolts: list[RigidObject] = [env.iscene[f"bolt_{i}"] for i in range(self.cfg.num_pairs)]
         self.keys: list[RigidObject] = [env.iscene[f"key_{i}"] for i in range(self.cfg.num_pairs)]
         self.env_origins = env.iscene.env_origins
-        for bolt in self.bolts:
-            self._set_friction(bolt, self.cfg.bolt_friction)
-        for platform in self.platforms:
-            self._set_friction(platform, self.cfg.platform_friction)
-        for key in self.keys:
-            self._set_friction(key, self.cfg.key_friction)
+        # Nominal friction, all envs — through the same hook per-env sampling uses.
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
         self._grasp_weld_bind()
 
     def grasp_sites(self) -> list:
@@ -284,12 +309,6 @@ class AllenBoltAssemblyScene(BaseScene):
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
         """Reconcile the weld-on-closure grasp contract every physics substep."""
         self._grasp_weld_step()
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: platforms pinned at spawn, bolts + keys lying on their sides
