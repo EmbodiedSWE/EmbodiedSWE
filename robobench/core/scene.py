@@ -8,7 +8,7 @@ are deferred so this module imports without AppLauncher.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .config import SimCfg
 
@@ -19,6 +19,18 @@ if TYPE_CHECKING:
 
 
 class BaseScene(ABC):
+    #: The scene's L4 physics dials: cfg fields it can re-apply PER ENV after the build (via
+    #: `apply_physical_params` — post-build view-writable physics: material frictions, masses, joint
+    #: drives), each mapped to a pre-baked sampling band (dist spec, see data_engine's sampler) or
+    #: None = appliable but not sampled (bind still applies the nominal). The data engine samples
+    #: these automatically, one world per env; the cfg default is always the nominal. Empty on the
+    #: base; a concrete scene that implements the hook declares its fields + bands here.
+    #: SCOPE: physical world parameters ONLY — friction, mass, material/drive constants. Never
+    #: sim/solver settings (dt, iterations), never grading thresholds or controller gains, and
+    #: never start-pose jitter (initial conditions belong to the scene's own reset and the phase
+    #: reset conditions, not to physics sampling).
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {}
+
     def __init__(self, cfg: Any) -> None:
         self.cfg = cfg
         self._env: BaseEnv | None = None
@@ -65,6 +77,16 @@ class BaseScene(ABC):
         """Cache the env back-ref + asset handles, once, after the scene is built. Override to grab
         handles (call `super().bind(env)`)."""
         self._env = env
+
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write world-physics values PER ENV through the sim views (post-build) — `values[name]`
+        holds one value per env, for names from `PHYSICAL_PARAMS`. A scene that declares
+        `PHYSICAL_PARAMS` implements this and routes its own nominal application in `bind()` through
+        it (uniform values), so the nominal path and per-env sampling share one code path. The
+        base supports no fields: any request here is a caller bug — fail loudly, never silently
+        skip (silently unapplied values would mislabel recorded data)."""
+        if values:
+            raise ValueError(f"{type(self).__name__} declares no PHYSICAL_PARAMS; cannot apply {sorted(values)}")
 
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
         """Step-coupled scene mechanics, run by the env **once per physics substep** (after the sim
