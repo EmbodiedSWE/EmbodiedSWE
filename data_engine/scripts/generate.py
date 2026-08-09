@@ -35,8 +35,11 @@ parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--env_draw", type=int, default=0,
                     help="physical-param draw slice start: env slot e samples index env_draw+e-1 "
                          "from the scene's PHYSICAL_PARAMS bands (slot 0 stays nominal)")
+parser.add_argument("--solve_draw", type=int, default=0,
+                    help="solve-hyperparameter draw index: ONE set from the solve's "
+                         "SOLVE_PARAMS bands for the whole batch")
 parser.add_argument("--nominal", action="store_true",
-                    help="skip physical-param sampling (baseline batch: every env nominal)")
+                    help="no sampling at all (baseline batch: plain world, bare solve)")
 parser.add_argument("--sigma", type=float, default=0.0, help="action-noise sigma (0 = nominal)")
 parser.add_argument("--prob", type=float, default=1.0, help="noise-window start prob per step")
 parser.add_argument("--duration", type=float, default=0.0, help="noise-window length (sim-seconds; 0 = a single step)")
@@ -59,7 +62,7 @@ noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
 run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
           phase=args.phase, num_envs=args.num_envs, seed=args.seed,
           noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu",
-          env_draw=args.env_draw, nominal=args.nominal)
+          env_draw=args.env_draw, solve_draw=args.solve_draw, nominal=args.nominal)
 
 # Kit teardown regularly hangs inside app.close() (100% CPU spin, holds GPU memory) —
 # same watchdog hard-exit as robobench/scripts/smoke.py; the batch is fully written by now.
