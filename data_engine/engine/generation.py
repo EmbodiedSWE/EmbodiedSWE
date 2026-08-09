@@ -33,9 +33,13 @@ PER ENV in one parallel batch. Env slot 0 keeps the nominal world (the in-batch
 canary), slot e >= 1 draws index `env_draw + e - 1`, written after the build via
 `scene.apply_physical_params(env, values)` (the scene owns its cfg-field -> PhysX-view
 mapping; `bind()` routes the nominal application through the same hook, so the code
-path is exercised by every batch ever run). `--nominal` skips sampling (the baseline
-batch). Drawn values land in every episode meta; the band specs land in the batch
-meta. A scene with no bands is nominal at every index, exactly as before.
+path is exercised by every batch ever run). Solve hyperparameters sample ONE set per
+batch from the solve module's `SOLVE_PARAMS` bands (`--solve_draw`) and are written
+onto the module's CONSTANTS before solve(env) runs — the solve signature never
+changes; the values in the file are the nominal. `--nominal` skips ALL sampling
+(the baseline batch: plain world, the file's own values).
+Drawn values land in every episode meta; the band specs land in the batch meta. No
+bands declared -> nominal at every index, exactly as before.
 """
 
 from __future__ import annotations
@@ -161,11 +165,12 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
               strategy: str = "strategy_0", phase: str | None = None,
               num_envs: int = 4, seed: int = 0,
               noise: dict | None = None, device: str = "cuda:0",
-              env_draw: int = 0, nominal: bool = False) -> Path:
+              env_draw: int = 0, solve_draw: int = 0, nominal: bool = False) -> Path:
     import numpy as np
     import torch
 
     from .noise import NoisyActionEnv
+    from .sampler import sample, solve_bands
 
     noise = noise or {}
     gen_root = Path(gen_root)
@@ -187,7 +192,8 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         print(f"[batch {batch}] physical params per-env (slot 0 nominal): {slot_drawn}", flush=True)
     grader_cls = load_grader_cls(scene_dir)
     if phase is None:
-        solve = _load("datagen_solve", strategy_dir / "solve.py").solve
+        solve_mod = _load("datagen_solve", strategy_dir / "solve.py")
+        solve = solve_mod.solve
         entry, conditions = None, []
     else:
         # reset/ holds one file per phase, named as the phase: each batch
@@ -195,12 +201,22 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         # entry and builds its state. No port = plain solve.py.
         phase_dir = strategy_dir / "phases" / phase
         port = phase_dir / "solve_by_phase.py"
-        solve = _load("datagen_solve", port if port.is_file()
-                      else strategy_dir / "solve.py").solve
+        solve_mod = _load("datagen_solve", port if port.is_file()
+                          else strategy_dir / "solve.py")
+        solve = solve_mod.solve
         has_port = port.is_file()
         entry = None
         conditions = [_load(f"datagen_reset_{f.stem}", f)
                       for f in sorted((phase_dir / "reset").glob("*.py"))]
+    # ONE set of solve hyperparameters per batch (see sampler.solve_bands): drawn at
+    # --solve_draw and WRITTEN ONTO THE MODULE's constants before solve(env) runs —
+    # the solve signature never changes. --nominal (or no SOLVE_PARAMS) -> file values.
+    s_bands = {} if nominal else solve_bands(solve_mod)
+    solve_drawn = sample(s_bands, solve_draw) if s_bands else {}
+    for n, v in solve_drawn.items():
+        setattr(solve_mod, n, v)
+    if solve_drawn:
+        print(f"[batch {batch}] solve params (one set, whole batch): {solve_drawn}", flush=True)
     sha = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
     dims = noise.get("dims")
@@ -270,8 +286,9 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             meta = {
                 "episode": ep, "rollout": rnd, "env_index": e,
                 "success": verdicts[e]["success"], "score": verdicts[e]["score"],
-                # the world draws this episode ran under ({} = the nominal world)
-                "parameters": slot_drawn[e] if slot_drawn else {},
+                # the draws this episode ran under ({} = nominal on that axis)
+                "parameters": {"physical": slot_drawn[e] if slot_drawn else {},
+                               "solve": solve_drawn},
                 "reset": reset_name, "reset_fn": (fn_of_env[e] if fn_of_env else None),
                 "entry": entry,
                 "seed": seed + rnd, "steps": T,
@@ -294,7 +311,8 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         "noise": {k: v for k, v in noise.items() if v},
         # the scene's band specs + this batch's slice of the index space (provenance)
         "params": {"physical_params": bands, "env_draw": env_draw, "nominal": nominal,
-                   "per_env": slot_drawn},
+                   "per_env": slot_drawn,
+                   "solve_params": s_bands, "solve_draw": solve_draw, "solve_drawn": solve_drawn},
         "episodes": len(verdicts_all), "successes": n_ok,
         "success_rate": round(n_ok / max(1, len(verdicts_all)), 4),
         "verdicts": verdicts_all,
