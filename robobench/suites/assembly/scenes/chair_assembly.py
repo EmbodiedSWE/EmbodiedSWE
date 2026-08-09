@@ -71,7 +71,7 @@ import math
 from collections.abc import Callable
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
@@ -478,6 +478,11 @@ PAIRS = ("seat-leg_0", "seat-leg_1", "seat-back", "seat-nut_0", "seat-nut_1")
 class ChairAssemblyScene(BaseScene):
     cfg: ChairAssemblySceneCfg
 
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "nut_friction": {"dist": "uniform", "lo": 0.05, "hi": 0.15, "reason": "nuts must slide on the studs"},
+    }
+
     def __init__(self, cfg: ChairAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or ChairAssemblySceneCfg())
 
@@ -582,6 +587,22 @@ class ChairAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ------------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, every shape of both nuts),
+        `values[name]` one value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the
+        nominal application through here with uniform values, so this is THE friction path —
+        per-env sampling reuses it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        if "nut_friction" in values:
+            col = torch.tensor(values["nut_friction"], dtype=torch.float32).view(-1, 1, 1)
+            for nut in self.nuts:
+                mats = nut.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col  # [static, dynamic, restitution]
+                nut.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab handles, allocate the weld flags + ordering-violation metric, and pre-author
         the 5 (disabled) weld joints per env (the ikea pattern: toggled, never created
@@ -597,17 +618,11 @@ class ChairAssemblyScene(BaseScene):
         # ordering metric: rising edges of "nut riding a stud while (seat,back) unassembled"
         self.order_violations = torch.zeros(n, dtype=torch.long, device=env.device)
         self._viol_prev = torch.zeros(n, 2, dtype=torch.bool, device=env.device)
-        for nut in self.nuts:  # nuts must SLIDE down cone + stud; they lock by weld
-            self._set_friction(nut, self.cfg.nut_friction)
+        # Nominal friction, all envs — through the same hook per-env sampling uses (nuts must
+        # SLIDE down cone + stud; they lock by weld).
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {name: [getattr(c, name)] * E for name in self.PHYSICAL_PARAMS})
         self._precreate_weld_joints()
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite static + dynamic friction on every shape of `asset` (all envs) — the
-        nut_thread scene pattern."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(
-            mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start (all welds released): the seat lies underside-up at

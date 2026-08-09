@@ -106,6 +106,12 @@ class NutThreadAssemblySceneCfg(BaseCfg):
 class NutThreadAssemblyScene(BaseScene):
     cfg: NutThreadAssemblySceneCfg
 
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "nut_friction": {"dist": "uniform", "lo": 0.005, "hi": 0.02},
+        "bolt_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
+    }
+
     def __init__(self, cfg: NutThreadAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or NutThreadAssemblySceneCfg())
 
@@ -205,6 +211,23 @@ class NutThreadAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, every shape), `values[name]` one
+        value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the nominal application
+        through here with uniform values, so this is THE friction path — per-env sampling reuses
+        it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        for name, assets in (("nut_friction", self.nuts), ("bolt_friction", self.bolts)):
+            if name in values:
+                col = torch.tensor(values[name], dtype=torch.float32).view(-1, 1, 1)
+                for asset in assets:
+                    mats = asset.root_physx_view.get_material_properties()
+                    mats[..., 0:2] = col  # [static, dynamic, restitution]
+                    asset.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the bolt + nut handles, cache env origins, and set the part frictions. Called once
         after the scene is built (the sim is already playing, so the physx views are ready)."""
@@ -212,16 +235,9 @@ class NutThreadAssemblyScene(BaseScene):
         self.bolts: list[Articulation] = [env.iscene[f"bolt_{i}"] for i in range(self.cfg.num_pairs)]
         self.nuts: list[RigidObject] = [env.iscene[f"nut_{i}"] for i in range(self.cfg.num_pairs)]
         self.env_origins = env.iscene.env_origins
-        for nut in self.nuts:
-            self._set_friction(nut, self.cfg.nut_friction)
-        for bolt in self.bolts:
-            self._set_friction(bolt, self.cfg.bolt_friction)
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
+        # Nominal friction, all envs — through the same hook per-env sampling uses.
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the bolts stand upright on the table and the nuts rest flat on it

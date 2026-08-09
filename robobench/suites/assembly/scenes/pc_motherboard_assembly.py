@@ -148,6 +148,13 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
 class PcMotherboardAssemblyScene(BaseScene):
     cfg: PcMotherboardAssemblySceneCfg
 
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "bolt_friction": {"dist": "uniform", "lo": 0.005, "hi": 0.02},
+        "case_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
+        "key_friction": {"dist": "uniform", "lo": 0.45, "hi": 0.75},
+    }
+
     def __init__(self, cfg: PcMotherboardAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or PcMotherboardAssemblySceneCfg())
 
@@ -292,6 +299,32 @@ class PcMotherboardAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, on every shape of the asset),
+        `values[name]` one value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the
+        nominal application through here with uniform values, so this is THE friction path —
+        per-env sampling reuses it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        if "case_friction" in values:
+            col = torch.tensor(values["case_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.case.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col  # [static, dynamic, restitution]
+            self.case.root_physx_view.set_material_properties(mats, ids)
+        if "key_friction" in values:
+            col = torch.tensor(values["key_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.key.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col
+            self.key.root_physx_view.set_material_properties(mats, ids)
+        if "bolt_friction" in values:
+            col = torch.tensor(values["bolt_friction"], dtype=torch.float32).view(-1, 1, 1)
+            for bolt in self.bolts:
+                mats = bolt.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col
+                bolt.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the case + bolt + key handles, cache env origins, and set the part frictions."""
         super().bind(env)
@@ -299,10 +332,9 @@ class PcMotherboardAssemblyScene(BaseScene):
         self.bolts: list[RigidObject] = [env.iscene[f"bolt_{i}"] for i in range(self.cfg.num_holes)]
         self.key: RigidObject = env.iscene["key"]
         self.env_origins = env.iscene.env_origins
-        self._set_friction(self.case, self.cfg.case_friction)
-        self._set_friction(self.key, self.cfg.key_friction)
-        for bolt in self.bolts:
-            self._set_friction(bolt, self.cfg.bolt_friction)
+        # Nominal friction, all envs — through the same hook per-env sampling uses.
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
         self._grasp_weld_bind()
         self._screw_bind()
 
@@ -317,12 +349,6 @@ class PcMotherboardAssemblyScene(BaseScene):
         substep."""
         self._grasp_weld_step()
         self._screw_step()
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the case pinned at spawn, bolts lying in a row beside it,

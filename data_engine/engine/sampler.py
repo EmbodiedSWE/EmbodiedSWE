@@ -1,46 +1,36 @@
-"""sampler — per-episode/per-batch parameters drawn from the cells' params.yaml files.
+"""sampler — per-env world-physics draws from the scene's own PHYSICAL_PARAMS bands.
 
-THE sampling declaration is data, not code: an optional, FLAT `params.yaml` per cell —
-the file's location says which layer it feeds, so there are no section headers:
+THE sampling declaration lives in the scene class (no side files): `PHYSICAL_PARAMS` on a
+`BaseScene` subclass maps each post-build-appliable cfg field to a distribution spec —
+pre-baked reasonable bands, authored next to the knowledge that justifies them (the
+scene's own comments document the knees):
 
-    scenes/<scene_cell>/params.yaml                 world physics -> scene-cfg field overrides
-    .../strategies/<strategy_N>/params.yaml         solve parameters -> solve(...) kwargs
+    PHYSICAL_PARAMS = {
+        "bulb_glass_friction": {"dist": "uniform", "lo": 0.30, "hi": 0.45},
+        "part_mass":           {"dist": "gaussian", "mean": 0.05, "std": 0.01, "lo": 0.02},
+        "socket_friction":     None,   # appliable but NOT sampled (bind still applies nominal)
+    }
 
-Each top-level key is a parameter name mapped to a distribution spec:
+`dist` is one of uniform | loguniform | gaussian (optional lo/hi truncation) | choice;
+`reason` is optional free text carried into the meta. A cell adjusts bands by editing
+its own scene.py copy — the same way it edits any other part of its world.
 
-    bulb_glass_friction: {dist: uniform, lo: 0.30, hi: 0.45, reason: "knee at 0.3"}
-    nut_mass:            {dist: gaussian, mean: 0.03, std: 0.008, lo: 0.015}
-    approach_side:       {dist: choice, options: ["+y", "-y"]}
-
-`dist` is one of uniform | loguniform | gaussian | choice; `reason` is optional free
-text carried into the meta. One reserved key: `frozen:` — a {name: note} map of
-parameters deliberately out of reach (a name both frozen and banded is an error).
-
-Nominal is IMPLICIT — the yaml never states it. The scene cfg's default is the env
-nominal; the solve kwarg's default is the solve nominal. A cell WITHOUT a params.yaml
-is nominal at every index (existing cells run unchanged), and the nominal baseline
-batch stays what it always was — a batch run without (or ignoring) the yamls. When a
-yaml IS present, every index >= 0 is a genuine draw: no reserved canary index.
-
-Draws are a pure function of the index: Halton low-discrepancy per dimension
-(dimensions in sorted name order), `choice` cycled. Env parameters vary per BATCH
-(the env is built once per batch; the cfg is patched before build), solve parameters
-per ROLLOUT (one batched solve() call parameterizes all its envs together).
-Reset/initialization randomization is NOT sampled here; it belongs to the scene's
-own reset and the phase reset conditions.
-
-Grading/feedback law is never declared here — that is what `frozen:` is for.
+Nominal is IMPLICIT — a band never repeats it: the cfg default IS the nominal, and
+env slot 0 of every batch keeps it (the in-batch canary; see engine/generation.py).
+`--nominal` skips sampling entirely (the baseline batch). Draws are a pure function of
+the index: Halton low-discrepancy per dimension (sorted name order), `choice` cycled,
+so draw k is the same value on any machine, forever — sharding and reruns need no
+coordination and no stored state. Reset/initialization randomization is NOT sampled
+here; it belongs to the scene's own reset and the phase reset conditions. Grading
+thresholds and controller gains are never banded.
 """
 
 from __future__ import annotations
 
 import math
 import statistics
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-PARAMS_FILE = "params.yaml"
 DISTS = ("uniform", "loguniform", "gaussian", "choice")
 # per-dist required/allowed spec keys (besides "dist"); "reason" is allowed everywhere
 _KEYS = {
@@ -52,97 +42,67 @@ _KEYS = {
 _PRIMES = (2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71)
 
 
-# ----- declaration loading ----------------------------------------------------------------------
-@dataclass
-class Declaration:
-    """One cell's parsed params.yaml: {name: spec} bands + the frozen {name: note} map."""
-
-    params: dict[str, dict[str, Any]] = field(default_factory=dict)
-    frozen: dict[str, str] = field(default_factory=dict)
-    source: str = ""  # the file it came from ("" -> absent: nominal-only)
-
-    def to_meta(self) -> dict[str, Any]:
-        """The declaration verbatim, for the batch meta.json (provenance)."""
-        return {"source": self.source, "params": self.params, "frozen": self.frozen}
-
-
-def load_declaration(cell_dir: Path) -> Declaration:
-    """Parse `<cell_dir>/params.yaml`; absent file -> the empty (nominal-only) declaration.
-    Validation fails loudly — a typo in a band must kill the batch, not silently go nominal."""
-    path = Path(cell_dir) / PARAMS_FILE
-    if not path.is_file():
-        return Declaration()
-    import yaml
-
-    raw = yaml.safe_load(path.read_text()) or {}
-    if not isinstance(raw, dict):
-        raise ValueError(f"{path}: top level must be a mapping of param name -> spec")
-    frozen = raw.pop("frozen", {}) or {}
-    if not isinstance(frozen, dict) or not all(isinstance(v, str) for v in frozen.values()):
-        raise ValueError(f"{path}: `frozen` must map names to a short note (string)")
-    params: dict[str, dict[str, Any]] = {}
-    for name, spec in raw.items():
-        params[name] = _check_spec(path, name, spec)
-        if name in frozen:
-            raise ValueError(f"{path}: '{name}' is both banded and frozen")
-    return Declaration(params, dict(frozen), str(path))
+def scene_bands(scene_cls: type, scene_cfg: Any) -> dict[str, dict[str, Any]]:
+    """The scene's validated sampling declaration: the `PHYSICAL_PARAMS` entries that carry
+    a spec (None entries are appliable-but-not-sampled). Fails loudly — a bad band must
+    kill the batch before the expensive build, never silently go nominal. Every name
+    must be a real field of the scene's cfg (the nominal source)."""
+    src = f"{scene_cls.__name__}.PHYSICAL_PARAMS"
+    bands: dict[str, dict[str, Any]] = {}
+    for name, spec in getattr(scene_cls, "PHYSICAL_PARAMS", {}).items():
+        if not hasattr(scene_cfg, name):
+            raise ValueError(f"{src}: '{name}' is not a field of {type(scene_cfg).__name__}")
+        if spec is None:
+            continue
+        bands[name] = _check_spec(src, name, spec)
+    return bands
 
 
-def _check_spec(path: Path, name: str, spec: Any) -> dict[str, Any]:
+def _check_spec(src: str, name: str, spec: Any) -> dict[str, Any]:
     if not isinstance(spec, dict) or "dist" not in spec:
-        raise ValueError(f"{path}: '{name}' must be a mapping with a `dist` key")
+        raise ValueError(f"{src}: '{name}' must be a mapping with a `dist` key (or None)")
     dist = spec["dist"]
     if dist not in DISTS:
-        raise ValueError(f"{path}: '{name}': unknown dist '{dist}' (one of {', '.join(DISTS)})")
+        raise ValueError(f"{src}: '{name}': unknown dist '{dist}' (one of {', '.join(DISTS)})")
     required, optional = _KEYS[dist]
     keys = set(spec) - {"dist", "reason"}
     if not required <= keys:
-        raise ValueError(f"{path}: '{name}' ({dist}) missing {sorted(required - keys)}")
+        raise ValueError(f"{src}: '{name}' ({dist}) missing {sorted(required - keys)}")
     if keys - required - optional:
-        raise ValueError(f"{path}: '{name}' ({dist}) has unknown keys {sorted(keys - required - optional)}")
-    if dist != "choice":  # coerce numerics — pyyaml reads unsigned-exponent floats ("1.0e5") as str
+        raise ValueError(f"{src}: '{name}' ({dist}) has unknown keys {sorted(keys - required - optional)}")
+    if dist != "choice":
         for k in keys:
             try:
                 spec[k] = float(spec[k])
             except (TypeError, ValueError):
-                raise ValueError(f"{path}: '{name}': `{k}` must be a number, got {spec[k]!r}") from None
+                raise ValueError(f"{src}: '{name}': `{k}` must be a number, got {spec[k]!r}") from None
     if dist in ("uniform", "loguniform"):
         lo, hi = spec["lo"], spec["hi"]
         if not lo < hi:
-            raise ValueError(f"{path}: '{name}': lo must be < hi")
+            raise ValueError(f"{src}: '{name}': lo must be < hi")
         if dist == "loguniform" and lo <= 0:
-            raise ValueError(f"{path}: '{name}': loguniform needs lo > 0")
+            raise ValueError(f"{src}: '{name}': loguniform needs lo > 0")
     elif dist == "gaussian":
         if spec["std"] <= 0:
-            raise ValueError(f"{path}: '{name}': std must be > 0")
+            raise ValueError(f"{src}: '{name}': std must be > 0")
         if "lo" in spec and "hi" in spec and not spec["lo"] < spec["hi"]:
-            raise ValueError(f"{path}: '{name}': lo must be < hi")
+            raise ValueError(f"{src}: '{name}': lo must be < hi")
     elif not spec["options"]:
-        raise ValueError(f"{path}: '{name}': choice needs non-empty options")
+        raise ValueError(f"{src}: '{name}': choice needs non-empty options")
     return dict(spec)
 
 
-def validate_env_keys(decl: Declaration, scene_cfg: Any) -> None:
-    """Every env param (and frozen name) must be a real field of the cell's scene cfg —
-    called by generation once the cfg exists, so typos fail before any rollout."""
-    for name in (*decl.params, *decl.frozen):
-        if not hasattr(scene_cfg, name):
-            raise ValueError(f"{decl.source}: '{name}' is not a field of {type(scene_cfg).__name__}")
-
-
-# ----- index-addressed draws --------------------------------------------------------------------
-def sample(decl: Declaration, index: int) -> dict[str, Any]:
-    """{name: value} for one index — a pure function of (declaration, index). Every
-    index >= 0 is a genuine draw (an empty declaration -> {} = nominal; the nominal
-    BASELINE is a batch run without yamls). Halton low-discrepancy per dimension in
-    sorted name order; `choice` cycles its options so coverage is even at any count."""
-    if not decl.params:
+def sample(bands: dict[str, dict[str, Any]], index: int) -> dict[str, Any]:
+    """{name: value} for one draw index — a pure function of (bands, index); {} for
+    empty bands. Halton low-discrepancy per dimension in sorted name order; `choice`
+    cycles its options so coverage is even at any count."""
+    if not bands:
         return {}
     if index < 0:
         raise ValueError("index must be >= 0")
     out: dict[str, Any] = {}
-    for dim, name in enumerate(sorted(decl.params)):
-        spec = decl.params[name]
+    for dim, name in enumerate(sorted(bands)):
+        spec = bands[name]
         if spec["dist"] == "choice":
             out[name] = spec["options"][index % len(spec["options"])]
             continue
