@@ -177,4 +177,8 @@ its (file, builder) lineage.
 This generates one batch of data using your proposed `phase_N` and its initial
 conditions, under `/workspace/data/<batch>/`: one `ep_NNNN/` folder per
 episode, success/fail in each episode's `meta.json`, and the batch summary
-(yield) in `data/<batch>/meta.json`. Judge by success, not score — a mid-phase entry gets partial score for free (the entry state already satisfies part of the rubric).
+(yield) in `data/<batch>/meta.json`. Physical parameters are sampled
+automatically (env 0 always keeps the plain, unsampled world); add
+`--nominal` to turn sampling off while you debug entries. Judge by success,
+not score — a mid-phase entry gets partial score for free (the entry state
+already satisfies part of the rubric).
