@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -41,57 +41,57 @@ if TYPE_CHECKING:
 
 @dataclass
 class PcGpuAssemblySceneCfg(BaseCfg):
-    """Config for `PcGpuAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial or
-    an `info()` structural constant (see `robobench.core.BaseCfg`)."""
+    """Config for `PcGpuAssemblyScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed."""
 
-    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
+    # --- seating gates, reset jitter, part frictions, grasp contract -------------------------------
     # The card is "seated" when — in the case's frame — its tab is >= `seat_depth` below the slot
     # mouth, its origin is within `align_xy` of the seated point, and its axes are within
     # `align_axis_deg` (tilt) / `align_yaw_deg` (heading along the slot) of the case's. The full
     # stroke from the slot mouth to the channel floor is 5 mm, so 4 mm separates "seated" from
     # "merely resting in the mouth".
-    seat_depth: float = tunable(0.004)  # min tab depth below the slot mouth (m) to count as seated
-    align_xy: float = tunable(0.003)  # max distance (m) of the card origin from the seated point
-    align_axis_deg: float = tunable(3.0)  # max tilt of the card's up axis off the slot axis (deg)
-    align_yaw_deg: float = tunable(3.0)  # max heading error of the card's length axis (deg)
-    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter for the loose card at reset (m)
+    seat_depth: float = 0.004  # min tab depth below the slot mouth (m) to count as seated
+    align_xy: float = 0.003  # max distance (m) of the card origin from the seated point
+    align_axis_deg: float = 3.0  # max tilt of the card's up axis off the slot axis (deg)
+    align_yaw_deg: float = 3.0  # max heading error of the card's length axis (deg)
+    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter for the loose card at reset (m)
     # Part friction (static = dynamic), set on every shape at bind. The moving card runs moderately
     # slick against a grippier fixed case, so it slides down the channel but holds seat.
-    card_friction: float = tunable(0.3)
-    case_friction: float = tunable(0.75)
+    card_friction: float = 0.3
+    case_friction: float = 0.75
     # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX
     # form — the grasp-weld machinery at the end of this scene class):
     # close the fingers squarely across the card's body slab near its top edge and the card welds
     # to the hand; open wide to release. Gripper envs only (no-op under robot="null").
-    grasp_weld: bool = tunable(True)
-    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
+    grasp_weld: bool = True
+    grasp_weld_dist: float = 0.010  # pinch-point-to-grip-band engage radius (m)
 
-    # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
+    # --- structure, reset layout, masses, asset paths ----------------------------------------------
     # Seated card origin (its PCB-tab bottom centre) in the case's local frame; orientation seated
     # = the case's own axes (identity). Baked into the committed USDs (keep in sync if they change).
-    seat_pos: tuple[float, float, float] = info((-0.01595, 0.0293, 0.0035))
-    slot_mouth_z: float = info(0.0085)  # slot top in the case frame: depth datum (5 mm at full seat)
-    board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
-    case_lift: float = info(0.0289)  # board face above the side panel the case lies on
-    card_mass: float = info(1.0)  # dual-fan RTX 2060 (kg)
-    light_intensity: float = info(2500.0)
+    seat_pos: tuple[float, float, float] = (-0.01595, 0.0293, 0.0035)
+    slot_mouth_z: float = 0.0085  # slot top in the case frame: depth datum (5 mm at full seat)
+    board_top: float = 0.0  # board face height in the case frame (the asset's own origin)
+    case_lift: float = 0.0289  # board face above the side panel the case lies on
+    card_mass: float = 1.0  # dual-fan RTX 2060 (kg); applied via mass_props at spawn
+    light_intensity: float = 2500.0
     # Loose card start pose: lying backplate-down on the table beside the case (+x side; the case
     # spans x < 0.13 and the lying card's tail reaches origin_x - 0.132).
-    card_init_xy: tuple[float, float] = info((0.28, 0.0))  # card start xy (table-rel.)
-    card_init_z: float = info(0.0022)  # origin height lying backplate-down (backplate plane -2 mm)
-    card_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
-    card_contact_offset: float = info(0.0001)  # collision contact offsets (m), set at spawn
-    case_contact_offset: float = info(0.0001)
+    card_init_xy: tuple[float, float] = (0.28, 0.0)  # card start xy (table-rel.)
+    card_init_z: float = 0.0022  # origin height lying backplate-down (backplate plane -2 mm)
+    card_init_quat: tuple[float, float, float, float] = (0.70711, 0.70711, 0.0, 0.0)  # flat
+    card_contact_offset: float = 0.0001  # collision contact offsets (m), set at spawn
+    case_contact_offset: float = 0.0001
     # Optional foam holder (a floor pad + two rails flanking the card's 36 mm body slab) that
     # presents the card UPRIGHT. Enable together with an upright `card_init_quat` (identity =
     # the seated orientation) and `card_init_z` = the holder's floor top.
-    card_stand: bool = info(False)
-    card_stand_gap: float = info(0.0025)  # rail clearance per side around the body slab (m)
+    card_stand: bool = False
+    card_stand_gap: float = 0.0025  # rail clearance per side around the body slab (m)
     # Selectable work surface (same presets as the sibling scenes).
-    table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
-    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    table: str = "lab_table"  # which work surface: "lab_table" | "packing"
+    surface_z: float | None = None  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = None  # xy the table sits at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
                       "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.5, 0.0),
@@ -101,9 +101,9 @@ class PcGpuAssemblySceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
     # Asset USDs; empty -> the prebuilt assets committed under `assets/`.
-    asset_dir: str = info("")
-    case_usd: str = info("")
-    card_usd: str = info("")
+    asset_dir: str = ""
+    case_usd: str = ""
+    card_usd: str = ""
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parents[1] / "assets"
@@ -127,6 +127,12 @@ class PcGpuAssemblyScene(BaseScene):
     # collider is trimmed to the VISUAL shell). The stand's rails flank THESE faces — the same
     # pair a parallel-jaw grasp pinches.
     CARD_BODY_Y: ClassVar[tuple[float, float]] = (-0.002, 0.0328)
+
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "card_friction": {"dist": "uniform", "lo": 0.20, "hi": 0.40},
+        "case_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
+    }
 
     def __init__(self, cfg: PcGpuAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or PcGpuAssemblySceneCfg())
@@ -258,14 +264,31 @@ class PcGpuAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, every shape), `values[name]` one
+        value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the nominal application
+        through here with uniform values, so this is THE friction path — per-env sampling reuses
+        it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        for name, asset in (("case_friction", self.case), ("card_friction", self.card)):
+            if name in values:
+                col = torch.tensor(values[name], dtype=torch.float32).view(-1, 1, 1)
+                mats = asset.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col  # [static, dynamic, restitution]
+                asset.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the case + card handles, cache env origins, and set the part frictions."""
         super().bind(env)
         self.case: RigidObject = env.iscene["case"]
         self.card: RigidObject = env.iscene["card"]
         self.env_origins = env.iscene.env_origins
-        self._set_friction(self.case, self.cfg.case_friction)
-        self._set_friction(self.card, self.cfg.card_friction)
+        # Nominal friction, all envs — through the same hook per-env sampling uses.
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
         self._grasp_weld_bind()
 
     def grasp_sites(self) -> list:
@@ -277,12 +300,6 @@ class PcGpuAssemblyScene(BaseScene):
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
         """Reconcile the weld-on-closure grasp contract every physics substep."""
         self._grasp_weld_step()
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the case pinned at spawn, the card lying backplate-down on

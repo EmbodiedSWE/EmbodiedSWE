@@ -48,7 +48,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -230,69 +230,69 @@ def _vessel_spawner_cfg(*, inner_r: float, wall_t: float, height: float, bot_t: 
 class PouringSceneCfg(BaseCfg):
     """Config for `PouringScene`."""
 
-    # --- tunable: goal + judging (difficulty dials) --------------------------------------------
-    goal: str = tunable("split")  # "split" (v1 metered, default) | "pour_all" (faithful v0)
-    n_lo: int = tunable(18)  # sampled active pellet count, inclusive bounds
-    n_hi: int = tunable(24)
-    frac_lo: float = tunable(0.55)  # sampled major-bowl target fraction band
-    frac_hi: float = tunable(0.72)  # (~2/3 split; brief's [0.58, 0.75] = band +/- tol)
-    count_tol: int = tunable(2)  # |major count - target| <= this
-    spill_max: int = tunable(2)  # pellets at rest outside all vessels allowed
-    spill_grace: int = tunable(60)  # displacement-window length (substeps) for the spill latch
-    spill_disp: float = tunable(0.006)  # moved less than this over a window = at rest (m)
-    pour_all_frac: float = tunable(0.90)  # v0 gate: >= this fraction in the major bowl
-    settle_speed: float = tunable(0.05)  # |v| below this = settled (judging gate)
+    # --- goal + judging (difficulty dials) ------------------------------------------------------
+    goal: str = "split"  # "split" (v1 metered, default) | "pour_all" (faithful v0)
+    n_lo: int = 18  # sampled active pellet count, inclusive bounds
+    n_hi: int = 24
+    frac_lo: float = 0.55  # sampled major-bowl target fraction band
+    frac_hi: float = 0.72  # (~2/3 split; brief's [0.58, 0.75] = band +/- tol)
+    count_tol: int = 2  # |major count - target| <= this
+    spill_max: int = 2  # pellets at rest outside all vessels allowed
+    spill_grace: int = 60  # displacement-window length (substeps) for the spill latch
+    spill_disp: float = 0.006  # moved less than this over a window = at rest (m)
+    pour_all_frac: float = 0.90  # v0 gate: >= this fraction in the major bowl
+    settle_speed: float = 0.05  # |v| below this = settled (judging gate)
     # A pellet in a bowl counts below this |v|: well under falling-transit speed
     # (~1.3 m/s at the bowl) but ABOVE contact-solver buzz on a 5 g sphere (GPU
     # round 2: a wedged pellet jittering at ~0.2 m/s never counted anywhere).
-    count_speed: float = tunable(0.30)
-    park_tilt_deg: float = tunable(15.0)  # cup upright gate when parked
-    seat_tilt_deg: float = tunable(18.0)  # bowl upright gate (source: 1 - Rzz < 0.05)
-    pad_xy_tol: float = tunable(0.06)  # bowl centre within this of its pad (source 0.06)
-    stream_gap: int = tunable(45)  # substeps without an outflow that end a stream
-    lift_h: float = tunable(0.04)  # cup bottom above surface by this = lifted
+    count_speed: float = 0.30
+    park_tilt_deg: float = 15.0  # cup upright gate when parked
+    seat_tilt_deg: float = 18.0  # bowl upright gate (source: 1 - Rzz < 0.05)
+    pad_xy_tol: float = 0.06  # bowl centre within this of its pad (source 0.06)
+    stream_gap: int = 45  # substeps without an outflow that end a stream
+    lift_h: float = 0.04  # cup bottom above surface by this = lifted
 
-    # --- tunable: randomization (the task-family knobs) ----------------------------------------
-    reset_pos_jitter: float = tunable(0.03)  # uniform +/- xy jitter on the cup at reset
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- yaw on the cup at reset
-    bowl_jitter: float = tunable(0.012)  # uniform +/- xy jitter per bowl (stays on pad)
+    # --- randomization (the task-family knobs) --------------------------------------------------
+    reset_pos_jitter: float = 0.03  # uniform +/- xy jitter on the cup at reset
+    reset_yaw_deg: float = 180.0  # uniform +/- yaw on the cup at reset
+    bowl_jitter: float = 0.012  # uniform +/- xy jitter per bowl (stays on pad)
 
-    # --- tunable: placement + embodiment sizing ------------------------------------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
-    cup_pos: tuple = tunable((0.0, -0.18))  # cup spawn centre on the surface
-    bowl_slots: tuple = tunable(((-0.18, 0.12), (0.18, 0.12)))  # pad centres (bowl 0, 1)
-    park_pos: tuple = tunable((-0.38, -0.20))  # suggested clear parking spot (describe only)
-    reserve_pos: tuple = tunable((0.0, 1.05))  # inactive-pellet grid, on the GROUND behind
-    cup_inner_r: float = tunable(0.034)  # per-embodiment: outer dia 78 mm palms for dex
-    cup_h: float = tunable(0.11)  # hands; the franka binding shrinks it under the 8 cm jaw
+    # --- placement + embodiment sizing ----------------------------------------------------------
+    surface_z: float = 0.0  # work-surface height; 0 = on the ground (null smoke)
+    cup_pos: tuple = (0.0, -0.18)  # cup spawn centre on the surface
+    bowl_slots: tuple = ((-0.18, 0.12), (0.18, 0.12))  # pad centres (bowl 0, 1)
+    park_pos: tuple = (-0.38, -0.20)  # suggested clear parking spot (describe only)
+    reserve_pos: tuple = (0.0, 1.05)  # inactive-pellet grid, on the GROUND behind
+    cup_inner_r: float = 0.034  # per-embodiment: outer dia 78 mm palms for dex
+    cup_h: float = 0.11  # hands; the franka binding shrinks it under the 8 cm jaw
 
-    # --- info: structure ------------------------------------------------------------------------
-    bench_size: tuple = info((1.2, 0.9))
-    cup_wall_t: float = info(0.005)
-    cup_bot_t: float = info(0.008)
-    cup_mass: float = info(0.10)
-    cup_color: tuple = info((0.82, 0.82, 0.85))
+    # --- structure (applied masses + pellet friction) ------------------------------
+    bench_size: tuple = (1.2, 0.9)
+    cup_wall_t: float = 0.005
+    cup_bot_t: float = 0.008
+    cup_mass: float = 0.10
+    cup_color: tuple = (0.82, 0.82, 0.85)
     # Source-faithful bowl size (objaverse bowl_7 x1.5 is ~19 cm across): GPU round 4
     # showed a 12 cm bowl sheds straggler splash over its rim; the wide basin is part
     # of what makes the source task feasible.
-    bowl_inner_r: float = info(0.075)
-    bowl_wall_t: float = info(0.007)  # rim width — the universal pinch-grasp affordance
-    bowl_h: float = info(0.055)
-    bowl_bot_t: float = info(0.010)
-    bowl_mass: float = info(0.25)
-    bowl_colors: tuple = info(((0.25, 0.42, 0.72), (0.30, 0.60, 0.35)))  # blue / green
-    bowl_names: tuple = info(("blue", "green"))
-    pad_size: tuple = info((0.20, 0.20, 0.006))
-    pad_colors: tuple = info(((0.14, 0.22, 0.38), (0.16, 0.32, 0.20)))  # darker shades
-    n_segments: int = info(12)  # rounder polygon = shallower corner notches
-    max_pellets: int = info(24)  # authored sphere count; reset() activates n_lo..n_hi
-    pellet_r: float = info(0.008)
-    pellet_mass: float = info(0.005)  # ~source ball scale (density-50 foam, grams)
-    pellet_color: tuple = info((0.93, 0.55, 0.15))  # bright orange on blue/green — countable
-    pellet_friction: tuple = info((0.40, 0.35))  # static, dynamic (restitution 0: no popcorn)
-    contact_offset: float = info(0.002)  # vessels (explicit small offsets everywhere)
-    pellet_contact_offset: float = info(0.0015)
-    n_flags: int = info(7)
+    bowl_inner_r: float = 0.075
+    bowl_wall_t: float = 0.007  # rim width — the universal pinch-grasp affordance
+    bowl_h: float = 0.055
+    bowl_bot_t: float = 0.010
+    bowl_mass: float = 0.25
+    bowl_colors: tuple = ((0.25, 0.42, 0.72), (0.30, 0.60, 0.35))  # blue / green
+    bowl_names: tuple = ("blue", "green")
+    pad_size: tuple = (0.20, 0.20, 0.006)
+    pad_colors: tuple = ((0.14, 0.22, 0.38), (0.16, 0.32, 0.20))  # darker shades
+    n_segments: int = 12  # rounder polygon = shallower corner notches
+    max_pellets: int = 24  # authored sphere count; reset() activates n_lo..n_hi
+    pellet_r: float = 0.008
+    pellet_mass: float = 0.005  # ~source ball scale (density-50 foam, grams)
+    pellet_color: tuple = (0.93, 0.55, 0.15)  # bright orange on blue/green — countable
+    pellet_friction: tuple = (0.40, 0.35)  # static, dynamic (restitution 0: no popcorn)
+    contact_offset: float = 0.002  # vessels (explicit small offsets everywhere)
+    pellet_contact_offset: float = 0.0015
+    n_flags: int = 7
 
     # Stage-flag slots (latched) + the two goal chains over them.
     FLAGS = ("lifted", "stream_major", "major_band", "stream_minor",

@@ -2,12 +2,12 @@
 
     .venv/bin/python data_engine/scripts/generate.py --headless \\
         <…/data_gen/<gen_name>> [--scene scene_0] [--strategy strategy_0] [--phase phase_1] \\
-        [--batch default] [--num_envs 4] [--rounds 1] [--seed 0] \\
+        [--batch default] [--num_envs 4] [--seed 0] \\
         [--sigma 0.05 --prob 0.01 --duration 0.5 --dims 0:6]
 
 The cell is the (scene × strategy × phase) triple; phase is optional — without it
 the strategy's solve.py runs from scratch, with it solve_by_phase.py enters at the
-phase's declared entries: each round sweeps ALL the cell's reset/ files, one rollout
+phase's declared entries: the batch sweeps ALL the cell's reset/ files, one rollout
 per file, and within a rollout every reset_N builder in the file shapes an even share
 of the envs. Noise defaults to off (the
 nominal configuration); --dims (e.g. 0:6 = franka-osc arm) is required when
@@ -31,8 +31,15 @@ parser.add_argument("--phase", default=None,
                     help="phase cell under the strategy's phases/ (no cell = from scratch)")
 parser.add_argument("--batch", default=None, help="batch name under data/ (default: batch_<timestamp>)")
 parser.add_argument("--num_envs", type=int, default=4)
-parser.add_argument("--rounds", type=int, default=1)
 parser.add_argument("--seed", type=int, default=0)
+parser.add_argument("--env_draw", type=int, default=0,
+                    help="physical-param draw slice start: env slot e samples index env_draw+e-1 "
+                         "from the scene's PHYSICAL_PARAMS bands (slot 0 stays nominal)")
+parser.add_argument("--solve_draw", type=int, default=0,
+                    help="solve-hyperparameter draw index: ONE set from the solve's "
+                         "SOLVE_PARAMS bands for the whole batch")
+parser.add_argument("--nominal", action="store_true",
+                    help="no sampling at all (baseline batch: plain world, bare solve)")
 parser.add_argument("--sigma", type=float, default=0.0, help="action-noise sigma (0 = nominal)")
 parser.add_argument("--prob", type=float, default=1.0, help="noise-window start prob per step")
 parser.add_argument("--duration", type=float, default=0.0, help="noise-window length (sim-seconds; 0 = a single step)")
@@ -53,8 +60,9 @@ from engine.generation import run_batch  # noqa: E402
 noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
          "dims": tuple(int(x) for x in args.dims.split(":")) if args.dims else None}
 run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
-          phase=args.phase, num_envs=args.num_envs, rounds=args.rounds, seed=args.seed,
-          noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu")
+          phase=args.phase, num_envs=args.num_envs, seed=args.seed,
+          noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu",
+          env_draw=args.env_draw, solve_draw=args.solve_draw, nominal=args.nominal)
 
 # Kit teardown regularly hangs inside app.close() (100% CPU spin, holds GPU memory) —
 # same watchdog hard-exit as robobench/scripts/smoke.py; the batch is fully written by now.

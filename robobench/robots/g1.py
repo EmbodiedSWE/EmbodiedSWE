@@ -26,7 +26,7 @@ offers three hands and varies them two ways:
     `spawn.usd_path = ".../g1_29dof_inspire_hand.usd"`, `activate_contact_sensors=True`, and a
     **redefined** `actuators["hands"]` for the inspire joints.
 
-To add it here: a `hand: str = info("three_finger")` field on `G1RobotCfg` driving, in `assets()`,
+To add it here: a `hand: str = "three_finger"` field on `G1RobotCfg` driving, in `assets()`,
 (1) which USD / USD-variant to spawn, and (2) the hand joint set — so `HAND_JOINTS` (the joint-name
 patterns) and the hand controller's `action_dim` become **variant-dependent** (3-finger=14 DOF !=
 5-finger inspire != none=0). The whole `composite([arms, joint(hands)])` shape still holds; only the
@@ -54,7 +54,7 @@ from robobench.controllers import (
     PinkIKController,
     PinkIKControllerCfg,
 )
-from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg, info, tunable
+from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation
@@ -64,33 +64,33 @@ if TYPE_CHECKING:
 @dataclass
 class G1RobotCfg(BaseRobotCfg):
     """Config for `G1Robot`. `control_mode` is inherited from `BaseRobotCfg` ("" -> first declared).
-    `base_pos`/`base_rot` are `tunable` placement dials; `fixed_base` + the asset path are `info`
-    (structural / build-time)."""
+    `base_pos`/`base_rot` are placement dials; `fixed_base` + the asset path are structural
+    (build-time)."""
 
     # Base fixity — a build-time variant (Isaac's `spawn.articulation_props.fix_root_link`): True welds
     # the pelvis to the world (stationary upper-body manipulator); False = mobile base,
     # which then needs a leg controller to balance/walk (loco-manip — not built yet). Not a control
-    # mode: it changes the articulation's structure, so it's `info` (changing it = a rebuild).
-    fixed_base: bool = info(True)
+    # mode: it changes the articulation's structure (changing it = a rebuild).
+    fixed_base: bool = True
     # Spawn pose of the pelvis — the G1's natural standing pose, but a placement/reachability dial an
-    # agent may adjust (move closer to the table, rotate to face it), so `tunable` not `info`.
-    base_pos: tuple[float, float, float] = tunable((0.0, 0.0, 0.75))
-    base_rot: tuple[float, float, float, float] = tunable((0.7071, 0.0, 0.0, 0.7071))  # wxyz; faces +y
+    # agent may adjust (move closer to the table, rotate to face it).
+    base_pos: tuple[float, float, float] = (0.0, 0.0, 0.75)
+    base_rot: tuple[float, float, float, float] = (0.7071, 0.0, 0.0, 0.7071)  # wxyz; faces +y
 
     # Upper-body actuator PD gains (stiffness Kp / damping Kd) — THE "articulation PD" that tracks the
     # position targets a `JointController`/IK writes. Defaults are Isaac's `G1_29DOF_CFG` values;
-    # exposed here as `tunable` so contact compliance is easy to dial (softer arms -> more compliant
+    # exposed here so contact compliance is easy to dial (softer arms -> more compliant
     # insertion — research dir. 5). Applied to the copied cfg's actuators in `assets()`. (Legs/feet
     # are DCMotor loco actuators, irrelevant to the fixed-base manipulator, so left at Isaac defaults.)
-    arm_stiffness: float = tunable(3000.0)
-    arm_damping: float = tunable(10.0)
-    hand_stiffness: float = tunable(20.0)
-    hand_damping: float = tunable(2.0)
-    waist_stiffness: float = tunable(5000.0)
-    waist_damping: float = tunable(5.0)
+    arm_stiffness: float = 3000.0
+    arm_damping: float = 10.0
+    hand_stiffness: float = 20.0
+    hand_damping: float = 2.0
+    waist_stiffness: float = 5000.0
+    waist_damping: float = 5.0
 
-    g1_usd: str = info("")  # "" -> the vendored robots/assets/g1/g1.usd
-    g1_urdf: str = info("")  # "" -> the vendored kinematics URDF (used by the pink_ik control mode)
+    g1_usd: str = ""  # "" -> the vendored robots/assets/g1/g1.usd
+    g1_urdf: str = ""  # "" -> the vendored kinematics URDF (used by the pink_ik control mode)
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parent / "assets" / "g1"

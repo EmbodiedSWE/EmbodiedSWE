@@ -17,7 +17,7 @@ Create, explicitly:
      phases and their preconditions. Each `phase_N` is a different division
      strategy of the solve — in most cases `phase_0` is all you need.
    - `reset/` — one file per phase, named exactly as the phase (one per
-     `ENTRIES` key). Each round sweeps ALL the files, one rollout per file: a
+     `ENTRIES` key). Each batch sweeps ALL the files, one rollout per file: a
      file chooses the entry and builds its state via `reset_0(env)`,
      `reset_1(env)`, … — all applied, the rollout's envs divided evenly among
      them.
@@ -170,11 +170,15 @@ recorded pool states):
     generate --headless /workspace --scene <scene> --strategy {base} \
         --phase phase_N --num_envs 64 --seed 0
 
-Each round sweeps ALL your reset files, one rollout of `--num_envs` episodes
-per file, the envs divided evenly among the file's builders — a single round
+The batch sweeps ALL your reset files, one rollout of `--num_envs` episodes
+per file, the envs divided evenly among the file's builders — a single batch
 already exercises every entry and every builder; each episode's meta records
 its (file, builder) lineage.
 This generates one batch of data using your proposed `phase_N` and its initial
 conditions, under `/workspace/data/<batch>/`: one `ep_NNNN/` folder per
 episode, success/fail in each episode's `meta.json`, and the batch summary
-(yield) in `data/<batch>/meta.json`. Judge by success, not score — a mid-phase entry gets partial score for free (the entry state already satisfies part of the rubric).
+(yield) in `data/<batch>/meta.json`. Physical parameters are sampled
+automatically (env 0 always keeps the plain, unsampled world); add
+`--nominal` to turn sampling off while you debug entries. Judge by success,
+not score — a mid-phase entry gets partial score for free (the entry state
+already satisfies part of the rubric).

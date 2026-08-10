@@ -81,7 +81,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -372,28 +372,29 @@ def _patty_spawner_cfg(c: "SpatulaFlipServeSceneCfg", patty_r: float) -> Any:
 @dataclass
 class SpatulaFlipServeSceneCfg(BaseCfg):
     """Config for `SpatulaFlipServeScene`. Friction/mass are the brief's feasibility-spike
-    knobs; the smoke's calibration sweep publishes the carry tilt budget they produce."""
+    knobs; the smoke's calibration sweep publishes the carry tilt budget they produce. Nothing is locked
+    — a variant is just a copy with a few fields changed."""
 
-    # --- tunable: the curriculum knob ---------------------------------------------------------
-    goal: str = tunable("flip_serve")  # "serve" (v0) | "flip" (v1) | "flip_serve" (v2)
+    # --- the curriculum knob ---------------------------------------------------------------------
+    goal: str = "flip_serve"  # "serve" (v0) | "flip" (v1) | "flip_serve" (v2)
 
-    # --- tunable: rubric thresholds -----------------------------------------------------------
-    lift_gate: float = tunable(0.05)  # blade/payload height above the surface = "lifted"
+    # --- rubric thresholds -------------------------------------------------------------------
+    lift_gate: float = 0.05  # blade/payload height above the surface = "lifted"
     # (the source's own >5 cm lift gate, kept)
-    flip_min_deg: float = tunable(150.0)  # orientation change about a horizontal axis = flipped
-    blade_align_max_deg: float = tunable(30.0)  # patty axis vs blade axis while riding it
-    flat_tilt_max_deg: float = tunable(15.0)  # "resting flat" gate (board and plate)
-    rest_z_tol: float = tunable(0.012)  # patty bottom within this of the resting surface (m)
-    served_xy_frac: float = tunable(0.75)  # patty centre within this fraction of the plate radius
-    settle_speed: float = tunable(0.05)  # max |v| when judging a resting patty (m/s)
-    spill_settle_steps: int = tunable(12)  # sustained bare-surface rest before one spill
-    arrival_window: int = tunable(360)  # served must fire within this many steps of the last
+    flip_min_deg: float = 150.0  # orientation change about a horizontal axis = flipped
+    blade_align_max_deg: float = 30.0  # patty axis vs blade axis while riding it
+    flat_tilt_max_deg: float = 15.0  # "resting flat" gate (board and plate)
+    rest_z_tol: float = 0.012  # patty bottom within this of the resting surface (m)
+    served_xy_frac: float = 0.75  # patty centre within this fraction of the plate radius
+    settle_speed: float = 0.05  # max |v| when judging a resting patty (m/s)
+    spill_settle_steps: int = 12  # sustained bare-surface rest before one spill
+    arrival_window: int = 360  # served must fire within this many steps of the last
     # loaded step (3 s at 120 Hz — the no-toss/no-shove contact-history clause; covers the
     # lower-and-tip end game, where the payload dips under the lift gate)
-    wedge_low_band: float = tunable(0.03)  # blade_under counts only with the patty bottom
+    wedge_low_band: float = 0.03  # blade_under counts only with the patty bottom
     # within this of the board top (the wedge happens AT the board, not in mid-air)
 
-    # --- tunable: physics (the feasibility-spike knobs) ----------------------------------------
+    # --- physics: friction + mass ----------------------
     # Friction pair sized from BOTH ends (round-2 GPU lesson): PhysX combines by AVERAGE, so
     # blade-patty ~ (0.33 static / 0.29 dynamic). Low enough that the wedge SLIPS under the
     # payload instead of sticking to it and bulldozing (round 2: at a combined 0.68 the patty
@@ -402,67 +403,67 @@ class SpatulaFlipServeSceneCfg(BaseCfg):
     # atan(0.33) ~ 18 deg — the brief's "tilt the blade 15 deg too far and dinner is on the
     # floor". Patty-board stays grippier (~0.55 with the 0.6 board) so the board anchors the
     # payload while the blade slides beneath.
-    patty_mass: float = tunable(0.06)
-    patty_friction: tuple = tunable((0.5, 0.45))  # static, dynamic (moist food)
-    blade_friction: tuple = tunable((0.15, 0.12))  # polished steel — the slippery half
-    spatula_mass: float = tunable(0.15)
+    patty_mass: float = 0.06
+    patty_friction: tuple = (0.5, 0.45)  # static, dynamic (moist food)
+    blade_friction: tuple = (0.15, 0.12)  # polished steel — the slippery half
+    spatula_mass: float = 0.15
 
-    # --- tunable: randomization (the task-family knobs) ----------------------------------------
-    patty_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the patty on the board
-    plate_jitter: float = tunable(0.04)  # uniform +/- xy jitter of the plate
-    spatula_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the spatula rest pose
-    spatula_yaw_deg: float = tunable(15.0)  # uniform +/- yaw jitter of the spatula
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- patty yaw (physics-relevant only
+    # --- randomization (the task-family knobs) -------------------------------------------------
+    patty_jitter: float = 0.03  # uniform +/- xy jitter of the patty on the board
+    plate_jitter: float = 0.04  # uniform +/- xy jitter of the plate
+    spatula_jitter: float = 0.03  # uniform +/- xy jitter of the spatula rest pose
+    spatula_yaw_deg: float = 15.0  # uniform +/- yaw jitter of the spatula
+    reset_yaw_deg: float = 180.0  # uniform +/- patty yaw (physics-relevant only
     # through collider tessellation, but it kills any memorizable pixel layout)
-    sample_size: bool = tunable(True)  # per-episode patty-size sampling (demo sets False)
+    sample_size: bool = True  # per-episode patty-size sampling (demo sets False)
 
-    # --- tunable: placement (robot embodiments raise the work onto a bench) --------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
-    board_pos: tuple = tunable((-0.16, 0.05))  # cutting-board centre on the surface
-    plate_pos: tuple = tunable((0.17, 0.06))  # plate centre (before jitter)
-    spatula_pos: tuple = tunable((0.02, -0.20))  # spatula rest (blade-bottom centre)
+    # --- placement (robot embodiments raise the work onto a bench) -----------------------------
+    surface_z: float = 0.0  # work-surface height; 0 = on the ground (null smoke)
+    board_pos: tuple = (-0.16, 0.05)  # cutting-board centre on the surface
+    plate_pos: tuple = (0.17, 0.06)  # plate centre (before jitter)
+    spatula_pos: tuple = (0.02, -0.20)  # spatula rest (blade-bottom centre)
 
-    # --- info: structure ------------------------------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))  # procedural bench top (x, y), used when surface_z > 0
-    board_size: tuple = info((0.30, 0.24, 0.015))  # kinematic cutting board (x, y, t)
-    plate_r: float = info(0.11)
-    plate_h: float = info(0.012)
+    # --- structure --------------------------------------------------------------------------------
+    bench_size: tuple = (1.1, 0.9)  # procedural bench top (x, y), used when surface_z > 0
+    board_size: tuple = (0.30, 0.24, 0.015)  # kinematic cutting board (x, y, t)
+    plate_r: float = 0.11
+    plate_h: float = 0.012
     # Blade: ONE bare flat 2 mm plate (GPU rounds 1-3 — every climbing feature ON the
     # blade either presents a wall that bulldozes the payload or relies on sub-mm slot
     # clearances that speculative contact offsets swallow at jab speeds; the climb
     # geometry lives on the PATTY's chamfered convex edge instead, which keeps working
     # inside the offset band because inflation preserves an inclined face's normal).
     # Width 90 mm just covers the mid patty.
-    blade_l: float = info(0.11)
-    blade_w: float = info(0.09)
-    blade_plate_t: float = info(0.002)
-    handle_angle_deg: float = info(25.0)
-    riser_l: float = info(0.055)
-    riser_w: float = info(0.022)
-    riser_t: float = info(0.012)
-    handle_r: float = info(0.012)  # the thin-cylinder pinch-audit knob (>= 10 mm rule)
-    handle_l: float = info(0.15)
-    blade_color: tuple = info((0.74, 0.76, 0.78))
-    handle_color: tuple = info((0.16, 0.16, 0.18))
-    blade_contact_offset: float = info(0.001)  # below the 2 mm plate thickness
-    patty_contact_offset: float = info(0.001)
-    patty_h: float = info(0.012)
+    blade_l: float = 0.11
+    blade_w: float = 0.09
+    blade_plate_t: float = 0.002
+    handle_angle_deg: float = 25.0
+    riser_l: float = 0.055
+    riser_w: float = 0.022
+    riser_t: float = 0.012
+    handle_r: float = 0.012  # the thin-cylinder pinch-audit knob (>= 10 mm rule)
+    handle_l: float = 0.15
+    blade_color: tuple = (0.74, 0.76, 0.78)
+    handle_color: tuple = (0.16, 0.16, 0.18)
+    blade_contact_offset: float = 0.001  # below the 2 mm plate thickness
+    patty_contact_offset: float = 0.001
+    patty_h: float = 0.012
     # 45-deg edge chamfer of the convex-hull collider (see `_spawn_patty`) — the rounded
     # food edge that makes wedging well-posed: bigger = easier scoop, smaller = closer to
     # a sharp cylinder. Symmetric top/bottom (a flipped patty re-wedges).
-    patty_chamfer: float = info(0.004)
-    raw_color: tuple = info((0.87, 0.68, 0.38))  # tan — up at spawn
-    cooked_color: tuple = info((0.42, 0.24, 0.12))  # brown — up after the flip
+    patty_chamfer: float = 0.004
+    raw_color: tuple = (0.87, 0.68, 0.38)  # tan — up at spawn
+    cooked_color: tuple = (0.42, 0.24, 0.12)  # brown — up after the flip
     # (family name, radius): three sizes, ONE present per episode (size randomization axis).
-    families: tuple = info((("patty_s", 0.040), ("patty_m", 0.045), ("patty_l", 0.050)))
+    families: tuple = (("patty_s", 0.040), ("patty_m", 0.045), ("patty_l", 0.050))
     # Off-camera ground depot for absent patties (the pen-holder depot analysis: extent well under
     # half of env_spacing 3).
-    parking_pos: tuple = info((1.0, 1.0))
+    parking_pos: tuple = (1.0, 1.0)
     # On-blade z band for the patty bottom in the blade frame: a riding patty rests on
     # the 2 mm plate top; the upper margin absorbs offset/chamfer slop. The lower bound
     # EXCLUDES a patty the blade merely slid under while it rests on the support surface
     # (bottom ~ -1 mm in the blade frame) — round 1's false-positive wedge check.
-    on_blade_z_band: tuple = info((0.0005, 0.015))
+    on_blade_z_band: tuple = (0.0005, 0.015)
 
     # Derived (filled in __post_init__).
     board_top: float = field(default=None, init=False)

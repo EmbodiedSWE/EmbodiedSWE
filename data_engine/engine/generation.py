@@ -3,15 +3,16 @@
 A cell is a (scene × strategy × phase) triple in a campaign; the phase is optional —
 without one the strategy's solve.py runs from scratch off the scene's own reset. With
 one, the phase cell declares itself in code: reset/ holds one file per phase of the
-cell's division, named exactly as the phase — each round sweeps ALL the files, one
-rollout per file (in name order), so every entry is covered whatever rounds is: a
+cell's division, named exactly as the phase — each batch sweeps ALL the files, one
+rollout per file (in name order), so every entry is covered: a
 file both chooses which phase to enter and builds its entry state via one or more
 initial-condition builders reset_0(env), reset_1(env), … — a rollout runs them ALL,
 dividing the batch's envs evenly among them (remainder to the earliest; fewer envs
 than builders fills them in order); each episode's meta records its (file, builder)
 lineage. Their randomness uses the globally seeded RNGs. No port in the
 cell = plain solve.py from its natural start. One batch =
-rounds × reset-files × num_envs episodes (no phase: rounds × num_envs):
+reset-files × num_envs episodes (no phase: num_envs — scale comes from MORE
+BATCHES, each with fresh world draws, not from repeating rollouts in one boot):
 
     build the env from the campaign preset on the cell's LOCAL scene copy
     per rollout: reset(seed+rollout) [→ phase reset] → grader → noise → recorder → solve
@@ -26,8 +27,19 @@ is the solve's commanded (clean) one — the noise wrapper perturbs only what ex
 Episode states come from env.get_states(), so any recorded step can later be
 restored with set_states (phase resets draw their entry states from these).
 
-Needs a running AppLauncher (see scripts/generate.py). Sampling is nominal-only
-for now: engine/sampler.py is a placeholder until the tunable rebuild.
+Needs a running AppLauncher (see scripts/generate.py). Sampling (engine/sampler.py)
+is driven by the LOCAL scene's own `PHYSICAL_PARAMS` bands — no side files: worlds vary
+PER ENV in one parallel batch. Env slot 0 keeps the nominal world (the in-batch
+canary), slot e >= 1 draws index `env_draw + e - 1`, written after the build via
+`scene.apply_physical_params(env, values)` (the scene owns its cfg-field -> PhysX-view
+mapping; `bind()` routes the nominal application through the same hook, so the code
+path is exercised by every batch ever run). Solve hyperparameters sample ONE set per
+batch from the solve module's `SOLVE_PARAMS` bands (`--solve_draw`) and are written
+onto the module's CONSTANTS before solve(env) runs — the solve signature never
+changes; the values in the file are the nominal. `--nominal` skips ALL sampling
+(the baseline batch: plain world, the file's own values).
+Drawn values land in every episode meta; the band specs land in the batch meta. No
+bands declared -> nominal at every index, exactly as before.
 """
 
 from __future__ import annotations
@@ -56,22 +68,41 @@ def _load(name: str, path: Path):
     return mod
 
 
-def build_env(scene_dir: Path, num_envs: int, device: str, seed: int):
-    """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene."""
+def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
+              env_draw: int = 0, nominal: bool = False):
+    """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene.
+
+    World physics comes from the LOCAL scene's own `PHYSICAL_PARAMS` bands (see the module
+    docstring): slot 0 nominal, slot e >= 1 at index `env_draw + e - 1`, written through
+    `scene.apply_physical_params` after the build. `nominal=True` skips sampling. Returns
+    (env, gen, bands, slot_drawn): the validated band specs and the per-slot draws
+    (slot 0 = {}; both empty when nominal or band-less). A bad band fails here — before
+    the expensive build."""
     import dataclasses
 
     import robobench
     import yaml
 
+    from .sampler import sample, scene_bands
+
     robobench.discover()
-    from robobench.core.registries import ENVS
+    from robobench.core.registries import ENVS, SCENES
 
     _load("datagen_local_scene", scene_dir / "scene" / "scene.py")
     scene_name = re.search(r'@SCENES\.register\("([\w.]+)"\)',
                            (scene_dir / "scene" / "scene.py").read_text()).group(1)
     gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
+    scene_cls = SCENES.get(scene_name)
+    bands = {} if nominal else scene_bands(scene_cls, scene_cls().cfg)
+    # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1
+    slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)] if bands else []
     cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
-    return cfg.build(num_envs=num_envs, device=device, seed=seed), gen
+    env = cfg.build(num_envs=num_envs, device=device, seed=seed)
+    if slot_drawn:
+        c = env.scene.cfg  # nominal source for slot 0
+        values = {n: [getattr(c, n)] + [d[n] for d in slot_drawn[1:]] for n in bands}
+        env.scene.apply_physical_params(env, values)
+    return env, gen, bands, slot_drawn
 
 
 def load_grader_cls(scene_dir: Path):
@@ -132,13 +163,14 @@ class Recorder:
 
 def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scene_0",
               strategy: str = "strategy_0", phase: str | None = None,
-              num_envs: int = 4, rounds: int = 1, seed: int = 0,
-              noise: dict | None = None, device: str = "cuda:0") -> Path:
+              num_envs: int = 4, seed: int = 0,
+              noise: dict | None = None, device: str = "cuda:0",
+              env_draw: int = 0, solve_draw: int = 0, nominal: bool = False) -> Path:
     import numpy as np
     import torch
 
-
     from .noise import NoisyActionEnv
+    from .sampler import sample, solve_bands
 
     noise = noise or {}
     gen_root = Path(gen_root)
@@ -154,31 +186,45 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     if out.exists():
         raise SystemExit(f"{out} already exists — batches are append-only")
 
-    env, gen = build_env(scene_dir, num_envs, device, seed)
+    env, gen, bands, slot_drawn = build_env(scene_dir, num_envs, device, seed,
+                                            env_draw, nominal)
+    if slot_drawn:
+        print(f"[batch {batch}] physical params per-env (slot 0 nominal): {slot_drawn}", flush=True)
     grader_cls = load_grader_cls(scene_dir)
     if phase is None:
-        solve = _load("datagen_solve", strategy_dir / "solve.py").solve
+        solve_mod = _load("datagen_solve", strategy_dir / "solve.py")
+        solve = solve_mod.solve
         entry, conditions = None, []
     else:
-        # reset/ holds one file per phase, named as the phase: each round
+        # reset/ holds one file per phase, named as the phase: each batch
         # sweeps all the files, one rollout per file — a file chooses the
         # entry and builds its state. No port = plain solve.py.
         phase_dir = strategy_dir / "phases" / phase
         port = phase_dir / "solve_by_phase.py"
-        solve = _load("datagen_solve", port if port.is_file()
-                      else strategy_dir / "solve.py").solve
+        solve_mod = _load("datagen_solve", port if port.is_file()
+                          else strategy_dir / "solve.py")
+        solve = solve_mod.solve
         has_port = port.is_file()
         entry = None
         conditions = [_load(f"datagen_reset_{f.stem}", f)
                       for f in sorted((phase_dir / "reset").glob("*.py"))]
+    # ONE set of solve hyperparameters per batch (see sampler.solve_bands): drawn at
+    # --solve_draw and WRITTEN ONTO THE MODULE's constants before solve(env) runs —
+    # the solve signature never changes. --nominal (or no SOLVE_PARAMS) -> file values.
+    s_bands = {} if nominal else solve_bands(solve_mod)
+    solve_drawn = sample(s_bands, solve_draw) if s_bands else {}
+    for n, v in solve_drawn.items():
+        setattr(solve_mod, n, v)
+    if solve_drawn:
+        print(f"[batch {batch}] solve params (one set, whole batch): {solve_drawn}", flush=True)
     sha = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
     dims = noise.get("dims")
 
     verdicts_all = []
-    # a round sweeps ALL the cell's reset files, one rollout per file (no
-    # phase = one rollout per round) — every entry is covered whatever rounds is
-    rollouts = rounds * max(1, len(conditions))
+    # one rollout per reset file (no phase = a single rollout) — every entry
+    # covered once per batch; more episodes = more batches
+    rollouts = max(1, len(conditions))
     for rnd in range(rollouts):
         env.reset(seed=seed + rnd)
         reset_name, fn_of_env = None, None
@@ -238,9 +284,11 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             np.savez_compressed(ep_dir / "traj.npz",
                                 **{k: v[:, e] for k, v in arrays.items()})
             meta = {
-                "episode": ep, "round": rnd, "env_index": e,
+                "episode": ep, "rollout": rnd, "env_index": e,
                 "success": verdicts[e]["success"], "score": verdicts[e]["score"],
-                "parameters": {},  # nominal — sampler is a placeholder
+                # the draws this episode ran under ({} = nominal on that axis)
+                "parameters": {"physical": slot_drawn[e] if slot_drawn else {},
+                               "solve": solve_drawn},
                 "reset": reset_name, "reset_fn": (fn_of_env[e] if fn_of_env else None),
                 "entry": entry,
                 "seed": seed + rnd, "steps": T,
@@ -259,8 +307,12 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     n_ok = sum(v["success"] for v in verdicts_all)
     (out / "meta.json").write_text(json.dumps({
         "batch": batch, "cell": cell,
-        "preset": gen["preset"], "num_envs": num_envs, "rounds": rounds, "seed": seed,
+        "preset": gen["preset"], "num_envs": num_envs, "seed": seed,
         "noise": {k: v for k, v in noise.items() if v},
+        # the scene's band specs + this batch's slice of the index space (provenance)
+        "params": {"physical_params": bands, "env_draw": env_draw, "nominal": nominal,
+                   "per_env": slot_drawn,
+                   "solve_params": s_bands, "solve_draw": solve_draw, "solve_drawn": solve_drawn},
         "episodes": len(verdicts_all), "successes": n_ok,
         "success_rate": round(n_ok / max(1, len(verdicts_all)), 4),
         "verdicts": verdicts_all,
