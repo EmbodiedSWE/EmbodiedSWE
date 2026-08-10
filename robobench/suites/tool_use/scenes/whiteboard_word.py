@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -56,10 +56,11 @@ FONT: dict[str, list[list[tuple[float, float]]]] = {
 
 @dataclass
 class WhiteboardWordSceneCfg(BaseCfg):
-    """Config for `WhiteboardWordScene`."""
+    """Config for `WhiteboardWordScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed."""
 
-    # --- tunable: difficulty dials -----------------------------------------------------------
-    ink_depth: float = tunable(0.004)  # tip-to-plane distance that still inks (m)
+    # --- difficulty dials ------------------------------------------------------------------------
+    ink_depth: float = 0.004  # tip-to-plane distance that still inks (m)
     # Geometry needs MARGIN on both scores (measured over 2 smoke runs):
     #  - coverage: the tip band (2*tip_r) must overhang the corridor, or a perfect trace
     #    caps below coverage_min (8mm band/16mm corridor -> 0.51; equal 10/10 -> 0.81 on
@@ -68,35 +69,35 @@ class WhiteboardWordSceneCfg(BaseCfg):
     #  - stray: ink is only "stray" beyond corridor + stray_margin (nobody calls 1mm of
     #    edge bleed scribbling); the overhang of a clean trace lands inside the margin,
     #    while the negative-control scribble (cm from any stroke) stays fully stray.
-    tip_r: float = tunable(0.006)  # ink dot radius (m)
-    corridor_w: float = tunable(0.010)  # full stroke-corridor width (m)
-    stray_margin: float = tunable(0.004)  # bleed allowance beyond the corridor edge (m)
-    coverage_min: float = tunable(0.85)
-    stray_max: float = tunable(0.10)
-    erase_gap: float = tunable(0.006)  # eraser-face-to-plane distance that clears (m)
+    tip_r: float = 0.006  # ink dot radius (m)
+    corridor_w: float = 0.010  # full stroke-corridor width (m)
+    stray_margin: float = 0.004  # bleed allowance beyond the corridor edge (m)
+    coverage_min: float = 0.85
+    stray_max: float = 0.10
+    erase_gap: float = 0.006  # eraser-face-to-plane distance that clears (m)
 
-    # --- tunable: placement -------------------------------------------------------------------
-    surface_z: float = tunable(0.0)
-    board_y: float = tunable(0.24)  # writing plane y
+    # --- placement -------------------------------------------------------------------------------
+    surface_z: float = 0.0
+    board_y: float = 0.24  # writing plane y
 
-    # --- tunable: randomization ----------------------------------------------------------------
+    # --- randomization ---------------------------------------------------------------------------
     # Per-episode word pool (was a module constant; scene init parameters belong in the
     # scene cfg — a curriculum variant can now swap the pool per binding).
-    words: tuple = tunable(("CAT", "HEX", "VAN", "WIN", "YAK", "ZOO", "NUT", "OIL", "LAW", "KIT"))
+    words: tuple = ("CAT", "HEX", "VAN", "WIN", "YAK", "ZOO", "NUT", "OIL", "LAW", "KIT")
 
-    # --- info: structure ----------------------------------------------------------------------
-    bench_size: tuple = info((1.2, 0.9))
-    board_size: tuple = info((0.7, 0.03, 0.5))
-    cell: float = info(0.002)
-    area: tuple = info((0.42, 0.22))  # writing area (u along x, v up)
-    area_v0: float = info(0.16)  # writing-area bottom above the surface
-    letter_box: tuple = info((0.08, 0.12))  # letter size in the slot
-    letter_pitch: float = info(0.13)  # slot-to-slot spacing (>= 4cm gaps)
-    n_letters: int = info(3)
-    marker_r: float = info(0.0125)  # chunky marker per the brief
-    marker_l: float = info(0.12)
-    eraser_size: tuple = info((0.10, 0.06, 0.04))
-    tray_y: float = info(0.10)  # tray front offset from the board plane
+    # --- structure --------------------------------------------------------------------------------
+    bench_size: tuple = (1.2, 0.9)
+    board_size: tuple = (0.7, 0.03, 0.5)
+    cell: float = 0.002
+    area: tuple = (0.42, 0.22)  # writing area (u along x, v up)
+    area_v0: float = 0.16  # writing-area bottom above the surface
+    letter_box: tuple = (0.08, 0.12)  # letter size in the slot
+    letter_pitch: float = 0.13  # slot-to-slot spacing (>= 4cm gaps)
+    n_letters: int = 3
+    marker_r: float = 0.0125  # chunky marker per the brief
+    marker_l: float = 0.12
+    eraser_size: tuple = (0.10, 0.06, 0.04)
+    tray_y: float = 0.10  # tray front offset from the board plane
 
     grid_n: tuple = field(default=None, init=False)  # (nu, nv)
 

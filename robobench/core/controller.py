@@ -29,10 +29,10 @@ Heavy imports (isaaclab / pxr / solvers) are deferred so this module — and reg
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from .config import BaseCfg, info
+from .config import BaseCfg
 
 if TYPE_CHECKING:
     import torch
@@ -42,16 +42,15 @@ if TYPE_CHECKING:
 
 @dataclass
 class BaseControllerCfg(BaseCfg):
-    """Shared base for controller configs (a `BaseCfg`, so fields use `tunable()` / `info()`). The
-    split is meaningful here: **`info` = robot-supplied structural wiring** (joint names, ee-frames,
-    URDF — set by the robot in `build_controller`, since only it knows its kinematics); **`tunable` =
-    knobs a higher layer (curriculum / env-register, robot-mediated) may dial** (gains, costs, scale).
-    Thin base — concrete controllers add their own fields. Not every controller needs a cfg (e.g.
-    `composite` takes a list of sub-controllers)."""
+    """Shared base for controller configs. Fields are plain dataclass fields: part robot-supplied
+    structural wiring (joint names, ee-frames, URDF — set by the robot in `build_controller`, since
+    only it knows its kinematics), part feedback-law knobs (gains, costs, scale). Thin base — concrete
+    controllers add their own fields. Not every controller needs a cfg (e.g. `composite` takes a list
+    of sub-controllers)."""
 
     #: Control period in seconds; `None` -> every physics step. Resolved to an integer `control_period`
     #: at `bind`. Keyword-only so it doesn't shift subclasses' positional args; the robot may override it.
-    dt: float | None = info(None, doc="control period (s); None -> every physics step", kw_only=True)
+    dt: float | None = field(default=None, kw_only=True)  # control period (s); None -> every physics step
 
 
 class BaseController(ABC):
