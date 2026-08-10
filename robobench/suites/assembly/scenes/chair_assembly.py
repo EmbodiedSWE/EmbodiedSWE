@@ -71,11 +71,11 @@ import math
 from collections.abc import Callable
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -369,82 +369,82 @@ class ChairAssemblySceneCfg(BaseCfg):
     """Config for `ChairAssemblyScene`. `ori_cos` is the source's 0.94 verbatim; the
     position thresholds default looser than the source's 5 mm sim (procedural clearances
     are the honest bound here) — tighten after the GPU calibration sweep publishes the
-    real knee."""
+    real knee. Nothing is locked — a variant is just a copy with a few fields changed."""
 
-    # --- tunable: rubric thresholds (the ported assembly-graph terms) -------------------------
-    tau_xy: float = tunable(0.010)  # child anchor within this of a candidate, parent-frame xy (m)
-    tau_z: float = tunable(0.008)  # child anchor within this of the candidate seat depth (m)
-    ori_cos: float = tunable(0.94)  # min orientation cosine child-axis vs parent-axis (source)
-    settle_speed: float = tunable(0.05)  # max child |v| at the moment of welding (m/s)
-    nut_friction: float = tunable(0.10)  # nut material friction (static = dynamic), set at
+    # --- rubric thresholds (the ported assembly-graph terms) + nut friction --
+    tau_xy: float = 0.010  # child anchor within this of a candidate, parent-frame xy (m)
+    tau_z: float = 0.008  # child anchor within this of the candidate seat depth (m)
+    ori_cos: float = 0.94  # min orientation cosine child-axis vs parent-axis (source)
+    settle_speed: float = 0.05  # max child |v| at the moment of welding (m/s)
+    nut_friction: float = 0.10  # nut material friction (static = dynamic), set at
     # bind. Low on purpose: a nut must SLIDE down the stud-tip cone and the stud instead of
     # sticking (it locks by weld, so it never needs friction; the nut_thread scene pattern).
 
-    # --- tunable: randomization (the task-family knobs) ----------------------------------------
-    reset_pos_jitter: float = tunable(0.04)  # uniform +/- xy jitter per loose part at reset (m)
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- yaw per loose part at reset
-    seat_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the seat at reset (m)
-    seat_yaw_deg: float = tunable(30.0)  # uniform +/- yaw of the seat at reset (rubric is
+    # --- randomization (the task-family knobs) -------------------------------------------------
+    reset_pos_jitter: float = 0.04  # uniform +/- xy jitter per loose part at reset (m)
+    reset_yaw_deg: float = 180.0  # uniform +/- yaw per loose part at reset
+    seat_jitter: float = 0.03  # uniform +/- xy jitter of the seat at reset (m)
+    seat_yaw_deg: float = 30.0  # uniform +/- yaw of the seat at reset (rubric is
     # seat-frame, so this is transparent to judging — it only moves the work)
-    shuffle_slots: bool = tunable(True)  # per-episode random part->slot permutation
+    shuffle_slots: bool = True  # per-episode random part->slot permutation
 
-    # --- tunable: placement (robot embodiments raise the work onto a bench) --------------------
-    surface_z: float = tunable(0.0)  # work-surface height; 0 = on the ground (null smoke)
-    seat_pos: tuple = tunable((0.0, 0.0))  # seat centre on the surface
-    spawn_radii: tuple = tunable((0.40,))  # scatter ring radii for the 5 loose parts
-    spawn_arc: tuple = tunable((0.0, 360.0))  # scatter arc (deg) around the seat
+    # --- placement (robot embodiments raise the work onto a bench) -----------------------------
+    surface_z: float = 0.0  # work-surface height; 0 = on the ground (null smoke)
+    seat_pos: tuple = (0.0, 0.0)  # seat centre on the surface
+    spawn_radii: tuple = (0.40,)  # scatter ring radii for the 5 loose parts
+    spawn_arc: tuple = (0.0, 360.0)  # scatter arc (deg) around the seat
 
-    # --- info: structure ------------------------------------------------------------------------
-    bench_size: tuple = info((1.1, 0.9))  # procedural bench top (x, y), used when surface_z > 0
-    slab_size: tuple = info((0.26, 0.26, 0.03))
-    seat_mass: float = info(0.50)
+    # --- structure, geometry, masses, colors ----------------------------
+    bench_size: tuple = (1.1, 0.9)  # procedural bench top (x, y), used when surface_z > 0
+    slab_size: tuple = (0.26, 0.26, 0.03)
+    seat_mass: float = 0.50
     # Front leg sockets / rear studs, seat-local xy. Stud x spacing == 2 * hole_sx.
-    leg_slots: tuple = info(((-0.08, -0.08), (0.08, -0.08)))
-    stud_slots: tuple = info(((-0.08, 0.08), (0.08, 0.08)))
-    leg_r: float = info(0.015)
-    leg_l: float = info(0.16)  # total, INCLUDING the guide cone at the insertion end
-    leg_mass: float = info(0.08)
-    socket_clear: float = info(0.004)  # radial clearance leg-in-socket (m)
-    socket_wall: float = info(0.012)
-    socket_h: float = info(0.04)
-    stud_r: float = info(0.012)
-    stud_l: float = info(0.085)  # above the slab top, INCLUDING the tip cone
-    cone_h: float = info(0.012)  # leg-insertion guide-cone height
+    leg_slots: tuple = ((-0.08, -0.08), (0.08, -0.08))
+    stud_slots: tuple = ((-0.08, 0.08), (0.08, 0.08))
+    leg_r: float = 0.015
+    leg_l: float = 0.16  # total, INCLUDING the guide cone at the insertion end
+    leg_mass: float = 0.08
+    socket_clear: float = 0.004  # radial clearance leg-in-socket (m)
+    socket_wall: float = 0.012
+    socket_h: float = 0.04
+    stud_r: float = 0.012
+    stud_l: float = 0.085  # above the slab top, INCLUDING the tip cone
+    cone_h: float = 0.012  # leg-insertion guide-cone height
     # Stud tip cone: TALLER than the leg cones on purpose): at a
     # 45 deg half-angle (12 mm tall) a dropped nut ring that touched the flank cocked or
     # stuck and every capture was pure hole clearance (0/3 mm ok, 6 mm+ 0/3). 24 mm tall
     # -> ~27 deg half-angle: contact normals are mostly lateral (centering) and the
     # slide condition holds for any sane friction.
-    stud_cone_h: float = info(0.024)
-    panel_size: tuple = info((0.24, 0.02, 0.10))  # backrest panel (x, y=thickness, z)
-    panel_y: float = info(0.050)  # panel centre y, back-local — behind the hole line, so a
+    stud_cone_h: float = 0.024
+    panel_size: tuple = (0.24, 0.02, 0.10)  # backrest panel (x, y=thickness, z)
+    panel_y: float = 0.050  # panel centre y, back-local — behind the hole line, so a
     # nut (outer inradius 30 mm) drops onto a stud with >= 10 mm of clearance to the panel
-    flange_d: float = info(0.06)  # flange plate depth (y) connecting holes to the panel foot
-    flange_t: float = info(0.015)  # flange thickness = the stud insertion depth
-    hole_sx: float = info(0.08)  # flange holes at (+/- hole_sx, 0), back-local
-    hole_clear: float = info(0.005)  # radial clearance stud-in-hole (two-point insertion grace)
-    hole_wall: float = info(0.012)
-    back_mass: float = info(0.30)
+    flange_d: float = 0.06  # flange plate depth (y) connecting holes to the panel foot
+    flange_t: float = 0.015  # flange thickness = the stud insertion depth
+    hole_sx: float = 0.08  # flange holes at (+/- hole_sx, 0), back-local
+    hole_clear: float = 0.005  # radial clearance stud-in-hole (two-point insertion grace)
+    hole_wall: float = 0.012
+    back_mass: float = 0.30
     # Nut-over-stud radial clearance. 5 mm (was 3 — GPU sweep A showed raw drops capture
     # only within the pure clearance): still honest under the rubric — max physical
     # on-stud offset = nut_r_in/cos(pi/8) - stud_r ~= 6.4 mm < tau_xy, and the 60 mm ring
     # still cannot pass the 17 mm flange hole (the ordering block is untouched).
-    nut_hole_clear: float = info(0.005)
-    nut_r_out: float = info(0.030)  # nut outer inradius — far wider than the flange hole
-    nut_t: float = info(0.012)
-    nut_mass: float = info(0.03)
-    n_segments: int = info(8)
+    nut_hole_clear: float = 0.005
+    nut_r_out: float = 0.030  # nut outer inradius — far wider than the flange hole
+    nut_t: float = 0.012
+    nut_mass: float = 0.03
+    n_segments: int = 8
     # Explicit small contact offset: clearances are 3-5 mm, the ~2 cm default would produce
     # phantom contact everywhere (pc_gpu precedent); both mating sides carry it, so the
     # speculative sum (3 mm) stays under the smallest diametral clearance.
-    contact_offset: float = info(0.0015)
-    seat_color: tuple = info((0.72, 0.55, 0.34))
-    fitting_color: tuple = info((0.45, 0.45, 0.48))
-    leg_color: tuple = info((0.30, 0.25, 0.20))
-    back_color: tuple = info((0.62, 0.45, 0.26))
-    stud_color: tuple = info((0.55, 0.57, 0.60))
-    tip_color: tuple = info((0.10, 0.10, 0.10))
-    nut_color: tuple = info((0.75, 0.20, 0.15))
+    contact_offset: float = 0.0015
+    seat_color: tuple = (0.72, 0.55, 0.34)
+    fitting_color: tuple = (0.45, 0.45, 0.48)
+    leg_color: tuple = (0.30, 0.25, 0.20)
+    back_color: tuple = (0.62, 0.45, 0.26)
+    stud_color: tuple = (0.55, 0.57, 0.60)
+    tip_color: tuple = (0.10, 0.10, 0.10)
+    nut_color: tuple = (0.75, 0.20, 0.15)
 
     # Derived (filled in __post_init__).
     socket_r_in: float = field(default=None, init=False)
@@ -477,6 +477,11 @@ PAIRS = ("seat-leg_0", "seat-leg_1", "seat-back", "seat-nut_0", "seat-nut_1")
 @SCENES.register("chair")
 class ChairAssemblyScene(BaseScene):
     cfg: ChairAssemblySceneCfg
+
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "nut_friction": {"dist": "uniform", "lo": 0.05, "hi": 0.15, "reason": "nuts must slide on the studs"},
+    }
 
     def __init__(self, cfg: ChairAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or ChairAssemblySceneCfg())
@@ -582,6 +587,22 @@ class ChairAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ------------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, every shape of both nuts),
+        `values[name]` one value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the
+        nominal application through here with uniform values, so this is THE friction path —
+        per-env sampling reuses it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        if "nut_friction" in values:
+            col = torch.tensor(values["nut_friction"], dtype=torch.float32).view(-1, 1, 1)
+            for nut in self.nuts:
+                mats = nut.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col  # [static, dynamic, restitution]
+                nut.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab handles, allocate the weld flags + ordering-violation metric, and pre-author
         the 5 (disabled) weld joints per env (the ikea pattern: toggled, never created
@@ -597,17 +618,11 @@ class ChairAssemblyScene(BaseScene):
         # ordering metric: rising edges of "nut riding a stud while (seat,back) unassembled"
         self.order_violations = torch.zeros(n, dtype=torch.long, device=env.device)
         self._viol_prev = torch.zeros(n, 2, dtype=torch.bool, device=env.device)
-        for nut in self.nuts:  # nuts must SLIDE down cone + stud; they lock by weld
-            self._set_friction(nut, self.cfg.nut_friction)
+        # Nominal friction, all envs — through the same hook per-env sampling uses (nuts must
+        # SLIDE down cone + stud; they lock by weld).
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {name: [getattr(c, name)] * E for name in self.PHYSICAL_PARAMS})
         self._precreate_weld_joints()
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite static + dynamic friction on every shape of `asset` (all envs) — the
-        nut_thread scene pattern."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(
-            mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start (all welds released): the seat lies underside-up at

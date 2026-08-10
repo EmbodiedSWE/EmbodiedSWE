@@ -125,7 +125,7 @@ ordered fixtures) are welcome — the requirement is that every contact the task
 A generated task is a package `tasks/<name>/` with four files:
 
 - **`scene.py`** — robobench-format scene module:
-  - a `SceneCfg` dataclass holding every tunable init parameter, with real
+  - a `SceneCfg` dataclass holding every adjustable init parameter, with real
     randomization (different seeds → different instances, verified by readback);
   - a `BaseScene` subclass implementing `assets()` / `reset(env_ids)` / `get_state` /
     `set_state` / `describe()`, plus `success()` and a graded `score()`;

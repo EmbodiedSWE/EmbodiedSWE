@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -36,44 +36,44 @@ if TYPE_CHECKING:
 
 @dataclass
 class PcMotherboardAssemblySceneCfg(BaseCfg):
-    """Config for `PcMotherboardAssemblyScene`. Each field is a `tunable()` curriculum/difficulty
-    dial or an `info()` structural constant (see `robobench.core.BaseCfg`)."""
+    """Config for `PcMotherboardAssemblyScene`. Nothing is locked — a variant is
+    just a copy with a few fields changed."""
 
-    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
+    # --- seating gates, reset jitter, part frictions, grasp + screw mechanics ----------------------
     # A bolt is "seated" when — in the case's frame — its tip is >= `seat_depth` below the board
     # face, within `align_xy` of a hole's axis, and tilted <= `align_axis_deg` off it. The head
     # bottoms out at 12.4 mm tip depth, so 11 mm separates "seated" from "merely started".
-    seat_depth: float = tunable(0.011)  # min tip depth below the board face (m) to count as seated
-    align_xy: float = tunable(0.003)  # max lateral distance (m) of the bolt tip from the hole axis
-    align_axis_deg: float = tunable(5.0)  # max tilt of the bolt axis off the hole axis (deg)
-    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter per loose part at reset (m)
+    seat_depth: float = 0.011  # min tip depth below the board face (m) to count as seated
+    align_xy: float = 0.003  # max lateral distance (m) of the bolt tip from the hole axis
+    align_axis_deg: float = 5.0  # max tilt of the bolt axis off the hole axis (deg)
+    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter per loose part at reset (m)
     # Part friction (static = dynamic), set on every shape at bind. The MOVING threaded part runs
     # slick (0.01) against a grippier fixed part (0.75).
-    bolt_friction: float = tunable(0.01)
-    case_friction: float = tunable(0.75)
+    bolt_friction: float = 0.01
+    case_friction: float = 0.75
     # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX
     # form — the grasp-weld machinery at the end of this scene class):
     # close the fingers across the key handle's hex and the key welds to the hand; open wide
     # to release. Gripper envs only (no-op under robot="null").
-    grasp_weld: bool = tunable(True)
-    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
+    grasp_weld: bool = True
+    grasp_weld_dist: float = 0.010  # pinch-point-to-grip-band engage radius (m)
     # Kinematic screw-joint threading: every bolt spawns STAGED hand-started in its hole, is
     # kinematic, and descends its 1 mm-pitch helix by following the key's hex-engaged
     # rotation through the lash, one-way, to a hard stop just above seating the head. The
     # thread inserts' collision is off (the joint IS the thread); the bolts' SOCKET walls
     # stay live, so insertion, press, cam-out, and slip are real contacts. False = dynamic
     # bolts lying beside the case and live inserts.
-    screw_mechanic: bool = tunable(True)
-    stage_depth: float = info(0.006)  # staged bolts' tip depth below the board face (m)
-    stage_yaw: float = info(3.141592653589793)  # staged bolts' yaw (a k*60 deg hex clocking)
-    key_friction: float = tunable(0.6)
+    screw_mechanic: bool = True
+    stage_depth: float = 0.006  # staged bolts' tip depth below the board face (m)
+    stage_yaw: float = 3.141592653589793  # staged bolts' yaw (a k*60 deg hex clocking)
+    key_friction: float = 0.6
 
-    # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
-    num_holes: int = info(7)  # motherboard case-mount screw holes (= number of bolts)
+    # --- structure, reset layout, masses, asset paths ----------------------------------------------
+    num_holes: int = 7  # motherboard case-mount screw holes (= number of bolts)
     # Hole axes in the case's local frame (xy on the z=0 board face), serpentine drive order.
     # Baked into the committed case USD (keep in sync if the asset changes). The board's
     # position keeps a hex key cranking in any hole clear of the IO-panel wall.
-    hole_xy: tuple[tuple[float, float], ...] = info((
+    hole_xy: tuple[tuple[float, float], ...] = (
         (+0.0376, -0.1448),  # top_left
         (-0.1650, -0.1444),  # top_right
         (-0.1651, +0.0109),  # mid_right
@@ -81,37 +81,37 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
         (+0.0619, +0.1345),  # bot_left
         (-0.0931, +0.1347),  # bot_mid
         (-0.1648, +0.1343),  # bot_right
-    ))
-    board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
-    case_lift: float = info(0.0289)  # board face above the side panel the case lies on
-    thread_len: float = info(0.0124)  # bolt thread length: tip depth at which the head bottoms out
-    bolt_mass: float = info(0.012)  # M8 socket-head cap screw (kg)
-    light_intensity: float = info(2500.0)
+    )
+    board_top: float = 0.0  # board face height in the case frame (the asset's own origin)
+    case_lift: float = 0.0289  # board face above the side panel the case lies on
+    thread_len: float = 0.0124  # bolt thread length: tip depth at which the head bottoms out
+    bolt_mass: float = 0.012  # M8 socket-head cap screw (kg); applied via mass_props
+    light_intensity: float = 2500.0
     # Loose parts' start pose: bolts lying in a row beside the case (+x side), key flat past the end.
-    bolt_init_xy: tuple[tuple[float, float], ...] = info(())  # per-bolt start xy (table-rel.)
-    bolt_row_x: float = info(0.24)  # x of the bolt row (the case spans x < 0.13)
-    bolt_row_y0: float = info(-0.27)  # y of bolt0
-    bolt_spacing: float = info(0.09)  # y gap between adjacent bolts
-    bolt_init_z: float = info(0.0065)  # bolt-origin height when lying on its side (head rim + crest)
-    bolt_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # lying
-    key_init_xy: tuple[float, float] = info((0.24, 0.38))  # key start xy (table-rel.)
-    key_init_z: float = info(0.004)  # resting on a hex flat (apothem 3.1 mm) + margin
-    key_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
-    key_mass: float = info(0.10)  # steel 6.25 mm long-series L-key, 210 mm arm (kg)
-    key_disable_gravity: bool = info(False)  # the force-driven key smoke sets this True (no hand to bear the handle's weight)
+    bolt_init_xy: tuple[tuple[float, float], ...] = ()  # per-bolt start xy (table-rel.)
+    bolt_row_x: float = 0.24  # x of the bolt row (the case spans x < 0.13)
+    bolt_row_y0: float = -0.27  # y of bolt0
+    bolt_spacing: float = 0.09  # y gap between adjacent bolts
+    bolt_init_z: float = 0.0065  # bolt-origin height when lying on its side (head rim + crest)
+    bolt_init_quat: tuple[float, float, float, float] = (0.70711, 0.0, 0.70711, 0.0)  # lying
+    key_init_xy: tuple[float, float] = (0.24, 0.38)  # key start xy (table-rel.)
+    key_init_z: float = 0.004  # resting on a hex flat (apothem 3.1 mm) + margin
+    key_init_quat: tuple[float, float, float, float] = (0.70711, 0.70711, 0.0, 0.0)  # flat
+    key_mass: float = 0.10  # steel 6.25 mm long-series L-key, 210 mm arm (kg); applied via mass_props
+    key_disable_gravity: bool = False  # the force-driven key smoke sets this True (no hand to bear the handle's weight)
     # Optional upright stand (a four-wall pocket) that presents the key standing tip-down, its
     # handle 210 mm up as a ready top-down grip — a gripper env sets key_stand=True (and an
     # upright key_init_quat), because the flat-lying key demands a low pinch and a 90 deg
     # in-hand reorientation before it can screw anything.
-    key_stand: bool = info(False)
-    key_stand_gap: float = info(0.0022)  # pocket clearance per side around the arm's 7.2 mm corners
-    key_contact_offset: float = info(0.00025)  # well below the 0.375 mm/side socket clearance
-    bolt_contact_offset: float = info(0.00025)  # ditto for the bolt's socket walls
+    key_stand: bool = False
+    key_stand_gap: float = 0.0022  # pocket clearance per side around the arm's 7.2 mm corners
+    key_contact_offset: float = 0.00025  # well below the 0.375 mm/side socket clearance
+    bolt_contact_offset: float = 0.00025  # ditto for the bolt's socket walls
     # Selectable work surface (same presets as the sibling scenes).
-    table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
-    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    table: str = "lab_table"  # which work surface: "lab_table" | "packing"
+    surface_z: float | None = None  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = None  # xy the table sits at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
                       "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.5, 0.0),
@@ -121,10 +121,10 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
     # Asset USDs; empty -> the prebuilt assets committed under `assets/`.
-    asset_dir: str = info("")
-    case_usd: str = info("")
-    bolt_usd: str = info("")
-    key_usd: str = info("")
+    asset_dir: str = ""
+    case_usd: str = ""
+    bolt_usd: str = ""
+    key_usd: str = ""
 
     def __post_init__(self) -> None:
         if not self.bolt_init_xy:
@@ -147,6 +147,13 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
 @SCENES.register("pc_motherboard")
 class PcMotherboardAssemblyScene(BaseScene):
     cfg: PcMotherboardAssemblySceneCfg
+
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "bolt_friction": {"dist": "uniform", "lo": 0.005, "hi": 0.02},
+        "case_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
+        "key_friction": {"dist": "uniform", "lo": 0.45, "hi": 0.75},
+    }
 
     def __init__(self, cfg: PcMotherboardAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or PcMotherboardAssemblySceneCfg())
@@ -292,6 +299,32 @@ class PcMotherboardAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, on every shape of the asset),
+        `values[name]` one value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the
+        nominal application through here with uniform values, so this is THE friction path —
+        per-env sampling reuses it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        if "case_friction" in values:
+            col = torch.tensor(values["case_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.case.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col  # [static, dynamic, restitution]
+            self.case.root_physx_view.set_material_properties(mats, ids)
+        if "key_friction" in values:
+            col = torch.tensor(values["key_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.key.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col
+            self.key.root_physx_view.set_material_properties(mats, ids)
+        if "bolt_friction" in values:
+            col = torch.tensor(values["bolt_friction"], dtype=torch.float32).view(-1, 1, 1)
+            for bolt in self.bolts:
+                mats = bolt.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col
+                bolt.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the case + bolt + key handles, cache env origins, and set the part frictions."""
         super().bind(env)
@@ -299,10 +332,9 @@ class PcMotherboardAssemblyScene(BaseScene):
         self.bolts: list[RigidObject] = [env.iscene[f"bolt_{i}"] for i in range(self.cfg.num_holes)]
         self.key: RigidObject = env.iscene["key"]
         self.env_origins = env.iscene.env_origins
-        self._set_friction(self.case, self.cfg.case_friction)
-        self._set_friction(self.key, self.cfg.key_friction)
-        for bolt in self.bolts:
-            self._set_friction(bolt, self.cfg.bolt_friction)
+        # Nominal friction, all envs — through the same hook per-env sampling uses.
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
         self._grasp_weld_bind()
         self._screw_bind()
 
@@ -317,12 +349,6 @@ class PcMotherboardAssemblyScene(BaseScene):
         substep."""
         self._grasp_weld_step()
         self._screw_step()
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the case pinned at spawn, bolts lying in a row beside it,

@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -46,50 +46,50 @@ if TYPE_CHECKING:
 
 @dataclass
 class PcAllAssemblySceneCfg(BaseCfg):
-    """Config for `PcAllAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial or
-    an `info()` structural constant (see `robobench.core.BaseCfg`)."""
+    """Config for `PcAllAssemblyScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed."""
 
-    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
+    # --- grading thresholds, frictions, reset jitter -----------------------------------------------
     # Seating gates, per part family (a seated stick may legitimately rest leaned a few deg).
-    bolt_seat_depth: float = tunable(0.011)  # min tip depth below the board face (m) to count seated
-    bolt_align_xy: float = tunable(0.003)  # max lateral distance (m) of a bolt tip from its hole axis
-    bolt_align_axis_deg: float = tunable(5.0)  # max tilt of a bolt axis off the hole axis (deg)
-    gpu_seat_depth: float = tunable(0.004)  # min tab depth below the PCIe mouth (m) to count seated
-    gpu_align_xy: float = tunable(0.003)  # max distance (m) of the card origin from its seated point
-    gpu_align_axis_deg: float = tunable(3.0)  # max tilt of the card's up axis off the slot axis (deg)
-    gpu_align_yaw_deg: float = tunable(3.0)  # max heading error of the card's length axis (deg)
-    ram_seat_depth: float = tunable(0.0037)  # min blade depth below a DIMM mouth (m) to count seated
-    ram_align_xy: float = tunable(0.003)  # max distance (m) of a stick origin from its seated point
-    ram_align_axis_deg: float = tunable(6.0)  # max tilt of a stick's up axis off the slot axis (deg)
-    ram_align_yaw_deg: float = tunable(3.0)  # max heading error of a stick's length axis (deg)
-    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter for every loose part at reset (m)
+    bolt_seat_depth: float = 0.011  # min tip depth below the board face (m) to count seated
+    bolt_align_xy: float = 0.003  # max lateral distance (m) of a bolt tip from its hole axis
+    bolt_align_axis_deg: float = 5.0  # max tilt of a bolt axis off the hole axis (deg)
+    gpu_seat_depth: float = 0.004  # min tab depth below the PCIe mouth (m) to count seated
+    gpu_align_xy: float = 0.003  # max distance (m) of the card origin from its seated point
+    gpu_align_axis_deg: float = 3.0  # max tilt of the card's up axis off the slot axis (deg)
+    gpu_align_yaw_deg: float = 3.0  # max heading error of the card's length axis (deg)
+    ram_seat_depth: float = 0.0037  # min blade depth below a DIMM mouth (m) to count seated
+    ram_align_xy: float = 0.003  # max distance (m) of a stick origin from its seated point
+    ram_align_axis_deg: float = 6.0  # max tilt of a stick's up axis off the slot axis (deg)
+    ram_align_yaw_deg: float = 3.0  # max heading error of a stick's length axis (deg)
+    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter for every loose part at reset (m)
     # Part friction (static = dynamic), set on every shape at bind. The threaded bolt runs slick
     # (the joint is the thread), the card/sticks moderately slick so they slide down their
     # channels but hold seat, against a grippier fixed case.
-    bolt_friction: float = tunable(0.01)
-    key_friction: float = tunable(0.6)
-    card_friction: float = tunable(0.3)
-    ram_friction: float = tunable(0.3)
-    case_friction: float = tunable(0.75)
+    bolt_friction: float = 0.01
+    key_friction: float = 0.6
+    card_friction: float = 0.3
+    ram_friction: float = 0.3
+    case_friction: float = 0.75
     # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX form — the grasp-weld
     # machinery at the end of this scene class): close the fingers across the key handle's hex,
     # squarely across the card's body slab, or flat across a stick's faces near its top edge, and
     # the part welds to the hand; open wide to release. Gripper envs only (no-op under
     # robot="null").
-    grasp_weld: bool = tunable(True)
-    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
+    grasp_weld: bool = True
+    grasp_weld_dist: float = 0.010  # pinch-point-to-grip-band engage radius (m)
     # Kinematic screw-joint threading (see the module docstring). False = dynamic bolts lying
     # beside the case and live thread inserts.
-    screw_mechanic: bool = tunable(True)
-    stage_depth: float = info(0.006)  # staged bolts' tip depth below the board face (m)
-    stage_yaw: float = info(3.141592653589793)  # staged bolts' yaw (a k*60 deg hex clocking)
+    screw_mechanic: bool = True
+    stage_depth: float = 0.006  # staged bolts' tip depth below the board face (m)
+    stage_yaw: float = 3.141592653589793  # staged bolts' yaw (a k*60 deg hex clocking)
 
-    # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
-    num_holes: int = info(7)  # motherboard case-mount screw holes (= number of bolts)
+    # --- structure, reset layout, masses, asset paths ----------------------------------------------
+    num_holes: int = 7  # motherboard case-mount screw holes (= number of bolts)
     # Hole axes in the case's local frame (xy on the z=0 board face), serpentine drive order.
     # Baked into the committed case USD (keep in sync if the asset changes) — the same values as
     # `pc_motherboard_assembly` (both scenes' case USDs compose the same shifted board).
-    hole_xy: tuple[tuple[float, float], ...] = info((
+    hole_xy: tuple[tuple[float, float], ...] = (
         (+0.0376, -0.1448),  # top_left
         (-0.1650, -0.1444),  # top_right
         (-0.1651, +0.0109),  # mid_right
@@ -97,65 +97,64 @@ class PcAllAssemblySceneCfg(BaseCfg):
         (+0.0619, +0.1345),  # bot_left
         (-0.0931, +0.1347),  # bot_mid
         (-0.1648, +0.1343),  # bot_right
-    ))
-    thread_len: float = info(0.0124)  # bolt thread length: tip depth at which the head bottoms out
+    )
+    thread_len: float = 0.0124  # bolt thread length: tip depth at which the head bottoms out
     # Seated part origins (PCB-edge bottom centres) in the case's local frame; seated orientation =
     # the case's own axes (identity). Baked into the committed USDs (keep in sync if they change).
     # RAM slot 0 is the outermost (farthest from the CPU socket).
-    gpu_seat_pos: tuple[float, float, float] = info((-0.01595, 0.0293, 0.0035))
-    gpu_slot_mouth_z: float = info(0.0085)  # PCIe slot top in the case frame (5 mm at full seat)
-    ram_seat_pos: tuple[tuple[float, float, float], ...] = info(
-        ((-0.1426893, -0.0678899, 0.0002058), (-0.1237320, -0.0678899, 0.0002058))
-    )
-    ram_slot_mouth_z: float = info(0.0046456)  # DIMM channel wall top in the case frame
-    board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
-    case_lift: float = info(0.0289)  # board face above the side panel the case lies on
-    bolt_mass: float = info(0.012)  # M8 socket-head cap screw (kg)
-    key_mass: float = info(0.10)  # steel 6.25 mm long-series L-key, 210 mm arm (kg)
-    card_mass: float = info(1.0)  # dual-fan RTX 2060 (kg)
-    ram_mass: float = info(0.25)  # stick mass (kg)
-    light_intensity: float = info(2500.0)
+    gpu_seat_pos: tuple[float, float, float] = (-0.01595, 0.0293, 0.0035)
+    gpu_slot_mouth_z: float = 0.0085  # PCIe slot top in the case frame (5 mm at full seat)
+    ram_seat_pos: tuple[tuple[float, float, float], ...] = (
+        (-0.1426893, -0.0678899, 0.0002058), (-0.1237320, -0.0678899, 0.0002058))
+    ram_slot_mouth_z: float = 0.0046456  # DIMM channel wall top in the case frame
+    board_top: float = 0.0  # board face height in the case frame (the asset's own origin)
+    case_lift: float = 0.0289  # board face above the side panel the case lies on
+    bolt_mass: float = 0.012  # M8 socket-head cap screw (kg)
+    key_mass: float = 0.10  # steel 6.25 mm long-series L-key, 210 mm arm (kg)
+    card_mass: float = 1.0  # dual-fan RTX 2060 (kg)
+    ram_mass: float = 0.25  # stick mass (kg)
+    light_intensity: float = 2500.0
     # Loose part start poses (table-relative xy; see the single-task scenes for the lying
     # defaults' rationale — a gripper env instead stages the key and every part upright).
-    bolt_init_xy: tuple[tuple[float, float], ...] = info(())  # per-bolt start xy (table-rel.;
+    bolt_init_xy: tuple[tuple[float, float], ...] = ()  # per-bolt start xy (table-rel.;
     # scenery — with `screw_mechanic` the bolts spawn staged in their holes)
-    bolt_row_x: float = info(0.24)  # x of the bolt row (the case spans x < 0.14)
-    bolt_row_y0: float = info(-0.27)  # y of bolt0
-    bolt_spacing: float = info(0.09)  # y gap between adjacent bolts
-    bolt_init_z: float = info(0.0065)  # bolt-origin height when lying on its side (head rim + crest)
-    bolt_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # lying
-    key_init_xy: tuple[float, float] = info((0.30, 0.40))  # key start xy (table-rel.)
-    key_init_z: float = info(0.004)  # resting on a hex flat (apothem 3.1 mm) + margin
-    key_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
-    key_disable_gravity: bool = info(False)  # the force-driven key smoke sets this True (no hand
+    bolt_row_x: float = 0.24  # x of the bolt row (the case spans x < 0.14)
+    bolt_row_y0: float = -0.27  # y of bolt0
+    bolt_spacing: float = 0.09  # y gap between adjacent bolts
+    bolt_init_z: float = 0.0065  # bolt-origin height when lying on its side (head rim + crest)
+    bolt_init_quat: tuple[float, float, float, float] = (0.70711, 0.0, 0.70711, 0.0)  # lying
+    key_init_xy: tuple[float, float] = (0.30, 0.40)  # key start xy (table-rel.)
+    key_init_z: float = 0.004  # resting on a hex flat (apothem 3.1 mm) + margin
+    key_init_quat: tuple[float, float, float, float] = (0.70711, 0.70711, 0.0, 0.0)  # flat
+    key_disable_gravity: bool = False  # the force-driven key smoke sets this True (no hand
     # to bear the handle's weight)
-    card_init_xy: tuple[float, float] = info((0.28, 0.0))
-    card_init_z: float = info(0.0022)
-    card_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
-    ram_init_xy: tuple[tuple[float, float], ...] = info(((0.27, -0.085), (0.27, 0.085)))
-    ram_init_z: float = info(0.0042)
-    ram_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # flat
-    key_contact_offset: float = info(0.00025)  # collision contact offsets (m), set at spawn
-    bolt_contact_offset: float = info(0.00025)
-    card_contact_offset: float = info(0.0001)
-    ram_contact_offset: float = info(0.0001)
-    case_contact_offset: float = info(0.0001)
+    card_init_xy: tuple[float, float] = (0.28, 0.0)
+    card_init_z: float = 0.0022
+    card_init_quat: tuple[float, float, float, float] = (0.70711, 0.70711, 0.0, 0.0)  # flat
+    ram_init_xy: tuple[tuple[float, float], ...] = ((0.27, -0.085), (0.27, 0.085))
+    ram_init_z: float = 0.0042
+    ram_init_quat: tuple[float, float, float, float] = (0.70711, 0.0, 0.70711, 0.0)  # flat
+    key_contact_offset: float = 0.00025  # collision contact offsets (m), set at spawn
+    bolt_contact_offset: float = 0.00025
+    card_contact_offset: float = 0.0001
+    ram_contact_offset: float = 0.0001
+    case_contact_offset: float = 0.0001
     # Optional stands that present the parts UPRIGHT. Enable together with upright init quats
     # (identity = seated orientation / standing tip-down) and init z = the holders' floor top.
-    key_stand: bool = info(False)
-    key_stand_gap: float = info(0.0022)  # pocket clearance per side around the arm's 7.2 mm corners
-    card_stand: bool = info(False)
-    card_stand_gap: float = info(0.0025)  # rail clearance per side around the card's body slab (m)
-    ram_stand: bool = info(False)
-    ram_stand_gap: float = info(0.0012)  # rail clearance per side around a stick's body slab (m)
+    key_stand: bool = False
+    key_stand_gap: float = 0.0022  # pocket clearance per side around the arm's 7.2 mm corners
+    card_stand: bool = False
+    card_stand_gap: float = 0.0025  # rail clearance per side around the card's body slab (m)
+    ram_stand: bool = False
+    ram_stand_gap: float = 0.0012  # rail clearance per side around a stick's body slab (m)
     # Selectable work surface (same presets as the sibling scenes).
-    case_xy: tuple[float, float] | None = info(None)  # world xy the case sits at; None -> the
+    case_xy: tuple[float, float] | None = None  # world xy the case sits at; None -> the
     # table anchor. Shifting the case (with the robot base following) stretches the staging
     # strip without touching any case-relative work geometry.
-    table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
-    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    table: str = "lab_table"  # which work surface: "lab_table" | "packing"
+    surface_z: float | None = None  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = None  # xy the table sits at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
                       "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.55, 0.0),
@@ -165,12 +164,12 @@ class PcAllAssemblySceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
     # Asset USDs; empty -> the prebuilt assets committed under `assets/`.
-    asset_dir: str = info("")
-    case_usd: str = info("")
-    bolt_usd: str = info("")
-    key_usd: str = info("")
-    card_usd: str = info("")
-    ram_usd: str = info("")
+    asset_dir: str = ""
+    case_usd: str = ""
+    bolt_usd: str = ""
+    key_usd: str = ""
+    card_usd: str = ""
+    ram_usd: str = ""
 
     def __post_init__(self) -> None:
         if not self.bolt_init_xy:
@@ -204,6 +203,15 @@ class PcAllAssemblySceneCfg(BaseCfg):
 @SCENES.register("pc_all")
 class PcAllAssemblyScene(BaseScene):
     cfg: PcAllAssemblySceneCfg
+
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "bolt_friction": {"dist": "uniform", "lo": 0.005, "hi": 0.02},
+        "key_friction": {"dist": "uniform", "lo": 0.45, "hi": 0.75},
+        "card_friction": {"dist": "uniform", "lo": 0.20, "hi": 0.40},
+        "ram_friction": {"dist": "uniform", "lo": 0.20, "hi": 0.40},
+        "case_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
+    }
 
     # Part-local extents of the body collision slabs (they match the visual shells): the card's
     # along its local y, a stick's along its local x. The holders' rails flank THESE faces — the
@@ -464,6 +472,43 @@ class PcAllAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, on every shape of the asset),
+        `values[name]` one value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the
+        nominal application through here with uniform values, so this is THE friction path —
+        per-env sampling reuses it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        if "case_friction" in values:
+            col = torch.tensor(values["case_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.case.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col  # [static, dynamic, restitution]
+            self.case.root_physx_view.set_material_properties(mats, ids)
+        if "key_friction" in values:
+            col = torch.tensor(values["key_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.key.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col
+            self.key.root_physx_view.set_material_properties(mats, ids)
+        if "card_friction" in values:
+            col = torch.tensor(values["card_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.card.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col
+            self.card.root_physx_view.set_material_properties(mats, ids)
+        if "bolt_friction" in values:
+            col = torch.tensor(values["bolt_friction"], dtype=torch.float32).view(-1, 1, 1)
+            for bolt in self.bolts:
+                mats = bolt.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col
+                bolt.root_physx_view.set_material_properties(mats, ids)
+        if "ram_friction" in values:
+            col = torch.tensor(values["ram_friction"], dtype=torch.float32).view(-1, 1, 1)
+            for ram in self.rams:
+                mats = ram.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col
+                ram.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the case + part handles, cache env origins, and set the part frictions."""
         super().bind(env)
@@ -473,13 +518,9 @@ class PcAllAssemblyScene(BaseScene):
         self.card: RigidObject = env.iscene["card"]
         self.rams: list[RigidObject] = [env.iscene[f"ram_{k}"] for k in range(self.cfg.num_slots)]
         self.env_origins = env.iscene.env_origins
-        self._set_friction(self.case, self.cfg.case_friction)
-        self._set_friction(self.key, self.cfg.key_friction)
-        self._set_friction(self.card, self.cfg.card_friction)
-        for bolt in self.bolts:
-            self._set_friction(bolt, self.cfg.bolt_friction)
-        for ram in self.rams:
-            self._set_friction(ram, self.cfg.ram_friction)
+        # Nominal friction, all envs — through the same hook per-env sampling uses.
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
         self._grasp_weld_bind()
         self._screw_bind()
 
@@ -503,12 +544,6 @@ class PcAllAssemblyScene(BaseScene):
         substep."""
         self._grasp_weld_step()
         self._screw_step()
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the case pinned at spawn, the bolts staged in their holes

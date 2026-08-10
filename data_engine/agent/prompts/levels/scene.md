@@ -1,1 +1,119 @@
-TODO — prompt to be written.
+# This level: scene
+
+The engine's whole idea is to take one solve that already works and multiply
+it into many verified episodes. At the scene level you multiply the **world**:
+each cell you make is one new version of the world the task happens in — with
+its judge kept truthful — and the same delivered solve is run in it, batch
+after batch, every episode graded. Different worlds are what make the
+dataset's episodes genuinely different: different clutter, different tables,
+different starting arrangements.
+
+One rule above all: **the delivered solve must still succeed in your world.**
+A world nobody can solve produces no data. When in doubt, change less.
+
+## Gentle modifications only
+
+Make simple, believable edits — the kind a real workshop would show from one
+day to the next:
+
+- **Add unrelated objects** (an apple beside the bulb, a mug, a screwdriver
+  near the work area). They must not interfere with the task: keep them out
+  of the space the parts and the hand move through, resting stably on the
+  surface — not floating, not intersecting anything.
+- **Add more of the target objects** (a second bulb and socket, extra
+  screws), when the task naturally extends to them. This changes what "done"
+  means, so the judge must change with it (next section).
+- **Change the work surface**: a taller or lower table, or a different table
+  model. Moving the surface moves the task in the robot's workspace, so do
+  the small calculation for the new poses (heights, approach points) and
+  change the necessary parameters in this cell's own `solve.py` so the solve
+  still reaches them — and check the new height is actually reachable before
+  building on it.
+
+**Leave the hard parts exactly as the suite ships them**: the contact
+mechanics (threads, insertion channels), the sim/PhysX settings, and the
+welding/fastening mechanisms — those needed dedicated expert checks the
+session cannot redo.
+
+**Where new objects come from**: run `catalog_assets` — it prints a fresh
+JSON list of every spawnable asset with its measured size in meters, the
+`scale` the spawner needs, and its physics class. Match the spawn to the
+class (`rigid` -> a free object, `static`/`articulation` -> a fixture,
+`visual` -> looks real but nothing collides with it — set dressing only,
+never a graspable "distractor"), respect `has_mass: true` (mass is baked in —
+don't override it), and place things clear of the task using the measured
+size. Assets not in the catalog can be built from simple shapes (a box, a
+cylinder, with a material); do not import asset files from outside.
+
+## The scene and its judge move as a pair
+
+Where a change shifts what success looks like, rewrite the scene's own check
+functions AND `grader/grader.py` so they describe the new world truthfully.
+Two ways this happens:
+
+- **Directly** — you extended the task: with two bulbs instead of one, "done"
+  now means both are seated; with extra screws, all of them fastened.
+- **By accident** — you added something "irrelevant" that the judge happens
+  to measure. In a packing task judged by "no loose parts left on the bench",
+  an innocent mug placed on the bench fails every episode; a distractor near
+  the goal can trip a "nearest object" check. Before calling an object
+  irrelevant, read what the grader actually measures and make sure the new
+  object is invisible to it — or update the judge.
+
+Where the meaning of success didn't move, leave the grader alone. An episode
+graded by an outdated judge is worse than no episode: it is wrong data that
+looks right.
+
+## The four edits people forget
+
+Adding an object is more than spawning it. Every new object needs all four:
+
+1. **Spawn** it in `assets()`, at a spot that cannot collide with the task
+   (on the surface, clear of the parts and the robot's path).
+2. **Reset** it in `reset(env_ids)`, so every episode puts it back — with its
+   own small placement variation if you want one (copy the scene's existing
+   pattern).
+3. **State**: add it to `get_state` / `set_state`. Skip this and saved
+   episodes silently lose the object when restored later — the mistake that
+   hurts most and shows up last.
+4. **Describe** it in `describe()`. That text is all a solving agent knows
+   about the world; an object missing from the description does not exist
+   for it.
+
+## Physical parameters — usually nothing to do
+
+The scene already carries its own physics dials with sensible ranges
+(`PHYSICAL_PARAMS` on the scene class): friction, mass and similar physical
+properties. `generate` samples them on its own — each env in a batch gets its
+own world, and env 0 always keeps the untouched original. You only act here
+if:
+
+- **your new object should vary too** (say, its friction): add one entry to
+  `PHYSICAL_PARAMS` and one matching block in `apply_physical_params` (copy
+  an existing one). Unknown names are rejected loudly, so a half-done
+  extension cannot slip through.
+- **your testing shows a shipped range is wrong**: tighten a range that kills
+  the yield, and say so in `SUMMARY.md`.
+
+Only physical properties of objects belong there — never grading thresholds,
+controller gains, sim settings, or start-pose jitter (starting poses belong
+to the scene's reset). To stop a dial from being sampled, set its entry to
+`None`; don't delete the line — the nominal values are applied through the
+same list, so deleting changes the normal world too.
+
+## Verification
+
+    generate --headless /workspace --scene scene_N --num_envs 8 --seed 0
+
+This generates one batch of data on your scene, under `/workspace/data/<batch>/`:
+one `ep_NNNN/` folder per episode, success/fail in each episode's `meta.json`,
+and the batch summary (yield) in `data/<batch>/meta.json`. Physical parameters
+are sampled automatically (env 0 always keeps the plain, unsampled world); add
+`--nominal` to turn sampling off when you want a pure baseline. Judge by
+success: does the delivered solve still succeed in your world? Env 0 failing
+points at your scene edit, not at the physics ranges. A cell whose tests never
+produce a successful episode must not ship: fix it or delete it.
+
+Either way, write `SUMMARY.md` at the cell root: what you tried, what you
+changed, the yields you measured, and what you learned — failed ideas
+included; they are what the next session learns from.

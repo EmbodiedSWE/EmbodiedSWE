@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -46,10 +46,10 @@ if TYPE_CHECKING:
 
 @dataclass
 class PcRamAssemblySceneCfg(BaseCfg):
-    """Config for `PcRamAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial or
-    an `info()` structural constant (see `robobench.core.BaseCfg`)."""
+    """Config for `PcRamAssemblyScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed."""
 
-    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
+    # --- seating gates, reset jitter, part frictions, grasp contract -------------------------------
     # A stick is "seated" when — in the case's frame — its blade is >= `seat_depth` below the slot
     # mouth, its origin is within `align_xy` of its seated point, and its axes are within
     # `align_axis_deg` (tilt) / `align_yaw_deg` (heading along the slot) of the case's. The full
@@ -57,52 +57,52 @@ class PcRamAssemblySceneCfg(BaseCfg):
     # pc_gpu's: with the shallow 3.4 mm grip band a fully seated stick may legitimately rest
     # leaned against a channel wall at up to ~5 deg (its upright-restoring range is only ~2 deg),
     # so 3 deg would false-fail a good insertion.
-    seat_depth: float = tunable(0.0037)  # min blade depth below the slot mouth (m) to count seated
-    align_xy: float = tunable(0.003)  # max distance (m) of a stick origin from its seated point
-    align_axis_deg: float = tunable(6.0)  # max tilt of a stick's up axis off the slot axis (deg)
-    align_yaw_deg: float = tunable(3.0)  # max heading error of a stick's length axis (deg)
-    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter for the loose sticks at reset (m)
+    seat_depth: float = 0.0037  # min blade depth below the slot mouth (m) to count seated
+    align_xy: float = 0.003  # max distance (m) of a stick origin from its seated point
+    align_axis_deg: float = 6.0  # max tilt of a stick's up axis off the slot axis (deg)
+    align_yaw_deg: float = 3.0  # max heading error of a stick's length axis (deg)
+    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter for the loose sticks at reset (m)
     # Part friction (static = dynamic), set on every shape at bind. The moving stick runs
     # moderately slick against a grippier fixed case, so it slides down the channel but holds seat.
-    ram_friction: float = tunable(0.3)
-    case_friction: float = tunable(0.75)
+    ram_friction: float = 0.3
+    case_friction: float = 0.75
     # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX
     # form — the grasp-weld machinery at the end of this scene class):
     # close the fingers flat across a stick's faces near its top edge and the stick welds to
     # the hand; open wide to release. Gripper envs only (no-op under robot="null").
-    grasp_weld: bool = tunable(True)
-    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
+    grasp_weld: bool = True
+    grasp_weld_dist: float = 0.010  # pinch-point-to-grip-band engage radius (m)
 
-    # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
+    # --- structure, reset layout, masses, asset paths ----------------------------------------------
     # Seated stick origins (PCB-blade bottom centres) in the case's local frame, one per empty DIMM
     # slot; seated orientation = the case's own axes (identity). Baked into the committed USDs
     # (keep in sync if they change). Slot 0 is the outermost (farthest from the CPU socket).
-    seat_pos: tuple[tuple[float, float, float], ...] = info(
-        ((-0.1426893, -0.0678899, 0.0002058), (-0.1237320, -0.0678899, 0.0002058))
+    seat_pos: tuple[tuple[float, float, float], ...] = (
+        (-0.1426893, -0.0678899, 0.0002058), (-0.1237320, -0.0678899, 0.0002058)
     )
-    slot_mouth_z: float = info(0.0046456)  # channel wall top in the case frame: depth datum
-    board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
-    case_lift: float = info(0.0289)  # board face above the side panel the case lies on
-    ram_mass: float = info(0.25)  # stick mass (kg); a real stick is ~45 g
-    light_intensity: float = info(2500.0)
+    slot_mouth_z: float = 0.0046456  # channel wall top in the case frame: depth datum
+    board_top: float = 0.0  # board face height in the case frame (the asset's own origin)
+    case_lift: float = 0.0289  # board face above the side panel the case lies on
+    ram_mass: float = 0.25  # stick mass (kg); a real stick is ~45 g
+    light_intensity: float = 2500.0
     # Loose stick start poses: lying flat (heat-spreader face down, RGB bar pointing away from the
     # case) on the table beside the case, end-to-end along y with a 34 mm tip gap.
-    ram_init_xy: tuple[tuple[float, float], ...] = info(((0.27, -0.085), (0.27, 0.085)))
-    ram_init_z: float = info(0.0042)  # origin height lying face-down (slab half 3.6 mm + pad)
-    ram_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # flat
-    ram_contact_offset: float = info(0.0001)  # collision contact offsets (m), set at spawn
-    case_contact_offset: float = info(0.0001)
+    ram_init_xy: tuple[tuple[float, float], ...] = ((0.27, -0.085), (0.27, 0.085))
+    ram_init_z: float = 0.0042  # origin height lying face-down (slab half 3.6 mm + pad)
+    ram_init_quat: tuple[float, float, float, float] = (0.70711, 0.0, 0.70711, 0.0)  # flat
+    ram_contact_offset: float = 0.0001  # collision contact offsets (m), set at spawn
+    case_contact_offset: float = 0.0001
     # Optional foam holders (per stick: a floor pad + two rails flanking the 7.3 mm body slab)
     # that present the sticks UPRIGHT. Enable together with upright
     # `ram_init_quat` (identity = the seated orientation) and `ram_init_z` = the holders' floor
     # top; the rails cap a free stick's lean at ~5 deg and the pick pulls straight up out of them.
-    ram_stand: bool = info(False)
-    ram_stand_gap: float = info(0.0012)  # rail clearance per side around the body slab (m)
+    ram_stand: bool = False
+    ram_stand_gap: float = 0.0012  # rail clearance per side around the body slab (m)
     # Selectable work surface (same presets as the sibling scenes).
-    table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
-    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    table: str = "lab_table"  # which work surface: "lab_table" | "packing"
+    surface_z: float | None = None  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = None  # xy the table sits at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
                       "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.55, 0.0),
@@ -112,9 +112,9 @@ class PcRamAssemblySceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
     # Asset USDs; empty -> the prebuilt assets committed under `assets/`.
-    asset_dir: str = info("")
-    case_usd: str = info("")
-    ram_usd: str = info("")
+    asset_dir: str = ""
+    case_usd: str = ""
+    ram_usd: str = ""
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parents[1] / "assets"
@@ -136,6 +136,12 @@ class PcRamAssemblySceneCfg(BaseCfg):
 @SCENES.register("pc_ram")
 class PcRamAssemblyScene(BaseScene):
     cfg: PcRamAssemblySceneCfg
+
+    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "ram_friction": {"dist": "uniform", "lo": 0.20, "hi": 0.40},
+        "case_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
+    }
 
     # Stick-local x extent of the body collision slab (from ram_tridentz.usd
     # `/ram/collision/body`; it matches the visual shell). The holders' rails flank THESE
@@ -273,15 +279,36 @@ class PcRamAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic, on every shape of the asset),
+        `values[name]` one value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the
+        nominal application through here with uniform values, so this is THE friction path —
+        per-env sampling reuses it, never a copy."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        if "case_friction" in values:
+            col = torch.tensor(values["case_friction"], dtype=torch.float32).view(-1, 1, 1)
+            mats = self.case.root_physx_view.get_material_properties()
+            mats[..., 0:2] = col  # [static, dynamic, restitution]
+            self.case.root_physx_view.set_material_properties(mats, ids)
+        if "ram_friction" in values:
+            col = torch.tensor(values["ram_friction"], dtype=torch.float32).view(-1, 1, 1)
+            for ram in self.rams:
+                mats = ram.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col
+                ram.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the case + stick handles, cache env origins, and set the part frictions."""
         super().bind(env)
         self.case: RigidObject = env.iscene["case"]
         self.rams: list[RigidObject] = [env.iscene[f"ram_{k}"] for k in range(self.cfg.num_slots)]
         self.env_origins = env.iscene.env_origins
-        self._set_friction(self.case, self.cfg.case_friction)
-        for ram in self.rams:
-            self._set_friction(ram, self.cfg.ram_friction)
+        # Nominal friction, all envs — through the same hook per-env sampling uses.
+        E, c = env.num_envs, self.cfg
+        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
         self._grasp_weld_bind()
 
     def grasp_sites(self) -> list:
@@ -296,12 +323,6 @@ class PcRamAssemblyScene(BaseScene):
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
         """Reconcile the weld-on-closure grasp contract every physics substep."""
         self._grasp_weld_step()
-
-    def _set_friction(self, asset, value: float) -> None:
-        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
-        mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the case pinned at spawn, both sticks lying flat on the table

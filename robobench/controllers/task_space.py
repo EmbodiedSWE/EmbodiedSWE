@@ -20,7 +20,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from robobench.core import CONTROLLERS, BaseController, BaseControllerCfg, info, tunable
+from robobench.core import CONTROLLERS, BaseController, BaseControllerCfg
 
 if TYPE_CHECKING:
     import torch
@@ -28,20 +28,20 @@ if TYPE_CHECKING:
 
 @dataclass
 class TaskSpaceControllerCfg(BaseControllerCfg):
-    """Shared config. Robot-specific structure is `info`; gains / action scaling are `tunable`."""
+    """Shared config: robot-specific structure plus gains / action scaling."""
 
-    ee_body: str = info("")  # end-effector frame (a body name); "" -> the articulation's last body
-    arm_joint_names: tuple[str, ...] | None = info(None)  # driven joints; None -> all of the robot's joints
-    task_prop_gains: tuple[float, ...] = tunable((100.0, 100.0, 100.0, 30.0, 30.0, 30.0))  # task stiffness [xyz, rpy]
-    task_deriv_gains: tuple[float, ...] = info(())  # () -> critical damping (2√Kp)
-    pos_scale: float = tunable(0.02)  # action unit -> position step (m)
-    rot_scale: float = tunable(0.097)  # action unit -> rotation step (rad)
-    unidirectional_rot: bool = info(False)  # clamp the yaw action to one sign (tighten-only)
-    ema_factor: float = tunable(1.0)  # action smoothing: 1 = off (stateless); <1 = low-pass (stateful)
-    nullspace_dof_pos: tuple[float, ...] = info(())  # posture target; () -> the arm's default joint pose
-    kp_null: float = tunable(10.0)  # nullspace posture stiffness
-    kd_null: float = tunable(6.3246)  # nullspace posture damping
-    torque_limit: float = tunable(100.0)  # per-joint torque clamp (N·m)
+    ee_body: str = ""  # end-effector frame (a body name); "" -> the articulation's last body
+    arm_joint_names: tuple[str, ...] | None = None  # driven joints; None -> all of the robot's joints
+    task_prop_gains: tuple[float, ...] = (100.0, 100.0, 100.0, 30.0, 30.0, 30.0)  # task stiffness [xyz, rpy]
+    task_deriv_gains: tuple[float, ...] = ()  # () -> critical damping (2√Kp)
+    pos_scale: float = 0.02  # action unit -> position step (m)
+    rot_scale: float = 0.097  # action unit -> rotation step (rad)
+    unidirectional_rot: bool = False  # clamp the yaw action to one sign (tighten-only)
+    ema_factor: float = 1.0  # action smoothing: 1 = off (stateless); <1 = low-pass (stateful)
+    nullspace_dof_pos: tuple[float, ...] = ()  # posture target; () -> the arm's default joint pose
+    kp_null: float = 10.0  # nullspace posture stiffness
+    kd_null: float = 6.3246  # nullspace posture damping
+    torque_limit: float = 100.0  # per-joint torque clamp (N·m)
 
 
 class _TaskSpaceController(BaseController):
