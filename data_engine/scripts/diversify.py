@@ -37,7 +37,7 @@ REPO_ROOT = ROOT.parent
 CRED_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_API_KEY")
 DEFAULTS = {"scene": "scene_0", "strategy": "strategy_0", "prompts": [], "cli": [],
             "agent": "claude", "model": "claude-opus-5",
-            "image": "rb-l1-agent:2.1.216", "gpu": "0", "budget_min": 240}
+            "image": "rb-diversify:2.1.216", "gpu": "0", "budget_min": 240}
 
 
 def load_condition(path: Path, overrides: list[str]) -> dict:

@@ -63,7 +63,9 @@ def main() -> None:
     try:
         import pxr  # noqa: F401  (usd-core — bare USD, no Isaac boot)
     except ImportError:
-        sys.exit("catalog_assets needs the standalone USD wheel: pip install usd-core")
+        sys.exit("catalog_assets needs the standalone USD wheel (baked into the rb-diversify "
+                 "image — data_engine/docker/Dockerfile; on the host: uv pip install usd-core). "
+                 "The session venv cannot install it at runtime.")
     ap = argparse.ArgumentParser(description="list spawnable assets with measured facts (JSON)")
     ap.add_argument("--suite", default=None, help="only this suite's assets (e.g. assembly)")
     ap.add_argument("--grep", default=None, help="substring filter on name/path")
