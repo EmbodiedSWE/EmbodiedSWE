@@ -1,0 +1,18 @@
+#usda 1.0
+(
+    defaultPrim = "root"
+    metersPerUnit = 1
+    upAxis = "Z"
+    doc = """Bowl scan visual (green): the vendored pkg is physics-stripped; colliders live on the procedural bowl body that references this."""
+)
+
+def Xform "root" (
+    prepend references = @./green/pkg/model_Bowl_B07WG43L2D_Green_TU_69323.usd@</root>
+)
+{
+    over "element_path" (
+        active = false
+    )
+    {
+    }
+}

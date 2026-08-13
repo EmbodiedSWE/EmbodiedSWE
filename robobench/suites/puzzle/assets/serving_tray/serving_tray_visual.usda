@@ -1,0 +1,18 @@
+#usda 1.0
+(
+    defaultPrim = "root"
+    metersPerUnit = 1
+    upAxis = "Z"
+    doc = """17-inch serving tray scan visual: the vendored pkg is physics-stripped; colliders live on the procedural tray body that references this."""
+)
+
+def Xform "root" (
+    prepend references = @./pkg/model_B07B8NV9TK_69323.usd@</root>
+)
+{
+    over "element_path" (
+        active = false
+    )
+    {
+    }
+}

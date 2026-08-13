@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -34,73 +34,73 @@ if TYPE_CHECKING:
 
 @dataclass
 class AllenBoltAssemblySceneCfg(BaseCfg):
-    """Config for `AllenBoltAssemblyScene`. Nothing is locked — a variant is just a copy with a few
-    fields changed."""
+    """Config for `AllenBoltAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial
+    or an `info()` structural constant (see `robobench.core.BaseCfg`)."""
 
-    # --- grading thresholds + reset jitter ---------------------------------------------------------
+    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
     # A bolt is "seated" when — in its platform's frame — the tip is >= `seat_depth` below the plate
     # top, within `align_xy` of the hole axis, and tilted <= `align_axis_deg` off it. The head
     # bottoms out at 24.8 mm tip depth, so 22 mm separates "seated" from "merely started".
-    seat_depth: float = 0.022  # min tip depth below the plate top (m) to count as seated
-    align_xy: float = 0.004  # max lateral distance (m) of the bolt tip from the hole axis
-    align_axis_deg: float = 5.0  # max tilt of the bolt axis off the hole axis (deg)
-    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter per bolt at reset (m); 0 = none
-    # Part friction (static = dynamic), set on every shape at bind. The MOVING threaded part
-    # runs slick (0.01) against a grippier fixed part (0.75).
-    bolt_friction: float = 0.01
-    platform_friction: float = 0.75
-    key_friction: float = 0.6
+    seat_depth: float = tunable(0.022)  # min tip depth below the plate top (m) to count as seated
+    align_xy: float = tunable(0.004)  # max lateral distance (m) of the bolt tip from the hole axis
+    align_axis_deg: float = tunable(5.0)  # max tilt of the bolt axis off the hole axis (deg)
+    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter per bolt at reset (m); 0 = none
+    # Part friction (static = dynamic), set on every shape at bind. The MOVING threaded part runs
+    # slick (0.01) against a grippier fixed part (0.75); the key gets the proven hex-cup friction.
+    bolt_friction: float = tunable(0.01)
+    platform_friction: float = tunable(0.75)
+    key_friction: float = tunable(0.6)
     # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX
     # form — the grasp-weld machinery at the end of this scene class):
     # close the fingers across either arm's hex and the key welds to the hand; open wide to
     # release. Gripper envs only (no-op under robot="null").
-    grasp_weld: bool = True
-    grasp_weld_dist: float = 0.010  # pinch-point-to-grip-band engage radius (m)
+    grasp_weld: bool = tunable(True)
+    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
     # Staged-bolt spawn: each bolt spawns thread-captured in its hole — hand-started a couple
     # of turns, the way a person finger-starts a bolt — at the asset-baked register below, a
     # settled pose on the SDF threads that holds unaided (recalibrate by drop/nest/
     # helix-advance if the bolt or insert USDs change). False = the lying spawn.
-    bolt_staged: bool = False
-    bolt_stage_depth: float = 0.004898  # staged tip depth below the plate top (m)
-    bolt_stage_yaw: float = 0.648037  # the depth's helix register (rad, about +z)
+    bolt_staged: bool = tunable(False)
+    bolt_stage_depth: float = info(0.004898)  # staged tip depth below the plate top (m)
+    bolt_stage_yaw: float = info(0.648037)  # the depth's helix register (rad, about +z)
 
-    # --- layout, structure, masses, asset paths ----------------------------------------------------
-    num_pairs: int = 1  # number of platform+bolt pairs
-    platform_slots: tuple[tuple[float, float], ...] = ((0.0, 0.0),)  # platform xy, table-rel.
+    # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
+    num_pairs: int = info(1)  # number of platform+bolt pairs
+    platform_slots: tuple[tuple[float, float], ...] = info(((0.0, 0.0),))  # platform xy, table-rel.
     # Geometry baked into the committed USD assets (defaults; keep in sync if the assets change):
-    plate_top: float = 0.038  # plate top above the platform origin (legs 25 mm + plate 13 mm)
-    thread_len: float = 0.0248  # bolt thread length: tip depth at which the head bottoms out
-    bolt_mass: float = 0.05  # M16 socket-head cap screw (kg)
-    light_intensity: float = 2500.0
+    plate_top: float = info(0.038)  # plate top above the platform origin (legs 25 mm + plate 13 mm)
+    thread_len: float = info(0.0248)  # bolt thread length: tip depth at which the head bottoms out
+    bolt_mass: float = info(0.05)  # M16 socket-head cap screw (kg)
+    light_intensity: float = info(2500.0)
     # Bolts' start pose: lying on their sides in a row on the +x side of the platforms.
-    bolt_init_xy: tuple[tuple[float, float], ...] = ()  # per-bolt start xy (table-rel.)
-    bolt_row_x0: float = 0.14  # x of bolt0
-    bolt_row_y: float = 0.0  # y of the row
-    bolt_spacing: float = 0.1  # x gap between adjacent bolts
-    bolt_init_z: float = 0.013  # [TUNE: to the asset] bolt-origin height when lying on its side
+    bolt_init_xy: tuple[tuple[float, float], ...] = info(())  # per-bolt start xy (table-rel.)
+    bolt_row_x0: float = info(0.14)  # x of bolt0
+    bolt_row_y: float = info(0.0)  # y of the row
+    bolt_spacing: float = info(0.1)  # x gap between adjacent bolts
+    bolt_init_z: float = info(0.013)  # [TUNE: to the asset] bolt-origin height when lying on its side
     # (lying, the bolt rests on its 15 mm head rim + 7.8 mm thread crests, axis tilted ~13 deg)
     # Allen key start pose: lying flat on the table beyond the bolts (both arms in the table plane).
-    key_init_xy: tuple[tuple[float, float], ...] = ()  # per-key start xy (table-rel.)
-    key_row_x0: float = 0.26  # x of key0
-    key_row_y: float = 0.0
-    key_spacing: float = 0.1
-    key_init_z: float = 0.0075  # resting on a hex flat (apothem 6.25 mm) + margin
-    key_init_quat: tuple[float, float, float, float] = (0.70711, 0.70711, 0.0, 0.0)  # wxyz; flat
-    key_mass: float = 0.08  # steel 12.5 mm L-key (kg)
-    key_disable_gravity: bool = False  # the force-driven key smoke sets this True (no hand to bear the handle's weight)
+    key_init_xy: tuple[tuple[float, float], ...] = info(())  # per-key start xy (table-rel.)
+    key_row_x0: float = info(0.26)  # x of key0
+    key_row_y: float = info(0.0)
+    key_spacing: float = info(0.1)
+    key_init_z: float = info(0.0075)  # resting on a hex flat (apothem 6.25 mm) + margin
+    key_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # wxyz; flat
+    key_mass: float = info(0.08)  # steel 12.5 mm L-key (kg)
+    key_disable_gravity: bool = info(False)  # the force-driven key smoke sets this True (no hand to bear the handle's weight)
     # Contact offsets add PER PAIR: the key<->socket clearance is 0.75 mm/side, so the key's and the
     # bolt's authored offsets together must stay well under that, or speculative contacts seal the
     # socket mouth — a key teleported INTO the recess still works (the force smoke), but a carried
     # key can never ENTER from outside. The bolt previously had no authored offset at all, and the
     # engine default on its head SDF sealed the mouth outright.
-    key_contact_offset: float = 0.0002
-    bolt_contact_offset: float = 0.0002
-    bolt_init_quat: tuple[float, float, float, float] = (0.70711, 0.0, 0.70711, 0.0)  # wxyz; lying
+    key_contact_offset: float = info(0.0002)
+    bolt_contact_offset: float = info(0.0002)
+    bolt_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # wxyz; lying
     # Selectable work surface (same presets as the sibling scenes).
-    table: str = "lab_table"  # which work surface: "lab_table" | "packing"
-    surface_z: float | None = None  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = None  # xy the table sits at; None -> preset
-    workbench_usd: str = ""  # empty -> the preset's vendored USD
+    table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
+    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
+    workbench_usd: str = info("")  # empty -> the preset's vendored USD
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
                       "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.5, 0.0),
@@ -110,10 +110,10 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
     # Asset USDs; empty -> the prebuilt assets committed under `assets/`.
-    asset_dir: str = ""
-    bolt_usd: str = ""
-    platform_usd: str = ""
-    key_usd: str = ""
+    asset_dir: str = info("")
+    bolt_usd: str = info("")
+    platform_usd: str = info("")
+    key_usd: str = info("")
 
     def __post_init__(self) -> None:
         if not self.bolt_init_xy:
@@ -136,13 +136,6 @@ class AllenBoltAssemblySceneCfg(BaseCfg):
 @SCENES.register("allen_bolt")
 class AllenBoltAssemblyScene(BaseScene):
     cfg: AllenBoltAssemblySceneCfg
-
-    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
-    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
-        "bolt_friction": {"dist": "uniform", "lo": 0.005, "hi": 0.02},
-        "platform_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
-        "key_friction": {"dist": "uniform", "lo": 0.45, "hi": 0.75},
-    }
 
     def __init__(self, cfg: AllenBoltAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or AllenBoltAssemblySceneCfg())
@@ -263,27 +256,6 @@ class AllenBoltAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
-    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
-        """Write the scene's frictions PER ENV (static = dynamic, every shape), `values[name]` one
-        value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the nominal application
-        through here with uniform values, so this is THE friction path — per-env sampling reuses
-        it, never a copy."""
-        unknown = set(values) - set(self.PHYSICAL_PARAMS)
-        if unknown:
-            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
-        ids = torch.arange(env.num_envs, device="cpu")
-        for name, assets in (
-            ("bolt_friction", self.bolts),
-            ("platform_friction", self.platforms),
-            ("key_friction", self.keys),
-        ):
-            if name in values:
-                col = torch.tensor(values[name], dtype=torch.float32).view(-1, 1, 1)
-                for asset in assets:
-                    mats = asset.root_physx_view.get_material_properties()
-                    mats[..., 0:2] = col  # [static, dynamic, restitution]
-                    asset.root_physx_view.set_material_properties(mats, ids)
-
     def bind(self, env: BaseEnv) -> None:
         """Grab the platform + bolt + key handles, cache env origins, and set the part frictions."""
         super().bind(env)
@@ -291,9 +263,12 @@ class AllenBoltAssemblyScene(BaseScene):
         self.bolts: list[RigidObject] = [env.iscene[f"bolt_{i}"] for i in range(self.cfg.num_pairs)]
         self.keys: list[RigidObject] = [env.iscene[f"key_{i}"] for i in range(self.cfg.num_pairs)]
         self.env_origins = env.iscene.env_origins
-        # Nominal friction, all envs — through the same hook per-env sampling uses.
-        E, c = env.num_envs, self.cfg
-        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
+        for bolt in self.bolts:
+            self._set_friction(bolt, self.cfg.bolt_friction)
+        for platform in self.platforms:
+            self._set_friction(platform, self.cfg.platform_friction)
+        for key in self.keys:
+            self._set_friction(key, self.cfg.key_friction)
         self._grasp_weld_bind()
 
     def grasp_sites(self) -> list:
@@ -309,6 +284,12 @@ class AllenBoltAssemblyScene(BaseScene):
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
         """Reconcile the weld-on-closure grasp contract every physics substep."""
         self._grasp_weld_step()
+
+    def _set_friction(self, asset, value: float) -> None:
+        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
+        mats = asset.root_physx_view.get_material_properties()
+        mats[..., 0:2] = value  # [static, dynamic, restitution]
+        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: platforms pinned at spawn, bolts + keys lying on their sides
