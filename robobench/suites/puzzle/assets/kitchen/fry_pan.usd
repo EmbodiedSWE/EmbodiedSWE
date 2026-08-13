@@ -1,0 +1,37 @@
+#usda 1.0
+(
+    defaultPrim = "fry_pan"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "fry_pan" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+)
+{
+    float physics:mass = 1.5
+
+    def "visual" (
+        prepend references = @./fry_pan_visual.usd@
+    )
+    {
+        over "mesh" (
+            prepend apiSchemas = ["PhysicsMeshCollisionAPI", "PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </fry_pan/phys_mat> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "none"
+        }
+    }
+
+    def Material "phys_mat" (
+        prepend apiSchemas = ["PhysicsMaterialAPI"]
+    )
+    {
+        float physics:dynamicFriction = 0.55
+        float physics:staticFriction = 0.6
+    }
+}
+

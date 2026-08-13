@@ -1,0 +1,64 @@
+#usda 1.0
+(
+    defaultPrim = "ChairBase"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "ChairBase" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+)
+{
+    float physics:mass = 5
+
+    def Cube "slab_col" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double size = 1
+        float3 xformOp:scale = (0.45629, 0.479132, 0.151861)
+        double3 xformOp:translate = (0, 0, 0.3967615)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "leg_fl_col" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double size = 1
+        float3 xformOp:scale = (0.03975, 0.03975, 0.324902)
+        double3 xformOp:translate = (-0.18639, -0.208796, 0.16264)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "leg_fr_col" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double size = 1
+        float3 xformOp:scale = (0.03975, 0.03975, 0.324902)
+        double3 xformOp:translate = (0.18639, -0.208796, 0.16264)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "leg_rl_col" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double size = 1
+        float3 xformOp:scale = (0.035242, 0.076242, 0.321023)
+        double3 xformOp:translate = (-0.169275, 0.282055, 0.1605115)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "leg_rr_col" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double size = 1
+        float3 xformOp:scale = (0.035242, 0.076242, 0.321023)
+        double3 xformOp:translate = (0.169275, 0.282055, 0.1605115)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+}
+
