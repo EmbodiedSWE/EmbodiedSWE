@@ -1,0 +1,18 @@
+#usda 1.0
+(
+    defaultPrim = "root"
+    metersPerUnit = 1
+    upAxis = "Z"
+    doc = """Green mug scan visual: the vendored pkg is physics-stripped; colliders live on the procedural cup body that references this."""
+)
+
+def Xform "root" (
+    prepend references = @./pkg/model_Cup_B08PTSRWF8_Green_69323.usd@</root>
+)
+{
+    over "element_path" (
+        active = false
+    )
+    {
+    }
+}

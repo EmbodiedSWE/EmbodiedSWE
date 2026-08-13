@@ -19,10 +19,10 @@ Heavy imports are deferred so this module imports without AppLauncher.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .config import BaseCfg
+from .config import BaseCfg, info, tunable
 
 if TYPE_CHECKING:
     import torch
@@ -35,18 +35,19 @@ if TYPE_CHECKING:
 class BaseRobotCfg(BaseCfg):
     """Thin shared base for robot configs: carries only the one universal selectable, the
     `control_mode`. Concrete robots subclass this and add their own asset / partial body variant (e.g. hands) /
-    `fix_root_link` / ee-frame / gains — morphologies differ too much for a fat shared cfg."""
+    `fix_root_link` / ee-frame / gains — morphologies differ too much for a fat shared cfg. Like any
+    `BaseCfg`, fields are declared `tunable()` / `info()` (see `robobench.core.config`)."""
 
     #: Which of the robot's `control_modes` to use; "" -> the first one the robot declares. The agent
-    #: may switch it (a new actuation of the same hardware).
-    control_mode: str = ""  # active control mode; "" selects the robot's first
+    #: may switch it (a new actuation of the same hardware) — that's why it's a `tunable` dial.
+    control_mode: str = tunable("", doc="active control mode; '' selects the robot's first")
 
     #: The robot's scene namespace: its asset key in `env.iscene` and (capitalized) its prim name —
     #: "robot" -> `iscene["robot"]` at `{ENV_REGEX_NS}/Robot`. Single-robot envs keep the default; a
     #: composite parent (`MultiRobot`) stamps each child's name ("left", "right", ...) so several
     #: robots coexist in one scene without key/prim collisions. Concrete robots read it through
     #: `BaseRobot.name` / `BaseRobot.prim_name` rather than hardcoding "robot".
-    name: str = field(default="robot", kw_only=True)  # scene-asset key / prim namespace for this robot
+    name: str = info("robot", doc="scene-asset key / prim namespace for this robot", kw_only=True)
 
 
 class BaseRobot(ABC):
