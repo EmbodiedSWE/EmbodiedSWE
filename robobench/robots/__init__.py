@@ -5,6 +5,16 @@ pipeline (joint PD / EE-IK / OSC, gains, end-effector body, kinematics) lives in
 not in `BaseRobot`. Import-light where possible (isaaclab deferred), so registration is app-free.
 """
 
+from .attached import (
+    AttachedArmRobotCfg,
+    CRX10iAL2F85Robot,
+    Festo2F85Robot,
+    Gen3N72F85Robot,
+    Rizon42F85Robot,
+    SawyerEGU50Robot,
+    TM122F85Robot,
+    Z1Lite6GRobot,
+)
 from .cobotta import CobottaPro1300Robot, CobottaPro1300RobotCfg
 from .franka import FrankaRobot, FrankaRobotCfg
 from .g1 import G1Robot, G1RobotCfg
@@ -18,6 +28,7 @@ from .xarm7 import XArm7Robot, XArm7RobotCfg
 
 __all__ = [
     "NullRobot",
+    "AttachedArmRobotCfg",
     "Aloha",
     "AlohaCfg",
     "BimanualFranka",
