@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from robobench.core import CONTROLLERS, BaseController, BaseControllerCfg
+from robobench.core import CONTROLLERS, BaseController, BaseControllerCfg, info, tunable
 
 if TYPE_CHECKING:
     import torch
@@ -26,14 +26,14 @@ if TYPE_CHECKING:
 
 @dataclass
 class JointControllerCfg(BaseControllerCfg):
-    """Config for `JointController`: which joints, and the affine action→target shaping.
-    `scale`/`offset` may be a scalar or anything that broadcasts against the
+    """Config for `JointController`: which joints (`info`), and the affine action→target shaping
+    (`tunable`). `scale`/`offset` may be a scalar or anything that broadcasts against the
     `(num_envs, len(joint_ids))` action (e.g. a per-joint tensor on the sim device); identity by
     default (raw pass-through)."""
 
-    joint_names: tuple[str, ...] | None = None  # None -> all of the robot's joints
-    scale: Any = 1.0  # action multiplier; 1.0 = none
-    offset: Any = 0.0  # added after scaling; 0.0 = none (e.g. the home pose for delta control)
+    joint_names: tuple[str, ...] | None = info(None)  # None -> all of the robot's joints
+    scale: Any = tunable(1.0)  # action multiplier; 1.0 = none
+    offset: Any = tunable(0.0)  # added after scaling; 0.0 = none (e.g. the home pose for delta control)
 
 
 @CONTROLLERS.register("joint")
