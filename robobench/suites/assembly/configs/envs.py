@@ -16,6 +16,7 @@ from __future__ import annotations
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
     AlohaCfg,
+    AttachedArmRobotCfg,
     BimanualFrankaCfg,
     BimanualPiperCfg,
     CobottaPro1300RobotCfg,
@@ -236,6 +237,73 @@ for _mode in ("osc", "impedance", "joint"):
             sim_overrides={"dt": 1.0 / 240.0},
         ),
     )
+
+# The SAME pc-ram work cell for the attached-gripper composites — the scene layout (stick
+# holders at world (0.30, -0.36) and (0.42, -0.36), sticks staged upright, deterministic spawn,
+# sim dt 1/240) is copied VERBATIM from the franka binding above so every embodiment faces the
+# identical task; only the robot changes. Base placement and home posture are per-embodiment
+# placement dials (see AttachedArmRobotCfg for the dial docs).
+#   -> "assembly.pc_ram.<robot>.{osc,impedance,joint}" for each composite below.
+_PC_RAM_COMPOSITE_KW: dict[str, dict] = {
+    # default_dof_pos: per-embodiment ready pose — the pads hovering top-down over the stick
+    # holders with the pinch axis across the sticks (offline IK over the composite's joint
+    # frames, same placement pass as the pc_gpu embodiments).
+    "z1_lite6g": dict(zero_joint_friction=True,  # the Z1 authors jointFriction 1.0-2.0
+                      gravity_compensation=True,  # 2 kg-class arm; its ratings cannot support
+                      # gravity-blind torque control (see the cfg dial docs)
+                      arm_effort_limit=60.0,
+                      # the 0.74 m arm needs the cell closer than the shared spot: base beside
+                      # the case's south-east corner, all four work points within ~0.29 m
+                      base_pos=(0.58, -0.28, 0.0),
+                      default_dof_pos=(0.4186, 1.5808, -0.7638, 0.7383, -0.0009, -1.1521)),
+    "rizon4_2f85": dict(arm_effort_limit=150.0,
+                        gravity_compensation=True,  # the real device's controller actively
+                        # gravity-compensates (as all the cobots here; see Jaco2N7RobotCfg)
+                        default_dof_pos=(0.6362, -0.4773, -0.1640, 2.5330, 0.5056, 1.4094, -1.5786)),
+    "gen3n7_2f85": dict(arm_effort_limit=120.0,  # authored wrist ratings are 9 N*m
+                        gravity_compensation=True,
+                        default_dof_pos=(-0.0288, 0.5646, -0.1281, 2.1424, 0.1590, 0.4472, 1.2895)),
+    "sawyer_egu50": dict(arm_effort_limit=150.0,
+                         gravity_compensation=True,  # see rizon4's note
+                         # straight-wrist ready pose: the folded wrist's l5 housing otherwise
+                         # grounds on the work pieces before the jaws reach them
+                         default_dof_pos=(1.8665, -2.8776, -1.2186, 1.8830, -1.9538, 0.3558, 2.4884)),
+    "crx10ial_2f85": dict(arm_effort_limit=150.0,
+                          gravity_compensation=True,  # authored masses are all zero
+                          default_dof_pos=(0.4847, 0.1019, -0.9746, 0.0002, -0.4889, 1.0866)),
+    "tm12_2f85": dict(arm_effort_limit=150.0,
+                      gravity_compensation=True,  # see rizon4's note
+                      default_dof_pos=(0.5040, -0.3720, 2.5646, -0.6278, 1.5706, 0.5036)),
+    "festo_2f85": dict(arm_effort_limit=150.0,
+                       gravity_compensation=True,  # authored masses are all zero
+                       default_dof_pos=(-0.1269, -0.5584, 0.4606, 0.0000, 0.5567, 1.4435)),
+}
+for _robot in ("z1_lite6g", "rizon4_2f85", "gen3n7_2f85", "sawyer_egu50",
+               "crx10ial_2f85", "tm12_2f85", "festo_2f85"):
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, mode=_mode: EnvCfg(
+                scene="pc_ram",
+                scene_cfg=PcRamAssemblySceneCfg(
+                    ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
+                    ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                    ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                    reset_pos_jitter=0.0,
+                    ram_stand=True,
+                ),
+                robot=robot,
+                # shared base placement (yaw 180: faces -x); per-robot dials may override it
+                # (the 0.74 m z1 sits closer to the cell)
+                robot_cfg=AttachedArmRobotCfg(
+                    **{"base_pos": (0.72, -0.34, 0.0), "base_rot": (0.0, 0.0, 0.0, 1.0),
+                       **_PC_RAM_COMPOSITE_KW[robot]},
+                ),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 240.0},
+            ),
+        )
 
 # Franka arm at the allen-bolt scene (base at the origin). The platform is pulled from the
 # table preset's 0.50 m to 0.42 m (`platform_slots`), and the loose key spawns on the +y side.
