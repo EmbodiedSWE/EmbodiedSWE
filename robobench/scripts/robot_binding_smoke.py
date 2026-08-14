@@ -8,12 +8,12 @@ counterpart of each suite's NullRobot smoke), one binding per run:
   3. wiggle the hand/gripper (composite controller's LAST sub-controller) toward the
      far joint limits and back — >=80% of driven joints track within 0.15 rad;
   4. reach: march the end-effector to a hover above `--reach_body` (an iscene key,
-     e.g. 'dial', 'box_0', 'barrel', 'marker') — residual < 8 cm.
+     e.g. 'barrel', 'cup') — residual < 8 cm.
      Supported control modes: `pink_ik` (humanoids: absolute wrist poses) and `osc`
      (Franka: end-effector pose deltas). `joint` bindings skip the reach.
 
-    python -m robobench.scripts.robot_binding_smoke --env articulated.safe.franka.osc \
-        --reach_body dial --headless
+    python -m robobench.scripts.robot_binding_smoke --env puzzle.syringe.franka.osc \
+        --reach_body barrel --headless
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--env", type=str, required=True,
-                    help="registered env name, e.g. articulated.safe.franka.osc")
+                    help="registered env name, e.g. puzzle.syringe.franka.osc")
 parser.add_argument("--reach_body", type=str, default="",
                     help="iscene key to reach a hover above ('' = skip the reach)")
 parser.add_argument("--via", type=str, default="",

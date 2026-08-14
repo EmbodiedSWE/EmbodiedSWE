@@ -1,13 +1,10 @@
 """packing suite — fit-things-into-containers tasks judged by physics.
 
 Tasks:
-  - `crate` (CratePackingScene) — pack a manifest of odd-shaped parts into a shipping
-    crate tight enough that the lid rests flush on the rim. The lid is the judge: any
-    part proud of the rim physically blocks it. (Design decisions worth keeping from
-    the brief: the crate interior is derived from the reference packing times an
-    `oversize` dial, so required precision is a knob, not an accident; the manifest
-    only fits LAYERED — a flat single-layer footprint exceeds the floor.)
   - `pen_holder` (PenHolderScene) — collect scattered pens into the holder cup.
+  - `tool_packing` (ToolPackingScene) — stow tools into the right drawers of an
+    articulated tool chest (2 glass doors + 3 drawers, real scanned assets) and
+    close it up.
 
 Structure mirrors the assembly suite: `scenes/` (each scene IS one task), `configs/`
 (named ENVS bindings), `smokes/` (NullRobot smoke/oracle runs).

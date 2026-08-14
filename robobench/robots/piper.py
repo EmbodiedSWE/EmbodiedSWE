@@ -38,7 +38,7 @@ from robobench.controllers import (
     TaskSpaceControllerCfg,
     TaskSpaceImpedanceController,
 )
-from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg
+from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg, info, tunable
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation
@@ -52,24 +52,24 @@ class PiperRobotCfg(BaseRobotCfg):
     i.e. "joint"). Arm gains are ALWAYS applied over the USD (the converter's authored drives are
     placeholder-weak); the torque modes zero them regardless."""
 
-    fixed_base: bool = True  # weld the base to the world (a table-mounted arm)
-    base_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # base at the table level
-    base_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # wxyz; faces +x
+    fixed_base: bool = info(True)  # weld the base to the world (a table-mounted arm)
+    base_pos: tuple[float, float, float] = tunable((0.0, 0.0, 0.0))  # base at the table level
+    base_rot: tuple[float, float, float, float] = tunable((1.0, 0.0, 0.0, 0.0))  # wxyz; faces +x
     # Arm position-PD gains — AgileX's Isaac tutorial values. Used in "joint" mode only.
-    arm_stiffness: float = 400.0
-    arm_damping: float = 80.0
+    arm_stiffness: float = tunable(400.0)
+    arm_damping: float = tunable(80.0)
     # Gripper PD gains (always position-controlled; the USD's linear drives are ~0.2 stiffness).
-    gripper_stiffness: float = 2000.0
-    gripper_damping: float = 100.0
+    gripper_stiffness: float = tunable(2000.0)
+    gripper_damping: float = tunable(100.0)
     # Home posture of the 6 arm joints: a mild forward-lean ready pose (zero = folded straight up;
     # joint2 in [0, pi], joint3 in [-2.70, 0]). Retune per task.
-    default_dof_pos: tuple[float, ...] = (0.0, 1.0, -0.8, 0.0, 0.6, 0.0)
+    default_dof_pos: tuple[float, ...] = tunable((0.0, 1.0, -0.8, 0.0, 0.6, 0.0))
     # Gripper finger home (m): joint7 in [0, 0.05], joint8 mirrors in [-0.05, 0]. Start open.
-    default_gripper_pos: tuple[float, float] = (0.04, -0.04)
+    default_gripper_pos: tuple[float, float] = tunable((0.04, -0.04))
     # Posture the task-space nullspace pulls toward; () -> use default_dof_pos. (On a 6-DOF arm the
     # nullspace is degenerate away from singularities — this mostly matters near joint limits.)
-    nullspace_dof_pos: tuple[float, ...] = ()
-    piper_usd: str = ""  # "" -> the vendored assets/piper/ wrapper USD
+    nullspace_dof_pos: tuple[float, ...] = tunable(())
+    piper_usd: str = info("")  # "" -> the vendored assets/piper/ wrapper USD
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parent / "assets" / "piper"

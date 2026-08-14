@@ -1,0 +1,38 @@
+#usda 1.0
+(
+    defaultPrim = "root"
+    metersPerUnit = 1
+    upAxis = "Z"
+    doc = """Pod-bay sliding cover VISUAL (E_shell_8, physics-stripped; body + collider + prismatic slide are authored procedurally by the scene's spawner)."""
+)
+
+def Xform "root" (
+    prepend references = @./pkg/model_capsule_coffee_maker_3.usd@</root>
+)
+{
+    over "E_body_2" (
+        active = false
+    )
+    {
+    }
+    over "E_button_1_9" (
+        active = false
+    )
+    {
+    }
+    over "E_button_2_1" (
+        active = false
+    )
+    {
+    }
+    over "PhysicsMaterial" (
+        active = false
+    )
+    {
+    }
+    over "PhysicsMaterial_01" (
+        active = false
+    )
+    {
+    }
+}
