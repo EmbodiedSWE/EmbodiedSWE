@@ -39,7 +39,7 @@ from robobench.controllers import (
     TaskSpaceControllerCfg,
     TaskSpaceImpedanceController,
 )
-from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg
+from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg, info, tunable
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation
@@ -53,24 +53,24 @@ class WxaiRobotCfg(BaseRobotCfg):
     i.e. "joint"). Gain fields default to None = keep the Trossen-tuned drives baked in the USD
     (the torque modes zero the arm gains regardless); set a float to override."""
 
-    fixed_base: bool = True  # weld the base to the world (a table-mounted arm)
-    base_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # base at the table level
-    base_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # wxyz; faces +x
+    fixed_base: bool = info(True)  # weld the base to the world (a table-mounted arm)
+    base_pos: tuple[float, float, float] = tunable((0.0, 0.0, 0.0))  # base at the table level
+    base_rot: tuple[float, float, float, float] = tunable((1.0, 0.0, 0.0, 0.0))  # wxyz; faces +x
     # Arm position-PD gains — None -> the USD's Trossen-tuned values (664/735/738 shoulder,
     # 34-62 wrist; damping ~1%). Used in "joint" mode only (torque modes zero them).
-    arm_stiffness: float | None = None
-    arm_damping: float | None = None
+    arm_stiffness: float | None = tunable(None)
+    arm_damping: float | None = tunable(None)
     # Gripper PD gains — None -> the USD's values (very stiff carriage drive). Always position-controlled.
-    gripper_stiffness: float | None = None
-    gripper_damping: float | None = None
+    gripper_stiffness: float | None = tunable(None)
+    gripper_damping: float | None = tunable(None)
     # Home posture of the 6 arm joints (Trossen's zero pose: folded upright). Retune per task.
-    default_dof_pos: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    default_dof_pos: tuple[float, ...] = tunable((0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
     # Gripper carriage home (m): 0 closed .. 0.044 open. Start open, ready to grasp.
-    default_gripper_pos: float = 0.044
+    default_gripper_pos: float = tunable(0.044)
     # Posture the task-space nullspace pulls toward; () -> use default_dof_pos. (On a 6-DOF arm the
     # nullspace is degenerate away from singularities — this mostly matters near joint limits.)
-    nullspace_dof_pos: tuple[float, ...] = ()
-    wxai_usd: str = ""  # "" -> the vendored assets/wxai/wxai_follower.usd
+    nullspace_dof_pos: tuple[float, ...] = tunable(())
+    wxai_usd: str = info("")  # "" -> the vendored assets/wxai/wxai_follower.usd
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parent / "assets" / "wxai"

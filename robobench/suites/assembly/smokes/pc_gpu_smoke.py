@@ -7,9 +7,12 @@ The card <-> fixture contact is LIVE (slot channel + the rear-panel cutout frame
 vertical drop is physically blocked by the panel above the opening) and the card is driven
 purely by forces: a PD "hand" (with a weight feedforward — gravity stays ON, so the final
 hold-check is a real retention test) lifts the lying card off the table, rights it, carries it
-over the case rim, descends INSIDE the case at a forward offset, slides rearward through the
-cutout, and presses straight down. Then the hand lets go: the card must hold its seat on its
-own.
+over the case rim (the walls stand 195 mm above the board face), descends INSIDE the case at a
+28 mm forward offset, slides rearward through the cutout at 16.5 mm height (tab 1 mm above the
+channel walls, bracket 1.8 mm under the opening top), and presses straight down. The invisible
+channel (a 1.2 mm/side funnel mouth narrowing to a 0.15 mm/side grip on the 4 mm PCB tab) guides
+the last 5 mm. Then the hand lets go: the card must hold its seat on its own — the snug grip
+caps its gravity roll (COM ~16 mm on the fan side of the PCB plane) at ~2 deg.
 
 Phases: show -> lift -> cross -> drop (inside, at the forward offset) -> align -> slide (rear-
 ward through the cutout) -> press (with logged re-tries) -> release -> settle. Verdict: seated
@@ -56,12 +59,14 @@ DT = 1.0 / 240.0        # sim timestep
 GRAV = 9.81
 # Flight geometry (m, relative to the board face unless said otherwise). The card origin is its
 # PCB-tab bottom centre; upright, the card body rises 123 mm above it.
-CROSS_Z = 0.240         # origin height while crossing the case rim
-SLIDE_OFF = 0.028       # forward (-x) offset while placing the card inside the case
-SLIDE_Z = 0.0165        # origin height for the placement + rearward slide
+CROSS_Z = 0.240         # origin height while crossing the case rim (bottom clears the 195 mm walls)
+SLIDE_OFF = 0.028       # forward (-x) offset while placing the card inside (bracket clear of panel)
+SLIDE_Z = 0.0165        # origin height for the placement + rearward slide: tab 1 mm above the
+                        # channel wall tops (15.5), bracket 1.8 mm under the cutout top (18.3 max)
 PRESS_TGT = -0.0005     # press z target below the seated origin (sustained push until bottomed)
 PRESS_DONE = 0.0048     # tab depth below the slot mouth to call the press finished (stroke 5 mm)
-MAX_RETRIES = 2         # press re-tries (raise back to SLIDE_Z, re-settle, press again)
+MAX_RETRIES = 2         # press re-tries (raise back to SLIDE_Z — NOT higher: the bracket sits in
+                        # the rear cutout and would jam on the panel above it — then press again)
 # PD "hand" gains for the 1 kg card (its rigid props carry 2.0 linear/angular damping):
 KP_XY, KD_XY = 600.0, 50.0    # N/m, N s/m — holds the origin on the carry/slot axis
 KP_Z, KD_Z = 200.0, 30.0      # N/m, N s/m — vertical carry/press servo
