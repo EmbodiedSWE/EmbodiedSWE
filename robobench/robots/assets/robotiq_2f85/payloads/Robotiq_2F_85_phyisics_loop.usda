@@ -1,0 +1,465 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary cameraSettings = {
+            dictionary Front = {
+                double3 position = (5, 0, 0)
+                double radius = 5
+            }
+            dictionary Perspective = {
+                double3 position = (0.3325151412817676, -0.06577883782265716, 0.1450584783772143)
+                double3 target = (-0.09089549906464967, -0.05264359940464019, 0.016363401350471374)
+            }
+            dictionary Right = {
+                double3 position = (0, -5, 0)
+                double radius = 5
+            }
+            dictionary Top = {
+                double3 position = (0, 0, 5)
+                double radius = 5
+            }
+            string boundCamera = "/OmniverseKit_Persp"
+        }
+        dictionary omni_layer = {
+            string authoring_layer = "./Robotiq_2F_85_phyisics_loop.usda"
+            dictionary locked = {
+            }
+            dictionary muteness = {
+            }
+        }
+        dictionary renderSettings = {
+        }
+    }
+    defaultPrim = "Robotiq_2F_85"
+    endTimeCode = 0
+    metersPerUnit = 1
+    startTimeCode = -1
+    subLayers = [
+        @./Robotiq_2F_85_base.usda@
+    ]
+    upAxis = "Z"
+)
+
+def "Render" (
+    hide_in_stage_window = true
+    no_delete = true
+)
+{
+    def "OmniverseKit"
+    {
+        def "HydraTextures" (
+            hide_in_stage_window = true
+            no_delete = true
+        )
+        {
+            def RenderProduct "omni_kit_widget_viewport_ViewportTexture_0" (
+                prepend apiSchemas = ["OmniRtxSettingsCommonAdvancedAPI_1", "OmniRtxSettingsRtAdvancedAPI_1", "OmniRtxSettingsPtAdvancedAPI_1", "OmniRtxPostColorGradingAPI_1", "OmniRtxPostChromaticAberrationAPI_1", "OmniRtxPostBloomPhysicalAPI_1", "OmniRtxPostMatteObjectAPI_1", "OmniRtxPostCompositingAPI_1", "OmniRtxPostDofAPI_1", "OmniRtxPostMotionBlurAPI_1", "OmniRtxPostTvNoiseAPI_1", "OmniRtxPostTonemapIrayReinhardAPI_1", "OmniRtxPostDebugSettingsAPI_1", "OmniRtxDebugSettingsAPI_1"]
+                hide_in_stage_window = true
+                no_delete = true
+            )
+            {
+                rel camera = </OmniverseKit_Persp>
+                token omni:rtx:background:source:texture:textureMode = "repeatMirrored"
+                token omni:rtx:background:source:type = "domeLight"
+                bool omni:rtx:dlss:frameGeneration = 0
+                string omni:rtx:material:db:rtSensorNameToIdMap = "DefaultMaterial:0;AsphaltStandardMaterial:1;AsphaltWeatheredMaterial:2;VegetationGrassMaterial:3;WaterStandardMaterial:4;GlassStandardMaterial:5;FiberGlassMaterial:6;MetalAlloyMaterial:7;MetalAluminumMaterial:8;MetalAluminumOxidizedMaterial:9;PlasticStandardMaterial:10;RetroMarkingsMaterial:11;RetroSignMaterial:12;RubberStandardMaterial:13;SoilClayMaterial:14;ConcreteRoughMaterial:15;ConcreteSmoothMaterial:16;OakTreeBarkMaterial:17;FabricStandardMaterial:18;PlexiGlassStandardMaterial:19;MetalSilverMaterial:20"
+                bool omni:rtx:material:db:syncLoads = 1
+                bool omni:rtx:post:registeredCompositing:invertColorCorrection = 1
+                bool omni:rtx:post:registeredCompositing:invertToneMap = 1
+                bool omni:rtx:pt:lightcache:cached:dontResolveConflicts = 1
+                int omni:rtx:pt:maxSamplesPerLaunch = 2073600
+                int omni:rtx:pt:mgpu:maxPixelsPerRegionExponent = 12
+                color3f omni:rtx:rt:ambientLight:color = (0.1, 0.1, 0.1)
+                bool omni:rtx:rt:demoire = 0
+                bool omni:rtx:rt:ecoMode:enabled
+                bool omni:rtx:rt:lightcache:spatialCache:dontResolveConflicts = 1
+                bool omni:rtx:scene:hydra:materialSyncLoads = 1
+                bool omni:rtx:scene:hydra:mdlMaterialWarmup = 1
+                uint omni:rtx:viewTile:limit = 4294967295
+                rel orderedVars = </Render/Vars/LdrColor>
+                custom bool overrideClipRange = 0
+                uniform int2 resolution = (1280, 720)
+            }
+        }
+    }
+
+    def RenderSettings "OmniverseGlobalRenderSettings" (
+        prepend apiSchemas = ["OmniRtxSettingsGlobalRtAdvancedAPI_1", "OmniRtxSettingsGlobalPtAdvancedAPI_1"]
+        no_delete = true
+    )
+    {
+        rel products = </Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0>
+    }
+
+    def "Vars"
+    {
+        def RenderVar "LdrColor" (
+            hide_in_stage_window = true
+            no_delete = true
+        )
+        {
+            uniform string sourceName = "LdrColor"
+        }
+    }
+}
+
+def Xform "Robotiq_2F_85" (
+    kind = "assembly"
+)
+{
+    over Xform "Robotiq_2F_85" (
+        prepend apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]
+        kind = "assembly"
+    )
+    {
+        bool physxArticulation:enabledSelfCollisions = 0
+
+        def Scope "Joints"
+        {
+            def PhysicsRevoluteJoint "finger_joint" (
+                prepend apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0.0002
+                float drive:angular:physics:maxForce = 16.5
+                float drive:angular:physics:stiffness = 0.17
+                float drive:angular:physics:targetPosition = 0
+                float drive:angular:physics:targetVelocity = 0
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/base_link>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/left_outer_knuckle>
+                point3f physics:localPos0 = (0, -0.0306, 0.05466)
+                point3f physics:localPos1 = (0, -0.0306, 0.05466)
+                quatf physics:localRot0 = (0.5, 0.5, -0.5, -0.5)
+                quatf physics:localRot1 = (0.5, 0.5, -0.5, -0.5)
+                float physics:lowerLimit = 0
+                float physics:upperLimit = 75
+                float physxJoint:maxJointVelocity = 130
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            def PhysicsRevoluteJoint "right_outer_knuckle_joint" (
+                delete apiSchemas = ["PhysicsDriveAPI:angular"]
+                prepend apiSchemas = ["PhysxJointAPI", "PhysxMimicJointAPI:rotZ", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 5000
+                float drive:angular:physics:maxForce = 5
+                float drive:angular:physics:stiffness = 0
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/base_link>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/right_outer_knuckle>
+                point3f physics:localPos0 = (0, 0.0306, 0.05466)
+                point3f physics:localPos1 = (0, 0.0306, 0.05466)
+                quatf physics:localRot0 = (0.5, 0.5, 0.5, 0.5)
+                quatf physics:localRot1 = (0.5, 0.5, 0.5, 0.5)
+                float physics:lowerLimit = 0
+                float physics:upperLimit = 75
+                float physxJoint:maxJointVelocity = 130
+                float physxMimicJoint:rotZ:dampingRatio = 0.01
+                float physxMimicJoint:rotZ:gearing = -1
+                float physxMimicJoint:rotZ:naturalFrequency = 5000
+                rel physxMimicJoint:rotZ:referenceJoint = </Robotiq_2F_85/Robotiq_2F_85/Joints/finger_joint>
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            def PhysicsRevoluteJoint "right_outer_finger_joint" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0
+                float drive:angular:physics:stiffness = 0
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/right_outer_knuckle>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/right_outer_finger>
+                point3f physics:localPos0 = (0, 0.06213, 0.0509)
+                point3f physics:localPos1 = (0, 0.06213, 0.0509)
+                quatf physics:localRot0 = (0.5, 0.5, 0.5, 0.5)
+                quatf physics:localRot1 = (0.5, 0.5, 0.5, 0.5)
+                float physics:lowerLimit = 0
+                float physics:upperLimit = 180
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            def PhysicsRevoluteJoint "right_inner_finger_joint" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0.00001
+                float drive:angular:physics:maxForce = 0.5
+                float drive:angular:physics:stiffness = 0.0002
+                float drive:angular:physics:targetPosition = 45
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/right_outer_finger>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/right_inner_finger>
+                point3f physics:localPos0 = (0, 0.06776, 0.09809)
+                point3f physics:localPos1 = (0, 0.06776, 0.09809)
+                quatf physics:localRot0 = (0.5, 0.5, 0.5, 0.5)
+                quatf physics:localRot1 = (0.5, 0.5, 0.5, 0.5)
+                float physics:lowerLimit = -inf
+                float physics:upperLimit = inf
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            def PhysicsRevoluteJoint "right_inner_knuckle_joint" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0
+                float drive:angular:physics:stiffness = 0
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/base_link>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/right_inner_knuckle>
+                uniform bool physics:excludeFromArticulation = 1
+                point3f physics:localPos0 = (0, 0.0127, 0.06118)
+                point3f physics:localPos1 = (0, 0.0127, 0.06118)
+                quatf physics:localRot0 = (0.5, 0.5, 0.5, 0.5)
+                quatf physics:localRot1 = (0.5, 0.5, 0.5, 0.5)
+                float physics:lowerLimit = -inf
+                float physics:upperLimit = inf
+            }
+
+            def PhysicsRevoluteJoint "right_inner_finger_knuckle_joint" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0
+                float drive:angular:physics:stiffness = 0
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/right_inner_finger>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/right_inner_knuckle>
+                point3f physics:localPos0 = (0, 0.04986, 0.1046)
+                point3f physics:localPos1 = (0, 0.04986, 0.1046)
+                quatf physics:localRot0 = (0.5, 0.5, 0.5, 0.5)
+                quatf physics:localRot1 = (0.5, 0.5, 0.5, 0.5)
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            def PhysicsRevoluteJoint "left_outer_finger_joint" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0
+                float drive:angular:physics:stiffness = 0
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/left_outer_knuckle>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/left_outer_finger>
+                point3f physics:localPos0 = (0, -0.06213, 0.0509)
+                point3f physics:localPos1 = (0, -0.06213, 0.0509)
+                quatf physics:localRot0 = (0.5, 0.5, 0.5, 0.5)
+                quatf physics:localRot1 = (0.5, 0.5, 0.5, 0.5)
+                float physics:lowerLimit = 0
+                float physics:upperLimit = 180
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            def PhysicsRevoluteJoint "left_inner_finger_knuckle_joint" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0
+                float drive:angular:physics:stiffness = 0
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/left_inner_finger>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/left_inner_knuckle>
+                point3f physics:localPos0 = (0, -0.04986, 0.1046)
+                point3f physics:localPos1 = (0, -0.04986, 0.1046)
+                quatf physics:localRot0 = (0.5, 0.5, 0.5, 0.5)
+                quatf physics:localRot1 = (0.5, 0.5, 0.5, 0.5)
+                float physics:lowerLimit = -inf
+                float physics:upperLimit = inf
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            def PhysicsRevoluteJoint "left_inner_finger_joint" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0.00001
+                float drive:angular:physics:maxForce = 0.5
+                float drive:angular:physics:stiffness = 0.0002
+                float drive:angular:physics:targetPosition = 45
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/left_outer_finger>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/left_inner_finger>
+                point3f physics:localPos0 = (0, -0.06776, 0.09809)
+                point3f physics:localPos1 = (0, -0.06776, 0.09809)
+                quatf physics:localRot0 = (0.5, 0.5, 0.5, 0.5)
+                quatf physics:localRot1 = (0.5, 0.5, 0.5, 0.5)
+                float physics:lowerLimit = -inf
+                float physics:upperLimit = inf
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            def PhysicsRevoluteJoint "left_inner_knuckle_joint" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0
+                float drive:angular:physics:stiffness = 0
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </Robotiq_2F_85/Robotiq_2F_85/base_link>
+                rel physics:body1 = </Robotiq_2F_85/Robotiq_2F_85/left_inner_knuckle>
+                uniform bool physics:excludeFromArticulation = 1
+                point3f physics:localPos0 = (0, -0.0127, 0.06118)
+                point3f physics:localPos1 = (0, -0.0127, 0.06118)
+                quatf physics:localRot0 = (0.5, 0.5, 0.5, 0.5)
+                quatf physics:localRot1 = (0.5, 0.5, 0.5, 0.5)
+                float physics:lowerLimit = -inf
+                float physics:upperLimit = inf
+            }
+        }
+
+        over "base_link" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+            kind = "group"
+        )
+        {
+        }
+
+        over "left_outer_knuckle" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+        )
+        {
+        }
+
+        over "left_outer_finger" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+            kind = "group"
+        )
+        {
+        }
+
+        over "left_inner_finger" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+        )
+        {
+        }
+
+        over "left_inner_knuckle" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+        )
+        {
+        }
+
+        over "right_outer_knuckle" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+        )
+        {
+        }
+
+        over "right_outer_finger" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+            kind = "group"
+        )
+        {
+        }
+
+        over "right_inner_finger" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+            kind = "group"
+        )
+        {
+        }
+
+        over "right_inner_knuckle" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+            kind = "group"
+        )
+        {
+        }
+    }
+}
+
+over "Meshes"
+{
+    over "base_link"
+    {
+        over "Defeatured_2F_85_PAD_OPEN_basestep_01"
+        {
+            over "Defeatured_2F_85_PAD_OPEN_basestep" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "PhysxCollisionAPI", "PhysxTriangleMeshCollisionAPI", "PhysicsMeshCollisionAPI", "PhysxConvexHullCollisionAPI"]
+            )
+            {
+                uniform token physics:approximation = "convexHull"
+                bool physics:collisionEnabled = 1
+            }
+        }
+    }
+
+    over "inner_finger"
+    {
+        over "Defeatured_2F_85_PAD_OPEN_finger4step_01"
+        {
+            over "Defeatured_2F_85_PAD_OPEN_finger4step" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "PhysxCollisionAPI", "PhysxTriangleMeshCollisionAPI", "PhysicsMeshCollisionAPI", "PhysxConvexHullCollisionAPI"]
+            )
+            {
+                uniform token physics:approximation = "convexHull"
+                bool physics:collisionEnabled = 1
+            }
+        }
+
+        over "Defeatured_2F_85_PAD_OPEN_fingertipsstep_01"
+        {
+            over "Defeatured_2F_85_PAD_OPEN_fingertipsstep" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "PhysxCollisionAPI", "PhysxTriangleMeshCollisionAPI", "PhysicsMeshCollisionAPI", "PhysxConvexHullCollisionAPI"]
+            )
+            {
+                uniform token physics:approximation = "convexHull"
+                bool physics:collisionEnabled = 1
+            }
+        }
+    }
+
+    over "inner_knuckle"
+    {
+        over "Defeatured_2F_85_PAD_OPEN_finger3step_01"
+        {
+            over "Defeatured_2F_85_PAD_OPEN_finger3step" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "PhysxCollisionAPI", "PhysxTriangleMeshCollisionAPI", "PhysicsMeshCollisionAPI", "PhysxConvexHullCollisionAPI"]
+            )
+            {
+                uniform token physics:approximation = "convexHull"
+                bool physics:collisionEnabled = 1
+            }
+        }
+    }
+
+    over "outer_finger"
+    {
+        over "Defeatured_2F_85_PAD_OPEN_finger2step_01"
+        {
+            over "Defeatured_2F_85_PAD_OPEN_finger2step" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "PhysxCollisionAPI", "PhysxTriangleMeshCollisionAPI", "PhysicsMeshCollisionAPI", "PhysxConvexHullCollisionAPI"]
+            )
+            {
+                uniform token physics:approximation = "convexHull"
+                bool physics:collisionEnabled = 1
+            }
+        }
+    }
+
+    over "outer_knuckle"
+    {
+        over "Defeatured_2F_85_PAD_OPEN_Finger1step_01"
+        {
+            over "Defeatured_2F_85_PAD_OPEN_Finger1step" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "PhysxCollisionAPI", "PhysxTriangleMeshCollisionAPI", "PhysicsMeshCollisionAPI", "PhysxConvexHullCollisionAPI"]
+            )
+            {
+                uniform token physics:approximation = "convexHull"
+                bool physics:collisionEnabled = 1
+            }
+        }
+    }
+}
+
