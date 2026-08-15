@@ -100,9 +100,19 @@ case "$AGENT" in
   *) echo "unknown AGENT=$AGENT (claude|cosigen|codex)" >&2; exit 64 ;;
 esac
 
+# RESUME=1: this container was handed a previous run's workspace AND that run's CLI state, so
+# leg 1 continues that conversation instead of opening a new one on top of files the agent has
+# no memory of writing. The payload is the keep-going nudge for the same reason it is used
+# between legs — re-sending the full instructions would re-read as a new task.
 # `|| rc=$?`, not a bare call: under `set -e` a non-zero exit from the agent would end this
 # script here — no legs.log, no keep-going loop, the rest of the budget unused.
-rc=0; run_leg "$(cat "$PROMPT_FILE")" "" || rc=$?
+rc=0
+if [ "${RESUME:-0}" = "1" ]; then
+  echo "resuming the previous session $(date -Is)" >> /workspace/.agent/legs.log
+  run_leg "$NUDGE$(tool_nudges)" --continue || rc=$?
+else
+  run_leg "$(cat "$PROMPT_FILE")" "" || rc=$?
+fi
 echo "leg 1 rc=$rc $(date -Is)" >> /workspace/.agent/legs.log
 # A run ends on exactly two conditions: the success check passes, or the wall-clock budget
 # runs out. Nothing here infers that the agent has given up. An agent that returns
