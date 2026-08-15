@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from robobench.core import CONTROLLERS, BaseController, BaseControllerCfg
+from robobench.core import CONTROLLERS, BaseController, BaseControllerCfg, info, tunable
 
 if TYPE_CHECKING:
     import torch
@@ -48,23 +48,24 @@ class FrameTaskCfg:
 @dataclass
 class PinkIKControllerCfg(BaseControllerCfg):
     """Config for the Pink IK wrapper: the `frames` to track + the `joint_names` chain it drives.
-    Frame/base names are **URDF** names; joint names are **USD/Isaac**.
+    Frame/base names are **URDF** names; joint names are **USD/Isaac**. `info` = robot-supplied
+    structure; `tunable` = solver knobs.
 
     PLACEMENT: the reusable schema lives here (one Pink IK serves any robot); a *robot* fills the
     structural values (URDF / frames / chain / base) — only it knows its kinematics (see
     `G1Robot.build_controller`)."""
 
-    urdf_path: str  # kinematics URDF (Pinocchio model); meshes not needed for IK
-    base_link: str  # USD body name of the base
-    base_link_frame: str  # URDF frame name of the base
-    frames: tuple[FrameTaskCfg, ...]  # the end-effector frames (one per target pose)
-    joint_names: tuple[str, ...]  # the IK-driven joint chain (USD names / regex)
-    nullspace_joints: tuple[str, ...] = ()  # joints to regularize toward home ('' -> no null-space)
-    nullspace_cost: float = 0.5
-    nullspace_gain: float = 0.3
-    nullspace_lm_damping: float = 1.0
-    mesh_path: str | None = None
-    show_ik_warnings: bool = False
+    urdf_path: str = info()  # kinematics URDF (Pinocchio model); meshes not needed for IK
+    base_link: str = info()  # USD body name of the base
+    base_link_frame: str = info()  # URDF frame name of the base
+    frames: tuple[FrameTaskCfg, ...] = info()  # the end-effector frames (one per target pose)
+    joint_names: tuple[str, ...] = info()  # the IK-driven joint chain (USD names / regex)
+    nullspace_joints: tuple[str, ...] = info(())  # joints to regularize toward home ('' -> no null-space)
+    nullspace_cost: float = tunable(0.5)
+    nullspace_gain: float = tunable(0.3)
+    nullspace_lm_damping: float = tunable(1.0)
+    mesh_path: str | None = info(None)
+    show_ik_warnings: bool = tunable(False)
 
 
 @CONTROLLERS.register("pink_ik")

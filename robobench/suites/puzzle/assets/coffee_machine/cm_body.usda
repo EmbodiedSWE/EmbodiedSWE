@@ -1,0 +1,23 @@
+#usda 1.0
+(
+    defaultPrim = "root"
+    metersPerUnit = 1
+    upAxis = "Z"
+    doc = """Coffee machine body visual: bay cover + START key removed (they spawn as their own part wrappers); the vendored pkg is physics-stripped. One long appliance: brew tower front, water tank rear — place tank-northward."""
+)
+
+def Xform "root" (
+    prepend references = @./pkg/model_capsule_coffee_maker_3.usd@</root>
+)
+{
+    over "E_button_1_9" (
+        active = false
+    )
+    {
+    }
+    over "E_shell_8" (
+        active = false
+    )
+    {
+    }
+}

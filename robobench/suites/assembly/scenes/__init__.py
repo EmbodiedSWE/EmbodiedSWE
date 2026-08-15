@@ -9,13 +9,11 @@ from .bulb_assembly import BulbAssemblyScene, BulbAssemblySceneCfg
 from .chair_assembly import ChairAssemblyScene, ChairAssemblySceneCfg
 from .ikea_table_assembly import IkeaTableAssemblyScene, IkeaTableAssemblySceneCfg
 from .nut_thread_assembly import NutThreadAssemblyScene, NutThreadAssemblySceneCfg
-from .pc_all_assembly import PcAllAssemblyScene, PcAllAssemblySceneCfg
 from .pc_gpu_assembly import PcGpuAssemblyScene, PcGpuAssemblySceneCfg
 from .pc_gpu_ram_assembly import PcGpuRamAssemblyScene, PcGpuRamAssemblySceneCfg
 from .pc_motherboard_assembly import PcMotherboardAssemblyScene, PcMotherboardAssemblySceneCfg
 from .pc_ram_assembly import PcRamAssemblyScene, PcRamAssemblySceneCfg
 from .so101_assembly import SO101AssemblyScene, SO101SceneCfg
-from .stacking_toy import StackingToyScene, StackingToySceneCfg
 
 __all__ = [
     "IkeaTableAssemblyScene",
@@ -26,8 +24,6 @@ __all__ = [
     "BulbAssemblySceneCfg",
     "AllenBoltAssemblyScene",
     "AllenBoltAssemblySceneCfg",
-    "PcAllAssemblyScene",
-    "PcAllAssemblySceneCfg",
     "PcGpuAssemblyScene",
     "PcGpuAssemblySceneCfg",
     "PcGpuRamAssemblyScene",
@@ -38,8 +34,6 @@ __all__ = [
     "PcRamAssemblySceneCfg",
     "SO101AssemblyScene",
     "SO101SceneCfg",
-    "StackingToyScene",
-    "StackingToySceneCfg",
     "ChairAssemblyScene",
     "ChairAssemblySceneCfg",
 ]

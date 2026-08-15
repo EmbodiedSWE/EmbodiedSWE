@@ -11,12 +11,10 @@ already-started board); the key starts where it lies on the table and never tele
 flown to each hole under force-only PD (lift clear of the standing heads, glide over, align its
 yaw to the socket's nearest hex clocking, descend into the socket) and then driven like a hand
 would — a ramped press along the bolt's axis, a torque-capped velocity-servo twist, and soft
-xy-centering / tilt-righting PD wrenches (gravity-free key). The FIRST approach crosses the
-case's wall line high, then sinks over hole 0.
+xy-centering / tilt-righting PD wrenches (gravity-free key).
 
-Phases: show -> stage -> [lift -> glide (-> descend) -> align -> insert -> drive] x 7 ->
-settle. Verdict: seated count, per-hole depth gained per rev vs the 1.0 mm pitch, and
-key->bolt slip angle.
+Phases: show -> stage -> [lift -> glide -> align -> insert -> drive] x 7 -> settle. Verdict:
+seated count, per-hole depth gained per rev vs the 1.0 mm pitch, and key->bolt slip angle.
 
 python -m robobench.suites.assembly.smokes.pc_motherboard_smoke --livestream 2
 python -m robobench.suites.assembly.smokes.pc_motherboard_smoke \
@@ -65,8 +63,7 @@ STAGE_DEPTH = 0.006       # bolt tip depth below the board face at stage (m)
 STAGE_YAW = math.pi       # bolt (and key) yaw at stage (a k*60 deg hex clocking)
 SEAT_MARGIN = 0.0001      # screw-joint hard stop: head held this far above the board (never preloads it)
 STOP_DEPTH = 0.0118       # stop twisting at this tip depth (m) — just before the head bottoms at 12.4 mm
-TRAVEL_Z = 0.030          # key TIP height above the board while hopping between holes
-KEY_CROSS_Z = 0.215       # key TIP height for the FIRST approach, crossing the case's wall line
+TRAVEL_Z = 0.030          # key TIP height above the board while hopping (clears the standing heads)
 # Drive parameters (module constants, like the sibling smokes). The twist is a torque-capped
 # velocity servo: tau = clamp(KW * (w_tgt - wz), -cap, +cap).
 DT = 1.0 / 240.0          # sim timestep
@@ -87,7 +84,6 @@ SYM_INERTIA = (5.0e-4, 5.0e-4, 1.0e-4, 0.08)  # (Ixx, Iyy, Izz, com_z); 210 mm a
 # Phase step budgets at dt=1/240 (rescaled at run time so sim TIME per phase is constant).
 SHOW_END, DRIVE_MAX, SETTLE_STEPS = 150, 6000, 300
 LIFT_STEPS, GLIDE_STEPS, ALIGN_STEPS, INSERT_STEPS = 240, 240, 192, 144
-DESCEND_STEPS = 168       # first hole only: sink from wall-crossing height to travel height
 ALIGN_TOL = math.radians(2.0)  # yaw error under which the key may descend into the socket
 
 
@@ -258,7 +254,6 @@ def main() -> None:
     show_end, drive_max, settle_steps = int(SHOW_END * ts), int(DRIVE_MAX * ts), int(SETTLE_STEPS * ts)
     lift_steps, glide_steps = int(LIFT_STEPS * ts), int(GLIDE_STEPS * ts)
     align_steps, insert_steps = int(ALIGN_STEPS * ts), int(INSERT_STEPS * ts)
-    descend_steps = int(DESCEND_STEPS * ts)
     ramp_steps = int(RAMP_STEPS * ts)
     log_every = max(1, int(300 * ts))
 
@@ -267,7 +262,6 @@ def main() -> None:
     hole_gain = torch.zeros(n, B, device=device)
     slip_last = torch.zeros(n, device=device)
     glide_from = torch.zeros(n, 2, device=device)
-    drop_from = torch.zeros(n, device=device)
     active = 0  # the hole the key is at (or flying toward)
     phase, i, marker = "show", 0, 0
     while True:
@@ -277,31 +271,21 @@ def main() -> None:
             if i >= show_end:  # the bolts spawned staged; the key flies over from the table
                 prev_key_yaw = yaw_of(key.data.root_quat_w)
                 phase, marker = "lift", i
-        elif phase == "lift":  # rise (and right itself), rate-limited; the FIRST approach goes to
-            # wall-crossing height, later hops stay low over the standing heads
+        elif phase == "lift":  # rise (and right itself) to the travel height, rate-limited
             pos = key.data.root_link_pos_w
-            lift_z = board_z + (KEY_CROSS_Z if active == 0 else TRAVEL_Z)
-            tgt_z = torch.minimum(pos[:, 2] + 0.03, lift_z)
+            tgt_z = torch.minimum(pos[:, 2] + 0.03, board_z + TRAVEL_Z)
             hop_key(pos[:, 0:2], tgt_z)
-            up_here = (lift_z - pos[:, 2]) < 0.004
+            up_here = (board_z + TRAVEL_Z - pos[:, 2]) < 0.004
             upright = up_axis_of(key.data.root_quat_w)[:, 2] > math.cos(math.radians(5.0))
-            if bool((up_here & upright).all()) or i - marker >= (2 if active == 0 else 1) * lift_steps:
+            if bool((up_here & upright).all()) or i - marker >= lift_steps:
                 glide_from = key.data.root_link_pos_w[:, 0:2].clone()
                 phase, marker = "glide", i
-        elif phase == "glide":  # ease over to the target hole (high on the first, wall-crossing
-            # approach; at travel height between holes)
+        elif phase == "glide":  # ease over to the target hole at travel height
             s = smoothstep((i - marker) / glide_steps)
             tgt = glide_from + s * (holes_w[:, active] - glide_from)
-            hop_key(tgt, board_z + (KEY_CROSS_Z if active == 0 else TRAVEL_Z))
+            hop_key(tgt, board_z + TRAVEL_Z)
             arrived = (key.data.root_link_pos_w[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.003
             if (i - marker >= glide_steps and bool(arrived.all())) or i - marker >= 2 * glide_steps:
-                phase, marker = ("descend" if active == 0 else "align"), i
-                drop_from = key.data.root_link_pos_w[:, 2].clone()
-        elif phase == "descend":  # (first hole only) sink from crossing height to travel height
-            s = smoothstep((i - marker) / descend_steps)
-            tgt_z = drop_from + s * (board_z + TRAVEL_Z - drop_from)
-            hop_key(holes_w[:, active], tgt_z)
-            if i - marker >= descend_steps:
                 phase, marker = "align", i
         elif phase == "align":  # hover over the socket, servo the hex clocking into register
             hop_key(holes_w[:, active], board_z + TRAVEL_Z, align_to=active)
