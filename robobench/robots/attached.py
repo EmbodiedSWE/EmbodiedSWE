@@ -314,6 +314,26 @@ class SawyerEGK25Robot(_AttachedArmRobot):
     GRIP_DESC = "a Schunk EGK-25 two-jaw parallel gripper (two mirrored prismatic jaws)"
 
 
+@ROBOTS.register("sawyer_panda")
+class SawyerPandaRobot(_AttachedArmRobot):
+    NAME = "sawyer_panda"
+    ARM_JOINTS = ("right_j[0-6]",)
+    ARM_JOINT_LIST = tuple(f"right_j{i}" for i in range(7))
+    GRIPPER_JOINTS = ("panda_finger_joint[1-2]",)
+    EXTRA_JOINTS = ("head_pan",)
+    EE_BODY = "right_l6"
+    ARM_HOME = (0.0, -1.18, 0.0, 2.18, 0.0, 0.57, 3.14)
+    ARM_DESC = "A Rethink Sawyer arm (7-DOF cobot, ~1.26 m reach, screen head)"
+    GRIP_DESC = "a Franka panda hand (two driven prismatic fingers)"
+
+    def __init__(self, cfg: AttachedArmRobotCfg | None = None) -> None:
+        cfg = cfg or AttachedArmRobotCfg()
+        if not cfg.usd:  # baked as .usda (see assets/gripper/make_composites.py)
+            cfg.usd = str(Path(__file__).resolve().parent / "assets" / "composites"
+                          / self.NAME / f"{self.NAME}.usda")
+        super().__init__(cfg)
+
+
 @ROBOTS.register("festo_panda")
 class FestoPandaRobot(_AttachedArmRobot):
     NAME = "festo_panda"
