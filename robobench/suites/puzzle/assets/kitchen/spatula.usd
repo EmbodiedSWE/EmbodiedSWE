@@ -1,0 +1,220 @@
+#usda 1.0
+(
+    defaultPrim = "spatula"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "spatula" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+)
+{
+    float physics:mass = 0.15
+
+    def "visual" (
+        prepend references = @./spatula_visual.usd@
+    )
+    {
+    }
+
+    def Material "phys_mat" (
+        prepend apiSchemas = ["PhysicsMaterialAPI"]
+    )
+    {
+        float physics:dynamicFriction = 0.12
+        float physics:staticFriction = 0.15
+    }
+
+    def Cube "blade_col_0" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float3 xformOp:scale = (0.038923826, 0.0741422, 0.0061343713)
+        double3 xformOp:translate = (-0.03892382746386891, 0, 0.0030671856368338062)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "blade_col_1" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float3 xformOp:scale = (0.038923826, 0.087913394, 0.0049116053)
+        double3 xformOp:translate = (0, 0, 0.002455802735322237)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "blade_col_2" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float3 xformOp:scale = (0.038923826, 0.0894314, 0.0054224757)
+        double3 xformOp:translate = (0.03892382746386891, 0, 0.0027112379152285752)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_0" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 8.582844
+        float3 xformOp:scale = (0.021665005, 0.020589849, 0.022945821)
+        double3 xformOp:translate = (-0.2520719464653012, -0.0002184757254216742, 0.08596275467630303)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_1" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 16.36142
+        float3 xformOp:scale = (0.023666082, 0.020091789, 0.027468896)
+        double3 xformOp:translate = (-0.23226945599788376, -0.00015510172998671554, 0.0816643159490808)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_2" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 16.171667
+        float3 xformOp:scale = (0.023252046, 0.01932108, 0.0261962)
+        double3 xformOp:translate = (-0.2116266679160536, 0.000006822225575588668, 0.07556966297561657)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_3" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 17.492466
+        float3 xformOp:scale = (0.022888437, 0.018630287, 0.02527557)
+        double3 xformOp:translate = (-0.19093878079562215, 0.00015643824965630524, 0.06933709421811864)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_4" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 16.634445
+        float3 xformOp:scale = (0.022589479, 0.017777694, 0.02427074)
+        double3 xformOp:translate = (-0.17014545799943342, 0.00028230756710899505, 0.06303423980553692)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_5" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 17.254107
+        float3 xformOp:scale = (0.022139644, 0.01720688, 0.023254486)
+        double3 xformOp:translate = (-0.1496165144126776, 0.0004464225773290059, 0.057069077644261904)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_6" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 17.847618
+        float3 xformOp:scale = (0.021588039, 0.016535858, 0.022725565)
+        double3 xformOp:translate = (-0.12885511936127486, 0.0005958542179280097, 0.05045918204516083)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_7" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 28.722227
+        float3 xformOp:scale = (0.018413855, 0.015760543, 0.026781337)
+        double3 xformOp:translate = (-0.10831161679811262, 0.0006100866586102342, 0.04102467936595378)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_8" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 39.593987
+        float3 xformOp:scale = (0.011966747, 0.019624976, 0.030583438)
+        double3 xformOp:translate = (-0.08767492745434183, 0.0003636479166284649, 0.026416455279124694)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+
+    def Cube "stick_col_9" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding:physics = </spatula/phys_mat> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double size = 1
+        token visibility = "invisible"
+        float xformOp:rotateY = 31.004663
+        float3 xformOp:scale = (0.015188592, 0.032476004, 0.023897817)
+        double3 xformOp:translate = (-0.06763545980943494, 0.00010787191168683957, 0.012342065375783362)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+    }
+}
+

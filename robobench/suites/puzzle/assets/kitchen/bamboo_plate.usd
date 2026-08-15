@@ -1,0 +1,37 @@
+#usda 1.0
+(
+    defaultPrim = "bamboo_plate"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "bamboo_plate" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+)
+{
+    float physics:mass = 0.4
+
+    def "visual" (
+        prepend references = @./bamboo_plate_visual.usd@
+    )
+    {
+        over "mesh" (
+            prepend apiSchemas = ["PhysicsMeshCollisionAPI", "PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </bamboo_plate/phys_mat> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "none"
+        }
+    }
+
+    def Material "phys_mat" (
+        prepend apiSchemas = ["PhysicsMaterialAPI"]
+    )
+    {
+        float physics:dynamicFriction = 0.45
+        float physics:staticFriction = 0.5
+    }
+}
+
