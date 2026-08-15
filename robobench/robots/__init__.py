@@ -7,12 +7,10 @@ not in `BaseRobot`. Import-light where possible (isaaclab deferred), so registra
 
 from .attached import (
     AttachedArmRobotCfg,
-    CRX10iAL2F85Robot,
     Festo2F85Robot,
     Gen3N72F85Robot,
     Rizon42F85Robot,
-    SawyerEGU50Robot,
-    TM122F85Robot,
+    SawyerEGK25Robot,
     Z1Lite6GRobot,
 )
 from .cobotta import CobottaPro1300Robot, CobottaPro1300RobotCfg
