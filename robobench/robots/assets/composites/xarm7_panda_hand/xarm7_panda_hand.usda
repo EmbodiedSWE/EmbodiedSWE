@@ -14,20 +14,20 @@ def Xform "xarm7_panda_hand" (
 )
 {
     def Xform "gripper" (
-        prepend references = @../../gripper/panda_hand.usd@
+        prepend references = @../../panda_hand/panda_hand.usd@
         delete apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]
     )
     {
-        quatd xformOp:orient = (-3.6356933231414844e-06, 1.00000015006762, -1.543964561712713e-15, 4.2464621598278706e-10)
+        quatd xformOp:orient = (-3.635883331229585e-06, 0.9999999999933902, 9.770373005435326e-26, 5.659368866835611e-25)
         double3 xformOp:scale = (1, 1, 1)
-        double3 xformOp:translate = (0.20600002925429584, 3.2995457475138876e-06, 0.12050052448049615)
+        double3 xformOp:translate = (0.20600003004074097, 3.3365486160549804e-06, 0.12049996852874745)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
     }
 
     def PhysicsFixedJoint "gripper_attach"
     {
         rel physics:body0 = </xarm7_panda_hand/link7>
-        rel physics:body1 = </xarm7_panda_hand/gripper/panda_hand>
+        rel physics:body1 = </xarm7_panda_hand/gripper/panda_rig/panda_hand>
         point3f physics:localPos0 = (0, 0, 0)
         point3f physics:localPos1 = (0.0, 0.0, 0.0)
         quatf physics:localRot0 = (1.0, 0.0, 0.0, 0.0)

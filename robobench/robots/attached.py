@@ -8,8 +8,8 @@ library, each with an end-effector welded on at vendor time (`assets/composites/
   - `festo_panda`    Festo Cobot (6-DOF, pneumatic)    + Franka panda hand
 
 (The xArm7's gripper swap lives on `XArm7Robot` itself as a cfg dial — `XArm7RobotCfg.gripper` —
-because that arm ships WITH a gripper and the swap is per-choice; its non-vendor choices GENERATE
-their composite at spawn time with this module's recipe rather than checking one in.)
+because that arm ships WITH a gripper; its non-vendor choices load composites BAKED offline by
+`assets/gripper/make_composites.py` with this module's recipe.)
 
 Each composite USD references the vendored arm as its root and the vendored gripper under
 `/<name>/gripper`, posed at the arm's flange rest transform with a FixedJoint authored from the
