@@ -279,6 +279,11 @@ class IkeaTableAssemblyScene(BaseScene):
         axis_ok = self._leg_axis_cos() >= math.cos(math.radians(self.cfg.align_axis_deg))
         return depth_ok & (near <= self.cfg.align_xy) & axis_ok
 
+    def success(self) -> torch.Tensor:
+        """(N,) bool: every leg seated on a stud — this scene's assembled state
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.seated().all(dim=1)
+
     def _leg_offsets_in_table(self) -> torch.Tensor:
         """Each leg's position in the tabletop's local frame, shape (num_envs, num_legs, 3): xy = its
         place in the slab plane (compare to the stud xy), z = height above the slab top. Measured in
