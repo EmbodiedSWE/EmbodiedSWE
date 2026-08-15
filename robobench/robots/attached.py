@@ -2,18 +2,20 @@
 library, each with an end-effector welded on at vendor time (`assets/composites/<name>/`):
 
   - `z1_lite6g`      Unitree Z1 (6-DOF, ~0.74 m)      + UFACTORY Lite6 gripper (2 prismatic jaws)
-  - `rizon4_2f85`    Flexiv Rizon 4 (7-DOF, ~0.8 m)    + Robotiq 2F-85
-  - `gen3n7_2f85`    Kinova Gen3 N7 (7-DOF, ~0.9 m)    + Robotiq 2F-85
+  - `rizon4_panda`   Flexiv Rizon 4 (7-DOF, ~0.8 m)    + Franka panda hand (2 prismatic fingers)
+  - `gen3n7_panda`   Kinova Gen3 N7 (7-DOF, ~0.9 m)    + Franka panda hand
   - `sawyer_egk25`   Rethink Sawyer (7-DOF + head pan) + Schunk EGK-25 (2 prismatic jaws)
-  - `festo_2f85`     Festo Cobot (6-DOF, pneumatic)    + Robotiq 2F-85
+  - `festo_panda`    Festo Cobot (6-DOF, pneumatic)    + Franka panda hand
 
 Each composite USD references the vendored arm as its root and the vendored gripper under
 `/<name>/gripper`, posed at the arm's flange rest transform with a FixedJoint authored from the
 composed rest poses (so nothing snaps at spawn) and the gripper's own articulation root stripped —
-the same pattern the xArm7 asset uses natively. The Robotiq 2F-85 and the Lite6 gripper are
-mimic-linkage grippers (ONE driven joint; followers ride PhysX mimic constraints and must spawn at
-their authored rest); the EGK-25's two jaws are both driven with mirrored signs (the vendored
-copy authors the follower's missing drive and drops its mimic).
+the same pattern the xArm7 asset uses natively. The Lite6 gripper is a mimic-linkage gripper
+(the vendored copy authors the follower's missing drive and drops its mimic; both jaws driven);
+the EGK-25's two jaws are likewise both driven with mirrored signs. The panda hand is the franka
+robot's own two-finger gripper, vendored as a standalone rig (`assets/panda_hand/`) — a Robotiq
+2F-85 was tried on these arms first and dropped: its parallelogram-linkage pad kinematics could
+not be placed reliably on the sticks across these mounts.
 
 The OSC control frame (and the task-side weld body) is the LAST ARM LINK, not the gripper base:
 several arms name their own base `base_link`, which collides with the Robotiq base's prim name
@@ -257,14 +259,6 @@ class _AttachedArmRobot(BaseRobot):
 
 # ----- the seven concrete composites --------------------------------------------------------------
 
-_ROBOTIQ_PASSIVE = (
-    "right_outer_knuckle_joint",
-    "right_inner_finger_joint",
-    "right_inner_finger_knuckle_joint",
-    "left_inner_finger_knuckle_joint",
-    "left_inner_finger_joint",
-)
-
 
 @ROBOTS.register("z1_lite6g")
 class Z1Lite6GRobot(_AttachedArmRobot):
@@ -279,28 +273,26 @@ class Z1Lite6GRobot(_AttachedArmRobot):
     GRIP_DESC = "a UFACTORY Lite6 two-jaw gripper (one driven prismatic jaw, its twin mimicked)"
 
 
-@ROBOTS.register("rizon4_2f85")
-class Rizon42F85Robot(_AttachedArmRobot):
-    NAME = "rizon4_2f85"
+@ROBOTS.register("rizon4_panda")
+class Rizon4PandaRobot(_AttachedArmRobot):
+    NAME = "rizon4_panda"
     ARM_JOINTS = ("joint[1-7]",)
-    GRIPPER_JOINTS = ("finger_joint",)
-    PASSIVE_JOINTS = _ROBOTIQ_PASSIVE
+    GRIPPER_JOINTS = ("panda_finger_joint[1-2]",)
     EE_BODY = "link7"
     ARM_HOME = (0.0, -0.7, 0.0, 1.5, 0.0, 0.7, 0.0)
     ARM_DESC = "A Flexiv Rizon 4 arm (7-DOF force-controlled cobot, ~0.8 m reach)"
-    GRIP_DESC = "a Robotiq 2F-85 gripper (one driven knuckle joint, five mimic followers)"
+    GRIP_DESC = "a Franka panda hand (two driven prismatic fingers)"
 
 
-@ROBOTS.register("gen3n7_2f85")
-class Gen3N72F85Robot(_AttachedArmRobot):
-    NAME = "gen3n7_2f85"
+@ROBOTS.register("gen3n7_panda")
+class Gen3N7PandaRobot(_AttachedArmRobot):
+    NAME = "gen3n7_panda"
     ARM_JOINTS = ("joint_[1-7]",)
-    GRIPPER_JOINTS = ("finger_joint",)
-    PASSIVE_JOINTS = _ROBOTIQ_PASSIVE
+    GRIPPER_JOINTS = ("panda_finger_joint[1-2]",)
     EE_BODY = "bracelet_link"
     ARM_HOME = (0.0, 0.65, 0.0, 1.89, 0.0, 0.6, -1.57)  # the isaaclab_assets preset's ready pose
     ARM_DESC = "A Kinova Gen3 arm (7-DOF cobot, ~0.9 m reach)"
-    GRIP_DESC = "a Robotiq 2F-85 gripper (one driven knuckle joint, five mimic followers)"
+    GRIP_DESC = "a Franka panda hand (two driven prismatic fingers)"
 
 
 @ROBOTS.register("sawyer_egk25")
@@ -318,13 +310,12 @@ class SawyerEGK25Robot(_AttachedArmRobot):
     GRIP_DESC = "a Schunk EGK-25 two-jaw parallel gripper (two mirrored prismatic jaws)"
 
 
-@ROBOTS.register("festo_2f85")
-class Festo2F85Robot(_AttachedArmRobot):
-    NAME = "festo_2f85"
+@ROBOTS.register("festo_panda")
+class FestoPandaRobot(_AttachedArmRobot):
+    NAME = "festo_panda"
     ARM_JOINTS = ("a[1-6]",)
-    GRIPPER_JOINTS = ("finger_joint",)
-    PASSIVE_JOINTS = _ROBOTIQ_PASSIVE
+    GRIPPER_JOINTS = ("panda_finger_joint[1-2]",)
     EE_BODY = "link_6"
     ARM_HOME = (0.0, -0.6, -1.4, 0.0, -0.8, 0.0)  # a3 in [-205, 65] deg: the elbow bends negative
     ARM_DESC = "A Festo pneumatic cobot arm (6-DOF)"
-    GRIP_DESC = "a Robotiq 2F-85 gripper (one driven knuckle joint, five mimic followers)"
+    GRIP_DESC = "a Franka panda hand (two driven prismatic fingers)"

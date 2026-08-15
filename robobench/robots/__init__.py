@@ -7,9 +7,9 @@ not in `BaseRobot`. Import-light where possible (isaaclab deferred), so registra
 
 from .attached import (
     AttachedArmRobotCfg,
-    Festo2F85Robot,
-    Gen3N72F85Robot,
-    Rizon42F85Robot,
+    FestoPandaRobot,
+    Gen3N7PandaRobot,
+    Rizon4PandaRobot,
     SawyerEGK25Robot,
     Z1Lite6GRobot,
 )
