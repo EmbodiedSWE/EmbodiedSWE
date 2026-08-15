@@ -256,13 +256,15 @@ _PC_RAM_COMPOSITE_KW: dict[str, dict] = {
                       # the case's south-east corner, all four work points within ~0.29 m
                       base_pos=(0.58, -0.28, 0.0),
                       default_dof_pos=(0.4186, 1.5808, -0.7638, 0.7383, -0.0009, -1.1521)),
-    "rizon4_2f85": dict(arm_effort_limit=150.0,
+    "rizon4_panda": dict(arm_effort_limit=150.0,
                         gravity_compensation=True,  # the real device's controller actively
                         # gravity-compensates (as all the cobots here; see Jaco2N7RobotCfg)
                         default_dof_pos=(0.6362, -0.4773, -0.1640, 2.5330, 0.5056, 1.4094, -1.5786)),
-    "gen3n7_2f85": dict(arm_effort_limit=120.0,  # authored wrist ratings are 9 N*m
+    "gen3n7_panda": dict(arm_effort_limit=120.0,  # authored wrist ratings are 9 N*m
                         gravity_compensation=True,
-                        default_dof_pos=(-0.0288, 0.5646, -0.1281, 2.1424, 0.1590, 0.4472, 1.2895)),
+                        # solved for the panda hand's (shorter) reach: a different approach
+                        # family whose far-slot align does not configuration-lock
+                        default_dof_pos=(-0.0286, 0.3731, -0.1231, 2.0578, 0.0679, 0.7191, 1.3759)),
     "sawyer_egk25": dict(arm_effort_limit=150.0,
                          gravity_compensation=True,  # see rizon4's note
                          # front-reach elbow-up ready pose, straight-ish wrist (the folded wrist's
@@ -271,11 +273,11 @@ _PC_RAM_COMPOSITE_KW: dict[str, dict] = {
                          default_dof_pos=(0.2919, -1.4106, -0.8423, 2.1866, -0.6818, -0.8069, 2.3385),
                          # anchor the task-space nullspace to the same front-reach posture
                          nullspace_dof_pos=(0.2919, -1.4106, -0.8423, 2.1866, -0.6818, -0.8069, 2.3385)),
-    "festo_2f85": dict(arm_effort_limit=150.0,
+    "festo_panda": dict(arm_effort_limit=150.0,
                        gravity_compensation=True,  # authored masses are all zero
                        default_dof_pos=(-0.1269, -0.5584, 0.4606, 0.0000, 0.5567, 1.4435)),
 }
-for _robot in ("z1_lite6g", "rizon4_2f85", "gen3n7_2f85", "sawyer_egk25", "festo_2f85"):
+for _robot in ("z1_lite6g", "rizon4_panda", "gen3n7_panda", "sawyer_egk25", "festo_panda"):
     for _mode in ("osc", "impedance", "joint"):
         register_env(
             SUITE,
