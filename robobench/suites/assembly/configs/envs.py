@@ -400,6 +400,44 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
+# The SAME bulb cell for the xArm7, carrying the Franka hand (`gripper` is a robot-cfg dial; two
+# driven prismatic fingers in METRES, 0 = closed, 80 mm aperture, action 6 pose deltas + 2 = 8 —
+# a sim-only pairing used for controlled cross-embodiment comparison: threading this bulb needs
+# a pad gap comfortably wider than the 48 mm glass belly, which rules out the arm's narrower
+# real-gripper options).
+# The scene layout (socket 9 cm closer at table-rel (-0.09, 0), loose bulb on the
+# +y side at (-0.24, 0.25), default sim dt) is copied VERBATIM from the franka binding above so
+# both embodiments face the identical task. Base at the origin facing +x, the franka's spot:
+# both arms clear the socket at 0.41 m and the bulb at (0.26, 0.25) well inside their envelopes
+# (xArm7 ~0.75 m reach vs the franka's ~0.85 m). arm_effort_limit is raised over the asset's
+# authored ratings (50/50/30/30/30/20/20) for gravity-uncompensated torque control — the same
+# dial the pc_gpu xarm7 binding uses.
+#   - "assembly.bulb.xarm7.osc"       — operational-space control (default)
+#   - "assembly.bulb.xarm7.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.bulb.xarm7.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="bulb",
+            scene_cfg=BulbAssemblySceneCfg(
+                socket_slots=((-0.09, 0.0),),
+                bulb_init_xy=((-0.24, 0.25),),
+            ),
+            robot="xarm7",
+            robot_cfg=XArm7RobotCfg(
+                gripper="panda_hand",
+                arm_effort_limit=120.0,
+                gravity_compensation=True,  # the task-space laws are gravity-blind; this arm cannot
+                # hold itself against gravity across the cell's reaches (the same dial the jaco2 and
+                # the pc_ram composites set)
+            ),
+            control_mode=mode,
+            env_spacing=2,
+        ),
+    )
+
+
 # Franka arm at the pc-gpu scene. The base stands in the table's NORTH strip at (0.64, -0.34),
 # yaw 180 deg, beside the case's north-east corner; the card holder sits west of it at
 # (0.28, -0.36). Both fit fully on the lab table's top plate — x [-0.32, 0.96] x y [-0.47, 0.44]
