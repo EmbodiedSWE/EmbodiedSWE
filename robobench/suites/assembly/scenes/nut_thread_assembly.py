@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
@@ -30,46 +30,47 @@ if TYPE_CHECKING:
 
 @dataclass
 class NutThreadAssemblySceneCfg(BaseCfg):
-    """Config for `NutThreadAssemblyScene`. Nothing is locked — a variant is just a copy with a few
-    fields changed.
+    """Config for `NutThreadAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial
+    or an `info()` structural constant (see `robobench.core.BaseCfg`); `cfg.tunables()` lists the
+    dials. Nothing is locked — a curriculum/debug variant is just a `.copy()` with a few changed.
     """
 
-    # --- grading thresholds + reset jitter ---------------------------------------------------------
+    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
     # A nut is "seated on a bolt" when — all measured in that bolt's own frame — it is threaded down to
     # at/below `seat_z` above the bolt origin, within `align_xy` of the bolt axis, and tilted
     # <= `align_axis_deg` off it (order-independent: any nut may seat on any bolt).
-    seat_z: float = 0.012  # max nut-origin height above the bolt origin (m) to count as seated.
+    seat_z: float = tunable(0.012)  # max nut-origin height above the bolt origin (m) to count as seated.
     # Calibrated to the asset (the nut USD's origin sits 10 mm below its bottom face): 12 mm puts the
     # nut's top face at/below the bolt's thread top — fully threaded on. Resting on the bolt top is
     # ~25 mm, true bottom-out ~1 mm; gripper pads graze the bolt head below ~4 mm.
-    align_xy: float = 0.015  # max lateral distance (m) of the nut from the nearest bolt axis
-    align_axis_deg: float = 10.0  # max tilt of the nut's screw axis off the bolt axis (deg)
-    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter per nut at reset (m); 0 = none
+    align_xy: float = tunable(0.015)  # max lateral distance (m) of the nut from the nearest bolt axis
+    align_axis_deg: float = tunable(10.0)  # max tilt of the nut's screw axis off the bolt axis (deg)
+    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter per nut at reset (m); 0 = none
     # Part friction (static = dynamic), applied to every shape at bind.
-    nut_friction: float = 0.01
-    bolt_friction: float = 0.75
+    nut_friction: float = tunable(0.01)
+    bolt_friction: float = tunable(0.75)
 
-    # --- layout, structure, masses, asset paths ----------------------------------------------------
-    num_pairs: int = 1  # number of bolt+nut pairs
+    # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
+    num_pairs: int = info(1)  # number of bolt+nut pairs
     # Bolt xy slots, relative to the table centre. One bolt per slot.
-    bolt_slots: tuple[tuple[float, float], ...] = ((0.0, 0.0),)
-    bolt_height: float = 0.025  # informational; the real value is baked into the bolt USD
-    nut_mass: float = 0.03  # M16 nut mass (kg)
-    light_intensity: float = 2500.0
+    bolt_slots: tuple[tuple[float, float], ...] = info(((0.0, 0.0),))
+    bolt_height: float = info(0.025)  # informational; the real value is baked into the bolt USD
+    nut_mass: float = info(0.03)  # M16 nut mass (kg)
+    light_intensity: float = info(2500.0)
     # Nuts' start pose. Default: each nut resting flat (identity quat -> screw axis up) in a row on the
     # +x side of the bolts. A curriculum/robot may set `nut_init_xy` to override the row.
-    nut_init_xy: tuple[tuple[float, float], ...] = ()  # per-nut start xy (table-rel.); () -> the row below
-    nut_row_x0: float = 0.12  # x of nut0 (the loose nuts sit to the +x side of the bolts)
-    nut_row_y: float = 0.0  # y of the row
-    nut_spacing: float = 0.1  # x gap between adjacent nuts (nut k at x0 + k*spacing)
-    nut_init_z: float = 0.02  # [TUNE: to the asset] nut-origin height above the surface when resting flat
-    nut_init_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # wxyz; identity -> axis up
+    nut_init_xy: tuple[tuple[float, float], ...] = info(())  # per-nut start xy (table-rel.); () -> the row below
+    nut_row_x0: float = info(0.12)  # x of nut0 (the loose nuts sit to the +x side of the bolts)
+    nut_row_y: float = info(0.0)  # y of the row
+    nut_spacing: float = info(0.1)  # x gap between adjacent nuts (nut k at x0 + k*spacing)
+    nut_init_z: float = info(0.02)  # [TUNE: to the asset] nut-origin height above the surface when resting flat
+    nut_init_quat: tuple[float, float, float, float] = info((1.0, 0.0, 0.0, 0.0))  # wxyz; identity -> axis up
     # Selectable work surface. `table` picks a preset in `TABLES`; the three fields below default to it
     # when left None/empty, or override it (e.g. raise `surface_z` so a standing robot can reach).
-    table: str = "lab_table"  # which work surface: "lab_table" | "packing"
-    surface_z: float | None = None  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = None  # xy the table (and bolts) sit at; None -> preset
-    workbench_usd: str = ""  # empty -> the preset's vendored USD
+    table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
+    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = info(None)  # xy the table (and bolts) sit at; None -> preset
+    workbench_usd: str = info("")  # empty -> the preset's vendored USD
     # Work-surface presets (vendored under assets/props/). Per table: usd (subdir, file), scale, orient
     # (wxyz), surface_z (top height) + pos (xy) defaults, top_offset (top above the USD origin), height
     # (top->feet, sinks the ground to the table's feet), kinematic (load as a fixed rigid body).
@@ -82,9 +83,9 @@ class NutThreadAssemblySceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
     # Bolt + nut USDs. Empty -> the packaged M16 bolt (with head) and M16 nut under assets/factory/.
-    asset_dir: str = ""
-    bolt_usd: str = ""
-    nut_usd: str = ""
+    asset_dir: str = info("")
+    bolt_usd: str = info("")
+    nut_usd: str = info("")
 
     def __post_init__(self) -> None:
         if not self.nut_init_xy:  # default: nuts resting in a row to the +x side of the bolts
@@ -105,12 +106,6 @@ class NutThreadAssemblySceneCfg(BaseCfg):
 @SCENES.register("nut_thread")
 class NutThreadAssemblyScene(BaseScene):
     cfg: NutThreadAssemblySceneCfg
-
-    #: L4 physics dials: per-env-appliable fields -> pre-baked sampling bands (cfg default = nominal)
-    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
-        "nut_friction": {"dist": "uniform", "lo": 0.005, "hi": 0.02},
-        "bolt_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
-    }
 
     def __init__(self, cfg: NutThreadAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or NutThreadAssemblySceneCfg())
@@ -211,23 +206,6 @@ class NutThreadAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
-    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
-        """Write the scene's frictions PER ENV (static = dynamic, every shape), `values[name]` one
-        value per env for names from `PHYSICAL_PARAMS`. `bind()` routes the nominal application
-        through here with uniform values, so this is THE friction path — per-env sampling reuses
-        it, never a copy."""
-        unknown = set(values) - set(self.PHYSICAL_PARAMS)
-        if unknown:
-            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
-        ids = torch.arange(env.num_envs, device="cpu")
-        for name, assets in (("nut_friction", self.nuts), ("bolt_friction", self.bolts)):
-            if name in values:
-                col = torch.tensor(values[name], dtype=torch.float32).view(-1, 1, 1)
-                for asset in assets:
-                    mats = asset.root_physx_view.get_material_properties()
-                    mats[..., 0:2] = col  # [static, dynamic, restitution]
-                    asset.root_physx_view.set_material_properties(mats, ids)
-
     def bind(self, env: BaseEnv) -> None:
         """Grab the bolt + nut handles, cache env origins, and set the part frictions. Called once
         after the scene is built (the sim is already playing, so the physx views are ready)."""
@@ -235,9 +213,16 @@ class NutThreadAssemblyScene(BaseScene):
         self.bolts: list[Articulation] = [env.iscene[f"bolt_{i}"] for i in range(self.cfg.num_pairs)]
         self.nuts: list[RigidObject] = [env.iscene[f"nut_{i}"] for i in range(self.cfg.num_pairs)]
         self.env_origins = env.iscene.env_origins
-        # Nominal friction, all envs — through the same hook per-env sampling uses.
-        E, c = env.num_envs, self.cfg
-        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
+        for nut in self.nuts:
+            self._set_friction(nut, self.cfg.nut_friction)
+        for bolt in self.bolts:
+            self._set_friction(bolt, self.cfg.bolt_friction)
+
+    def _set_friction(self, asset, value: float) -> None:
+        """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
+        mats = asset.root_physx_view.get_material_properties()
+        mats[..., 0:2] = value  # [static, dynamic, restitution]
+        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the bolts stand upright on the table and the nuts rest flat on it
@@ -305,6 +290,11 @@ class NutThreadAssemblyScene(BaseScene):
         depth_ok = depth <= self.cfg.seat_z
         axis_ok = self._nut_axis_cos() >= math.cos(math.radians(self.cfg.align_axis_deg))
         return depth_ok & (near_dist <= self.cfg.align_xy) & axis_ok
+
+    def success(self) -> torch.Tensor:
+        """(N,) bool: every nut seated on a bolt — this scene's assembled state
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.seated().all(dim=1)
 
     def _nut_offsets_in_bolt(self) -> torch.Tensor:
         """Each nut's position in each bolt's local frame, shape (num_envs, num_pairs_nut, num_pairs_bolt,

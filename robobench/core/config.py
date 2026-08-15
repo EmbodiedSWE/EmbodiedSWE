@@ -4,8 +4,9 @@ Three cohesive pieces (import-light: stdlib only at module load; the few isaacla
 `EnvCfg.build` / `register_env` are lazy, so importing this — and listing/registering configs — never
 needs AppLauncher):
 
-  - `BaseCfg` — the shared base scene/robot cfgs subclass: plain dataclasses, plain fields
-    (nothing is locked; a variant is a `replace(...)` / copy with a few fields changed).
+  - `tunable` / `info` + `BaseCfg` — the marker machinery scene/robot cfgs are written with: each
+    field is a **tunable** curriculum/difficulty dial or a fixed **info** fact, enumerable via
+    `cfg.tunables()` / `cfg.infos()` (documentation + machine-readable; nothing is locked).
   - `SimCfg` — the sim substrate (dt + PhysX), **declared by the scene** (its contact geometry drives
     the requirements), patchable per binding.
   - `EnvCfg` (+ `register_env`) — the one struct that **binds a runnable env** (scene + robot + control
@@ -16,18 +17,48 @@ needs AppLauncher):
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import MISSING, dataclass, field, fields, replace
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .env import BaseEnv
 
 
-# ----- BaseCfg ----------------------------------------------------------------------------------
+# ----- tunable / info markers + BaseCfg ---------------------------------------------------------
+def tunable(default: Any = MISSING, *, factory: Callable[[], Any] | None = None, doc: str = "", kw_only: bool = False) -> Any:
+    """Declare a **curriculum/difficulty dial** (the agent may adjust it). Use `factory=` for a mutable
+    default (list/dict), `default=` otherwise. `kw_only=True` keeps it out of positional order (a shared
+    base can add a field without shifting subclasses' args)."""
+    meta = {"kind": "tunable", "doc": doc}
+    if factory is not None:
+        return field(default_factory=factory, metadata=meta, kw_only=kw_only)
+    return field(default=default, metadata=meta, kw_only=kw_only)
+
+
+def info(default: Any = MISSING, *, factory: Callable[[], Any] | None = None, doc: str = "", kw_only: bool = False) -> Any:
+    """Declare a **structural/fixed fact** about the scene or robot (not a difficulty dial). `kw_only=True`
+    keeps it out of positional order (see `tunable`)."""
+    meta = {"kind": "info", "doc": doc}
+    if factory is not None:
+        return field(default_factory=factory, metadata=meta, kw_only=kw_only)
+    return field(default=default, metadata=meta, kw_only=kw_only)
+
+
 @dataclass
 class BaseCfg:
-    """Shared base for scene/robot configs: a plain dataclass of plain fields. Nothing is locked —
-    a curriculum/debug variant is just a copy with a few fields changed."""
+    """Base for scene/robot configs whose fields are declared with `tunable()` / `info()`. See the
+    module docstring. The split is exposed (not enforced) via `tunables()` / `infos()`."""
+
+    def tunables(self) -> dict[str, Any]:
+        """`{name: value}` for the curriculum/difficulty dials — what a curriculum may sample."""
+        return self._fields_of_kind("tunable")
+
+    def infos(self) -> dict[str, Any]:
+        """`{name: value}` for the structural/fixed facts."""
+        return self._fields_of_kind("info")
+
+    def _fields_of_kind(self, kind: str) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.metadata.get("kind") == kind}
 
 
 # ----- SimCfg: the sim substrate (scene-declared) -----------------------------------------------
