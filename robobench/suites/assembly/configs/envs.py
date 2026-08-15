@@ -213,16 +213,12 @@ for _mode in ("osc", "impedance", "joint"):
 # placement dials (see AttachedArmRobotCfg for the dial docs).
 #   -> "assembly.pc_ram.<robot>.{osc,impedance,joint}" for each composite below.
 _PC_RAM_COMPOSITE_KW: dict[str, dict] = {
-    # default_dof_pos: per-embodiment ready pose — the pads hovering top-down over the stick
-    # holders with the pinch axis across the sticks (offline IK over the composite's joint
-    # frames, same placement pass as the pc_gpu embodiments).
-    "z1_lite6g": dict(zero_joint_friction=True,  # the Z1 authors jointFriction 1.0-2.0
-                      gravity_compensation=True,  # 2 kg-class arm; its ratings cannot support
-                      # gravity-blind torque control (see the cfg dial docs)
+    # default_dof_pos: per-embodiment ready posture at the work cell. base_pos overrides the
+    # shared spot where an arm's reach calls for it.
+    "z1_lite6g": dict(zero_joint_friction=True,  # the asset authors jointFriction 1.0-2.0
+                      gravity_compensation=True,  # 2 kg-class arm (see the cfg dial docs)
                       arm_effort_limit=60.0,
-                      # the 0.74 m arm needs the cell closer than the shared spot: base beside
-                      # the case's south-east corner, all four work points within ~0.29 m
-                      base_pos=(0.58, -0.28, 0.0),
+                      base_pos=(0.58, -0.28, 0.0),  # 0.74 m reach: base beside the case
                       default_dof_pos=(0.4186, 1.5808, -0.7638, 0.7383, -0.0009, -1.1521)),
     "rizon4_panda": dict(arm_effort_limit=150.0,
                         gravity_compensation=True,  # the real device's controller actively
@@ -230,16 +226,10 @@ _PC_RAM_COMPOSITE_KW: dict[str, dict] = {
                         default_dof_pos=(0.6362, -0.4773, -0.1640, 2.5330, 0.5056, 1.4094, -1.5786)),
     "gen3n7_panda": dict(arm_effort_limit=120.0,  # authored wrist ratings are 9 N*m
                         gravity_compensation=True,
-                        # solved for the panda hand's (shorter) reach: a different approach
-                        # family whose far-slot align does not configuration-lock
                         default_dof_pos=(-0.0286, 0.3731, -0.1231, 2.0578, 0.0679, 0.7191, 1.3759)),
     "sawyer_egk25": dict(arm_effort_limit=150.0,
                          gravity_compensation=True,  # see rizon4's note
-                         # front-reach elbow-up ready pose, straight-ish wrist (the folded wrist's
-                         # l5 housing otherwise grounds on the work pieces; the over-the-back
-                         # branch crosses a wrist-singular region on the holder->slot transit)
                          default_dof_pos=(0.2919, -1.4106, -0.8423, 2.1866, -0.6818, -0.8069, 2.3385),
-                         # anchor the task-space nullspace to the same front-reach posture
                          nullspace_dof_pos=(0.2919, -1.4106, -0.8423, 2.1866, -0.6818, -0.8069, 2.3385)),
     "festo_panda": dict(arm_effort_limit=150.0,
                        gravity_compensation=True,  # authored masses are all zero
@@ -272,11 +262,8 @@ for _robot in ("z1_lite6g", "rizon4_panda", "gen3n7_panda", "sawyer_egk25", "fes
         )
 
 # The same pc-ram work cell for two of the pc_gpu embodiments (Jaco2 N7 / Cobotta Pro 1300) —
-# scene cfg verbatim as above; per-embodiment base placement + ready posture (the 0.90 m Jaco2
-# sits mid-cell; the 1.3 m Cobotta at the shared composite spot). The xArm7 is deliberately NOT
-# registered here: its vendor gripper's finger plates (32 mm thick beside a 7.3 mm slab) cannot
-# press a DIMM beside a seated neighbour (15.26 mm slot pitch) in any stance — the asset and
-# robot class remain available for other tasks.
+# scene cfg verbatim as above so every embodiment faces the identical task; per-embodiment base
+# placement + ready posture only.
 #   -> "assembly.pc_ram.{jaco2_n7, cobotta_pro_1300}.{osc, impedance, joint}"
 _PC_RAM_PCGPU_ARMS = (
     ("jaco2_n7", Jaco2N7RobotCfg, dict(
@@ -287,7 +274,7 @@ _PC_RAM_PCGPU_ARMS = (
     )),
     ("cobotta_pro_1300", CobottaPro1300RobotCfg, dict(
         base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
-        arm_effort_limit=150.0,  # authored 60 per joint; a 1.3 m arm needs more at full stretch
+        arm_effort_limit=150.0,  # the vendored asset authors 60 N*m per joint
         default_dof_pos=(-0.2256, -0.1725, 2.3889, 0.0003, 0.9203, 1.3454),
     )),
 )
