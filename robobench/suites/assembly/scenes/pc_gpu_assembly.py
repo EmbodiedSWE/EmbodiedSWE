@@ -369,6 +369,11 @@ class PcGpuAssemblyScene(BaseScene):
         yaw_ok = self._axis_cos(0) >= math.cos(math.radians(c.align_yaw_deg))
         return depth_ok & xy_ok & up_ok & yaw_ok
 
+    def success(self) -> torch.Tensor:
+        """(N,) bool: the card seated in its slot — this scene's assembled state
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.seated()
+
     def _card_offset_in_case(self) -> torch.Tensor:
         """The card origin's offset from the seated point, in the case's local frame, shape
         (num_envs, 3). Zero means the card origin sits exactly at the seated pose."""

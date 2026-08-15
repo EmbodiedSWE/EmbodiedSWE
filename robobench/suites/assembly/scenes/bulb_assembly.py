@@ -332,6 +332,11 @@ class BulbAssemblyScene(BaseScene):
         axis_ok = self._bulb_axis_cos() >= math.cos(math.radians(self.cfg.align_axis_deg))
         return depth_ok & (near_dist <= self.cfg.align_xy) & axis_ok
 
+    def success(self) -> torch.Tensor:
+        """(N,) bool: every bulb seated in a socket — this scene's assembled state
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.seated().all(dim=1)
+
     def _bulb_offsets_in_socket(self) -> torch.Tensor:
         """Each bulb's position in each socket's frame, (n, N_bulb, B_socket, 3): xy = offset from the
         socket axis, z = height above the socket origin (correct even if a socket is yawed)."""

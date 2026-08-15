@@ -464,6 +464,11 @@ class PcGpuRamAssemblyScene(BaseScene):
         columns 1..S the sticks (depth + xy + tilt + heading gates, per family)."""
         return torch.cat([self.gpu_seated().unsqueeze(1), self.ram_seated()], dim=1)
 
+    def success(self) -> torch.Tensor:
+        """(N,) bool: the card and every stick seated — this scene's assembled state
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.seated().all(dim=1)
+
     def gpu_engaged(self) -> torch.Tensor:
         """Card tab depth below the PCIe slot mouth, shape (num_envs,), in metres."""
         rel = self._card_offset_in_case()
