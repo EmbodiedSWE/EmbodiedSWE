@@ -1,0 +1,56 @@
+#usda 1.0
+(
+    defaultPrim = "festo_panda"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "festo_panda" (
+    prepend references = @../../festo_cobot/festo_cobot.usd@
+)
+{
+    def Xform "gripper" (
+        prepend references = @../../panda_hand/panda_hand.usd@
+    )
+    {
+        quatd xformOp:orient = (2.980232254850759e-8, 0.7071067811865469, -2.980232540988855e-8, 0.7071067811865469)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.4820499122142792, 0.06544992327690125, 0.6715998649597168)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Robotiq_2F_85" (
+            delete apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]
+        )
+        {
+        }
+    }
+
+    def PhysicsFixedJoint "gripper_attach"
+    {
+        rel physics:body0 = </festo_panda/flange>
+        rel physics:body1 = </festo_panda/gripper/panda_rig/panda_hand>
+        point3f physics:localPos0 = (0, 1.3877788e-17, -1.110223e-16)
+        point3f physics:localPos1 = (0, 0, 0)
+        quatf physics:localRot0 = (1, 7.041365e-17, -4.977001e-24, 9.014158e-17)
+        quatf physics:localRot1 = (1, 0, 0, 0)
+    }
+
+    over "link_6" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0, 0, 0)
+        float3 physics:diagonalInertia = (0.002, 0.002, 0.002)
+        float physics:mass = 1.5
+    }
+
+    over "flange" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0, 0, 0)
+        float3 physics:diagonalInertia = (0.0002, 0.0002, 0.0002)
+        float physics:mass = 0.3
+    }
+}
+

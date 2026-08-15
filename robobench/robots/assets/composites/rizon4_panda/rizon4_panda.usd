@@ -1,0 +1,38 @@
+#usda 1.0
+(
+    defaultPrim = "rizon4_panda"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "rizon4_panda" (
+    prepend references = @../../rizon4/flexiv_rizon4.usd@
+)
+{
+    def Xform "gripper" (
+        prepend references = @../../panda_hand/panda_hand.usd@
+    )
+    {
+        quatd xformOp:orient = (0.7071067690849304, 0, 0.7071067932881617, -6.181724144332457e-8)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.13599999248981476, -0.11000000685453415, 1.2549999952316284)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Robotiq_2F_85" (
+            delete apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]
+        )
+        {
+        }
+    }
+
+    def PhysicsFixedJoint "gripper_attach"
+    {
+        rel physics:body0 = </rizon4_panda/flange>
+        rel physics:body1 = </rizon4_panda/gripper/panda_rig/panda_hand>
+        point3f physics:localPos0 = (-2.220446e-16, 0, 0)
+        point3f physics:localPos1 = (0, 0, 0)
+        quatf physics:localRot0 = (1, 1.4225843e-23, -1.11022296e-16, -2.1227235e-17)
+        quatf physics:localRot1 = (1, 0, 0, 0)
+    }
+}
+
