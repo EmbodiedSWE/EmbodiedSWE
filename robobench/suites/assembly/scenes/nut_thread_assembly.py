@@ -291,6 +291,11 @@ class NutThreadAssemblyScene(BaseScene):
         axis_ok = self._nut_axis_cos() >= math.cos(math.radians(self.cfg.align_axis_deg))
         return depth_ok & (near_dist <= self.cfg.align_xy) & axis_ok
 
+    def success(self) -> torch.Tensor:
+        """(N,) bool: every nut seated on a bolt — this scene's assembled state
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.seated().all(dim=1)
+
     def _nut_offsets_in_bolt(self) -> torch.Tensor:
         """Each nut's position in each bolt's local frame, shape (num_envs, num_pairs_nut, num_pairs_bolt,
         3): xy = lateral offset from that bolt's axis, z = height above that bolt's origin. Measured in
