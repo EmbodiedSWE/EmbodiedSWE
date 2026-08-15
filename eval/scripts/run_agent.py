@@ -85,6 +85,9 @@ def main() -> None:
                     help="also snapshot solution/ as a submission every N minutes (skipped when "
                          "unchanged) — uniform curve sampling even if the agent never submits")
     ap.add_argument("--gpu", default=None)
+    ap.add_argument("--keep-going", action="store_true",
+                    help="when the agent stops before the budget, continue the same "
+                         "conversation instead of ending the run (long budgets)")
     ap.add_argument("--run", default=None, help="run name (default: <agent>_<timestamp>)")
     ap.add_argument("--dry-run", action="store_true",
                     help="assemble the task folder, print the docker command, and exit")
@@ -145,6 +148,7 @@ def main() -> None:
 
     model = pick(args.model, "model")
     gpu = pick(args.gpu, "gpu", "0")
+    keep_going = bool(pick(args.keep_going or None, "keep_going", False))
     image = cfg.get("image", DEFAULT_IMAGE)
 
     cname = f"rb_{exp.name}_{run_name}"
@@ -163,6 +167,18 @@ def main() -> None:
     for var in CRED_VARS:
         if os.environ.get(var):
             cmd += ["-e", var]
+    if keep_going:
+        # the container's entrypoint loops instead of ending when the CLI returns, and
+        # SUCCESS_CHECK is what ends it early: verify_solution.py builds the preset from the
+        # same /bench the agent had, runs the delivered solve() through a no-shortcuts wrapper
+        # and reports the scene's own success predicate. Exit 0 (solved) stops the loop; any
+        # other exit — including a scene with no predicate — keeps the agent working, so a
+        # missing or broken check can never end a run early.
+        cmd += ["-e", "KEEP_GOING=1",
+                "-v", f"{Path(__file__).resolve().parent / 'verify_solution.py'}:"
+                      f"/opt/verify_solution.py:ro",
+                "-e", f"SUCCESS_CHECK=python /opt/verify_solution.py "
+                      f"--preset {record['preset']} --solution /workspace/solution"]
     cmd += [image, "/opt/entrypoints/agent-entry.sh"]
 
     if args.dry_run:

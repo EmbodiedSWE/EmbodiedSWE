@@ -418,6 +418,11 @@ class PcMotherboardAssemblyScene(BaseScene):
         axis_ok = self._bolt_axis_cos() >= math.cos(math.radians(self.cfg.align_axis_deg))
         return depth_ok & (near_dist <= self.cfg.align_xy) & axis_ok
 
+    def success(self) -> torch.Tensor:
+        """(N,) bool: every bolt seated in a hole — this scene's assembled state
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.seated().all(dim=1)
+
     def _bolt_offsets_in_case(self) -> torch.Tensor:
         """Each bolt's position relative to each hole, in the case's local frame, shape
         (num_envs, num_bolts, num_holes, 3): xy = lateral offset from that hole's axis, z = tip

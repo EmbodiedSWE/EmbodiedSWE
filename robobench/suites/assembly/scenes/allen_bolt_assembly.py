@@ -405,6 +405,11 @@ class AllenBoltAssemblyScene(BaseScene):
         axis_ok = self._bolt_axis_cos() >= math.cos(math.radians(self.cfg.align_axis_deg))
         return depth_ok & (near_dist <= self.cfg.align_xy) & axis_ok
 
+    def success(self) -> torch.Tensor:
+        """(N,) bool: every bolt seated in a platform — this scene's assembled state
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.seated().all(dim=1)
+
     def _bolt_offsets_in_platform(self) -> torch.Tensor:
         """Each bolt's position in each platform's local frame, shape (num_envs, num_bolts,
         num_platforms, 3): xy = lateral offset from the hole axis, z = tip height above the
