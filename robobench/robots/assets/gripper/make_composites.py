@@ -40,9 +40,7 @@ ARMS = {
 #: ship without DriveAPI — PhysX creates no drive at parse time and gain writes move nothing),
 #: pad_boxes ((body, translate, half-extents) collision plates for unusable fingertip geometry).
 GRIPPERS = {
-    "2f85": dict(usd="robotiq_2f85/Robotiq_2F_85_edit.usd",
-                 attach_prim="Robotiq_2F_85/base_link", api_prim="Robotiq_2F_85"),
-    "panda_hand": dict(usd="gripper/panda_hand.usd", attach_prim="panda_hand"),
+    "panda_hand": dict(usd="panda_hand/panda_hand.usd", attach_prim="panda_rig/panda_hand"),
 }
 
 BUILD = tuple(("xarm7", g) for g in GRIPPERS)
