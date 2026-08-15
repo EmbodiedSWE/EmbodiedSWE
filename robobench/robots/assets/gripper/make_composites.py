@@ -25,10 +25,15 @@ ASSETS = os.path.dirname(HERE)
 COMPOSITES = os.path.join(ASSETS, "composites")
 
 #: usd (under assets/), root prim, flange body (the weld target, relative to the root prim),
-#: variants to select (e.g. to strip a built-in gripper)
+#: variants to select (e.g. to strip a built-in gripper), flange_pos (the mount FACE in the
+#: flange body's frame, when it is offset from the body origin)
 ARMS = {
     "xarm7": dict(usd="xarm7/xarm7.usd", root="/UF_ROBOT", flange="link7",
                   variants={"Variant_Set": "None"}),
+    # right_j6 spins about l6's +z (= the tool axis; the authored right_hand tool frame
+    # agrees); the flange face sits at +z 24.5 mm from the l6 body origin
+    "sawyer": dict(usd="sawyer/sawyer_instanceable.usd", root="/sawyer", flange="right_l6",
+                   flange_pos=(0.0, 0.0, 0.0245)),
 }
 
 #: usd (under assets/) and attach_prim (the mount body, relative to the USD's default prim).
@@ -43,14 +48,14 @@ GRIPPERS = {
     "panda_hand": dict(usd="panda_hand/panda_hand.usd", attach_prim="panda_rig/panda_hand"),
 }
 
-BUILD = tuple(("xarm7", g) for g in GRIPPERS)
+#: (arm, gripper, composite name)
+BUILD = (("xarm7", "panda_hand", "xarm7_panda_hand"), ("sawyer", "panda_hand", "sawyer_panda"))
 
 
-def make(arm_name: str, gripper_name: str) -> str:
+def make(arm_name: str, gripper_name: str, name: str) -> str:
     from pxr import Gf, Usd, UsdGeom
 
     arm, grip = ARMS[arm_name], GRIPPERS[gripper_name]
-    name = f"{arm_name}_{gripper_name}"
     arm_usd = os.path.join(ASSETS, *arm["usd"].split("/"))
     grip_usd = os.path.join(ASSETS, *grip["usd"].split("/"))
 
@@ -75,11 +80,13 @@ def make(arm_name: str, gripper_name: str) -> str:
     groot = gstage.GetDefaultPrim()
     t_mount = UsdGeom.XformCache().GetLocalToWorldTransform(
         gstage.GetPrimAtPath(f"{groot.GetPath()}/{grip['attach_prim']}"))
-    mq = grip.get("mount_quat", (1.0, 0.0, 0.0, 0.0))
+    mq = arm.get("mount_quat") or grip.get("mount_quat") or (1.0, 0.0, 0.0, 0.0)
     mp = grip.get("mount_pos", (0.0, 0.0, 0.0))
+    fp = arm.get("flange_pos", (0.0, 0.0, 0.0))
     r_mount = Gf.Matrix4d().SetRotate(Gf.Quatd(mq[0], mq[1], mq[2], mq[3]))
     m_shift = Gf.Matrix4d().SetTranslate(Gf.Vec3d(*mp))
-    tg = (m_shift * t_mount).GetInverse() * r_mount * t_flange
+    m_fshift = Gf.Matrix4d().SetTranslate(Gf.Vec3d(*fp))
+    tg = (m_shift * t_mount).GetInverse() * r_mount * m_fshift * t_flange
     t = tg.ExtractTranslation()
     q = tg.ExtractRotationQuat()
 
@@ -139,7 +146,7 @@ def Xform "{name}" (
     {{
         rel physics:body0 = </{name}/{arm["flange"]}>
         rel physics:body1 = </{name}/gripper/{grip["attach_prim"]}>
-        point3f physics:localPos0 = (0, 0, 0)
+        point3f physics:localPos0 = ({fp[0]}, {fp[1]}, {fp[2]})
         point3f physics:localPos1 = ({mp[0]}, {mp[1]}, {mp[2]})
         quatf physics:localRot0 = ({mq[0]}, {mq[1]}, {mq[2]}, {mq[3]})
         quatf physics:localRot1 = (1, 0, 0, 0)
@@ -154,8 +161,8 @@ def Xform "{name}" (
 
 
 def main() -> None:
-    for arm_name, gripper_name in BUILD:
-        print("wrote", make(arm_name, gripper_name))
+    for arm_name, gripper_name, name in BUILD:
+        print("wrote", make(arm_name, gripper_name, name))
 
 
 if __name__ == "__main__":
