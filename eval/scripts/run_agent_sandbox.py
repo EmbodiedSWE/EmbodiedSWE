@@ -95,6 +95,16 @@ CRED_VARS = ()
 GATEWAY_KEY = "plat_OEHXT9eJ3Y0HO4Kqx8qkPCzR3rFkzAyue73hbAlcIhk"
 GATEWAY_BASE = "https://super-relay.byted.org/v1"
 GATEWAY_MODEL = "model_hub/es1_orange_o48"
+# --upstream openrouter: same relay, different upstream. A sandbox CAN reach openrouter.ai and
+# OpenRouter serves the Anthropic Messages format, so pointing the CLI straight at it looks
+# possible — and it is not: with the CLI version this harness installs, every request past the
+# first came back "400 Provider returned error", while the identical prompt, tools and
+# max_tokens through the relay answered 200 forty-seven times running. The relay normalizes what
+# it forwards (it calls upstream non-streaming and re-emits the SSE burst itself), which is what
+# the direct path lacks. It also logs the upstream body, so a future 400 is readable instead of
+# being a bare CLI message. The model id travels as-is from --model, so no rewrite is needed.
+OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+OPENROUTER_KEY = "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"
 PSM_L20 = "seed.sandbox.env_manager_ded016ca96e160db.service.wlby"
 CC_VERSION = "2.1.216"       # the version eval/docker pins
 NODE = "v22.11.0"
@@ -403,12 +413,32 @@ async def claim_from_pool(min_gpu: int = 1):
             continue
         # Only a sandbox that already holds the environment is worth claiming: taking one that
         # does not would put the 40-90 min acquisition back inside the run.
-        if not await isaac_ok(sandbox):
+        #
+        # Probing and resetting are as fallible as attaching: a box can hand out a stale
+        # endpoint that accepts the attach and then refuses every exec ("Cannot connect to
+        # host ..."). Unguarded, that exception left the loop and killed the whole launcher
+        # instead of costing one candidate — so an unusable box could stop a whole campaign
+        # from starting. Treat it the same way as a box with no Isaac: not claimable, leave it
+        # for prewarm, try the next one.
+        try:
+            usable = await isaac_ok(sandbox)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  pooled sandbox {uid} does not answer ({type(exc).__name__}); leaving it "
+                  f"for prewarm", flush=True)
+            pool_set(uid, state="needs-provision", pid=None)
+            continue
+        if not usable:
             print(f"  pooled sandbox {uid} has no Isaac; leaving it for prewarm", flush=True)
             pool_set(uid, state="needs-provision", pid=None)
             continue
         print(f"  claimed pooled sandbox {uid}", flush=True)
-        await reset_like_new_container(sandbox)
+        try:
+            await reset_like_new_container(sandbox)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  pooled sandbox {uid} could not be reset ({type(exc).__name__}); leaving "
+                  f"it for prewarm", flush=True)
+            pool_set(uid, state="needs-provision", pid=None)
+            continue
         pool_set(uid, state="busy", pid=os.getpid(), last_used=time.time())
         return emc, sandbox, portal
 
@@ -754,11 +784,18 @@ async def provision_sandbox(sandbox, portal, allow_acquire: bool = False) -> Non
         await capture_env(sandbox, portal)
 
 
-async def start_relay(sandbox, portal, port: int) -> str:
+async def start_relay(sandbox, portal, port: int, upstream_base: str = GATEWAY_BASE,
+                      api_key: str = GATEWAY_KEY, force_model: str | None = GATEWAY_MODEL) -> str:
     """SUBSTRATE for --traj-relay: the relay runs INSIDE, because the sandbox cannot reach us.
 
     Root-owned 700 with its own interpreter, so the agent (a different user) cannot read the
     trajectory. The credential goes through execute()'s env, never a command line.
+
+    `upstream_base`/`api_key`/`force_model` default to the byted gateway. A different upstream
+    (--upstream) only changes these three: everything about how the relay is started, secured
+    and health-checked is the same, so there is one relay path to keep working. force_model=None
+    forwards whatever model the CLI asked for, which is what an upstream whose ids the CLI
+    accepts (OpenRouter) needs.
     """
     src = Path(__file__).resolve().parents[2] / "sim_gen" / "super_relay"
     await portal.upload_files({f"{RELAY_DIR}/{p.name}": p.read_bytes()
@@ -788,12 +825,14 @@ async def start_relay(sandbox, portal, port: int) -> str:
     # --host 127.0.0.1: the relay holds the upstream credential, and its default 0.0.0.0 bind
     # makes it an open proxy to our gateway for anything that can reach the sandbox. The agent
     # talks to it over loopback, so nothing needs the wider bind.
+    relay_env = {"SUPER_RELAY_API_KEY": api_key}
+    if force_model:
+        relay_env["SUPER_RELAY_FORCE_MODEL"] = force_model
     await sh(sandbox, f"cd {RELAY_DIR} && nohup {relay_py} {RELAY_DIR}/server.py "
                       f"--host 127.0.0.1 --port {port} --log-dir {RELAY_DIR}/trajlog "
-                      f"--upstream-base {GATEWAY_BASE} > {RELAY_DIR}/relay.log 2>&1 & "
+                      f"--upstream-base {upstream_base} > {RELAY_DIR}/relay.log 2>&1 & "
                       f"echo $! > {RELAY_DIR}/relay.pid; sleep 8",
-             env={"SUPER_RELAY_API_KEY": GATEWAY_KEY,
-                  "SUPER_RELAY_FORCE_MODEL": GATEWAY_MODEL})
+             env=relay_env)
     # Three things, because "something answered 200" is not the same as "our relay is up":
     # the process we started is alive, it did not fail to bind, and the endpoint reports the log
     # file WE gave it.
@@ -812,6 +851,75 @@ async def start_relay(sandbox, portal, port: int) -> str:
     if rc == 0:
         raise SystemExit(f"{RELAY_DIR} is readable by the agent")
     return f"http://127.0.0.1:{port}"
+
+
+AGENT_STATE = "agent_home.tgz"   # the CLI's own session state, kept beside the run's artifacts
+
+
+async def mirror_agent_state(sandbox, portal, run_dir: Path) -> bool:
+    """Copy the agent CLI's session state (/home/<agent>) out, so the run can be RESUMED.
+
+    Not part of the per-poll mirror: this is the conversation history, which grows to the size
+    of the whole session, and copying it every 60 s would cost more than it saves. It is taken
+    once, at teardown — the moment before reset_like_new_container deletes it.
+
+    Without it a finished run cannot be continued at all: the workspace survives in the mirror,
+    but an agent restarted against those files starts a NEW conversation and has to re-derive
+    everything it had learned. This is the difference between resuming a session and rerunning
+    one.
+    """
+    rc, out = await sh(sandbox, f"test -d /home/{AGENT_USER} && "
+                                f"tar czf /tmp/{AGENT_STATE} -C /home {AGENT_USER} && "
+                                f"echo STATE_OK; true", timeout=900, quiet=True)
+    if "STATE_OK" not in out:
+        print("  no agent session state to preserve (the CLI never started?)", flush=True)
+        return False
+    blob = await portal.download_files([f"/tmp/{AGENT_STATE}"])
+    payload = (getattr(blob, "files", None) or {}).get(f"/tmp/{AGENT_STATE}")
+    if not payload:
+        print(f"  agent session state did not come back ({getattr(blob, 'errors', None)}); "
+              f"this run will not be resumable", flush=True)
+        return False
+    data = base64.b64decode(payload) if isinstance(payload, str) else payload
+    (run_dir / AGENT_STATE).write_bytes(data)
+    print(f"  agent session state preserved: {len(data) / 1e6:.1f} MB "
+          f"({run_dir / AGENT_STATE})", flush=True)
+    return True
+
+
+async def restore_run_state(sandbox, portal, run_dir: Path) -> bool:
+    """Put a previous run's workspace, submissions and session state back into a fresh box.
+
+    Returns whether the CLI's own state came back too, which is what decides between resuming
+    the conversation and merely inheriting the files.
+    """
+    ws, subs = run_dir / "workspace", run_dir / "submissions"
+    if not ws.is_dir():
+        raise SystemExit(f"{ws} does not exist — nothing to resume from")
+    tgz = run_dir / ".restore.tgz"
+    parts = ["workspace"] + (["submissions"] if subs.is_dir() else [])
+    subprocess.run(["tar", "czf", str(tgz), "-C", str(run_dir), *parts], check=True)
+    await portal.upload_files({"/tmp/restore.tgz": tgz.read_bytes()})
+    tgz.unlink(missing_ok=True)
+    await sh(sandbox, "rm -rf /workspace /submissions && tar xzf /tmp/restore.tgz -C / && "
+                      "rm -f /tmp/restore.tgz && ls -d /workspace /submissions 2>/dev/null",
+             timeout=900)
+    state = run_dir / AGENT_STATE
+    if not state.exists():
+        print(f"  no {AGENT_STATE} beside this run: its files are restored but the conversation "
+              f"is not — the agent will start fresh against its own previous work", flush=True)
+        return False
+    await portal.upload_files({f"/tmp/{AGENT_STATE}": state.read_bytes()})
+    rc, out = await sh(sandbox, f"rm -rf /home/{AGENT_USER} && "
+                                f"tar xzf /tmp/{AGENT_STATE} -C /home && "
+                                f"rm -f /tmp/{AGENT_STATE} && "
+                                f"chown -R {AGENT_USER}:{AGENT_USER} /home/{AGENT_USER} && "
+                                f"echo STATE_RESTORED", timeout=900, quiet=True)
+    if "STATE_RESTORED" not in out:
+        raise SystemExit("the agent session state did not restore; refusing to resume as if it "
+                         "had (the run would silently start a new conversation)")
+    print("  agent session state restored — the CLI resumes its own conversation", flush=True)
+    return True
 
 
 async def start_entry(sandbox, portal, env: dict) -> None:
@@ -1026,6 +1134,13 @@ def main() -> None:
                          "the condition's business (--config), not the harness's: tools arrive "
                          "as python modules at /task/tools, so any CLI gets the same toolset")
     ap.add_argument("--model", default=None, help="model override (MODEL env for the agent CLI)")
+    ap.add_argument("--upstream", default="gateway", choices=["gateway", "openrouter"],
+                    help="which upstream the in-sandbox relay forwards to: 'gateway' (default) "
+                         "the byted super-relay, whose model id it rewrites; 'openrouter' "
+                         "OpenRouter, which takes --model as written (e.g. qwen/qwen3.6-27b)")
+    ap.add_argument("--max-output-tokens", type=int, default=None,
+                    help="cap on the response length the agent CLI asks for "
+                         "(CLAUDE_CODE_MAX_OUTPUT_TOKENS); default: the CLI's own")
     ap.add_argument("--budget-min", type=float, default=None, help="wall-clock kill budget (minutes)")
     ap.add_argument("--auto-submit-min", type=float, default=None,
                     help="also snapshot solution/ as a submission every N minutes (skipped when "
@@ -1050,6 +1165,12 @@ def main() -> None:
                          "return it to the pool for the next run.")
     ap.add_argument("--fresh-sandbox", action="store_true",
                     help="SUBSTRATE: provision a new sandbox even if an idle pooled one exists")
+    ap.add_argument("--resume-from", default="",
+                    help="continue a previous run: its mirrored workspace, submissions and (if "
+                         "preserved) the agent CLI's own session state are restored into this "
+                         "run's sandbox, and the CLI picks its conversation up where it stopped "
+                         "instead of starting over. Pass that run's directory "
+                         "(<exp>/runs/<name>).")
     ap.add_argument("--allow-acquire", action="store_true",
                     help="SUBSTRATE: let THIS run acquire the environment if its sandbox lacks "
                          "one (a 40-90 min step that contends with other runs doing the same). "
@@ -1160,6 +1281,8 @@ def main() -> None:
     }
     if model:
         container_env["MODEL"] = model
+    if args.max_output_tokens:
+        container_env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(args.max_output_tokens)
     if keep_going:
         # the entrypoint loops instead of ending when the CLI returns
         container_env["KEEP_GOING"] = "1"
@@ -1191,8 +1314,27 @@ def main() -> None:
             print(f"sandbox {cname} created", flush=True)
     sbx(mount_like_docker(sandbox, portal, stage, task_dir))
     sbx(provision_sandbox(sandbox, portal, allow_acquire=args.allow_acquire))
+    if args.resume_from:
+        # After the mounts, before the entry: the restore overwrites /workspace, which
+        # mount_like_docker has just created empty.
+        resumed = sbx(restore_run_state(sandbox, portal, Path(args.resume_from).resolve()))
+        if resumed:
+            container_env["RESUME"] = "1"   # agent-entry.sh continues rather than starts over
     # SUBSTRATE: --traj-relay is always on and always in-sandbox (no route to the API).
-    relay_url = sbx(start_relay(sandbox, portal, args.relay_port))
+    if args.upstream == "openrouter":
+        if not model:
+            sys.exit("--upstream openrouter needs --model (an OpenRouter id, e.g. "
+                     "qwen/qwen3.6-27b): it is what every request is pinned to")
+        # Pinned, not passed through: --model reaches the agent CLI's own turns, but the CLI
+        # spawns SUBAGENTS on its built-in default id (seen as cc_is_subagent=true requests for
+        # claude-opus-4-8, refused by OpenRouter), so a run would quietly mix models — or lose
+        # every delegated turn. Rewriting at the relay is what makes the whole run one model.
+        relay_url = sbx(start_relay(sandbox, portal, args.relay_port,
+                                    upstream_base=OPENROUTER_BASE, api_key=OPENROUTER_KEY,
+                                    force_model=model))
+        print(f"upstream: {OPENROUTER_BASE}, every request pinned to {model}", flush=True)
+    else:
+        relay_url = sbx(start_relay(sandbox, portal, args.relay_port))
     container_env["ANTHROPIC_BASE_URL"] = relay_url
     container_env["ANTHROPIC_API_KEY"] = "relay"   # substituted upstream by the relay
     sbx(start_entry(sandbox, portal, container_env))
@@ -1368,6 +1510,8 @@ def main() -> None:
     try:
         sbx(mirror_back(sandbox, portal, run_dir))
         sbx(mirror_trajectory(sandbox, portal, run_dir))
+        # Last thing off the box before it is reset: without this the run can never be resumed.
+        sbx(mirror_agent_state(sandbox, portal, run_dir))
         logs = sbx(sh(sandbox, f"cat {RELAY_DIR}/container.log 2>/dev/null", quiet=True))
         (run_dir / "container.log").write_text(logs[1])
     except Exception as exc:  # noqa: BLE001
@@ -1398,7 +1542,10 @@ def main() -> None:
         # SUBSTRATE: what replaced the container, so a reader knows which path produced this
         "harness": "run_agent_sandbox (env manager sandbox, no docker)",
         "sandbox_id": cname, "sandbox_pool": PSM_L20,
-        "gateway": GATEWAY_BASE, "gateway_model": GATEWAY_MODEL,
+        "upstream": args.upstream,
+        "gateway": GATEWAY_BASE if args.upstream == "gateway" else OPENROUTER_BASE,
+        "gateway_model": GATEWAY_MODEL if args.upstream == "gateway" else model,
+        "max_output_tokens": args.max_output_tokens,
     }
     (run_dir / "run.json").write_text(json.dumps(record_out, indent=2) + "\n")
     print(f"{status}: raw artifacts in {run_dir}  (workspace/, task/, container.log, run.json)")
