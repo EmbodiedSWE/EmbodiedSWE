@@ -76,6 +76,10 @@ class XArm7RobotCfg(BaseRobotCfg):
     default_gripper_pos: float = 0.0
     # Posture the task-space nullspace pulls toward; () -> use default_dof_pos.
     nullspace_dof_pos: tuple[float, ...] = ()
+    # Arm gravity compensation (PhysX: spawn the bodies with gravity disabled) — the analog of
+    # the real controller's active gravity compensation, as on the sibling arms; without it the
+    # gravity-blind torque modes sag at the work height.
+    gravity_compensation: bool = False
     xarm7_usd: str = ""  # "" -> the vendored robots/assets/xarm7/xarm7.usd
 
     def __post_init__(self) -> None:
@@ -129,7 +133,7 @@ class XArm7Robot(BaseRobot):
                 spawn=sim_utils.UsdFileCfg(
                     usd_path=c.xarm7_usd,
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                        disable_gravity=False,
+                        disable_gravity=c.gravity_compensation,
                         max_depenetration_velocity=5.0,
                     ),
                     articulation_props=sim_utils.ArticulationRootPropertiesCfg(

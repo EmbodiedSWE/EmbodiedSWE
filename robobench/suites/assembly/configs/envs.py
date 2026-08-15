@@ -303,6 +303,47 @@ for _robot in ("z1_lite6g", "rizon4_panda", "gen3n7_panda", "sawyer_egk25", "fes
             ),
         )
 
+# The same pc-ram work cell for two of the pc_gpu embodiments (Jaco2 N7 / Cobotta Pro 1300) —
+# scene cfg verbatim as above; per-embodiment base placement + ready posture (the 0.90 m Jaco2
+# sits mid-cell; the 1.3 m Cobotta at the shared composite spot). The xArm7 is deliberately NOT
+# registered here: its vendor gripper's finger plates (32 mm thick beside a 7.3 mm slab) cannot
+# press a DIMM beside a seated neighbour (15.26 mm slot pitch) in any stance — the asset and
+# robot class remain available for other tasks.
+#   -> "assembly.pc_ram.{jaco2_n7, cobotta_pro_1300}.{osc, impedance, joint}"
+_PC_RAM_PCGPU_ARMS = (
+    ("jaco2_n7", Jaco2N7RobotCfg, dict(
+        base_pos=(0.60, -0.30, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+        arm_effort_limit=120.0,
+        gravity_compensation=True,  # see Jaco2N7RobotCfg.gravity_compensation
+        default_dof_pos=(0.1629, 2.2989, -0.2511, 0.7993, -2.3822, -0.9424, -0.0279),
+    )),
+    ("cobotta_pro_1300", CobottaPro1300RobotCfg, dict(
+        base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+        arm_effort_limit=150.0,  # authored 60 per joint; a 1.3 m arm needs more at full stretch
+        default_dof_pos=(-0.2256, -0.1725, 2.3889, 0.0003, 0.9203, 1.3454),
+    )),
+)
+for _name, _cfg_cls, _kw in _PC_RAM_PCGPU_ARMS:
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda name=_name, cfg_cls=_cfg_cls, kw=_kw, mode=_mode: EnvCfg(
+                scene="pc_ram",
+                scene_cfg=PcRamAssemblySceneCfg(
+                    ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
+                    ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                    ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                    reset_pos_jitter=0.0,
+                    ram_stand=True,
+                ),
+                robot=name,
+                robot_cfg=cfg_cls(**kw),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 240.0},
+            ),
+        )
+
 # Franka arm at the allen-bolt scene (base at the origin). The platform is pulled from the
 # table preset's 0.50 m to 0.42 m (`platform_slots`), and the loose key spawns on the +y side.
 # The bolt stages upright, hand-started in its hole (the robot's job is the KEY).
