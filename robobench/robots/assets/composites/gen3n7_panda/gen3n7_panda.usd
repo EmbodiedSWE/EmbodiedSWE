@@ -1,0 +1,38 @@
+#usda 1.0
+(
+    defaultPrim = "gen3n7_panda"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "gen3n7_panda" (
+    prepend references = @../../gen3n7/gen3n7_instanceable.usd@
+)
+{
+    def Xform "gripper" (
+        prepend references = @../../panda_hand/panda_hand.usd@
+    )
+    {
+        quatd xformOp:orient = (1, 1.2246467991473532e-16, -3.498107729715037e-27, 1.3856540924274339e-25)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (-1.9258281378605662e-16, -0.024859532713890076, 1.1873847246170044)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Robotiq_2F_85" (
+            delete apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]
+        )
+        {
+        }
+    }
+
+    def PhysicsFixedJoint "gripper_attach"
+    {
+        rel physics:body0 = </gen3n7_panda/end_effector_link>
+        rel physics:body1 = </gen3n7_panda/gripper/panda_rig/panda_hand>
+        point3f physics:localPos0 = (5.2326784e-18, -1.3877788e-17, 0)
+        point3f physics:localPos1 = (0, 0, 0)
+        quatf physics:localRot0 = (1, -1.2246469e-16, 2.9347502e-26, -4.0859528e-26)
+        quatf physics:localRot1 = (1, 0, 0, 0)
+    }
+}
+

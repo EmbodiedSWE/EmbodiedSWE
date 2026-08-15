@@ -16,13 +16,17 @@ from __future__ import annotations
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
     AlohaCfg,
+    AttachedArmRobotCfg,
     BimanualFrankaCfg,
     BimanualPiperCfg,
+    CobottaPro1300RobotCfg,
     FrankaRobotCfg,
     G1RobotCfg,
     GR1T2RobotCfg,
+    Jaco2N7RobotCfg,
     PiperRobotCfg,
     WxaiRobotCfg,
+    XArm7RobotCfg,
 )
 from robobench.robots import MultiRobotCfg
 from robobench.suites.assembly.scenes import (
@@ -202,6 +206,99 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
+# The SAME pc-ram work cell for the attached-gripper composites — the scene layout (stick
+# holders at world (0.30, -0.36) and (0.42, -0.36), sticks staged upright, deterministic spawn,
+# sim dt 1/240) is copied VERBATIM from the franka binding above so every embodiment faces the
+# identical task; only the robot changes. Base placement and home posture are per-embodiment
+# placement dials (see AttachedArmRobotCfg for the dial docs).
+#   -> "assembly.pc_ram.<robot>.{osc,impedance,joint}" for each composite below.
+_PC_RAM_COMPOSITE_KW: dict[str, dict] = {
+    # default_dof_pos: per-embodiment ready posture at the work cell. base_pos overrides the
+    # shared spot where an arm's reach calls for it.
+    "z1_lite6g": dict(zero_joint_friction=True,  # the asset authors jointFriction 1.0-2.0
+                      gravity_compensation=True,  # 2 kg-class arm (see the cfg dial docs)
+                      arm_effort_limit=60.0,
+                      base_pos=(0.58, -0.28, 0.0),  # 0.74 m reach: base beside the case
+                      default_dof_pos=(0.4186, 1.5808, -0.7638, 0.7383, -0.0009, -1.1521)),
+    "rizon4_panda": dict(arm_effort_limit=150.0,
+                        gravity_compensation=True,  # the real device's controller actively
+                        # gravity-compensates (as all the cobots here; see Jaco2N7RobotCfg)
+                        default_dof_pos=(0.6362, -0.4773, -0.1640, 2.5330, 0.5056, 1.4094, -1.5786)),
+    "gen3n7_panda": dict(arm_effort_limit=120.0,  # authored wrist ratings are 9 N*m
+                        gravity_compensation=True,
+                        default_dof_pos=(-0.0286, 0.3731, -0.1231, 2.0578, 0.0679, 0.7191, 1.3759)),
+    "sawyer_egk25": dict(arm_effort_limit=150.0,
+                         gravity_compensation=True,  # see rizon4's note
+                         default_dof_pos=(0.2919, -1.4106, -0.8423, 2.1866, -0.6818, -0.8069, 2.3385),
+                         nullspace_dof_pos=(0.2919, -1.4106, -0.8423, 2.1866, -0.6818, -0.8069, 2.3385)),
+    "festo_panda": dict(arm_effort_limit=150.0,
+                       gravity_compensation=True,  # authored masses are all zero
+                       default_dof_pos=(-0.1269, -0.5584, 0.4606, 0.0000, 0.5567, 1.4435)),
+}
+for _robot in ("z1_lite6g", "rizon4_panda", "gen3n7_panda", "sawyer_egk25", "festo_panda"):
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, mode=_mode: EnvCfg(
+                scene="pc_ram",
+                scene_cfg=PcRamAssemblySceneCfg(
+                    ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
+                    ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                    ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                    reset_pos_jitter=0.0,
+                    ram_stand=True,
+                ),
+                robot=robot,
+                # shared base placement (yaw 180: faces -x); per-robot dials may override it
+                # (the 0.74 m z1 sits closer to the cell)
+                robot_cfg=AttachedArmRobotCfg(
+                    **{"base_pos": (0.72, -0.34, 0.0), "base_rot": (0.0, 0.0, 0.0, 1.0),
+                       **_PC_RAM_COMPOSITE_KW[robot]},
+                ),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 240.0},
+            ),
+        )
+
+# The same pc-ram work cell for two of the pc_gpu embodiments (Jaco2 N7 / Cobotta Pro 1300) —
+# scene cfg verbatim as above so every embodiment faces the identical task; per-embodiment base
+# placement + ready posture only.
+#   -> "assembly.pc_ram.{jaco2_n7, cobotta_pro_1300}.{osc, impedance, joint}"
+_PC_RAM_PCGPU_ARMS = (
+    ("jaco2_n7", Jaco2N7RobotCfg, dict(
+        base_pos=(0.60, -0.30, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+        arm_effort_limit=120.0,
+        gravity_compensation=True,  # see Jaco2N7RobotCfg.gravity_compensation
+        default_dof_pos=(0.1629, 2.2989, -0.2511, 0.7993, -2.3822, -0.9424, -0.0279),
+    )),
+    ("cobotta_pro_1300", CobottaPro1300RobotCfg, dict(
+        base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+        arm_effort_limit=150.0,  # the vendored asset authors 60 N*m per joint
+        default_dof_pos=(-0.2256, -0.1725, 2.3889, 0.0003, 0.9203, 1.3454),
+    )),
+)
+for _name, _cfg_cls, _kw in _PC_RAM_PCGPU_ARMS:
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda name=_name, cfg_cls=_cfg_cls, kw=_kw, mode=_mode: EnvCfg(
+                scene="pc_ram",
+                scene_cfg=PcRamAssemblySceneCfg(
+                    ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
+                    ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                    ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                    reset_pos_jitter=0.0,
+                    ram_stand=True,
+                ),
+                robot=name,
+                robot_cfg=cfg_cls(**kw),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 240.0},
+            ),
+        )
+
 # Franka arm at the allen-bolt scene (base at the origin). Placement follows the solve-verified
 # reach lessons of the sibling franka envs: the platform is pulled from the table preset's 0.50 m
 # to 0.42 m (`platform_slots`) — the screwing happens under a TOP-DOWN hand, and beyond ~0.45 m
@@ -347,6 +444,68 @@ for _mode in ("osc", "impedance", "joint"):
             sim_overrides={"dt": 1.0 / 240.0},
         ),
     )
+
+# The SAME pc-gpu work cell for the other single-arm embodiments — the scene layout (card holder
+# at world (0.28, -0.36), card staged upright in the scene's foam holder, deterministic spawn,
+# sim dt 1/240) is copied VERBATIM from the franka binding above so every embodiment faces the
+# identical task; only the robot changes. Base placement and home posture are per-embodiment
+# placement dials, retuned per arm exactly like every franka binding's base_pos (the dial docs
+# live on each robot's cfg).
+#   - "assembly.pc_gpu.xarm7.{osc,impedance,joint}"            — UFACTORY xArm7 + vendor gripper
+#   - "assembly.pc_gpu.jaco2_n7.{osc,impedance,joint}"         — Kinova Jaco2 7-DOF, 3-finger hand
+#   - "assembly.pc_gpu.cobotta_pro_1300.{osc,impedance,joint}" — Denso Cobotta Pro 1300 + RG6
+_PC_GPU_ROBOT_KW: dict[str, dict] = {
+    # xArm7 / Cobotta: the franka's north-strip spot (base defaults below). arm_effort_limit is
+    # raised over the assets' authored ratings for gravity-uncompensated torque control — the
+    # franka cfg documents the same dial.
+    "xarm7": dict(
+        default_dof_pos=(-0.0659, -0.3051, 0.0759, 0.6345, 0.0281, 0.9358, -0.0097),
+        arm_effort_limit=120.0,
+    ),
+    "jaco2_n7": dict(
+        # A short (0.9 m) assistive arm with a large 3-finger hand: it works from the SOUTH
+        # strip between the card holder and the case (the north-strip spot lies outside its
+        # comfortable envelope), yaw +90 so the arm faces the work to the north.
+        base_pos=(0.42, -0.50, 0.0),
+        base_rot=(0.70710678, 0.0, 0.0, 0.70710678),
+        default_dof_pos=(-1.9644, 1.8449, 0.0412, 0.8507, -0.7280, 2.8869, 2.8141),
+        arm_effort_limit=120.0,
+        gravity_compensation=True,  # the real device's controller actively gravity-compensates
+        # (see Jaco2N7RobotCfg.gravity_compensation)
+    ),
+    "cobotta_pro_1300": dict(
+        default_dof_pos=(-0.2689, -0.2062, 2.3545, -0.0002, 0.9898, -0.2685),
+        arm_effort_limit=150.0,  # authored 60 per joint; a 1.3 m arm needs more at full stretch
+    ),
+}
+for _robot, _cfg_cls in (
+    ("xarm7", XArm7RobotCfg),
+    ("jaco2_n7", Jaco2N7RobotCfg),
+    ("cobotta_pro_1300", CobottaPro1300RobotCfg),
+):
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, cfg_cls=_cfg_cls, mode=_mode: EnvCfg(
+                scene="pc_gpu",
+                scene_cfg=PcGpuAssemblySceneCfg(
+                    card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36)
+                    card_init_z=0.030,  # tab-bottom plane = the holder's floor top
+                    card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                    reset_pos_jitter=0.0,
+                    card_stand=True,
+                ),
+                robot=robot,
+                robot_cfg=cfg_cls(
+                    # per-robot base placement: kwargs override the franka's north-strip default
+                    **{"base_pos": (0.64, -0.34, 0.0), "base_rot": (0.0, 0.0, 0.0, 1.0),
+                       **_PC_GPU_ROBOT_KW[robot]},
+                ),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 240.0},
+            ),
+        )
 
 # Two Frankas at the SO101 workbench as ONE robot (`BimanualFranka`: action = [left | right];
 # address one arm via `env.robot["left"]`). Bases stand on the bench top (z = 0.994, the default
