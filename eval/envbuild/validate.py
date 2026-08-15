@@ -107,6 +107,16 @@ os._exit(0)
         for line in r.stdout.splitlines():
             if line.startswith(_MISSING):
                 missing = json.loads(line[len(_MISSING):])
+        # Only a reference the extractor could actually supply counts as a missing asset. A
+        # composed stage also lists references it can never resolve locally — every scene using
+        # a stock ground plane names a remote Nucleus URL — and reporting those as "missing"
+        # made MissingAssets the verdict for ANY boot failure in such a scene, so the real error
+        # was replaced by an unsuppliable URL and never printed at all.
+        remote = [p for p in missing if not str(p).startswith(str(tree))]
+        missing = [p for p in missing if str(p).startswith(str(tree))]
+        if remote and not missing:
+            print(f"[validate] references that do not resolve locally and are not the tree's to "
+                  f"supply (not the failure unless the error below says so): {', '.join(remote)}")
         # A scene that checks its own assets raises FileNotFoundError before the stage is
         # composed, so `unresolved()` never sees it — the pc scenes reach their directory
         # through a cfg field rather than a literal `assets / "name"`, which is what the

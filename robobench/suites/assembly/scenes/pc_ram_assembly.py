@@ -390,6 +390,11 @@ class PcRamAssemblyScene(BaseScene):
         yaw_ok = self._axis_cos(1) >= math.cos(math.radians(c.align_yaw_deg))
         return depth_ok & xy_ok & up_ok & yaw_ok
 
+    def success(self) -> torch.Tensor:
+        """(N,) bool: every stick seated in its slot — this scene's assembled state
+        (scene-level success alias, matching the other suites' surface)."""
+        return self.seated().all(dim=1)
+
     def _ram_offsets_in_case(self) -> torch.Tensor:
         """Each stick origin's offset from its seated point, in the case's local frame, shape
         (num_envs, num_slots, 3). Zero means that stick sits exactly at its seated pose."""
