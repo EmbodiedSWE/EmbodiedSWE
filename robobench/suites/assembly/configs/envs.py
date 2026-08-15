@@ -263,23 +263,19 @@ _PC_RAM_COMPOSITE_KW: dict[str, dict] = {
     "gen3n7_2f85": dict(arm_effort_limit=120.0,  # authored wrist ratings are 9 N*m
                         gravity_compensation=True,
                         default_dof_pos=(-0.0288, 0.5646, -0.1281, 2.1424, 0.1590, 0.4472, 1.2895)),
-    "sawyer_egu50": dict(arm_effort_limit=150.0,
+    "sawyer_egk25": dict(arm_effort_limit=150.0,
                          gravity_compensation=True,  # see rizon4's note
-                         # straight-wrist ready pose: the folded wrist's l5 housing otherwise
-                         # grounds on the work pieces before the jaws reach them
-                         default_dof_pos=(1.8665, -2.8776, -1.2186, 1.8830, -1.9538, 0.3558, 2.4884)),
-    "crx10ial_2f85": dict(arm_effort_limit=150.0,
-                          gravity_compensation=True,  # authored masses are all zero
-                          default_dof_pos=(0.4847, 0.1019, -0.9746, 0.0002, -0.4889, 1.0866)),
-    "tm12_2f85": dict(arm_effort_limit=150.0,
-                      gravity_compensation=True,  # see rizon4's note
-                      default_dof_pos=(0.5040, -0.3720, 2.5646, -0.6278, 1.5706, 0.5036)),
+                         # front-reach elbow-up ready pose, straight-ish wrist (the folded wrist's
+                         # l5 housing otherwise grounds on the work pieces; the over-the-back
+                         # branch crosses a wrist-singular region on the holder->slot transit)
+                         default_dof_pos=(0.2919, -1.4106, -0.8423, 2.1866, -0.6818, -0.8069, 2.3385),
+                         # anchor the task-space nullspace to the same front-reach posture
+                         nullspace_dof_pos=(0.2919, -1.4106, -0.8423, 2.1866, -0.6818, -0.8069, 2.3385)),
     "festo_2f85": dict(arm_effort_limit=150.0,
                        gravity_compensation=True,  # authored masses are all zero
                        default_dof_pos=(-0.1269, -0.5584, 0.4606, 0.0000, 0.5567, 1.4435)),
 }
-for _robot in ("z1_lite6g", "rizon4_2f85", "gen3n7_2f85", "sawyer_egu50",
-               "crx10ial_2f85", "tm12_2f85", "festo_2f85"):
+for _robot in ("z1_lite6g", "rizon4_2f85", "gen3n7_2f85", "sawyer_egk25", "festo_2f85"):
     for _mode in ("osc", "impedance", "joint"):
         register_env(
             SUITE,

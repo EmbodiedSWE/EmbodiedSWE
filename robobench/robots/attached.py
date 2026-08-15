@@ -1,12 +1,10 @@
-"""Attached-gripper composite arms — seven bare-flange manipulators from the Isaac Sim 5.1 asset
+"""Attached-gripper composite arms — five bare-flange manipulators from the Isaac Sim 5.1 asset
 library, each with an end-effector welded on at vendor time (`assets/composites/<name>/`):
 
   - `z1_lite6g`      Unitree Z1 (6-DOF, ~0.74 m)      + UFACTORY Lite6 gripper (2 prismatic jaws)
   - `rizon4_2f85`    Flexiv Rizon 4 (7-DOF, ~0.8 m)    + Robotiq 2F-85
   - `gen3n7_2f85`    Kinova Gen3 N7 (7-DOF, ~0.9 m)    + Robotiq 2F-85
-  - `sawyer_egu50`   Rethink Sawyer (7-DOF + head pan) + Schunk EGU-50 (2 prismatic jaws)
-  - `crx10ial_2f85`  Fanuc CRX-10iA/L (6-DOF, 1.4 m)   + Robotiq 2F-85
-  - `tm12_2f85`      Techman TM12 (6-DOF, 1.3 m)       + Robotiq 2F-85
+  - `sawyer_egk25`   Rethink Sawyer (7-DOF + head pan) + Schunk EGK-25 (2 prismatic jaws)
   - `festo_2f85`     Festo Cobot (6-DOF, pneumatic)    + Robotiq 2F-85
 
 Each composite USD references the vendored arm as its root and the vendored gripper under
@@ -14,11 +12,14 @@ Each composite USD references the vendored arm as its root and the vendored grip
 composed rest poses (so nothing snaps at spawn) and the gripper's own articulation root stripped —
 the same pattern the xArm7 asset uses natively. The Robotiq 2F-85 and the Lite6 gripper are
 mimic-linkage grippers (ONE driven joint; followers ride PhysX mimic constraints and must spawn at
-their authored rest); the EGU-50 is a driven prismatic jaw with a mimic'd twin.
+their authored rest); the EGK-25's two jaws are both driven with mirrored signs (the vendored
+copy authors the follower's missing drive and drops its mimic).
 
 The OSC control frame (and the task-side weld body) is the LAST ARM LINK, not the gripper base:
 several arms name their own base `base_link`, which collides with the Robotiq base's prim name
 inside one articulation, and some flange/tool bodies are massless (unreliable jacobian rows).
+(A Fanuc CRX-10iA/L and a Techman TM12 were tried and dropped: their vendor arm assets are
+spawn-unstable at the PhysX articulation-assembly level regardless of configuration.)
 Hand geometry (approach/pinch axes, pad offsets) is measured live from the finger bodies.
 
 Control modes mirror `FrankaRobot`:
@@ -302,51 +303,19 @@ class Gen3N72F85Robot(_AttachedArmRobot):
     GRIP_DESC = "a Robotiq 2F-85 gripper (one driven knuckle joint, five mimic followers)"
 
 
-@ROBOTS.register("sawyer_egu50")
-class SawyerEGU50Robot(_AttachedArmRobot):
-    NAME = "sawyer_egu50"
+@ROBOTS.register("sawyer_egk25")
+class SawyerEGK25Robot(_AttachedArmRobot):
+    NAME = "sawyer_egk25"
     ARM_JOINTS = ("right_j[0-6]",)
     ARM_JOINT_LIST = tuple(f"right_j{i}" for i in range(7))
-    GRIPPER_JOINTS = ("Jaw_Drive",)
-    PASSIVE_JOINTS = ("HUB_GBA_2_TRANS_3",)
-    PASSIVE_KEEP_AUTHORED = True  # the EGU's mimic'd jaw ships an authored assist drive
+    # Both jaws driven with mirrored signs (Jaw_Drive opens +, its twin opens -): the asset's
+    # mimic follower ships without a drive, so the vendored copy authors one and drops the mimic.
+    GRIPPER_JOINTS = ("Jaw_Drive", "PrismaticJoint0")
     EXTRA_JOINTS = ("head_pan",)  # not part of the task chain; held in place
     EE_BODY = "right_l6"
     ARM_HOME = (0.0, -1.18, 0.0, 2.18, 0.0, 0.57, 3.14)  # Sawyer's tucked ready pose
     ARM_DESC = "A Rethink Sawyer arm (7-DOF cobot, ~1.26 m reach, screen head)"
-    GRIP_DESC = "a Schunk EGU-50 two-jaw parallel gripper (one driven prismatic jaw, its twin mimicked)"
-
-
-@ROBOTS.register("crx10ial_2f85")
-class CRX10iAL2F85Robot(_AttachedArmRobot):
-    NAME = "crx10ial_2f85"
-    ARM_JOINTS = ("joint_[1-6]",)
-    GRIPPER_JOINTS = ("finger_joint",)
-    PASSIVE_JOINTS = _ROBOTIQ_PASSIVE
-    EE_BODY = "link_6"
-    ARM_HOME = (0.0, 0.4, -0.4, 0.0, -1.1, 0.0)
-    ARM_DESC = "A Fanuc CRX-10iA/L arm (6-DOF cobot, ~1.4 m reach)"
-    GRIP_DESC = "a Robotiq 2F-85 gripper (one driven knuckle joint, five mimic followers)"
-
-
-@ROBOTS.register("tm12_2f85")
-class TM122F85Robot(_AttachedArmRobot):
-    NAME = "tm12_2f85"
-    ARM_JOINTS = (
-        "shoulder_1_joint",
-        "shoulder_2_joint",
-        "elbow_joint",
-        "wrist_1_joint",
-        "wrist_2_joint",
-        "wrist_3_joint",
-    )
-    ARM_JOINT_LIST = ARM_JOINTS
-    GRIPPER_JOINTS = ("finger_joint",)
-    PASSIVE_JOINTS = _ROBOTIQ_PASSIVE
-    EE_BODY = "link_6"
-    ARM_HOME = (0.0, -0.5, 1.6, -1.1, 1.57, 0.0)
-    ARM_DESC = "A Techman TM12 arm (6-DOF cobot, ~1.3 m reach)"
-    GRIP_DESC = "a Robotiq 2F-85 gripper (one driven knuckle joint, five mimic followers)"
+    GRIP_DESC = "a Schunk EGK-25 two-jaw parallel gripper (two mirrored prismatic jaws)"
 
 
 @ROBOTS.register("festo_2f85")
