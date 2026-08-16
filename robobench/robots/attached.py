@@ -262,6 +262,15 @@ class _AttachedArmRobot(BaseRobot):
 
 @ROBOTS.register("z1_lite6g")
 class Z1Lite6GRobot(_AttachedArmRobot):
+
+    # Scene grasp-weld contract keys (campaign-measured; robobench.core.grasp_weld):
+    # mirrored prismatic jaws whose body origins ride the pad faces.
+    GRASP_IFACE = dict(
+        hand_body="link06", finger_joints="finger_joint[1-2]",
+        approach=(1.0, 0.0, 0.0), pinch_offset=0.069,
+        closure=("aperture",), pad_bodies=("uflite_finger1", "uflite_finger2"), sep_off=0.0,
+        stall_vel=0.01,
+    )
     NAME = "z1_lite6g"
     ARM_JOINTS = ("joint[1-6]",)
     GRIPPER_JOINTS = ("finger_joint1", "finger_joint2")  # both jaws driven, mirrored targets
@@ -297,6 +306,15 @@ class Gen3N7PandaRobot(_AttachedArmRobot):
 
 @ROBOTS.register("sawyer_egk25")
 class SawyerEGK25Robot(_AttachedArmRobot):
+
+    # Scene grasp-weld contract keys: the EGK-25's mirrored jaws (origins ride the faces).
+    GRASP_IFACE = dict(
+        hand_body="right_l6", finger_joints="(Jaw_Drive|PrismaticJoint0)",
+        approach=(0.031, 0.999, 0.031), pinch_offset=0.114,
+        closure=("aperture",),
+        pad_bodies=("SCHUNK_1500102Grundbacke_EGK_25_3", "SCHUNK_1500102Grundbacke_EGK_25_4"),
+        sep_off=0.0, stall_vel=0.01,
+    )
     NAME = "sawyer_egk25"
     ARM_JOINTS = ("right_j[0-6]",)
     ARM_JOINT_LIST = tuple(f"right_j{i}" for i in range(7))
