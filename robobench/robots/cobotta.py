@@ -85,24 +85,21 @@ class CobottaPro1300Robot(BaseRobot):
     `control_mode`; the RG6's `finger_joint` is always a direct position target, the 6 arm joints by
     the mode's arm controller (torque-mode task-space control, or position JointController)."""
 
-    # Scene grasp-weld contract keys: the RG6 linkage — finger origins ride 24.6 mm outside the
-    # pad faces per side (sep_off), and the linkage raises them ~15 mm open->closed, so the
-    # pinch offset is the straddle-range value (campaign straddle-time calibration).
+    # Scene grasp-weld contract keys: the RG6 linkage — finger origins ride 24.6 mm outside
+    # the pad faces per side (sep_off), and the linkage raises the fingers ~15 mm from open
+    # to closed (and lowers them again as it opens).
     GRASP_IFACE = dict(
         hand_body="onrobot_rg6_base_link", finger_joints="finger_joint",
         approach=(0.0, 0.0, 1.0),
-        pinch_offset=0.261,  # the grip's centre of action ON the part: the physical pad centre
-        # rides 0.246 out and the verified bite grips 15 mm SHALLOW (long pads high on the
-        # slab), so the band the part presents sits 15 mm deeper than the pad centre
+        pinch_offset=0.261,  # the grip's centre of action on a part: the long pads extend
+        # well past their geometric centre
         closure=("aperture",), pad_bodies=("left_inner_finger", "right_inner_finger"),
         pinch_axis=(0.0, 1.0, 0.0),
         sep_off=0.0492,
-        stall_vel=0.02,  # rad/s: tight enough to reject the closing sweep's slow tail
-        # (a false stall at 7.4 mm welded the stick early and the drive then crushed
-        # past the solver's window floor); the true stall reads ~0
-        release_at=0.015,  # the linkage LOWERS its pads ~15 mm as it opens: release early in
-        # the grip window (1.2 mm of pad drop) so the freed stick is clear before the pads
-        # descend further; the reform's straddle stop caps the total drop at ~3 mm
+        stall_vel=0.02,  # rad/s: the true stall reads ~0; a looser gate mistakes the closing
+        # sweep's slow tail for contact
+        release_at=0.015,  # the linkage lowers its pads as it opens: release early in the
+        # open so the descending pads clear a barely-held part
     )
 
     control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default

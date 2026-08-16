@@ -263,17 +263,18 @@ class _AttachedArmRobot(BaseRobot):
 @ROBOTS.register("z1_lite6g")
 class Z1Lite6GRobot(_AttachedArmRobot):
 
-    # Scene grasp-weld contract keys (campaign-measured; robobench.core.grasp_weld):
-    # mirrored prismatic jaws whose body origins ride the pad faces.
+    # Scene grasp-weld contract keys (robobench.core.grasp_weld): mirrored prismatic jaws
+    # whose body origins ride the pad faces.
     GRASP_IFACE = dict(
         hand_body="link06", finger_joints="finger_joint[1-2]",
         approach=(1.0, 0.0, 0.0), pinch_offset=0.069,
         closure=("aperture",), pad_bodies=("uflite_finger1", "uflite_finger2"), sep_off=0.0,
         pinch_axis=(0.0, 1.0, 0.0),
         stall_vel=0.01,
-        release_at=0.014,  # the jaws max out at ~17.8 mm — the panda-scaled default (18 mm)
-        # would hold forever; 14 mm sits above the grip window, below the straddle/open
-        band_dist=0.018,  # the second-trip crest-clearing bite rides ~10 mm shallow of the band
+        release_at=0.014,  # full jaw stroke is ~17.8 mm: the default release hysteresis sits
+        # beyond what these jaws can open to
+        band_dist=0.018,  # short jaws pinching near a part's top edge put the pinch centre off
+        # the grip band by construction
     )
     NAME = "z1_lite6g"
     ARM_JOINTS = ("joint[1-6]",)
