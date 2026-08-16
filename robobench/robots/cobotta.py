@@ -97,7 +97,12 @@ class CobottaPro1300Robot(BaseRobot):
         closure=("aperture",), pad_bodies=("left_inner_finger", "right_inner_finger"),
         pinch_axis=(0.0, 1.0, 0.0),
         sep_off=0.0492,
-        stall_vel=0.05,  # rad/s: the single driven knuckle
+        stall_vel=0.02,  # rad/s: tight enough to reject the closing sweep's slow tail
+        # (a false stall at 7.4 mm welded the stick early and the drive then crushed
+        # past the solver's window floor); the true stall reads ~0
+        release_at=0.015,  # the linkage LOWERS its pads ~15 mm as it opens: release early in
+        # the grip window (1.2 mm of pad drop) so the freed stick is clear before the pads
+        # descend further; the reform's straddle stop caps the total drop at ~3 mm
     )
 
     control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default
