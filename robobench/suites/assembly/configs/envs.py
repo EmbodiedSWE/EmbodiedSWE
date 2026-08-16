@@ -376,6 +376,47 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
+# The SAME nut-thread cell for the transfer suite: xarm7 (panda-hand dial) + the four panda-hand
+# composites at the franka oracle's flat layout (bolt at world 0.50 m, nut pick at 0.38 m, dt
+# 1/480 for the SDF threads). Ready poses re-aim the bulb bindings' hand-down branches at this
+# scene's +x work line.
+#   -> "assembly.nut_thread.<robot>.{osc,impedance,joint}"
+_NUT_SCENE = dict(nut_init_xy=((-0.12, 0.0),), nut_friction=0.4)
+_NUT_SCENE_BY_ROBOT: dict[str, dict] = {}
+# rizon4/festo/sawyer: no nut binding — their posture creep forms off-axis hex grips the
+# wrench recipe cannot rotate around.
+_NUT_COMPOSITE_KW: dict[str, dict] = {
+    "gen3n7_panda": dict(arm_effort_limit=120.0, gravity_compensation=True),
+}
+for _robot in ("gen3n7_panda",):
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, mode=_mode: EnvCfg(
+                scene="nut_thread",
+                scene_cfg=NutThreadAssemblySceneCfg(**_NUT_SCENE_BY_ROBOT.get(robot, _NUT_SCENE)),
+                robot=robot,
+                robot_cfg=AttachedArmRobotCfg(**_NUT_COMPOSITE_KW[robot]),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 480.0},
+            ),
+        )
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="nut_thread",
+            scene_cfg=NutThreadAssemblySceneCfg(**_NUT_SCENE),
+            robot="xarm7",
+            # vendor gripper: the 24 mm M16 suits its linkage natively (unlike the bulb)
+            robot_cfg=XArm7RobotCfg(arm_effort_limit=120.0, gravity_compensation=True),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 480.0},
+        ),
+    )
+
 # Franka arm at the bulb scene (base at the origin). The socket + loose bulb are pulled off the stock
 # nut_thread "+x row" layout into the arm's measured reach band: the default row put the bulb at
 # 0.63 m (out of reach -> REORIENT_STUCK) on the centreline (parks wrist q7 near its stop). Baked in:
