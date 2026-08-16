@@ -85,6 +85,17 @@ class CobottaPro1300Robot(BaseRobot):
     `control_mode`; the RG6's `finger_joint` is always a direct position target, the 6 arm joints by
     the mode's arm controller (torque-mode task-space control, or position JointController)."""
 
+    # Scene grasp-weld contract keys: the RG6 linkage — finger origins ride 24.6 mm outside the
+    # pad faces per side (sep_off), and the linkage raises them ~15 mm open->closed, so the
+    # pinch offset is the straddle-range value (campaign straddle-time calibration).
+    GRASP_IFACE = dict(
+        hand_body="onrobot_rg6_base_link", finger_joints="finger_joint",
+        approach=(0.0, 0.0, 1.0), pinch_offset=0.246,
+        closure=("aperture",), pad_bodies=("left_inner_finger", "right_inner_finger"),
+        sep_off=0.0492,
+        stall_vel=0.05,  # rad/s: the single driven knuckle
+    )
+
     control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default
 
     cfg: CobottaPro1300RobotCfg
