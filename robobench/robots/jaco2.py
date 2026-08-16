@@ -103,6 +103,9 @@ class Jaco2N7Robot(BaseRobot):
         pinch_axis=(0.003, 0.993, -0.121),
         wrap_off=(0.025, 0.050),  # site closure window -> tip-origin proxy band
         prox_release=0.15,
+        band_dist=0.035,  # the 3-finger squeeze reaction shoves the weak wrist: the pinch
+        # centre rides 24-29 mm off the band at an honest verified wrap (flank + prox stall
+        # still anchor the grasp to the part)
     )
 
     control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default

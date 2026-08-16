@@ -90,8 +90,12 @@ class CobottaPro1300Robot(BaseRobot):
     # pinch offset is the straddle-range value (campaign straddle-time calibration).
     GRASP_IFACE = dict(
         hand_body="onrobot_rg6_base_link", finger_joints="finger_joint",
-        approach=(0.0, 0.0, 1.0), pinch_offset=0.246,
+        approach=(0.0, 0.0, 1.0),
+        pinch_offset=0.261,  # the grip's centre of action ON the part: the physical pad centre
+        # rides 0.246 out and the verified bite grips 15 mm SHALLOW (long pads high on the
+        # slab), so the band the part presents sits 15 mm deeper than the pad centre
         closure=("aperture",), pad_bodies=("left_inner_finger", "right_inner_finger"),
+        pinch_axis=(0.0, 1.0, 0.0),
         sep_off=0.0492,
         stall_vel=0.05,  # rad/s: the single driven knuckle
     )
