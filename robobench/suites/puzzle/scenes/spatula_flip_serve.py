@@ -88,7 +88,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import GraspWeldMixin, SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import GraspWeldContract, SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -256,7 +256,7 @@ class SpatulaFlipServeSceneCfg(BaseCfg):
 
 # ----- scene -----------------------------------------------------------------------------------
 @SCENES.register("spatula")
-class SpatulaFlipServeScene(GraspWeldMixin, BaseScene):
+class SpatulaFlipServeScene(BaseScene):
     cfg: SpatulaFlipServeSceneCfg
 
     def __init__(self, cfg: SpatulaFlipServeSceneCfg | None = None) -> None:
@@ -411,6 +411,15 @@ class SpatulaFlipServeScene(GraspWeldMixin, BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+
+    def __getattr__(self, name: str):
+        # Legacy surface: the grasp contract's state used to live directly on the scene
+        # (inline machinery era) and existing solutions read it there — forward to the
+        # composed contract. `__getattr__` only fires for attributes not found normally.
+        if name.startswith("_gw_") and "grasp_weld" in self.__dict__:
+            return getattr(self.grasp_weld, name)
+        raise AttributeError(name)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab handles, set the tuned frictions (the shipped rigs carry placeholder
         physics materials; the tunables are authoritative), allocate the presence mask
@@ -427,7 +436,8 @@ class SpatulaFlipServeScene(GraspWeldMixin, BaseScene):
         for b in self.breads.values():
             self._set_friction(b, c.bread_friction)
         self._alloc(env.num_envs, env.device)
-        self._grasp_weld_bind()
+        self.grasp_weld = GraspWeldContract(self)  # composed, publishes self.grasp_held
+        self.grasp_weld.bind()
 
     def grasp_sites(self) -> list:
         """One grip band: the spatula's molded HANDLE, spanning the mid 9 cm of the
@@ -551,7 +561,7 @@ class SpatulaFlipServeScene(GraspWeldMixin, BaseScene):
         self._max_carry_tilt[env_ids] = 0.0
         self._spills[env_ids] = 0
         self._lost_streak[env_ids] = 0
-        self._grasp_weld_release_all(env_ids)
+        self.grasp_weld.release_all(env_ids)
 
     # ----- kinematics helpers -------------------------------------------------------------------
     def _bread_tensors(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -697,7 +707,7 @@ class SpatulaFlipServeScene(GraspWeldMixin, BaseScene):
 
     # ----- mechanics: the latches (run every physics substep) --------------------------------------
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
-        self._grasp_weld_step()
+        self.grasp_weld.step()
         c = self.cfg
         pos, _q, _v = self._bread_tensors()
         z_rel = (pos - self.env_origins.unsqueeze(1))[:, :, 2]
@@ -752,7 +762,7 @@ class SpatulaFlipServeScene(GraspWeldMixin, BaseScene):
                                   "_loaded_pf", "_served", "_since_loaded",
                                   "_max_carry_tilt", "_spills", "_lost_streak",
                                   "_prev_lost")},
-            **self._grasp_weld_state(env_ids),
+            **self.grasp_weld.state(env_ids),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
@@ -762,7 +772,7 @@ class SpatulaFlipServeScene(GraspWeldMixin, BaseScene):
             b.write_root_state_to_sim(state["bodies"][n], env_ids)
         for k, v in state["machine"].items():
             getattr(self, k)[env_ids] = v
-        self._grasp_weld_restore(state, env_ids)
+        self.grasp_weld.restore(state, env_ids)
 
     # ----- description ------------------------------------------------------------------------------
     def describe(self) -> str:
@@ -843,7 +853,15 @@ class SpatulaFlipServeScene(GraspWeldMixin, BaseScene):
             return self._flipped & now
         return self._flipped & self._served & self.served_now()
 
-    # Grasp-weld contract: `GraspWeldMixin` (robobench.core.grasp_weld) — the
-    # weld-on-closure machinery shared by the grasping scenes; this scene supplies the
-    # part-side `grasp_sites()`.
+    # Grasp-weld contract: composed `GraspWeldContract` (robobench.core.grasp_weld),
+    # created in `bind()`; this scene supplies the part-side `grasp_sites()`.
+    # Grasp-weld contract constants — the scene's public knobs (solutions read these off the
+    # scene, e.g. `scene.GRASP_PINCH_OFFSET`); the composed GraspWeldContract consumes them.
+    GRASP_HAND_BODY: ClassVar[str] = "panda_hand"
+    GRASP_FINGER_JOINTS: ClassVar[str] = "panda_finger_joint.*"
+    GRASP_PINCH_OFFSET: ClassVar[float] = 0.1034  # hand origin -> finger-pad centre, along approach
+    GRASP_POOL: ClassVar[int] = 8  # engages per (env, site) per run; exhausted -> warn, no weld
+    GRASP_STALL: ClassVar[float] = 0.01  # max |finger vel| sum (m/s): fingers stopped ON the part
+    GRASP_DEBOUNCE: ClassVar[int] = 8  # consecutive qualifying substeps before the weld engages
+    GRASP_RELEASE_MARGIN: ClassVar[float] = 0.008  # release at window-top + this (m), hysteresis
 

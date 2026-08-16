@@ -11,8 +11,8 @@ snagged) + fingers STALLED (a closing sweep passes through the window; a real pi
 it). Release: closure past window-top + margin (hysteresis). One hold per env (a hand pinches
 one part). Embodiment-agnostic two ways: no hand on the stage (e.g. robot="null") -> no
 joints, no-op contract; and a robot class may declare `GRASP_IFACE` to key the contract to
-its own hand — absent that, the scene's panda ClassVars apply, bit-identically to the
-historical inline copies. Holds ride get_state/set_state.
+its own hand — absent that, the panda defaults apply, bit-identically to the historical
+inline copies. Holds ride get_state/set_state.
 
 `GRASP_IFACE` (dict on the robot class; every key optional, defaults = the panda values):
     hand_body       str    weld/pinch body name (default "panda_hand")
@@ -59,8 +59,31 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 
-class GraspWeldMixin:
-    """Scene mixin: weld-on-closure grasping against the scene's `grasp_sites()`."""
+class GraspWeldContract:
+    """Weld-on-closure grasping against the owning scene's `grasp_sites()`.
+
+    Composed, not inherited: a scene creates one in `bind()` and delegates its lifecycle —
+
+        self.grasp_weld = GraspWeldContract(self)
+        self.grasp_weld.bind()          # discovery + joint pools (before the sim plays)
+        self.grasp_weld.step()          # every physics substep (post_step)
+        self.grasp_weld.release_all(ids)  # episode reset
+        state.update(self.grasp_weld.state(ids)); self.grasp_weld.restore(state, ids)
+
+    The contract publishes `scene.grasp_held` (n, sites) on the OWNING scene, so solutions
+    keep reading `env.scene.grasp_held` unchanged.
+
+    def __init__ / delegation glue is at the end of the class; the machinery between is the
+    scenes' historical inline implementation, unchanged.
+    """
+
+    def __init__(self, scene) -> None:
+        self.scene = scene
+        # The scene may declare any GRASP_* constant (per-scene knobs, and the public surface
+        # solutions read, e.g. `scene.GRASP_PINCH_OFFSET`); the class values are the defaults.
+        for _k in ("GRASP_HAND_BODY", "GRASP_FINGER_JOINTS", "GRASP_PINCH_OFFSET", "GRASP_POOL",
+                   "GRASP_STALL", "GRASP_DEBOUNCE", "GRASP_RELEASE_MARGIN", "GRASP_RELEASE_DEBOUNCE"):
+            setattr(self, _k, getattr(scene, _k, getattr(type(self), _k)))
 
     GRASP_HAND_BODY: ClassVar[str] = "panda_hand"
     GRASP_FINGER_JOINTS: ClassVar[str] = "panda_finger_joint.*"
@@ -93,21 +116,21 @@ class GraspWeldMixin:
             release_at=None,
             band_dist=None,
         )
-        ifc = getattr(getattr(self.env, "robot", None), "GRASP_IFACE", None)
+        ifc = getattr(getattr(self.scene.env, "robot", None), "GRASP_IFACE", None)
         if ifc:
             base.update(ifc)
         return base
 
     # ----- bind-time: discovery + joint pools ------------------------------------------------------
-    def _grasp_weld_bind(self) -> None:
+    def bind(self) -> None:
         """Discover the hand, author the (disabled) joint pools, allocate the hold state. Called
         from `bind()` — authoring must happen BEFORE the sim starts playing, or PhysX only picks
         the joints up after a full `sim.reset()`."""
         import torch
 
-        env = self.env
+        env = self.scene.env
         n = env.num_envs
-        self._gw_on = bool(getattr(self.cfg, "grasp_weld", False))
+        self._gw_on = bool(getattr(self.scene.cfg, "grasp_weld", False))
         self._gw_art = None  # articulation handle, resolved lazily (the robot binds after us)
         self._gw_sites: list = []
         if not self._gw_on:
@@ -118,10 +141,10 @@ class GraspWeldMixin:
             self._gw_on = False
             print(f"[grasp-weld] no '{self._gw_if['hand_body']}' on the stage — contract disabled", flush=True)
             return
-        self._gw_sites = list(self.grasp_sites())
+        self._gw_sites = list(self.scene.grasp_sites())
         s = len(self._gw_sites)
         dev = env.device
-        self.grasp_held = torch.zeros(n, s, dtype=torch.bool, device=dev)
+        self.scene.grasp_held = torch.zeros(n, s, dtype=torch.bool, device=dev)
         self._gw_rel_p = torch.zeros(n, s, 3, device=dev)
         self._gw_rel_q = torch.zeros(n, s, 4, device=dev)
         self._gw_count = torch.zeros(n, s, dtype=torch.int32, device=dev)
@@ -134,7 +157,7 @@ class GraspWeldMixin:
         """The hand body's prim path under env_0 (clones are identical), or None if absent."""
         from pxr import Usd
 
-        root = self.env.stage.GetPrimAtPath("/World/envs/env_0")
+        root = self.scene.env.stage.GetPrimAtPath("/World/envs/env_0")
         if not root.IsValid():
             return None
         for prim in Usd.PrimRange(root):
@@ -150,7 +173,7 @@ class GraspWeldMixin:
 
         p = obj.cfg.prim_path.replace("{ENV_REGEX_NS}", "/World/envs/env_.*")
         root = p.replace("env_.*", f"env_{env_i}")
-        prim = self.env.stage.GetPrimAtPath(root)
+        prim = self.scene.env.stage.GetPrimAtPath(root)
         if not prim.IsValid():
             raise RuntimeError(f"[grasp-weld] part prim missing: {root}")
         for child in Usd.PrimRange(prim):
@@ -163,9 +186,9 @@ class GraspWeldMixin:
         frames identity until an engage writes the live relative pose."""
         from pxr import Gf, UsdPhysics
 
-        stage = self.env.stage
+        stage = self.scene.env.stage
         self._gw_paths: list[list[list[str]]] = []  # [env][site][k]
-        for i in range(self.env.num_envs):
+        for i in range(self.scene.env.num_envs):
             hand = hand0.replace("env_0", f"env_{i}")
             rows = []
             for name, obj, _p0, _p1, _win in self._gw_sites:
@@ -191,7 +214,7 @@ class GraspWeldMixin:
         if self._gw_art is not None:
             return True
         try:
-            art = self.env.robot.articulation
+            art = self.scene.env.robot.articulation
             ifc = self._gw_if
             self._gw_hand_i = art.body_names.index(ifc["hand_body"])
             self._gw_fingers = art.find_joints([ifc["finger_joints"]])[0]
@@ -247,7 +270,7 @@ class GraspWeldMixin:
             return [(win[0] + o0, win[1] + o1) for _n, _o, _p0, _p1, win in self._gw_sites]
         return [win for _n, _o, _p0, _p1, win in self._gw_sites]
 
-    def _grasp_weld_step(self) -> None:
+    def step(self) -> None:
         """Reconcile engages + releases against the closure criterion. Called from `post_step()`."""
         if not getattr(self, "_gw_on", False) or not self._gw_sites or not self._gw_resolve_hand():
             return
@@ -279,7 +302,7 @@ class GraspWeldMixin:
 
         # Releases first (a re-grasp in the same step then sees a free hand), debounced —
         # jaw give under press load can spike the closure past the threshold for a substep.
-        for row, s in self.grasp_held.nonzero(as_tuple=False).tolist():
+        for row, s in self.scene.grasp_held.nonzero(as_tuple=False).tolist():
             if mode == "wrap":
                 past = bool(released[row])
             else:
@@ -295,11 +318,11 @@ class GraspWeldMixin:
             else:
                 self._gw_rel_count[row, s] = 0
 
-        free = ~self.grasp_held.any(dim=-1)  # (n,)
+        free = ~self.scene.grasp_held.any(dim=-1)  # (n,)
         dists = self._gw_site_dists(pinch)  # (n, s)
         c = ifc["band_dist"]
         if c is None:
-            c = getattr(self.cfg, "grasp_weld_dist", 0.010)
+            c = getattr(self.scene.cfg, "grasp_weld_dist", 0.010)
         if mode == "wrap":
             flank = self._gw_wrap_flank(hq)
             ok = torch.stack(
@@ -386,7 +409,7 @@ class GraspWeldMixin:
             return
         self._gw_rel_p[env_i, s] = rel_p
         self._gw_rel_q[env_i, s] = rel_q
-        self.grasp_held[env_i, s] = True
+        self.scene.grasp_held[env_i, s] = True
         self._gw_count[env_i] = 0
         print(f"[grasp-weld] env {env_i}: GRIPPED {name} (aperture {float(gap) * 1000:.1f} mm)", flush=True)
 
@@ -400,7 +423,7 @@ class GraspWeldMixin:
                 self._gw_pool_warned.add((env_i, s))
                 print(f"[grasp-weld] env {env_i}: pool dry for {self._gw_sites[s][0]} — no weld", flush=True)
             return False
-        j = UsdPhysics.FixedJoint.Get(self.env.stage, self._gw_paths[env_i][s][k])
+        j = UsdPhysics.FixedJoint.Get(self.scene.env.stage, self._gw_paths[env_i][s][k])
         p, q = rel_p.tolist(), rel_q.tolist()
         j.GetLocalPos0Attr().Set(Gf.Vec3f(p[0], p[1], p[2]))
         j.GetLocalRot0Attr().Set(Gf.Quatf(q[0], Gf.Vec3f(q[1], q[2], q[3])))
@@ -413,32 +436,32 @@ class GraspWeldMixin:
 
         k = self._gw_pool_i[env_i][s]
         if k < self.GRASP_POOL:
-            j = UsdPhysics.FixedJoint.Get(self.env.stage, self._gw_paths[env_i][s][k])
+            j = UsdPhysics.FixedJoint.Get(self.scene.env.stage, self._gw_paths[env_i][s][k])
             j.GetJointEnabledAttr().Set(False)
         self._gw_pool_i[env_i][s] = k + 1
-        self.grasp_held[env_i, s] = False
+        self.scene.grasp_held[env_i, s] = False
         print(f"[grasp-weld] env {env_i}: RELEASED {self._gw_sites[s][0]}", flush=True)
 
     # ----- episode + state plumbing ----------------------------------------------------------------
-    def _grasp_weld_release_all(self, env_ids) -> None:
+    def release_all(self, env_ids) -> None:
         """Cut every hold for `env_ids` (a fresh episode starts empty-handed). Called from `reset()`."""
         if not getattr(self, "_gw_on", False):
             return
-        for row, s in self.grasp_held[env_ids].nonzero(as_tuple=False).tolist():
+        for row, s in self.scene.grasp_held[env_ids].nonzero(as_tuple=False).tolist():
             self._gw_release(int(env_ids[row]), s)
         self._gw_count[env_ids] = 0
 
-    def _grasp_weld_state(self, env_ids) -> dict[str, Any]:
+    def state(self, env_ids) -> dict[str, Any]:
         """The contract's restorable state (empty when the contract is off)."""
         if not getattr(self, "_gw_on", False):
             return {}
         return {
-            "grasp_held": self.grasp_held[env_ids].clone(),
+            "grasp_held": self.scene.grasp_held[env_ids].clone(),
             "grasp_rel_p": self._gw_rel_p[env_ids].clone(),
             "grasp_rel_q": self._gw_rel_q[env_ids].clone(),
         }
 
-    def _grasp_weld_restore(self, state: dict[str, Any], env_ids) -> None:
+    def restore(self, state: dict[str, Any], env_ids) -> None:
         """Re-arm the holds `get_state` recorded, at their RECORDED hand-frame poses (the bodies
         were just written, so live measurement is redundant), on fresh pool joints. Called from
         `set_state()` after the bodies are restored."""
@@ -447,12 +470,12 @@ class GraspWeldMixin:
         for row in range(len(env_ids)):
             i = int(env_ids[row])
             for s in range(len(self._gw_sites)):
-                if self.grasp_held[i, s]:
+                if self.scene.grasp_held[i, s]:
                     self._gw_release(i, s)
                 if bool(state["grasp_held"][row, s]) and self._gw_set_joint(
                     i, s, state["grasp_rel_p"][row, s], state["grasp_rel_q"][row, s]
                 ):
                     self._gw_rel_p[i, s] = state["grasp_rel_p"][row, s]
                     self._gw_rel_q[i, s] = state["grasp_rel_q"][row, s]
-                    self.grasp_held[i, s] = True
+                    self.scene.grasp_held[i, s] = True
         self._gw_count[env_ids] = 0
