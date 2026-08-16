@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import GraspWeldMixin, SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import GraspWeldContract, SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -144,7 +144,7 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
 
 
 @SCENES.register("pc_motherboard")
-class PcMotherboardAssemblyScene(GraspWeldMixin, BaseScene):
+class PcMotherboardAssemblyScene(BaseScene):
     cfg: PcMotherboardAssemblySceneCfg
 
     def __init__(self, cfg: PcMotherboardAssemblySceneCfg | None = None) -> None:
@@ -291,6 +291,15 @@ class PcMotherboardAssemblyScene(GraspWeldMixin, BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+
+    def __getattr__(self, name: str):
+        # Legacy surface: the grasp contract's state used to live directly on the scene
+        # (inline machinery era) and existing solutions read it there — forward to the
+        # composed contract. `__getattr__` only fires for attributes not found normally.
+        if name.startswith("_gw_") and "grasp_weld" in self.__dict__:
+            return getattr(self.grasp_weld, name)
+        raise AttributeError(name)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the case + bolt + key handles, cache env origins, and set the part frictions."""
         super().bind(env)
@@ -302,7 +311,8 @@ class PcMotherboardAssemblyScene(GraspWeldMixin, BaseScene):
         self._set_friction(self.key, self.cfg.key_friction)
         for bolt in self.bolts:
             self._set_friction(bolt, self.cfg.bolt_friction)
-        self._grasp_weld_bind()
+        self.grasp_weld = GraspWeldContract(self)  # composed, publishes self.grasp_held
+        self.grasp_weld.bind()
         self._screw_bind()
 
     def grasp_sites(self) -> list:
@@ -314,7 +324,7 @@ class PcMotherboardAssemblyScene(GraspWeldMixin, BaseScene):
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
         """Reconcile the weld-on-closure grasp contract and the screw joints every physics
         substep."""
-        self._grasp_weld_step()
+        self.grasp_weld.step()
         self._screw_step()
 
     def _set_friction(self, asset, value: float) -> None:
@@ -343,7 +353,7 @@ class PcMotherboardAssemblyScene(GraspWeldMixin, BaseScene):
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 3:7] = torch.tensor(init_quat, device=dev)
             part.write_root_state_to_sim(st, env_ids)
-        self._grasp_weld_release_all(env_ids)
+        self.grasp_weld.release_all(env_ids)
         self._screw_reset(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
@@ -353,7 +363,7 @@ class PcMotherboardAssemblyScene(GraspWeldMixin, BaseScene):
             "case": self.case.data.root_state_w[env_ids].clone(),
             "bolts": torch.stack([b.data.root_state_w[env_ids].clone() for b in self.bolts], dim=1),
             "key": self.key.data.root_state_w[env_ids].clone(),
-            **self._grasp_weld_state(env_ids),
+            **self.grasp_weld.state(env_ids),
             **self._screw_state(env_ids),
         }
 
@@ -364,7 +374,7 @@ class PcMotherboardAssemblyScene(GraspWeldMixin, BaseScene):
         for i, bolt in enumerate(self.bolts):
             bolt.write_root_state_to_sim(state["bolts"][:, i], env_ids)
         self.key.write_root_state_to_sim(state["key"], env_ids)
-        self._grasp_weld_restore(state, env_ids)
+        self.grasp_weld.restore(state, env_ids)
         self._screw_restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
@@ -451,9 +461,17 @@ class PcMotherboardAssemblyScene(GraspWeldMixin, BaseScene):
         bolt_up = torch.stack([quat_apply(b.data.root_quat_w, ez) for b in self.bolts], dim=1)  # (n, B, 3)
         return (bolt_up * case_up[:, None, :]).sum(dim=-1)
 
-    # Grasp-weld contract: `GraspWeldMixin` (robobench.core.grasp_weld) — the
-    # weld-on-closure machinery shared by the grasping scenes; this scene supplies the
-    # part-side `grasp_sites()`.
+    # Grasp-weld contract: composed `GraspWeldContract` (robobench.core.grasp_weld),
+    # created in `bind()`; this scene supplies the part-side `grasp_sites()`.
+    # Grasp-weld contract constants — the scene's public knobs (solutions read these off the
+    # scene, e.g. `scene.GRASP_PINCH_OFFSET`); the composed GraspWeldContract consumes them.
+    GRASP_HAND_BODY: ClassVar[str] = "panda_hand"
+    GRASP_FINGER_JOINTS: ClassVar[str] = "panda_finger_joint.*"
+    GRASP_PINCH_OFFSET: ClassVar[float] = 0.1034  # hand origin -> finger-pad centre, along approach
+    GRASP_POOL: ClassVar[int] = 8  # engages per (env, site) per run; exhausted -> warn, no weld
+    GRASP_STALL: ClassVar[float] = 0.01  # max |finger vel| sum (m/s): fingers stopped ON the part
+    GRASP_DEBOUNCE: ClassVar[int] = 8  # consecutive qualifying substeps before the weld engages
+    GRASP_RELEASE_MARGIN: ClassVar[float] = 0.008  # release at window-top + this (m), hysteresis
 
 
     # ----- screw-joint machinery (the thread mechanic; private — not an agent action) ---------
