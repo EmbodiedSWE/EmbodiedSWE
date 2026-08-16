@@ -90,9 +90,9 @@ class Jaco2N7Robot(BaseRobot):
     the mode's arm controller (torque-mode task-space control, or position JointController)."""
 
     # Scene grasp-weld contract keys: the curling 3-finger hand has no aperture window — a
-    # caging WRAP certified by the proximal stall (command past the free-air terminal; only
-    # pressing the part stops the fingers early) + thumb/pair flanking the grip band. Axes
-    # measured live in the pc_ram campaign (link_7 frame).
+    # caging WRAP certified by the proximal stall (a free-air curl reaches its command; only
+    # pressing a part stops the fingers early) + thumb/pair flanking the grip band. Hand axes
+    # in the link_7 frame.
     GRASP_IFACE = dict(
         hand_body="j2n7s300_link_7",
         finger_joints="j2n7s300_joint_finger.*",  # proximals then tips (articulation order)
@@ -103,9 +103,8 @@ class Jaco2N7Robot(BaseRobot):
         pinch_axis=(0.003, 0.993, -0.121),
         wrap_off=(0.025, 0.050),  # site closure window -> tip-origin proxy band
         prox_release=0.15,
-        band_dist=0.035,  # the 3-finger squeeze reaction shoves the weak wrist: the pinch
-        # centre rides 24-29 mm off the band at an honest verified wrap (flank + prox stall
-        # still anchor the grasp to the part)
+        band_dist=0.035,  # a 3-finger squeeze displaces the wrist, riding the pinch centre
+        # off the band; the flank + stall gates still anchor the grasp to the part
     )
 
     control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default
