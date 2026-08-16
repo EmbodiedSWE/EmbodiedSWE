@@ -269,7 +269,11 @@ class Z1Lite6GRobot(_AttachedArmRobot):
         hand_body="link06", finger_joints="finger_joint[1-2]",
         approach=(1.0, 0.0, 0.0), pinch_offset=0.069,
         closure=("aperture",), pad_bodies=("uflite_finger1", "uflite_finger2"), sep_off=0.0,
+        pinch_axis=(0.0, 1.0, 0.0),
         stall_vel=0.01,
+        release_at=0.014,  # the jaws max out at ~17.8 mm — the panda-scaled default (18 mm)
+        # would hold forever; 14 mm sits above the grip window, below the straddle/open
+        band_dist=0.018,  # the second-trip crest-clearing bite rides ~10 mm shallow of the band
     )
     NAME = "z1_lite6g"
     ARM_JOINTS = ("joint[1-6]",)
@@ -314,6 +318,7 @@ class SawyerEGK25Robot(_AttachedArmRobot):
         closure=("aperture",),
         pad_bodies=("SCHUNK_1500102Grundbacke_EGK_25_3", "SCHUNK_1500102Grundbacke_EGK_25_4"),
         sep_off=0.0, stall_vel=0.01,
+        pinch_axis=(-0.001, -0.031, 1.0),
     )
     NAME = "sawyer_egk25"
     ARM_JOINTS = ("right_j[0-6]",)
