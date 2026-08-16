@@ -69,6 +69,9 @@ class GraspWeldMixin:
     GRASP_STALL: ClassVar[float] = 0.01  # max |finger vel| sum (m/s): fingers stopped ON the part
     GRASP_DEBOUNCE: ClassVar[int] = 8  # consecutive qualifying substeps before the weld engages
     GRASP_RELEASE_MARGIN: ClassVar[float] = 0.008  # release at window-top + this (m), hysteresis
+    GRASP_RELEASE_DEBOUNCE: ClassVar[int] = 4  # consecutive qualifying substeps before a release
+    # fires: jaw give under press load can spike the closure measure past the threshold for a
+    # substep — an instant cut mid-press hammers the freed part (depenetration blow-up)
 
     # ----- per-robot hand keys --------------------------------------------------------------------
     def _gw_iface(self) -> dict:
@@ -122,6 +125,7 @@ class GraspWeldMixin:
         self._gw_rel_p = torch.zeros(n, s, 3, device=dev)
         self._gw_rel_q = torch.zeros(n, s, 4, device=dev)
         self._gw_count = torch.zeros(n, s, dtype=torch.int32, device=dev)
+        self._gw_rel_count = torch.zeros(n, s, dtype=torch.int32, device=dev)
         self._gw_pool_i = [[0] * s for _ in range(n)]
         self._gw_pool_warned: set = set()
         self._gw_author_pools(hand0)
@@ -273,17 +277,23 @@ class GraspWeldMixin:
             closed_ok = stalled  # the window test joins per site below
             released = None
 
-        # Releases first (a re-grasp in the same step then sees a free hand).
+        # Releases first (a re-grasp in the same step then sees a free hand), debounced —
+        # jaw give under press load can spike the closure past the threshold for a substep.
         for row, s in self.grasp_held.nonzero(as_tuple=False).tolist():
             if mode == "wrap":
-                if bool(released[row]):
-                    self._gw_release(row, s)
+                past = bool(released[row])
             else:
                 rel_thr = ifc["release_at"]
                 if rel_thr is None:
                     rel_thr = wins[s][1] + self.GRASP_RELEASE_MARGIN
-                if gap[row] > rel_thr:
+                past = bool(gap[row] > rel_thr)
+            if past:
+                self._gw_rel_count[row, s] += 1
+                if int(self._gw_rel_count[row, s]) >= self.GRASP_RELEASE_DEBOUNCE:
                     self._gw_release(row, s)
+                    self._gw_rel_count[row, s] = 0
+            else:
+                self._gw_rel_count[row, s] = 0
 
         free = ~self.grasp_held.any(dim=-1)  # (n,)
         dists = self._gw_site_dists(pinch)  # (n, s)
