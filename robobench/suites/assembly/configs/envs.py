@@ -376,6 +376,47 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
+# The SAME nut-thread cell for the transfer suite: xarm7 (panda-hand dial) + the four panda-hand
+# composites at the franka oracle's flat layout (bolt at world 0.50 m, nut pick at 0.38 m, dt
+# 1/480 for the SDF threads). Ready poses re-aim the bulb bindings' hand-down branches at this
+# scene's +x work line.
+#   -> "assembly.nut_thread.<robot>.{osc,impedance,joint}"
+_NUT_SCENE = dict(nut_init_xy=((-0.12, 0.0),), nut_friction=0.4)
+_NUT_SCENE_BY_ROBOT: dict[str, dict] = {}
+# rizon4/festo/sawyer: no nut binding — their posture creep forms off-axis hex grips the
+# wrench recipe cannot rotate around.
+_NUT_COMPOSITE_KW: dict[str, dict] = {
+    "gen3n7_panda": dict(arm_effort_limit=120.0, gravity_compensation=True),
+}
+for _robot in ("gen3n7_panda",):
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, mode=_mode: EnvCfg(
+                scene="nut_thread",
+                scene_cfg=NutThreadAssemblySceneCfg(**_NUT_SCENE_BY_ROBOT.get(robot, _NUT_SCENE)),
+                robot=robot,
+                robot_cfg=AttachedArmRobotCfg(**_NUT_COMPOSITE_KW[robot]),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 480.0},
+            ),
+        )
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="nut_thread",
+            scene_cfg=NutThreadAssemblySceneCfg(**_NUT_SCENE),
+            robot="xarm7",
+            # vendor gripper: the 24 mm M16 suits its linkage natively (unlike the bulb)
+            robot_cfg=XArm7RobotCfg(arm_effort_limit=120.0, gravity_compensation=True),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 480.0},
+        ),
+    )
+
 # Franka arm at the bulb scene (base at the origin). The socket + loose bulb are pulled off the stock
 # nut_thread "+x row" layout into the arm's measured reach band: the default row put the bulb at
 # 0.63 m (out of reach -> REORIENT_STUCK) on the centreline (parks wrist q7 near its stop). Baked in:
@@ -399,6 +440,81 @@ for _mode in ("osc", "impedance", "joint"):
             env_spacing=2,
         ),
     )
+
+# The SAME bulb cell for the xArm7, carrying the Franka hand (`gripper` is a robot-cfg dial; two
+# driven prismatic fingers in METRES, 0 = closed, 80 mm aperture, action 6 pose deltas + 2 = 8 —
+# a sim-only pairing used for controlled cross-embodiment comparison: threading this bulb needs
+# a pad gap comfortably wider than the 48 mm glass belly, which rules out the arm's narrower
+# real-gripper options).
+# The scene layout (socket 9 cm closer at table-rel (-0.09, 0), loose bulb on the
+# +y side at (-0.24, 0.25), default sim dt) is copied VERBATIM from the franka binding above so
+# both embodiments face the identical task. Base at the origin facing +x, the franka's spot:
+# both arms clear the socket at 0.41 m and the bulb at (0.26, 0.25) well inside their envelopes
+# (xArm7 ~0.75 m reach vs the franka's ~0.85 m). arm_effort_limit is raised over the asset's
+# authored ratings (50/50/30/30/30/20/20) for gravity-uncompensated torque control — the same
+# dial the pc_gpu xarm7 binding uses.
+#   - "assembly.bulb.xarm7.osc"       — operational-space control (default)
+#   - "assembly.bulb.xarm7.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.bulb.xarm7.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="bulb",
+            scene_cfg=BulbAssemblySceneCfg(
+                socket_slots=((-0.09, 0.0),),
+                bulb_init_xy=((-0.24, 0.25),),
+            ),
+            robot="xarm7",
+            robot_cfg=XArm7RobotCfg(
+                gripper="panda_hand",
+                arm_effort_limit=120.0,
+                gravity_compensation=True,  # the task-space laws are gravity-blind; this arm cannot
+                # hold itself against gravity across the cell's reaches (the same dial the jaco2 and
+                # the pc_ram composites set)
+            ),
+            control_mode=mode,
+            env_spacing=2,
+        ),
+    )
+
+
+# The SAME bulb cell for the four panda-hand composites — the transfer-learning suite: six
+# arms (franka, xarm7, and these four), one task, one end-effector. Scene layout verbatim from
+# the franka binding; base at the origin facing +x (socket 0.41 m / bulb 0.36 m sit inside every
+# reach envelope); arm_effort_limit + gravity_compensation follow each arm's verified pc_ram kw.
+#   -> "assembly.bulb.<robot>.{osc,impedance,joint}" for each composite below.
+_BULB_COMPOSITE_KW: dict[str, dict] = {
+    "rizon4_panda": dict(arm_effort_limit=150.0, gravity_compensation=True,
+                         # 0.36 m is inside this arm's close-in cliff for a hand-down reach:
+                         # base back 15 cm puts the bulb at 0.44 m and the socket at 0.56 m
+                         base_pos=(-0.15, 0.0, 0.0)),
+    "gen3n7_panda": dict(arm_effort_limit=120.0, gravity_compensation=True),
+    # the stock home leaves the 6-DOF wrist in a branch where hand-down is unreachable
+    # (a6 pins at -135deg); this home seeds the down-facing branch, a6 mid-range
+    "festo_panda": dict(arm_effort_limit=150.0, gravity_compensation=True,
+                        default_dof_pos=(0.7679, -0.6, -1.4, 0.0, 2.35, 0.0)),
+    # ready pose for the corrected tool-axis mount: hand straight down over the table,
+    # every joint mid-range (the Intera neutral leaves the EE half a metre from the work)
+    "sawyer_panda": dict(arm_effort_limit=150.0, gravity_compensation=True,
+                         default_dof_pos=(0.7679, -1.18, 0.0, 1.5, 0.0, 1.22, 0.0)),
+}
+for _robot in ("rizon4_panda", "gen3n7_panda", "festo_panda", "sawyer_panda"):
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, mode=_mode: EnvCfg(
+                scene="bulb",
+                scene_cfg=BulbAssemblySceneCfg(
+                    socket_slots=((-0.09, 0.0),),
+                    bulb_init_xy=((-0.24, 0.25),),
+                ),
+                robot=robot,
+                robot_cfg=AttachedArmRobotCfg(**_BULB_COMPOSITE_KW[robot]),
+                control_mode=mode,
+                env_spacing=2,
+            ),
+        )
 
 # Franka arm at the pc-gpu scene. The base stands in the table's NORTH strip at (0.64, -0.34),
 # yaw 180 deg, beside the case's north-east corner; the card holder sits west of it at

@@ -7,6 +7,10 @@ library, each with an end-effector welded on at vendor time (`assets/composites/
   - `sawyer_egk25`   Rethink Sawyer (7-DOF + head pan) + Schunk EGK-25 (2 prismatic jaws)
   - `festo_panda`    Festo Cobot (6-DOF, pneumatic)    + Franka panda hand
 
+(The xArm7's gripper swap lives on `XArm7Robot` itself as a cfg dial — `XArm7RobotCfg.gripper` —
+because that arm ships WITH a gripper; its non-vendor choices load composites BAKED offline by
+`assets/gripper/make_composites.py` with this module's recipe.)
+
 Each composite USD references the vendored arm as its root and the vendored gripper under
 `/<name>/gripper`, posed at the arm's flange rest transform with a FixedJoint authored from the
 composed rest poses (so nothing snaps at spawn) and the gripper's own articulation root stripped —
@@ -308,6 +312,26 @@ class SawyerEGK25Robot(_AttachedArmRobot):
     ARM_HOME = (0.0, -1.18, 0.0, 2.18, 0.0, 0.57, 3.14)  # Sawyer's tucked ready pose
     ARM_DESC = "A Rethink Sawyer arm (7-DOF cobot, ~1.26 m reach, screen head)"
     GRIP_DESC = "a Schunk EGK-25 two-jaw parallel gripper (two mirrored prismatic jaws)"
+
+
+@ROBOTS.register("sawyer_panda")
+class SawyerPandaRobot(_AttachedArmRobot):
+    NAME = "sawyer_panda"
+    ARM_JOINTS = ("right_j[0-6]",)
+    ARM_JOINT_LIST = tuple(f"right_j{i}" for i in range(7))
+    GRIPPER_JOINTS = ("panda_finger_joint[1-2]",)
+    EXTRA_JOINTS = ("head_pan",)
+    EE_BODY = "right_l6"
+    ARM_HOME = (0.0, -1.18, 0.0, 2.18, 0.0, 0.57, 3.14)
+    ARM_DESC = "A Rethink Sawyer arm (7-DOF cobot, ~1.26 m reach, screen head)"
+    GRIP_DESC = "a Franka panda hand (two driven prismatic fingers)"
+
+    def __init__(self, cfg: AttachedArmRobotCfg | None = None) -> None:
+        cfg = cfg or AttachedArmRobotCfg()
+        if not cfg.usd:  # baked as .usda (see assets/gripper/make_composites.py)
+            cfg.usd = str(Path(__file__).resolve().parent / "assets" / "composites"
+                          / self.NAME / f"{self.NAME}.usda")
+        super().__init__(cfg)
 
 
 @ROBOTS.register("festo_panda")

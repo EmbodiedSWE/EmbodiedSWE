@@ -1,17 +1,25 @@
-"""XArm7Robot — a UFACTORY xArm7 arm + the UFACTORY parallel gripper, for table-top manipulation.
+"""XArm7Robot — a UFACTORY xArm7 arm + a CONFIGURABLE end-effector, for table-top manipulation.
 
-A fixed-base 7-DOF arm (~0.70 m reach, 3.5 kg payload) with the vendor's linkage gripper. The
-vendored USD set (`assets/xarm7/` + `assets/xarm_gripper/`, from the Isaac Sim 5.1 asset library's
-`Robots/Ufactory/{xarm7,xarm_gripper}` — the robot's default `Variant_Set` composes the gripper in)
-keeps NVIDIA's authored effort limits (50/50/30/30/30/20/20 N*m — UFACTORY's real joint ratings).
-One local patch, applied at vendor time: the gripper attach joint
+A fixed-base 7-DOF arm (~0.70 m reach, 3.5 kg payload). The end-effector is a cfg dial
+(`XArm7RobotCfg.gripper`): "xarm" (default) is the vendor's linkage gripper baked into the stock
+USD; "panda_hand" spawns a baked composite from `assets/composites/xarm7_panda_hand/`
+(written offline by `assets/gripper/make_composites.py`: the arm USD's own `Variant_Set=None`
+goes bare-flange and the gripper USD is welded at link7's rest frame). Per-gripper runtime
+structure (joint names, mimic followers, control frame, actuator defaults) lives in
+`XArm7Robot.GRIPPERS`; the action layout follows the driven-joint count (one-joint linkages: 7;
+two-finger hands: 8).
+
+The vendored USD set (`assets/xarm7/` + `assets/xarm_gripper/`, from the Isaac Sim 5.1 asset
+library's `Robots/Ufactory/{xarm7,xarm_gripper}` — the robot's default `Variant_Set` composes the
+gripper in) keeps NVIDIA's authored effort limits (50/50/30/30/30/20/20 N*m — UFACTORY's real
+joint ratings). One local patch, applied at vendor time: the gripper attach joint
 (`/UF_ROBOT/gripper/root_joint`, link7 -> gripper base) shipped with its own
 `PhysicsArticulationRootAPI`, which splits the robot into TWO articulations under PhysX — the API
 is removed in the vendored copy so IsaacLab sees one 13-joint articulation.
 
-The gripper is a fingertip linkage with ONE actuated joint (`drive_joint`, 0 = fully open ->
-~0.85 rad closed); the five follower joints ride PhysX mimic constraints authored in the asset, so
-they get a zero-gain actuator group and are never commanded.
+Each gripper is a fingertip linkage with ONE actuated joint (0 = fully open -> ~0.85 rad closed);
+the five follower joints ride PhysX mimic constraints authored in the asset, so they get a
+zero-gain actuator group and are never commanded.
 
 Control modes mirror `FrankaRobot` (the controllers are embodiment-generic; only names/gains are
 per-robot):
@@ -62,60 +70,94 @@ class XArm7RobotCfg(BaseRobotCfg):
     # Arm actuator effort cap [N*m]; None -> keep the vendored asset's authored per-joint ratings
     # (50/50/30/30/30/20/20 — UFACTORY's real xArm7 limits).
     arm_effort_limit: float | None = None
-    # Gripper drive-joint PD gains (always position-controlled; the linkage followers are passive
-    # mimic joints). Torque units — the knuckle links weigh ~30-50 g.
-    gripper_stiffness: float = 100.0
-    gripper_damping: float = 10.0
-    gripper_effort_limit: float | None = None  # None -> the asset's authored 1000 (plenty)
+    # Gripper drive-joint PD gains (always position-controlled; linkage followers stay passive).
+    # None -> the gripper choice's own defaults from `XArm7Robot.GRIPPERS` — units differ per
+    # gripper (N*m/rad for the revolute linkages, N/m for the panda hand's prismatic fingers).
+    gripper_stiffness: float | None = None
+    gripper_damping: float | None = None
+    gripper_effort_limit: float | None = None
     # Home posture of the 7 arm joints: a forward-facing ready pose with the elbow well bent and
     # the tool already pitched toward the table (zero = the arm pointing straight up; joint4's
     # lower limit is only -11 deg, so a near-straight elbow leaves the wrist no room to flip the
     # tool down). Retune per task.
     default_dof_pos: tuple[float, ...] = (0.0, -0.35, 0.0, 1.15, 0.0, 1.5, 0.0)
-    # Gripper drive-joint home (rad): 0 = fully open (~85 mm aperture), ~0.85 = closed.
-    default_gripper_pos: float = 0.0
+    # Gripper drive-joint home; None -> the gripper choice's default (the linkages spawn at 0 =
+    # open, the panda hand at 0.04 m = open — its sense is inverted and its units are metres).
+    default_gripper_pos: float | None = None
+    # Which end-effector rides on the arm — the GRIPPER-LEVEL dial. "xarm" (default) is the
+    # vendor's linkage gripper baked into the stock USD; every other choice spawns the baked
+    # composite assets/composites/xarm7_<gripper>/. Known choices live in `XArm7Robot.GRIPPERS`;
+    # adding one = add the gripper asset + a make_composites.py table entry + a GRIPPERS entry.
+    gripper: str = "xarm"
     # Posture the task-space nullspace pulls toward; () -> use default_dof_pos.
     nullspace_dof_pos: tuple[float, ...] = ()
-    # Arm gravity compensation (PhysX: spawn the bodies with gravity disabled) — the analog of
-    # the real controller's active gravity compensation, as on the sibling arms; without it the
-    # gravity-blind torque modes sag at the work height.
+    # Arm gravity compensation (PhysX: spawn the robot's bodies with gravity disabled — the analog
+    # of the franka cfg's Newton-only `gravcomp`, and the same dial `Jaco2N7RobotCfg` /
+    # `AttachedArmRobotCfg` carry). The task-space laws are gravity-blind (tau = J^T F_task +
+    # tau_null, no gravity term), so under torque control this arm cannot hold itself against
+    # gravity across a long reach. The real xArm7's controller gravity-compensates.
     gravity_compensation: bool = False
     xarm7_usd: str = ""  # "" -> the vendored robots/assets/xarm7/xarm7.usd
 
-    def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parent / "assets" / "xarm7"
-        self.xarm7_usd = self.xarm7_usd or str(assets / "xarm7.usd")
 
 
 @ROBOTS.register("xarm7")
 class XArm7Robot(BaseRobot):
-    """UFACTORY xArm7 arm + vendor parallel gripper. `apply_action` delegates to the controller for
-    `control_mode`; the gripper's `drive_joint` is always a direct position target, the 7 arm joints
-    by the mode's arm controller (torque-mode task-space control, or position JointController)."""
+    """UFACTORY xArm7 arm + a configurable end-effector (`cfg.gripper`; "xarm" = the vendor's
+    linkage gripper, the default). `apply_action` delegates to the controller for `control_mode`;
+    the gripper's driven joint is always a direct position target, the 7 arm joints by the mode's
+    arm controller (torque-mode task-space control, or position JointController)."""
 
     control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default
 
     cfg: XArm7RobotCfg
 
     ARM_JOINTS: tuple[str, ...] = ("joint[1-7]",)
-    GRIPPER_JOINTS: tuple[str, ...] = ("drive_joint",)  # the linkage's one actuated joint
-    # The five linkage followers: PhysX mimic constraints drive them; their actuator group only
-    # pins the (absent) USD drives to zero so nothing fights the mimics.
-    PASSIVE_JOINTS: tuple[str, ...] = (
-        "left_finger_joint",
-        "left_inner_knuckle_joint",
-        "right_inner_knuckle_joint",
-        "right_outer_knuckle_joint",
-        "right_finger_joint",
-    )
-    EE_BODY: str = "xarm_gripper_base_link"  # the OSC control frame (the gripper's base body)
+
+    #: One entry per gripper choice: which joints are driven, which are passive mimic followers,
+    #: the control frame, actuator defaults (used where the cfg leaves the gripper fields None),
+    #: the spawn pose, and the describe() text. Non-default grippers also name their USD and
+    #: the spawn pose, and the describe() text. The action size follows the driven-joint count
+    #: (one-joint linkages: 7; the two-finger panda hand: 8).
+    GRIPPERS: dict[str, dict[str, Any]] = {
+        "xarm": dict(
+            gripper_joints=("drive_joint",),
+            passive_joints=("left_finger_joint", "left_inner_knuckle_joint",
+                            "right_inner_knuckle_joint", "right_outer_knuckle_joint",
+                            "right_finger_joint"),
+            ee_body="xarm_gripper_base_link",  # coincident with link7, 0.54 kg
+            stiffness=100.0, damping=10.0, effort=None,  # N*m/rad; None -> the authored 1000
+            default_pos=0.0,  # 0 = open ~85 mm, 0.85 rad = closed
+            desc="the vendor's parallel linkage gripper (0 = open ~85 mm, 0.85 rad = closed; the "
+                 "finger linkage follows by mimic constraint)",
+        ),
+        "panda_hand": dict(
+            gripper_joints=("panda_finger_joint1", "panda_finger_joint2"),
+            passive_joints=(),
+            ee_body="link7",
+            stiffness=2000.0, damping=100.0, effort=200.0,  # N/m, N*s/m, N — prismatic
+            default_pos=0.04,  # metres; 0 = closed, 0.04 = open (the franka convention)
+            desc="the Franka hand (two driven prismatic fingers, METRES: 0 = closed, "
+                 "0.04 = open ~80 mm)",
+        ),
+    }
 
     # Action/target rate (s) — same scheme as FrankaRobot.
     TORQUE_CONTROL_DT: float = 1.0 / 15.0
     JOINT_CONTROL_DT: float = 0.02
 
     def __init__(self, cfg: XArm7RobotCfg | None = None) -> None:
-        super().__init__(cfg or XArm7RobotCfg())
+        cfg = cfg or XArm7RobotCfg()
+        spec = self.GRIPPERS.get(cfg.gripper)
+        if spec is None:
+            raise ValueError(f"unknown xArm7 gripper {cfg.gripper!r}; known: {sorted(self.GRIPPERS)}")
+        # instance-level structural attrs, resolved from the gripper choice
+        self.GRIPPER_JOINTS: tuple[str, ...] = spec["gripper_joints"]
+        self.PASSIVE_JOINTS: tuple[str, ...] = spec["passive_joints"]
+        self.EE_BODY: str = spec["ee_body"]
+        self._grip_desc: str = spec["desc"]
+        self._gspec = spec  # actuator/spawn defaults for cfg fields left None
+        super().__init__(cfg)
 
     # ----- assets -------------------------------------------------------------------------------
     def assets(self) -> dict[str, Any]:
@@ -127,13 +169,47 @@ class XArm7Robot(BaseRobot):
 
         c = self.cfg
         torque_mode = self.control_mode in ("impedance", "osc")
+        # The USD to spawn: an explicit cfg override, the stock arm+vendor-gripper USD, or the
+        # gripper choice's baked composite (written by assets/gripper/make_composites.py).
+        # Resolved here at spawn time, never stored on the cfg — an eagerly-stored path would
+        # survive `dataclasses.replace(cfg, gripper=...)` and silently spawn the old gripper.
+        assets_dir = Path(__file__).resolve().parent / "assets"
+        usd = c.xarm7_usd or (
+            str(assets_dir / "xarm7" / "xarm7.usd") if c.gripper == "xarm"
+            else str(assets_dir / "composites" / f"xarm7_{c.gripper}" / f"xarm7_{c.gripper}.usda"))
+        gs = self._gspec  # cfg gripper fields left None fall back to the gripper's own defaults
+        grip_pos = c.default_gripper_pos if c.default_gripper_pos is not None else gs["default_pos"]
+        actuators: dict[str, Any] = {
+            "xarm7_arm": ImplicitActuatorCfg(
+                joint_names_expr=list(self.ARM_JOINTS),
+                stiffness=0.0 if torque_mode else c.arm_stiffness,
+                damping=0.0 if torque_mode else c.arm_damping,
+                effort_limit_sim=c.arm_effort_limit,  # None -> the authored per-joint ratings
+                friction=0.0,  # the asset authors physxJoint:jointFriction=1.0 on every arm
+                # joint — PhysX scales it by the transmitted constraint force, a large
+                # Coulomb brake under gravity load. The benchmark's other arms author no
+                # joint friction: zero it for parity.
+            ),
+            "xarm7_gripper": ImplicitActuatorCfg(
+                joint_names_expr=list(self.GRIPPER_JOINTS),
+                stiffness=c.gripper_stiffness if c.gripper_stiffness is not None else gs["stiffness"],
+                damping=c.gripper_damping if c.gripper_damping is not None else gs["damping"],
+                effort_limit_sim=c.gripper_effort_limit if c.gripper_effort_limit is not None else gs["effort"],
+            ),
+        }
+        if self.PASSIVE_JOINTS:
+            actuators["xarm7_gripper_passive"] = ImplicitActuatorCfg(
+                joint_names_expr=list(self.PASSIVE_JOINTS),
+                stiffness=0.0,  # mimic constraints drive these; keep the drives silent
+                damping=0.0,
+            )
         return {
             self.name: ArticulationCfg(
                 prim_path=f"{{ENV_REGEX_NS}}/{self.prim_name}",  # cfg.name-namespaced (default "Robot")
                 spawn=sim_utils.UsdFileCfg(
-                    usd_path=c.xarm7_usd,
+                    usd_path=usd,
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                        disable_gravity=c.gravity_compensation,
+                        disable_gravity=bool(c.gravity_compensation),
                         max_depenetration_velocity=5.0,
                     ),
                     articulation_props=sim_utils.ArticulationRootPropertiesCfg(
@@ -148,32 +224,10 @@ class XArm7Robot(BaseRobot):
                     rot=c.base_rot,
                     joint_pos={
                         **{f"joint{i + 1}": float(q) for i, q in enumerate(c.default_dof_pos)},
-                        "drive_joint": c.default_gripper_pos,
+                        **{gj: grip_pos for gj in self.GRIPPER_JOINTS},
                     },
                 ),
-                actuators={
-                    "xarm7_arm": ImplicitActuatorCfg(
-                        joint_names_expr=list(self.ARM_JOINTS),
-                        stiffness=0.0 if torque_mode else c.arm_stiffness,
-                        damping=0.0 if torque_mode else c.arm_damping,
-                        effort_limit_sim=c.arm_effort_limit,  # None -> the authored per-joint ratings
-                        friction=0.0,  # the asset authors physxJoint:jointFriction=1.0 on every arm
-                        # joint — PhysX scales it by the transmitted constraint force, a large
-                        # Coulomb brake under gravity load. The benchmark's other arms author no
-                        # joint friction: zero it for parity.
-                    ),
-                    "xarm7_gripper": ImplicitActuatorCfg(
-                        joint_names_expr=list(self.GRIPPER_JOINTS),
-                        stiffness=c.gripper_stiffness,
-                        damping=c.gripper_damping,
-                        effort_limit_sim=c.gripper_effort_limit,
-                    ),
-                    "xarm7_gripper_passive": ImplicitActuatorCfg(
-                        joint_names_expr=list(self.PASSIVE_JOINTS),
-                        stiffness=0.0,  # mimic constraints drive these; keep the drives silent
-                        damping=0.0,
-                    ),
-                },
+                actuators=actuators,
                 soft_joint_pos_limit_factor=1.0,
             )
         }
@@ -185,12 +239,14 @@ class XArm7Robot(BaseRobot):
         # by the transmitted constraint force — a large Coulomb brake under gravity load. The
         # actuator cfg's `friction=0.0` only updates IsaacLab's data buffer for implicit
         # actuators — it is NOT pushed to PhysX — so write it through explicitly.
+        # Zero it through the PHYSX VIEW, not `write_joint_friction_coefficient_to_sim`: for
+        # implicit actuators that call updates only IsaacLab's data buffer, leaving PhysX's own
+        # coefficients at the authored 1.0 (`art.data.joint_friction_coeff` then reads 0.0 while
+        # the brake is still live). Same escape hatch `AttachedArmRobot.on_bind` uses.
         art = self.articulation
-        zeros = torch.zeros_like(art.data.joint_friction_coeff)
-        write = getattr(art, "write_joint_friction_coefficient_to_sim", None) or getattr(
-            art, "write_joint_friction_to_sim"
-        )
-        write(zeros)
+        fr = art.root_physx_view.get_dof_friction_coefficients()
+        fr[:] = 0.0
+        art.root_physx_view.set_dof_friction_coefficients(fr, torch.arange(env.num_envs, device="cpu"))
 
     def build_controller(self) -> CompositeController:
         """`composite([<arm controller>, joint(gripper)])` for the active mode — same shape as
@@ -238,9 +294,9 @@ class XArm7Robot(BaseRobot):
             arm = "7 arm joints by operational-space control (joint torque); the action is 6 end-effector pose deltas"
         else:
             arm = "7 arm joints by direct position targets"
+        n_grip = len(self.GRIPPER_JOINTS)
         return (
-            f"A UFACTORY xArm7 arm (7-DOF cobot, ~0.70 m reach) with the vendor's parallel linkage "
-            f"gripper, fixed to the table. Control mode '{mode}': {arm}, plus 1 gripper drive joint by "
-            f"direct position target (0 = open ~85 mm, 0.85 rad = closed; the finger linkage follows "
-            f"by mimic constraint). Action dim {self.action_dim}."
+            f"A UFACTORY xArm7 arm (7-DOF cobot, ~0.70 m reach) with {self._grip_desc}, fixed to "
+            f"the table. Control mode '{mode}': {arm}, plus {n_grip} gripper joint(s) by direct "
+            f"position target. Action dim {self.action_dim}."
         )
