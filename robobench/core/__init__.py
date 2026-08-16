@@ -14,7 +14,7 @@ Base abstractions (import-light — safe without AppLauncher):
 Still TODO (filled later): a Sim wrapper, sensors, gym_wrapper, a grader registry.
 """
 
-from .grasp_weld import GraspWeldMixin
+from .grasp_weld import GraspWeldContract
 from .config import BaseCfg, EnvCfg, SimCfg, info, register_env, tunable
 from .controller import BaseController, BaseControllerCfg
 from .env import BaseEnv
@@ -25,7 +25,7 @@ from .scene import BaseScene
 from .grader import BaseGrader, GradedEnv
 
 __all__ = [
-    "GraspWeldMixin",
+    "GraspWeldContract",
     "BaseScene",
     "BaseRobot",
     "BaseRobotCfg",

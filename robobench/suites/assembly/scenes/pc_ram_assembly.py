@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import GraspWeldMixin, SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import GraspWeldContract, SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -137,7 +137,7 @@ class PcRamAssemblySceneCfg(BaseCfg):
 
 
 @SCENES.register("pc_ram")
-class PcRamAssemblyScene(GraspWeldMixin, BaseScene):
+class PcRamAssemblyScene(BaseScene):
     cfg: PcRamAssemblySceneCfg
 
     # Stick-local x extent of the body collision slab (from ram_tridentz.usd
@@ -276,6 +276,15 @@ class PcRamAssemblyScene(GraspWeldMixin, BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+
+    def __getattr__(self, name: str):
+        # Legacy surface: the grasp contract's state used to live directly on the scene
+        # (inline machinery era) and existing solutions read it there — forward to the
+        # composed contract. `__getattr__` only fires for attributes not found normally.
+        if name.startswith("_gw_") and "grasp_weld" in self.__dict__:
+            return getattr(self.grasp_weld, name)
+        raise AttributeError(name)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab the case + stick handles, cache env origins, and set the part frictions."""
         super().bind(env)
@@ -285,7 +294,8 @@ class PcRamAssemblyScene(GraspWeldMixin, BaseScene):
         self._set_friction(self.case, self.cfg.case_friction)
         for ram in self.rams:
             self._set_friction(ram, self.cfg.ram_friction)
-        self._grasp_weld_bind()
+        self.grasp_weld = GraspWeldContract(self)  # composed, publishes self.grasp_held
+        self.grasp_weld.bind()
 
     def grasp_sites(self) -> list:
         """One grip band per stick: across the blade (faces at STICK_BODY_X, 7.3 mm wide),
@@ -298,7 +308,7 @@ class PcRamAssemblyScene(GraspWeldMixin, BaseScene):
 
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
         """Reconcile the weld-on-closure grasp contract every physics substep."""
-        self._grasp_weld_step()
+        self.grasp_weld.step()
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
@@ -321,7 +331,7 @@ class PcRamAssemblyScene(GraspWeldMixin, BaseScene):
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 3:7] = torch.tensor(c.ram_init_quat, device=dev)
             ram.write_root_state_to_sim(st, env_ids)
-        self._grasp_weld_release_all(env_ids)
+        self.grasp_weld.release_all(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
@@ -329,7 +339,7 @@ class PcRamAssemblyScene(GraspWeldMixin, BaseScene):
         out = {"case": self.case.data.root_state_w[env_ids].clone()}
         for k, ram in enumerate(self.rams):
             out[f"ram_{k}"] = ram.data.root_state_w[env_ids].clone()
-        out.update(self._grasp_weld_state(env_ids))
+        out.update(self.grasp_weld.state(env_ids))
         return out
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
@@ -338,7 +348,7 @@ class PcRamAssemblyScene(GraspWeldMixin, BaseScene):
         self.case.write_root_pose_to_sim(state["case"][:, 0:7], env_ids)
         for k, ram in enumerate(self.rams):
             ram.write_root_state_to_sim(state[f"ram_{k}"], env_ids)
-        self._grasp_weld_restore(state, env_ids)
+        self.grasp_weld.restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
@@ -424,7 +434,15 @@ class PcRamAssemblyScene(GraspWeldMixin, BaseScene):
             cols.append((ram_ax * case_ax).sum(dim=-1))
         return torch.stack(cols, dim=1)
 
-    # Grasp-weld contract: `GraspWeldMixin` (robobench.core.grasp_weld) — the
-    # weld-on-closure machinery shared by the grasping scenes; this scene supplies the
-    # part-side `grasp_sites()`.
+    # Grasp-weld contract: composed `GraspWeldContract` (robobench.core.grasp_weld),
+    # created in `bind()`; this scene supplies the part-side `grasp_sites()`.
+    # Grasp-weld contract constants — the scene's public knobs (solutions read these off the
+    # scene, e.g. `scene.GRASP_PINCH_OFFSET`); the composed GraspWeldContract consumes them.
+    GRASP_HAND_BODY: ClassVar[str] = "panda_hand"
+    GRASP_FINGER_JOINTS: ClassVar[str] = "panda_finger_joint.*"
+    GRASP_PINCH_OFFSET: ClassVar[float] = 0.1034  # hand origin -> finger-pad centre, along approach
+    GRASP_POOL: ClassVar[int] = 8  # engages per (env, site) per run; exhausted -> warn, no weld
+    GRASP_STALL: ClassVar[float] = 0.01  # max |finger vel| sum (m/s): fingers stopped ON the part
+    GRASP_DEBOUNCE: ClassVar[int] = 8  # consecutive qualifying substeps before the weld engages
+    GRASP_RELEASE_MARGIN: ClassVar[float] = 0.008  # release at window-top + this (m), hysteresis
 
