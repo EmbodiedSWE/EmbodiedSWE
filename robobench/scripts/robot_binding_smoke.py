@@ -132,8 +132,9 @@ def main() -> None:
     grip_ids = grip_ctrl.joint_ids
     grip0 = art.data.joint_pos[:, grip_ids].clone()
     ee0 = art.data.body_link_state_w[:, ee_i, :7].clone()
-    if robot_name != "franka":
-        li = art.find_bodies(getattr(env.robot, "EE_BODIES")[0])[0][0]
+    if getattr(env.robot, "EE_BODIES", None):  # humanoids only (pink_ik uses the LEFT wrist pose);
+        # single-arm grippers carry EE_BODY alone
+        li = art.find_bodies(env.robot.EE_BODIES[0])[0][0]
         l0 = art.data.body_link_state_w[:, li, :7].clone()
     arm_ids = (env.robot.controller.controllers[0].joint_ids
                if mode == "joint" else None)

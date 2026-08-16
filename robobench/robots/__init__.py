@@ -11,6 +11,7 @@ from .attached import (
     Gen3N7PandaRobot,
     Rizon4PandaRobot,
     SawyerEGK25Robot,
+    SawyerPandaRobot,
     Z1Lite6GRobot,
 )
 from .cobotta import CobottaPro1300Robot, CobottaPro1300RobotCfg
