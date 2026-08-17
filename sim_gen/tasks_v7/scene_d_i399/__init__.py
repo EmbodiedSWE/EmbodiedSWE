@@ -1,0 +1,1 @@
+"""sim_gen task `scene_d_i399` — mast lowering: stand the catch cradle just beyond the protected bottle, fell the hinged mast past vertical, and let the cradle arrest it spanning over the still-standing bottle."""
