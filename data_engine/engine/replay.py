@@ -452,11 +452,6 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
             for n, v in views.items():
                 if writers[i][n] is not None:
                     writers[i][n].close()
-                # per-cam contract, so several views/looks coexist; drop a legacy
-                # single-name render.json only if it was this camera's (now superseded)
-                legacy = ep_dir / "imgs" / "render.json"
-                if legacy.exists() and json.loads(legacy.read_text()).get("camera") == n:
-                    legacy.unlink()
                 eye, target = (placed[n][i] if n in placed else (v["eye"], v["target"]))
                 (ep_dir / "imgs" / f"render_{n}.json").write_text(json.dumps({
                     "camera": n, "size": list(size), "fps": fps, "stride": stride,

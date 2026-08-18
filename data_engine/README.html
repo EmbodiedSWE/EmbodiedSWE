@@ -388,10 +388,10 @@ scenes/
         </tbody>
       </table></div>
 
-      <h3>Export (scripts/export_lerobot.py — no Isaac)</h3>
-      <div class="block">~/Documents/Research/lerobot/.venv/bin/python data_engine/scripts/export_lerobot.py \
+      <h3>Export (vla/scripts/export_lerobot.py — no Isaac)</h3>
+      <div class="block">~/Documents/Research/lerobot/.venv/bin/python vla/scripts/export_lerobot.py \
     &lt;…/data_gen/&lt;gen_name&gt;&gt; --repo-id cosigen/bulb_franka_osc [--batches …] [--task "…"]</div>
-      <p>Runs on <b>lerobot's own venv</b> (its deps are not in the Isaac venv) and consumes only files: rendered frames + <code>render_&lt;cam&gt;.json</code> + <code>traj.npz</code>. Per frame: <code>observation.images.&lt;cam&gt;</code>, <code>observation.state</code> = joint positions at the frame's tick, <code>action</code> = <b>absolute joint positions at the next frame's tick</b> (rate-independent — the recorded command is a per-sim-tick task-space delta whose magnitude only means something at 240 Hz; <code>traj.npz</code> keeps it), <code>task</code> = the scene description's "Goal:" sentence (or <code>--task</code>). Failed episodes are skipped by default. The dataset lands at <code>&lt;gen_name&gt;/datasets/&lt;repo_id&gt;</code>.</p>
+      <p>Lives in <code>vla/</code> — the lerobot side of the pipeline (see <code>vla/README.md</code>); the render contract above is the API between the two. Runs on <b>lerobot's own venv</b> (its deps are not in the Isaac venv) and consumes only files: rendered frames + <code>render_&lt;view&gt;.json</code> + <code>traj.npz</code>. Views are discovered from the contracts — every rendered view exports as its own stream. Per frame: <code>observation.images.&lt;view&gt;</code> for each view, <code>observation.state</code> = joint positions at the frame's tick, <code>action</code> = <b>the recorded controller command at that tick</b> — the env-loop action verbatim (franka osc: 6 EE-pose offsets, re-anchored to the current pose at every latch so they are rate-independent intent — a sustained press exports as a sustained offset — plus 2 gripper targets); a trained policy deploys through the same controller, and there is deliberately no action-space option, <code>task</code> = the scene description's "Goal:" sentence (or <code>--task</code>). Failed episodes are skipped by default. The dataset lands at <code>&lt;gen_name&gt;/datasets/&lt;repo_id&gt;</code>.</p>
 
       <h4>export_lerobot.py arguments</h4>
       <div class="twrap"><table>
@@ -399,9 +399,9 @@ scenes/
         <tbody>
           <tr><td class="name">gen_root</td><td class="t">—</td><td>the campaign dir, same as render.py's</td></tr>
           <tr><td class="name">--repo-id</td><td class="t">required</td><td>dataset id, e.g. <code>cosigen/bulb_franka_osc</code></td></tr>
-          <tr><td class="name">--batches / --episodes</td><td class="t">all rendered</td><td>which episodes to pack (only ones with <code>imgs/render_&lt;cam&gt;.json</code> — or the legacy <code>render.json</code> — count)</td></tr>
+          <tr><td class="name">--batches / --episodes</td><td class="t">all rendered</td><td>which episodes to pack (only ones with <code>imgs/render_&lt;view&gt;.json</code> contracts count)</td></tr>
           <tr><td class="name">--root</td><td class="t">&lt;gen_root&gt;/datasets/&lt;repo_id&gt;</td><td>where the dataset is written (must not already exist)</td></tr>
-          <tr><td class="name">--cam</td><td class="t">cam</td><td>which rendered view to pack (a declared camera name, e.g. <code>front</code>, or the ad-hoc name)</td></tr>
+          <tr><td class="name">--cams</td><td class="t">all rendered</td><td>views to pack — discovered from each episode's <code>render_&lt;view&gt;.json</code> contracts; every view becomes its own <code>observation.images.&lt;view&gt;</code> stream</td></tr>
           <tr><td class="name">--task</td><td class="t">the scene's "Goal:" sentence</td><td>language instruction stored on every frame</td></tr>
           <tr><td class="name">--robot-type</td><td class="t">the preset</td><td>metadata tag on the dataset</td></tr>
           <tr><td class="name">--include-failures</td><td class="t">off</td><td>keep episodes whose grader verdict was failure (skipped by default)</td></tr>
@@ -413,6 +413,9 @@ scenes/
     <!-- 06 TODO ------------------------------------------------------ -->
     <section id="todo" hidden>
       <h2><span class="num">06</span>TODO</h2>
+
+      <h3>Controller gains live in solve.py, not in the export contract</h3>
+      <p>The dataset's <code>action</code> is the preset controller's command, so a deployed policy must run <em>the same controller with the same gains</em> — but the gains that actually shaped the data are live overrides in every solve's setup (<code>osc._kp = (150, 150, 150, 600, 600, 600)</code>, <code>kd = 2√kp</code>, gripper stiffness written to 8000 vs the cfg's 2000), identical across all cells yet recorded nowhere the export can see. Fix: promote them into the preset's cfg (the <code>task_prop_gains</code> / <code>gripper_stiffness</code> fields exist for exactly this) or stamp them into <code>render_&lt;view&gt;.json</code> → dataset metadata, so a training/deployment stack can reconstruct the control law without reading solve.py. Do this before the first real training run.</p>
 
       <h3>Language descriptions in the generated data</h3>
       <p>Study eval's <b>checkpoint tree</b> (<code>eval/prompts/tools/checkpoint_tree.md</code>, the <code>cosigen-checkpoint-tree</code> skill): every saved node carries natural-language annotations — the state reached, the action attempted, measured notes, plus computed state diffs. Generated episodes carry none of that today. Work out how data gen attaches language to what it records (per-episode and per-phase descriptions, sourced from the solve's visible phases and checkpoint-tree-style annotation), so the dataset can feed language-conditioned training without a separate labeling pass.</p>
