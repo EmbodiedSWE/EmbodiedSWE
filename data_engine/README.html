@@ -218,7 +218,8 @@
       <a href="#quickstart"><span class="num">02</span>Quick start</a>
       <a href="#levels"><span class="num">03</span>Diversification levels</a>
       <a href="#generate"><span class="num">04</span>Generating data</a>
-      <a href="#todo"><span class="num">05</span>TODO</a>
+      <a href="#replay"><span class="num">05</span>Replay &amp; export</a>
+      <a href="#todo"><span class="num">06</span>TODO</a>
     </div>
   </div>
 </nav>
@@ -330,9 +331,86 @@ scenes/
     </section>
 
 
-    <!-- 05 TODO ------------------------------------------------------ -->
+    <!-- 05 REPLAY & EXPORT --------------------------------------------- -->
+    <section id="replay" hidden>
+      <h2><span class="num">05</span>Replay &amp; export</h2>
+      <p class="lede">L5 in practice: recorded states re-render to <b>RGB frames</b> without touching the dynamics — retroactively, on every episode ever recorded — then pack into a <b>LeRobotDataset</b> for VLA training.</p>
+
+      <h3>Render (scripts/render.py — boots Isaac)</h3>
+      <div class="block">.venv/bin/python data_engine/scripts/render.py --headless \
+    &lt;…/data_gen/&lt;gen_name&gt;&gt; --batches bf_scene3</div>
+      <p class="note">That is the whole normal run — the defaults (8 parallel envs, 30 fps, 640×480, the probed bulb camera) are the ones every dataset here was rendered with. Everything tunable is in the args table below.</p>
+      <p class="note">Generation records states only — rendering stays a separate, retroactive pass (any batch, any time, any camera). For convenience the two chain: <code>generate.py --render [--render_args "…"]</code> replays the freshly graded batch in its own process.</p>
+      <p>Kinematic replay: the env rebuilds from the cell's <b>local scene</b> (exactly like <code>generate</code>), then every rendered frame is a restored recorded state — <code>env.set_states</code> on <code>num_envs</code> episodes at once, one <b>TiledCamera</b> pass rendering all of them together (that is where the parallelism lives). Physics decides nothing. The scene's <code>post_step</code> runs on each restored state <em>before</em> the render, so state-coupled visuals — the bulb's glow — land in the correct frame. Episodes recorded on any env grid replay anywhere: positions shift onto the replay slots, anchored on the deterministic robot base.</p>
+      <ul class="tight">
+        <li><b>Outputs, per episode</b>: <code>imgs/&lt;cam&gt;/frame_%06d.jpg</code> (the dataset frames — the layout's <code>imgs/</code> slot), <code>imgs/render_&lt;cam&gt;.json</code> (frame indices + camera + joint names + visual draw: the export contract, per cam so several looks coexist), <code>imgs/preview.mp4</code> (time-lapsed, for eyeballing). Per batch: <code>replay_sheet.png</code>, an episodes × time contact grid.</li>
+        <li><b>The renderer has state of its own</b> ("visual cache"): the RTX temporal denoiser accumulates across frames, so teleports leave ghost trails and a fresh boot renders its first frames dark. <code>--warmup</code> (default 12) burns throwaway renders at every chunk start. And Kit shows what PhysX had at its <em>last step</em> — the one <code>sim.step(render=True)</code> per frame is what carries restored transforms into the renderer.</li>
+        <li><b>Visual diversification is scene-owned</b>, mirroring L4's world physics: the cell's scene.py declares <code>VISUAL_PARAMS</code> bands (same distribution grammar as <code>PHYSICAL_PARAMS</code>, the cfg default = the nominal look) — one file, next to the knowledge that justifies the ranges, and the L1 agent authors it with the rest of the cell. <code>--visual_draw k</code> samples the bands at Halton index k into <b>one stage-wide look per render pass</b> (lights and ground are shared prims, so a pass can't mix looks); K looks of the same episodes = K runs, kept apart with distinct <code>--cam</code> names, and the draw + values are recorded into <code>render_&lt;cam&gt;.json</code>. The draw applies at <b>both moments, so knobs need no tags</b>: values are written onto the scene cfg <em>before</em> the build — build-consumed fields (a table preset, a backdrop usd) take effect there with zero extra code — then handed to <code>scene.apply_visual_params(env, values)</code> <em>after</em> it for the live subset (light/texture attribute writes, material rebinds; a knob with no branch there already did its work at build). For looks that don't band-ify there is the escape hatch: <code>--visual file.py</code> with <code>setup(env)</code> (once, after the build and after the banded look) and <code>per_frame(env, t)</code> (before each rendered frame).</li>
+        <li>One scene per process; inputs spanning several scene cells split into one subprocess per scene automatically.</li>
+      </ul>
+
+      <h3>One standalone robot per frame — Isaac has no true parallel rendering</h3>
+      <p>Unlike Genesis, MJX + Madrona, or ManiSkill — which batch-render N <em>independent</em> worlds — Omniverse RTX renders <b>one shared USD stage</b>: a <code>TiledCamera</code> is a single render product packing N viewpoints of that same stage, so every camera sees every environment. This is a documented limitation, still current (verified 2026-08): the TiledCamera docs note the camera renders all other parallel environments into the image (IsaacLab PR #1246), and the request for per-env-only rendering (<a href="https://github.com/isaac-sim/IsaacLab/issues/4021">issue #4021</a>, Nov 2025) closed with no supported feature — USD visibility is stage-global, not per-camera.</p>
+      <p>The standard fix — used by NVIDIA's own image pipelines — is <b>geometric</b>: keep every neighbor beyond the camera's far clip plane, where geometry is discarded before rasterization. Zero neighbor pixels can render, which is pixel-identical to independent worlds, at full tiled-rendering speed. In the wild: <a href="https://github.com/NVlabs/DEXTRAH">DEXTRAH</a> runs <code>clipping_range=(0.01, 2.0)</code> at <code>env_spacing=2.0</code>; <a href="https://github.com/NVlabs/GR00T-VisualSim2Real">GR00T-VisualSim2Real</a> runs <code>(0.1, 20.0)</code> at <code>env_spacing: 20</code>.</p>
+      <ul class="tight">
+        <li>Here: <code>--env-spacing</code> (default <b>50 m</b>) &gt; far clip (<b>40 m</b>) — a 10 m margin, so isolation holds for any camera pose, not just cameras centered in their cell. Replay owns its grid (recorded states shift onto the replay origins), so the spacing costs nothing.</li>
+        <li>The shared ground plane is auto-enlarged to grid extent + far-clip margin, or far-flung envs would float over sky.</li>
+        <li>Side effect: the background beyond 40 m is dome-light sky (a plain horizon line) — the same look DEXTRAH/GR00T training images have. A richer backdrop is a per-env asset (an L1 scene edit or the <code>--visual</code> hook), not a renderer setting.</li>
+        <li>Setting <code>--env-spacing</code> at or below the far clip prints a warning and neighbors reappear — the true-isolation alternative (one env per process) costs a ~90 s Kit boot per episode and loses the tiling.</li>
+      </ul>
+
+      <h4>render.py arguments</h4>
+      <div class="twrap"><table>
+        <thead><tr><th>arg</th><th>default</th><th>what it does</th></tr></thead>
+        <tbody>
+          <tr><td class="name">gen_root</td><td class="t">—</td><td>the campaign dir (<code>…/data_gen/&lt;gen_name&gt;</code>); episodes, scene code, and the robot preset are all found from here</td></tr>
+          <tr><td class="name">--batches</td><td class="t">all</td><td>batch folders under <code>data/</code> to replay</td></tr>
+          <tr><td class="name">--episodes</td><td class="t">—</td><td>explicit <code>ep_NNNN/</code> dirs instead (overrides <code>--batches</code>; also how the dispatcher hands a scene group to its worker)</td></tr>
+          <tr><td class="name">--num_envs</td><td class="t">8</td><td>episodes replayed simultaneously — one per env slot, one tiled render pass; the throughput knob (VRAM-bound)</td></tr>
+          <tr><td class="name">--fps</td><td class="t">30</td><td>output frame rate in sim time → subsampling stride over the 240 Hz states (240/30 = every 8th tick); becomes the dataset fps at export</td></tr>
+          <tr><td class="name">--size</td><td class="t">640 480</td><td>image width height</td></tr>
+          <tr><td class="name">--eye / --target</td><td class="t">1.0 -0.7 0.5 / 0.22 0.1 0.18</td><td>camera position and look-at, env-origin-relative on the work surface (<code>surface_z</code> added automatically); defaults probed for the bulb scenes</td></tr>
+          <tr><td class="name">--focal</td><td class="t">16</td><td>pinhole focal length, USD mm: 24 ≈ 47° hFOV, 16 ≈ 66° (wide enough to keep the arm in frame)</td></tr>
+          <tr><td class="name">--cam</td><td class="t">cam</td><td>camera name → frames land in <code>imgs/&lt;cam&gt;/</code>; a second viewpoint under a different name coexists per episode</td></tr>
+          <tr><td class="name">--env-spacing</td><td class="t">50</td><td>replay grid spacing; kept above the 40 m far clip so each frame shows only its own robot (warns if set at/below it)</td></tr>
+          <tr><td class="name">--warmup</td><td class="t">12</td><td>throwaway renders per chunk start — flushes the RTX temporal denoiser (first frames otherwise dark/ghosted)</td></tr>
+          <tr><td class="name">--no-frames</td><td class="t">off</td><td>skip the per-frame jpgs (previews only; export needs frames)</td></tr>
+          <tr><td class="name">--no-preview</td><td class="t">off</td><td>skip the per-episode <code>preview.mp4</code></td></tr>
+          <tr><td class="name">--preview-speed</td><td class="t">6</td><td>preview plays N× faster than sim time</td></tr>
+          <tr><td class="name">--no-sheet</td><td class="t">off</td><td>skip the per-batch <code>replay_sheet.png</code> contact grid</td></tr>
+          <tr><td class="name">--crf</td><td class="t">26</td><td>x264 quality for the preview (lower = better/bigger)</td></tr>
+          <tr><td class="name">--max-frames</td><td class="t">0 = all</td><td>debug cap on frames per episode — makes 2-minute smoke tests possible</td></tr>
+          <tr><td class="name">--visual_draw</td><td class="t">— (nominal)</td><td>sample the scene's own <code>VISUAL_PARAMS</code> bands at this index and apply the look stage-wide for the whole pass; omit = the nominal look (the cfg defaults); recorded in <code>render_&lt;cam&gt;.json</code></td></tr>
+          <tr><td class="name">--visual</td><td class="t">—</td><td>escape-hatch diversify hook: py file with <code>setup(env)</code> (once, after the build) and <code>per_frame(env, t)</code> (before each rendered frame); recorded in <code>render.json</code></td></tr>
+          <tr><td class="name">--headless …</td><td class="t">—</td><td>standard isaaclab AppLauncher flags; <code>--enable_cameras</code> is forced on</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Export (scripts/export_lerobot.py — no Isaac)</h3>
+      <div class="block">~/Documents/Research/lerobot/.venv/bin/python data_engine/scripts/export_lerobot.py \
+    &lt;…/data_gen/&lt;gen_name&gt;&gt; --repo-id cosigen/bulb_franka_osc [--batches …] [--task "…"]</div>
+      <p>Runs on <b>lerobot's own venv</b> (its deps are not in the Isaac venv) and consumes only files: rendered frames + <code>render_&lt;cam&gt;.json</code> + <code>traj.npz</code>. Per frame: <code>observation.images.&lt;cam&gt;</code>, <code>observation.state</code> = joint positions at the frame's tick, <code>action</code> = <b>absolute joint positions at the next frame's tick</b> (rate-independent — the recorded command is a per-sim-tick task-space delta whose magnitude only means something at 240 Hz; <code>traj.npz</code> keeps it), <code>task</code> = the scene description's "Goal:" sentence (or <code>--task</code>). Failed episodes are skipped by default. The dataset lands at <code>&lt;gen_name&gt;/datasets/&lt;repo_id&gt;</code>.</p>
+
+      <h4>export_lerobot.py arguments</h4>
+      <div class="twrap"><table>
+        <thead><tr><th>arg</th><th>default</th><th>what it does</th></tr></thead>
+        <tbody>
+          <tr><td class="name">gen_root</td><td class="t">—</td><td>the campaign dir, same as render.py's</td></tr>
+          <tr><td class="name">--repo-id</td><td class="t">required</td><td>dataset id, e.g. <code>cosigen/bulb_franka_osc</code></td></tr>
+          <tr><td class="name">--batches / --episodes</td><td class="t">all rendered</td><td>which episodes to pack (only ones with <code>imgs/render_&lt;cam&gt;.json</code> — or the legacy <code>render.json</code> — count)</td></tr>
+          <tr><td class="name">--root</td><td class="t">&lt;gen_root&gt;/datasets/&lt;repo_id&gt;</td><td>where the dataset is written (must not already exist)</td></tr>
+          <tr><td class="name">--cam</td><td class="t">cam</td><td>which rendered camera to pack (matches render.py's <code>--cam</code>)</td></tr>
+          <tr><td class="name">--task</td><td class="t">the scene's "Goal:" sentence</td><td>language instruction stored on every frame</td></tr>
+          <tr><td class="name">--robot-type</td><td class="t">the preset</td><td>metadata tag on the dataset</td></tr>
+          <tr><td class="name">--include-failures</td><td class="t">off</td><td>keep episodes whose grader verdict was failure (skipped by default)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">Chaining from generation: <code>generate.py --render</code> runs render.py on the fresh batch after grading, and <code>--render_args "…"</code> forwards any of the render flags above.</p>
+    </section>
+
+    <!-- 06 TODO ------------------------------------------------------ -->
     <section id="todo" hidden>
-      <h2><span class="num">05</span>TODO</h2>
+      <h2><span class="num">06</span>TODO</h2>
 
       <h3>Language descriptions in the generated data</h3>
       <p>Study eval's <b>checkpoint tree</b> (<code>eval/prompts/tools/checkpoint_tree.md</code>, the <code>cosigen-checkpoint-tree</code> skill): every saved node carries natural-language annotations — the state reached, the action attempted, measured notes, plus computed state diffs. Generated episodes carry none of that today. Work out how data gen attaches language to what it records (per-episode and per-phase descriptions, sourced from the solve's visible phases and checkpoint-tree-style annotation), so the dataset can feed language-conditioned training without a separate labeling pass.</p>

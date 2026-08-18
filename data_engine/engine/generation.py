@@ -69,7 +69,9 @@ def _load(name: str, path: Path):
 
 
 def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
-              env_draw: int = 0, nominal: bool = False):
+              env_draw: int = 0, nominal: bool = False,
+              env_spacing: float | None = None,
+              scene_overrides: dict | None = None):
     """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene.
 
     World physics comes from the LOCAL scene's own `PHYSICAL_PARAMS` bands (see the module
@@ -77,7 +79,11 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
     `scene.apply_physical_params` after the build. `nominal=True` skips sampling. Returns
     (env, gen, bands, slot_drawn): the validated band specs and the per-slot draws
     (slot 0 = {}; both empty when nominal or band-less). A bad band fails here — before
-    the expensive build."""
+    the expensive build.
+
+    `scene_overrides` (replay's visual draw) constructs the scene cfg WITH those field
+    values — through the constructor, not setattr, so `__post_init__` derivations (a
+    table preset filling its usd/height) see them — and the build consumes them."""
     import dataclasses
 
     import robobench
@@ -97,7 +103,12 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
     # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1
     slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)] if bands else []
     cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
-    env = cfg.build(num_envs=num_envs, device=device, seed=seed)
+    # env_spacing: None keeps the preset's grid; replay overrides it (recorded states
+    # shift onto whatever grid the replay builds, so spacing is free there)
+    extra = {} if env_spacing is None else {"env_spacing": env_spacing}
+    if scene_overrides:
+        extra["scene_cfg"] = type(scene_cls().cfg)(**scene_overrides)
+    env = cfg.build(num_envs=num_envs, device=device, seed=seed, **extra)
     if slot_drawn:
         c = env.scene.cfg  # nominal source for slot 0
         values = {n: [getattr(c, n)] + [d[n] for d in slot_drawn[1:]] for n in bands}

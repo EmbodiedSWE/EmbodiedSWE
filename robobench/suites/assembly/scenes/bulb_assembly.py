@@ -113,6 +113,16 @@ class BulbAssemblySceneCfg(BaseCfg):
 class BulbAssemblyScene(BaseScene):
     cfg: BulbAssemblySceneCfg
 
+    #: L5 visual dials for replay (data_engine render.py --visual_draw): stage-wide look knobs ->
+    #: sampling bands, cfg default = the nominal look. Applied once per render pass, never per env
+    #: (the dome light is one shared prim).
+    VISUAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "light_intensity": {"dist": "loguniform", "lo": 800.0, "hi": 8000.0,
+                            "reason": "dim dusk -> bright lab around the 2500 nominal"},
+        "lit_intensity": {"dist": "loguniform", "lo": 2.0e5, "hi": 1.0e6,
+                          "reason": "faint filament -> blazing bulb; post_step scales the ramp by it"},
+    }
+
     def __init__(self, cfg: BulbAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or BulbAssemblySceneCfg())
 
@@ -203,6 +213,19 @@ class BulbAssemblyScene(BaseScene):
         )
 
     # ----- lifecycle ----------------------------------------------------------------------------
+    def apply_visual_params(self, env: BaseEnv, values: dict[str, Any]) -> None:
+        """The live subset of `VISUAL_PARAMS` (see BaseScene): both knobs are attribute writes, so
+        both apply here — `light_intensity` also reaches the dome at build via the cfg, making this
+        write redundant-but-harmless on a fresh build."""
+        unknown = set(values) - set(self.VISUAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply visuals: {sorted(unknown)}")
+        if "light_intensity" in values:
+            env.stage.GetPrimAtPath("/World/light").GetAttribute("inputs:intensity").Set(
+                float(values["light_intensity"]))
+        if "lit_intensity" in values:
+            self.cfg.lit_intensity = float(values["lit_intensity"])  # post_step reads it per frame
+
     def bind(self, env: BaseEnv) -> None:
         """Grab handles, cache env origins, and set part friction. Called once after the build (physx ready)."""
         super().bind(env)
