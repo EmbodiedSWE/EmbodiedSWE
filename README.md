@@ -118,7 +118,9 @@ uv pip install --python "$PY" -e .                     # robobench itself (decla
 Notes:
 
 - The Newton engine itself needs no separate install — `isaaclab_newton[all]` pins and pulls the
-  exact `newton` git commit it is built against.
+  exact `newton` git commit it is built against. (The `shoe_tying` suite needs a NEWER newton
+  than that pin — see "Upgrading newton" below; all three Newton suites pass under the upgrade,
+  folding via a two-knob retune baked into its scene cfg.)
 - All seven `-e` packages are required: `isaaclab_ovphysx`/`isaaclab_physx` are hard imports of
   isaaclab's app launcher, and `isaaclab_visualizers[kit]` drives rendering (the folding smokes
   default to the kit visualizer).
@@ -162,3 +164,69 @@ Note: do **not** record COUPLED-substrate pouring runs with `scripts/record_vide
 live rendering corrupts the coupled MPM physics on this stack. Record via `--dump_states`
 (poses + particles to an `.npz`) plus offline replay (a replay renderer last exists at
 `f8c101d`: `scripts/replay_render.py`).
+
+### 5. Upgrading newton (required by the shoe_tying suite)
+
+The `shoe_tying` suite runs Newton **rods** (capsule chains + cable joints), whose APIs
+(`add_rod` twist stiffness / `body_frame_origin`, `CollisionPipeline(contact_matching="sticky")`)
+postdate the newton commit `isaaclab_newton 1.0.3` pins (`811968bf`, 1.4.0.dev0). Upgrade the
+venv's newton stack in place — the five packages move together:
+
+```bash
+uv pip install --python env_newton/bin/python \
+  "newton[sim] @ git+https://github.com/newton-physics/newton.git@f420998186ec70bc39323ccc374bcb6c2be1d14f" \
+  "warp-lang>=1.16,<1.17" "newton-usd-schemas>=0.4.1"
+# -> newton 1.6.0.dev0, warp 1.16, mujoco+mujoco-warp 3.11, newton-usd-schemas 0.5
+```
+
+newton 1.5.0 removed a few APIs the pinned IsaacLab checkout still uses; apply the vendored
+compat patch to your checkout (SolverNotifyFlags->ModelFlags alias, joint_target_pos/vel ->
+joint_target_q/qd, the new `shape_margin` arg of `evaluate_body_particle_contact`):
+
+```bash
+git -C ~/IsaacLab apply /path/to/CoSiGen/scripts/isaaclab_newton16_compat.patch
+```
+
+Status after the upgrade (2026-08-17): pouring smoke **PASS** unchanged; shoe_tying **PASS**;
+folding **PASS after a two-knob retune** baked into `TshirtFoldingSceneCfg` — `soft_contact_kd`
+1e-5 -> 1e-2 (newton 1.5 changed the contact damping units from a ratio of ke to an absolute
+coefficient) and `robot_friction_boost` None -> 6.0 (the upgrade shifted the pinch-grasp grip
+margin; boosting only the ROBOT shapes restores the lift, +135 mm vs the 60 mm gate, while the
+table keeps its tuned friction). Standalone A/B repros against a `811968bf` worktree confirmed
+the 1.6 VBD body-particle contact stack itself carries pinches fine — the shirt grasp simply
+sat at the old grip margin.
+Rollback: reinstall `newton[sim] @ git+...@811968bfb7cc7ff4e37b9260a2ba56930a3e605e`
+`warp-lang==1.14.0 mujoco-warp==3.8.0.3 mujoco==3.8.0 newton-usd-schemas==0.2.0`,
+`git -C ~/IsaacLab apply -R` the patch, and revert the two folding cfg values.
+
+### 6. The shoe_tying suite (same venv, upgraded newton)
+
+The `shoe_tying` suite (`robobench/suites/shoe_tying/`) TIES a half knot from two initially
+separate shoelaces — Newton *rods* (capsule chains + cable joints, standalone VBD/AVBD) rooted
+at a sneaker's top eyelets — by moving their free ends through the classic four beats: cross
+into a mid-air X (pinched by 20 N spring-finger pins), thread under the junction, cross again,
+pull apart and seat on the tongue. Verdict, slack and pin-free: winding >= 140 deg on the knot
+sections, >= 6 cross-lace contacts, knot z < 155 mm. Rods have no IsaacLab asset type, so the
+scene injects them into the Newton `ModelBuilder` through the manager's per-world builder hooks
+(the in-tree MPM asset's mechanism). ONE registered env on ONE registered scene:
+`shoe_tying.knot` (robot-less; roots anchored, the free ends are kinematic handles driven per
+solver substep with closed-loop planning off the measured crossing):
+
+```bash
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
+  -m robobench.suites.shoe_tying.smokes.knot_smoke --headless
+```
+
+Rendering is Kit **RTX**: the smoke spawns a textured visual shoe USD and syncs one visual
+capsule prim per rod segment from `body_q` (the physics rod is prim-less). Record through the
+standard harness:
+
+```bash
+env_newton/bin/python scripts/record_video.py \
+  robobench.suites.shoe_tying.smokes.knot_smoke \
+  --video robobench/suites/shoe_tying/videos/knot_smoke.mp4 \
+  --eye 0.33 -0.31 0.40 --target-at 0.0 0.03 0.10
+```
+
+See `robobench/suites/shoe_tying/README.md` for the recipe, pass criteria, and the
+gap-at-add-time landmine (`ShapeConfig.gap=0.0` — builder.rigid_gap is baked per shape).

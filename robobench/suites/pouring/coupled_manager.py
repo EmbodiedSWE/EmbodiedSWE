@@ -39,8 +39,8 @@ from __future__ import annotations
 import inspect
 
 import warp as wp
-from newton import BodyFlags, EqType, Model, ModelBuilder, ShapeFlags, eval_fk
-from newton.solvers import SolverImplicitMPM, SolverMuJoCo, SolverNotifyFlags
+from newton import BodyFlags, EqType, Model, ModelBuilder, ModelFlags, ShapeFlags, eval_fk
+from newton.solvers import SolverImplicitMPM, SolverMuJoCo
 from warp.fem import TemporaryStore
 
 from isaaclab.physics import PhysicsManager
@@ -172,7 +172,13 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
             cls._add_finger_pad_boxes(builder)
         weld_labels = []
         for label, suffix1, suffix2 in getattr(solver_cfg, "weld_specs", None) or []:
-            builder.add_equality_constraint(
+            # newton 1.5 removed the deprecated ModelBuilder.add_equality_constraint wrapper; the
+            # implementation lives on as this internal helper (same row schema the runtime
+            # set_weld reads back through model.mujoco.equality_constraint_*).
+            from newton._src.solvers.mujoco.equality import _add_equality_constraint
+
+            _add_equality_constraint(
+                builder,
                 EqType.WELD,
                 body1=cls._find_body(builder, suffix1),
                 body2=cls._find_body(builder, suffix2),
@@ -456,7 +462,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
             wp.copy(model.mujoco.equality_constraint_relpose, staged, dest_offset=eq_idx, count=1)
         staged_en = wp.array([bool(active)], dtype=wp.bool, device=device)
         wp.copy(model.mujoco.equality_constraint_enabled, staged_en, dest_offset=eq_idx, count=1)
-        cls.add_model_change(SolverNotifyFlags.CONSTRAINT_PROPERTIES)
+        cls.add_model_change(ModelFlags.CONSTRAINT_PROPERTIES)
 
     @classmethod
     def resync_collider_history(cls) -> None:
