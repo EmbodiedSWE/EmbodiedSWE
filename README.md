@@ -202,27 +202,3 @@ env_newton/bin/python scripts/record_video.py \
 ```
 
 See `robobench/suites/shoe_tying/README.md` for the full recipe and pass criteria.
-
-## Assembly embodiment coverage
-
-Which embodiment has a verified solution per assembly task (solutions live in the private
-CoSiGen_Solutions repo; ✅ = verified there, ✔️ = verified in a local experiment and pending
-transfer, 🚫 = proven infeasible for that hand/arm geometry, — = not attempted).
-
-| embodiment | pc_ram | pc_gpu | pc_gpu_ram | pc_motherboard | allen_bolt | pc_all |
-|---|---|---|---|---|---|---|
-| franka | ✅ | ✅ | ✅ | ✅ | ✅ | ✅* |
-| festo_panda | ✅ | — | — | — | — | — |
-| rizon4_panda | ✅ | — | — | — | — | — |
-| gen3n7_panda | ✅ | — | — | — | — | — |
-| z1_lite6g | ✅ | 🚫 jaw stroke | — | — | — | — |
-| sawyer_egk25 | ✅ | — | — | — | — | — |
-| jaco2_n7 | ✅ | ✔️ | — | — | — | — |
-| cobotta_pro_1300 | ✅ | ✔️ | — | — | — | — |
-| xarm7 | 🚫 finger clearance | ✔️ | — | — | — | — |
-
-\* pc_all last verified before the 2026-08-14 controller refresh; re-verification queued.
-
-Grasping in every verified solve rides each scene's weld-on-closure grasp contract, keyed by
-the robot's `GRASP_IFACE` (see `robobench/core/grasp_weld.py`). Update this table when a
-transfer lands or a campaign extends a column.
