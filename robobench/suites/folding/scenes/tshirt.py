@@ -50,13 +50,15 @@ class TshirtFoldingSceneCfg(BaseCfg):
     edge_kd: float = tunable(1e-1)  # [TUNE] bending damping
     # --- contacts (Newton model-level) ---
     soft_contact_ke: float = tunable(1e3)  # [TUNE] particle-body contact stiffness
-    soft_contact_kd: float = tunable(1e-5)  # [TUNE] particle-body contact damping
+    soft_contact_kd: float = tunable(1e-2)  # [TUNE] particle-body contact damping; absolute
+    # coefficient since newton 1.5 (before that kd was a ratio of ke — same effective value)
     soft_contact_mu: float = tunable(0.5)  # [TUNE] particle-side friction
     shape_ke: float = tunable(1e3)  # [TUNE] per-shape contact stiffness override
     shape_kd: float = tunable(1e-5)  # [TUNE] per-shape contact damping override
     shape_mu: float = tunable(1.5)  # [TUNE] per-shape friction (table + robot)
-    robot_friction_boost: float | None = tunable(None)  # [TUNE] extra mu on ROBOT shapes only
-    # (tried for grasp slip — net regression: the whole arm becomes sticky and drags the cloth)
+    robot_friction_boost: float | None = tunable(6.0)  # [TUNE] extra mu on ROBOT shapes only —
+    # gives the fingertips mixed friction sqrt(0.5*6)=1.73 for the pinch grasp (newton >= 1.6
+    # needs this to hold the lift) while the table keeps its tuned 0.87
     cloth_contact_margin: float = tunable(0.012)  # [TUNE] cloth-body collision margin (>= particle_radius)
     # --- VBD solver ---
     vbd_iterations: int = tunable(20)  # [TUNE] VBD iterations/substep; more = crisper (less rubbery) cloth
@@ -252,11 +254,11 @@ class TshirtFoldingScene(BaseScene):
             return  # scene-only binding (NullRobot) — nothing to boost
         import warp as wp
         from isaaclab_newton.physics.newton_manager import NewtonManager
-        from newton.solvers import SolverNotifyFlags
+        from newton import ModelFlags
 
         binding = robot._root_view.get_attribute("shape_material_mu", NewtonManager.get_model())[:, 0]
         wp.to_torch(binding)[:] = mu
-        NewtonManager.add_model_change(SolverNotifyFlags.SHAPE_PROPERTIES)
+        NewtonManager.add_model_change(ModelFlags.SHAPE_PROPERTIES)
 
     def reset(self, env_ids: torch.Tensor) -> None:
         import torch
