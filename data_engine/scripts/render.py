@@ -5,19 +5,27 @@
         data_gen_test/experiments/bulb_franka_osc/runs/test/data_gen/gen_e2e \\
         --batches bf_scene3
 
-    # quick smoke (a few frames per episode), a retuned camera, or another look:
+    # quick smoke (a few frames per episode), picking views, or another look:
     #   … --batches bf_scene3 --max-frames 40
-    #   … --eye 1.0 -0.7 0.5 --target 0.22 0.1 0.18 --focal 16
-    #   … --visual_draw 2 --cam cam_v2   (scene-owned VISUAL_PARAMS look, kept beside `cam`)
+    #   … --cams front wrist              (subset of the declared cameras)
+    #   … --eye 1.0 -0.7 0.5 --target 0.22 0.1 0.18   (probe a one-time ad-hoc view, named `cam`)
+    #   … --visual_draw 2                 (scene-owned VISUAL_PARAMS look)
 
     All flags: --help, or the args table in data_engine/README.html (tab 05).
 
 Replays recorded states (`ep_NNNN/traj.npz`) kinematically — physics decides nothing —
-and renders every env in one TiledCamera pass, `num_envs` episodes at a time. Writes
-per episode: `imgs/<cam>/frame_%06d.jpg`, `imgs/render_<cam>.json` (the export
-contract), `imgs/preview.mp4`; per batch: `replay_sheet.png`. The scene's `post_step` runs on
-every restored state, so state-coupled visuals (the bulb glow) render correctly.
-Camera eye/target are env-origin-relative on the work surface (surface_z is added).
+and renders every env in one pass per frame, `num_envs` episodes at a time, one
+TiledCamera per view. Writes per (episode, view): `imgs/<view>/frame_%06d.jpg`,
+`imgs/render_<view>.json` (the export contract), `imgs/preview_<view>.mp4`; per
+batch: `replay_sheet_<view>.png`. The scene's `post_step` runs on every restored
+state, so state-coupled visuals (the bulb glow) render correctly.
+
+Cameras are DECLARED, not flag defaults: the scene's `CAMERAS` are external views
+(eye/target env-origin-relative on the work surface), the robot's `CAMERAS` are ego
+views (`link` mounts them on that body, riding the replayed motion). Default = all
+declared; `--cams` selects; `--eye/--target` adds a one-time ad-hoc view for probing.
+Per-view `bands` randomize the pose PER EPISODE with the engine's sampling grammar
+({eye,target}_{x,y,z}, nominal = the declared value).
 
 Each frame shows ONE standalone robot: RTX renders a single shared stage (Isaac has
 no per-env world isolation), so `--env-spacing` (default 50 m) spreads the replay
@@ -52,15 +60,19 @@ parser.add_argument("--episodes", nargs="*", default=[], help="explicit ep dirs 
 parser.add_argument("--num_envs", type=int, default=8, help="episodes replayed in parallel")
 parser.add_argument("--fps", type=int, default=30, help="dataset frame rate (stride = 1/(fps*dt))")
 parser.add_argument("--size", type=int, nargs=2, default=(640, 480), metavar=("W", "H"))
-parser.add_argument("--eye", type=float, nargs=3, default=(1.0, -0.7, 0.5),
-                    help="camera eye, env-origin-relative on the work surface")
-parser.add_argument("--target", type=float, nargs=3, default=(0.22, 0.1, 0.18))
+parser.add_argument("--cams", nargs="*", default=None,
+                    help="declared cameras to render, by name (the scene's + robot's CAMERAS; "
+                         "default: all declared)")
+parser.add_argument("--eye", type=float, nargs=3, default=None,
+                    help="ad-hoc ONE-TIME camera eye, env-origin-relative on the work surface "
+                         "(for probing a view before writing it into the scene's CAMERAS)")
+parser.add_argument("--target", type=float, nargs=3, default=None, help="ad-hoc camera look-at point")
 parser.add_argument("--focal", type=float, default=16.0,
-                    help="pinhole focal length, USD mm (24 ≈ 47° hFOV, 16 ≈ 66°)")
+                    help="ad-hoc camera focal length, USD mm (24 ≈ 47° hFOV, 16 ≈ 66°)")
+parser.add_argument("--cam", default="cam", help="name for the ad-hoc --eye/--target camera")
 parser.add_argument("--env-spacing", type=float, default=50.0, dest="env_spacing",
                     help="replay grid spacing (m); beyond the 40 m camera far clip, so each "
                          "frame shows ONLY its own env — one standalone robot per image")
-parser.add_argument("--cam", default="cam", help="camera name (imgs/<cam>/ subdir)")
 parser.add_argument("--warmup", type=int, default=12,
                     help="throwaway renders per chunk start (temporal-denoiser ghost flush)")
 parser.add_argument("--no-frames", action="store_true", help="previews only, no jpg frames")
@@ -83,6 +95,10 @@ from isaaclab.app import AppLauncher  # noqa: E402
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
+if (args.eye is None) != (args.target is None):
+    parser.error("--eye and --target go together")
+adhoc = ({"name": args.cam, "eye": tuple(args.eye), "target": tuple(args.target),
+          "focal": args.focal} if args.eye else None)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from engine.replay import batch_scene, collect_episodes, group_by_scene  # noqa: E402
@@ -102,11 +118,15 @@ if len(groups) > 1:
         cmd = [sys.executable, __file__, str(gen_root), "--_scene", scene,
                "--episodes", *[str(e) for e in group]]
         cmd += ["--num_envs", str(args.num_envs), "--fps", str(args.fps),
-                "--size", *map(str, args.size), "--eye", *map(str, args.eye),
-                "--target", *map(str, args.target), "--focal", str(args.focal),
-                "--env-spacing", str(args.env_spacing), "--cam", args.cam,
+                "--size", *map(str, args.size),
+                "--env-spacing", str(args.env_spacing),
                 "--warmup", str(args.warmup), "--preview-speed", str(args.preview_speed),
                 "--crf", str(args.crf), "--max-frames", str(args.max_frames)]
+        if args.cams is not None:
+            cmd += ["--cams", *args.cams]
+        if adhoc:
+            cmd += ["--eye", *map(str, args.eye), "--target", *map(str, args.target),
+                    "--focal", str(args.focal), "--cam", args.cam]
         if args.visual:
             cmd += ["--visual", args.visual]
         if args.visual_draw is not None:
@@ -129,10 +149,10 @@ import torch  # noqa: E402
 from engine.replay import contact_sheet, replay_scene  # noqa: E402
 
 (scene, group), = groups.items()
-rendered = replay_scene(
+rendered, view_names = replay_scene(
     gen_root, scene, group,
     num_envs=args.num_envs, fps=args.fps, size=tuple(args.size),
-    eye=tuple(args.eye), target=tuple(args.target), focal=args.focal, cam_name=args.cam,
+    cams=args.cams, adhoc=adhoc,
     warmup=args.warmup, save_frames=not args.no_frames, preview=not args.no_preview,
     preview_speed=args.preview_speed, crf=args.crf, max_frames=args.max_frames,
     visual=args.visual or None, visual_draw=args.visual_draw, env_spacing=args.env_spacing,
@@ -140,9 +160,10 @@ rendered = replay_scene(
 )
 if not args.no_sheet and not args.no_frames:
     for batch_dir in sorted({ep.parent for ep in rendered}):
-        sheet = contact_sheet(batch_dir, args.cam)
-        if sheet:
-            print(f"[render] sheet -> {sheet}", flush=True)
+        for view in view_names:
+            sheet = contact_sheet(batch_dir, view)
+            if sheet:
+                print(f"[render] sheet -> {sheet}", flush=True)
 print(f"[render] DONE: {len(rendered)} episodes ({scene})", flush=True)
 
 # Kit teardown regularly hangs inside app.close() under --enable_cameras — same

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .config import BaseCfg, info, tunable
 
@@ -54,6 +54,13 @@ class BaseRobot(ABC):
     #: Control modes this embodiment supports (e.g. ("joint", "ee_pose", "osc_impedance")).
     #: Declared per concrete robot; the active one is `self.control_mode`.
     control_modes: tuple[str, ...] = ()
+
+    #: Named EGO viewpoints for visual replay (data_engine render.py) — embodiment knowledge:
+    #: which body is the wrist, where a lens clears the fingers. Each entry: {"link": <body prim
+    #: name>, "eye": (x,y,z), "target": (x,y,z), "focal": mm}, eye/target in the LINK frame; the
+    #: camera mounts under that link and rides it. External scene views live on the SCENE's
+    #: `CAMERAS` instead.
+    CAMERAS: ClassVar[dict[str, dict]] = {}
 
     def __init__(self, cfg: Any) -> None:
         self.cfg = cfg

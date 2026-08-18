@@ -4,7 +4,7 @@
         <…/data_gen/<gen_name>> [--scene scene_0] [--strategy strategy_0] [--phase phase_1] \\
         [--batch default] [--num_envs 4] [--seed 0] \\
         [--sigma 0.05 --prob 0.01 --duration 0.5 --dims 0:6] \\
-        [--render] [--render_args "--fps 30"]
+        [--render] [--render_args "--cams front --fps 30"]
 
 The cell is the (scene × strategy × phase) triple; phase is optional — without it
 the strategy's solve.py runs from scratch, with it solve_by_phase.py enters at the

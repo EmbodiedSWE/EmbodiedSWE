@@ -21,11 +21,23 @@ The parts that bite (all handled here):
     tick from the restored state, velocities as recorded) is what syncs transforms
     into the renderer — `sim.render()` alone would show the previous frame's poses.
 
-Outputs, per episode: `imgs/<cam>/frame_%06d.jpg` (the dataset frames, README's
-`imgs/` slot), `imgs/render_<cam>.json` (frame indices + camera + joint names +
-visual draw — the export contract, per cam so K looks coexist), `imgs/preview.mp4`
-(time-lapsed, for eyeballing — shared, last run wins). Per batch:
-`replay_sheet.png` (episodes x time contact sheet).
+Cameras are DECLARED, two kinds with two owners: the scene's `CAMERAS` are external
+views (env-origin-relative on the work surface — where to stand to see THIS
+geometry), the robot's `CAMERAS` are ego views (a `link` key mounts the camera on
+that body, eye/target in the link frame — it rides the link through the replayed
+motion). All declared views render simultaneously in one pass, one TiledCamera
+each; `--cams` selects a subset, and `--eye/--target` adds a one-time ad-hoc view
+(named by `--cam`) for probing before numbers get written into a declaration.
+Per-view `bands` randomize the pose with THE sampling grammar (engine/sampler.py)
+on {eye,target}_{x,y,z}: nominal = the declared value, drawn PER EPISODE (Halton
+index = the episode's global position in the run), each episode holding its own
+fixed camera — set before the chunk's warmup, so the denoiser never sees it move.
+
+Outputs, per (episode, view): `imgs/<view>/frame_%06d.jpg` (the dataset frames,
+README's `imgs/` slot), `imgs/render_<view>.json` (frame indices + the ACTUAL
+per-episode camera + joint names + visual draw — the export contract, per view so
+several views/looks coexist), `imgs/preview_<view>.mp4` (time-lapsed, for
+eyeballing). Per batch: `replay_sheet_<view>.png` (episodes x time contact sheet).
 
 Visual diversification is SCENE-OWNED, like world physics: the cell's scene.py
 declares `VISUAL_PARAMS` bands (same grammar as `PHYSICAL_PARAMS`, cfg default =
@@ -119,31 +131,77 @@ def _lookat_quat(eye, target):
     return tuple(quat_from_matrix(torch.stack([f, left, u], dim=1)).tolist())
 
 
-def _camera_cfg(name: str, eye, target, size, surface_z: float, focal: float):
-    """Per-env TiledCamera under {ENV_REGEX_NS}: eye/target are env-origin-relative on
-    the work surface (record_video.py's convention — the script adds surface_z itself).
-    `focal` is USD mm on the default 20.955 aperture (24 ≈ 47° hFOV, 16 ≈ 66°)."""
+# ----- cameras: declared views + the ad-hoc override ----------------------------------------------
+_CAM_BAND_KEYS = ("eye_x", "eye_y", "eye_z", "target_x", "target_y", "target_z")
+
+
+def resolve_views(scene_cls, robot_cls, cams: list[str] | None, adhoc: dict | None) -> dict[str, dict]:
+    """The views to render: the SCENE's `CAMERAS` (external, env-origin-relative on the work
+    surface) merged with the ROBOT's `CAMERAS` (ego — a `link` key mounts the camera on that
+    body, eye/target in the link frame), plus the CLI's one-time ad-hoc view. `cams` selects
+    by name (None = all declared + the ad-hoc). Per-view `bands` use THE sampling grammar
+    (engine/sampler.py) on {eye,target}_{x,y,z} — nominal = the declared value, drawn per
+    episode; ego views can't band (their pose is the link's)."""
+    from .sampler import _check_spec
+
+    views = {n: {**spec, "link": None} for n, spec in getattr(scene_cls, "CAMERAS", {}).items()}
+    for n, spec in getattr(robot_cls, "CAMERAS", {}).items():
+        if n in views:
+            raise SystemExit(f"camera '{n}' declared by both {scene_cls.__name__} and {robot_cls.__name__}")
+        views[n] = {**spec, "robot_prim": robot_cls().prim_name}
+    if adhoc:
+        views[adhoc["name"]] = {**adhoc, "link": None}
+    for n, v in views.items():
+        bands = v.get("bands") or {}
+        if bands and v.get("link"):
+            raise SystemExit(f"camera '{n}': ego views (link-mounted) can't declare bands")
+        unknown = set(bands) - set(_CAM_BAND_KEYS)
+        if unknown:
+            raise SystemExit(f"camera '{n}': bands on {sorted(unknown)} (allowed: {_CAM_BAND_KEYS})")
+        v["bands"] = {k: _check_spec(f"CAMERAS['{n}']", k, s) for k, s in bands.items()}
+        v.setdefault("focal", 16.0)
+    if cams:
+        missing = sorted(set(cams) - set(views))
+        if missing:
+            raise SystemExit(f"unknown cameras {missing}; declared: {sorted(views)}")
+        views = {n: views[n] for n in cams}
+    if not views:
+        raise SystemExit("no cameras: the scene/robot declare none — pass --eye/--target for a one-time view")
+    return views
+
+
+def _camera_cfg(name: str, view: dict, size, surface_z: float):
+    """Per-env TiledCamera for one view. External: under {ENV_REGEX_NS}/<name>, eye/target
+    env-origin-relative on the work surface (surface_z added here). Ego: under the robot
+    link ({ENV_REGEX_NS}/<Robot>/<link>/<name>), eye/target in the LINK frame — the camera
+    rides the link through the replayed motion. `focal` is USD mm on the default 20.955
+    aperture (24 ≈ 47° hFOV, 16 ≈ 66°)."""
     import isaaclab.sim as sim_utils
     from isaaclab.sensors import TiledCameraCfg
 
-    eye = (eye[0], eye[1], eye[2] + surface_z)
-    target = (target[0], target[1], target[2] + surface_z)
-    return name, TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/" + name,
+    eye, target = view["eye"], view["target"]
+    if view.get("link"):
+        prim = "{ENV_REGEX_NS}/%s/%s/%s" % (view["robot_prim"], view["link"], name)
+    else:
+        prim = "{ENV_REGEX_NS}/" + name
+        eye = (eye[0], eye[1], eye[2] + surface_z)
+        target = (target[0], target[1], target[2] + surface_z)
+    return TiledCameraCfg(
+        prim_path=prim,
         width=size[0], height=size[1],
         data_types=["rgb"],
         update_period=0.0,
-        offset=TiledCameraCfg.OffsetCfg(pos=eye, rot=_lookat_quat(eye, target), convention="world"),
-        spawn=sim_utils.PinholeCameraCfg(focal_length=focal, clipping_range=(0.05, _FAR_CLIP)),
+        offset=TiledCameraCfg.OffsetCfg(pos=tuple(eye), rot=_lookat_quat(eye, target), convention="world"),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=view["focal"], clipping_range=(0.05, _FAR_CLIP)),
     )
 
 
-def build_replay_env(scene_dir: Path, num_envs: int, device: str, cam_name: str,
-                     eye, target, size, focal: float, env_spacing: float,
-                     visual_draw: int | None = None):
+def build_replay_env(scene_dir: Path, num_envs: int, device: str,
+                     cams: list[str] | None, adhoc: dict | None, size,
+                     env_spacing: float, visual_draw: int | None = None):
     """generation.build_env on the cell's LOCAL scene (nominal world — physics is
-    overwritten every frame anyway), with the tiled camera injected into the scene's
-    assets before the build.
+    overwritten every frame anyway), with one tiled camera PER RESOLVED VIEW injected
+    into the scene's assets before the build.
 
     RTX renders ONE shared stage (no per-env world isolation like Madrona/ManiSkill),
     so standalone-robot frames come from geometry: `env_spacing` spreads the replay
@@ -159,8 +217,17 @@ def build_replay_env(scene_dir: Path, num_envs: int, device: str, cam_name: str,
     _load("datagen_local_scene", scene_dir / "scene" / "scene.py")
     scene_name = re.search(r'@SCENES\.register\("([\w.]+)"\)',
                            (scene_dir / "scene" / "scene.py").read_text()).group(1)
+    import robobench
+    import yaml
+
+    robobench.discover()
+    from robobench.core.registries import ENVS, ROBOTS
+
     scene_cls = SCENES.get(scene_name)
     surface_z = float(getattr(scene_cls().cfg, "surface_z", 0.0) or 0.0)
+    gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
+    robot_cls = ROBOTS.get(ENVS.get(gen["preset"])().robot)
+    views = resolve_views(scene_cls, robot_cls, cams, adhoc)
     # the visual draw is sampled BEFORE the build and written onto the scene cfg, so
     # build-consumed knobs (a table preset, a backdrop usd) take effect with no extra
     # code; live knobs are re-applied through scene.apply_visual_params after the build
@@ -172,28 +239,38 @@ def build_replay_env(scene_dir: Path, num_envs: int, device: str, cam_name: str,
         if not bands:
             raise SystemExit(f"--visual_draw: {scene_cls.__name__} declares no VISUAL_PARAMS bands")
         visual_values = sample(bands, visual_draw)
-    name, cam_cfg = _camera_cfg(cam_name, eye, target, size, surface_z, focal)
+    cam_cfgs = {n: _camera_cfg(n, v, size, surface_z) for n, v in views.items()}
+    # entities spawn in insertion order (scene assets, then robot assets): ego cameras
+    # need the robot LINK prim to exist, so they inject into the ROBOT's assets — after
+    # the Robot entry — while external views ride the scene's
+    static_cfgs = {n: c for n, c in cam_cfgs.items() if not views[n].get("link")}
+    ego_cfgs = {n: c for n, c in cam_cfgs.items() if views[n].get("link")}
     # grid extent + far-clip margin on every side
     ground_xy = (math.ceil(math.sqrt(num_envs)) - 1) * env_spacing + 2 * (_FAR_CLIP + 10.0)
 
     def assets_with_camera(self, _orig=scene_cls.assets):
         from isaaclab.sim import GroundPlaneCfg
 
-        out = {**_orig(self), name: cam_cfg}
+        out = {**_orig(self), **static_cfgs}
         for asset in out.values():
             spawn = getattr(asset, "spawn", None)
             if isinstance(spawn, GroundPlaneCfg) and max(spawn.size) < ground_xy:
                 spawn.size = (ground_xy, ground_xy)
         return out
 
+    def assets_with_ego(self, _orig=robot_cls.assets):
+        return {**_orig(self), **ego_cfgs}
+
     scene_cls.assets = assets_with_camera
+    robot_cls.assets = assets_with_ego
     try:
         env, gen, _, _ = build_env(scene_dir, num_envs, device, seed=0, nominal=True,
                                    env_spacing=env_spacing,
                                    scene_overrides=visual_values or None)
     finally:
         scene_cls.assets = assets_with_camera.__defaults__[0]
-    return env, gen, visual_values
+        robot_cls.assets = assets_with_ego.__defaults__[0]
+    return env, gen, visual_values, views, surface_z
 
 
 def _load_shifted(ep_dir: Path, base_pos, device):
@@ -215,15 +292,15 @@ def _load_shifted(ep_dir: Path, base_pos, device):
 
 # ----- the replay itself -------------------------------------------------------------------------
 def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int = 8,
-                 fps: int = 30, size=(640, 480), eye=(1.0, -0.7, 0.5),
-                 target=(0.22, 0.1, 0.18), focal: float = 16.0,
-                 cam_name: str = "cam", warmup: int = WARMUP_DEFAULT,
+                 fps: int = 30, size=(640, 480), cams: list[str] | None = None,
+                 adhoc: dict | None = None, warmup: int = WARMUP_DEFAULT,
                  save_frames: bool = True, preview: bool = True, preview_speed: float = 6.0,
                  crf: int = 26, max_frames: int = 0, visual: str | None = None,
                  visual_draw: int | None = None, env_spacing: float = 50.0,
                  device: str = "cuda:0") -> list[Path]:
-    """Replay `eps` (all from `scene`) in chunks of `num_envs`, writing frames/previews
-    into each episode dir. Returns the episode dirs rendered."""
+    """Replay `eps` (all from `scene`) in chunks of `num_envs`, rendering every resolved
+    view each frame and writing frames/previews into each episode dir. Returns the
+    episode dirs rendered."""
     import imageio
     import numpy as np
     import torch
@@ -232,9 +309,11 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
     if num_envs > 1 and env_spacing <= _FAR_CLIP:
         print(f"[replay] WARNING: env_spacing {env_spacing} <= far clip {_FAR_CLIP} — "
               f"neighbor envs will appear in frames", flush=True)
-    env, gen, visual_values = build_replay_env(scene_dir, num_envs, device, cam_name, eye,
-                                               target, size, focal, env_spacing, visual_draw)
-    cam = env.iscene.sensors[cam_name]
+    env, gen, visual_values, views, surface_z = build_replay_env(
+        scene_dir, num_envs, device, cams, adhoc, size, env_spacing, visual_draw)
+    sensors = {n: env.iscene.sensors[n] for n in views}
+    print(f"[replay {scene}] views: " + ", ".join(
+        f"{n} (ego on {v['link']})" if v.get("link") else n for n, v in views.items()), flush=True)
     if visual_values:
         # the draw already sat on the scene cfg through the build (build-consumed knobs
         # took effect there); the hook now applies the LIVE subset — attribute writes,
@@ -258,8 +337,40 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         env.robot.post_step()
         env.scene.post_step()
         env.sim.step(render=True)
-        cam.update(0.0, force_recompute=True)
-        return cam.data.output["rgb"]
+        out = {}
+        for n, cam in sensors.items():
+            cam.update(0.0, force_recompute=True)
+            out[n] = cam.data.output["rgb"]
+        return out
+
+    env_origins = env.iscene.env_origins  # (E, 3), device
+
+    def place_banded_views(lo: int, n_eps: int) -> dict[str, list]:
+        """Draw each banded view's per-episode pose (THE sampler, index = the episode's
+        global position in this run) and set every env slot's camera before the chunk's
+        warmup — each episode holds its own fixed camera for its whole duration. Returns
+        {view: [(eye, target) per episode]} for the render contract."""
+        from .sampler import sample
+
+        placed: dict[str, list] = {}
+        for n, v in views.items():
+            if not v["bands"]:
+                continue
+            poses, quats, actual = [], [], []
+            for i in range(num_envs):
+                g = lo + min(i, n_eps - 1)  # padded slots reuse the last episode's draw
+                draw = sample(v["bands"], g)
+                e = [draw.get(f"eye_{a}", x) for a, x in zip("xyz", v["eye"])]
+                t = [draw.get(f"target_{a}", x) for a, x in zip("xyz", v["target"])]
+                if i < n_eps:
+                    actual.append((e, t))
+                e_w = [e[0], e[1], e[2] + surface_z]
+                poses.append(env_origins[i] + torch.tensor(e_w, device=device))
+                quats.append(torch.tensor(_lookat_quat(e, t), device=device))
+            sensors[n].set_world_poses(torch.stack(poses), torch.stack(quats),
+                                       convention="world")
+            placed[n] = actual
+        return placed
 
     # same-T episodes chunk together (a batch shares T); mixed chunks pad with the last state
     eps = sorted(eps, key=lambda p: (json.loads((p / "meta.json").read_text())["steps"], str(p)))
@@ -279,22 +390,27 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         print(f"[replay {scene}] chunk {lo // num_envs + 1}: {len(chunk)} eps, "
               f"{t_max} steps @ {1 / env.dt:.0f}Hz -> {n_frames} frames each", flush=True)
 
+        # per (episode, view): frame dir, preview writer; frame indices are per episode
         writers, frame_dirs, indices = [], [], []
         for d, meta in loaded:
             ep_dir = Path(meta["_ep_dir"])
             img_dir = ep_dir / "imgs"
             img_dir.mkdir(exist_ok=True)
-            frame_dirs.append(img_dir / cam_name)
-            if save_frames:
-                frame_dirs[-1].mkdir(exist_ok=True)
-                for stale in frame_dirs[-1].glob("frame_*.jpg"):  # a re-render must not leave old tails
-                    stale.unlink()
-            w = None
-            if preview:
-                w = imageio.get_writer(str(img_dir / "preview.mp4"), fps=max(1, round(fps * preview_speed)),
-                                       codec="libx264", quality=None, pixelformat="yuv420p",
-                                       output_params=["-crf", str(crf), "-preset", "medium"])
-            writers.append(w)
+            fd, ws = {}, {}
+            for n in views:
+                fd[n] = img_dir / n
+                if save_frames:
+                    fd[n].mkdir(exist_ok=True)
+                    for stale in fd[n].glob("frame_*.jpg"):  # a re-render must not leave old tails
+                        stale.unlink()
+                ws[n] = None
+                if preview:
+                    ws[n] = imageio.get_writer(str(img_dir / f"preview_{n}.mp4"),
+                                               fps=max(1, round(fps * preview_speed)),
+                                               codec="libx264", quality=None, pixelformat="yuv420p",
+                                               output_params=["-crf", str(crf), "-preset", "medium"])
+            frame_dirs.append(fd)
+            writers.append(ws)
             indices.append([])
 
         def compose(t: int) -> dict:
@@ -305,6 +421,7 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                 flat[k] = torch.stack(rows)
             return _unflatten(flat)
 
+        placed = place_banded_views(lo, len(chunk))  # per-episode camera draws, pre-warmup
         env.set_states(compose(0))
         for _ in range(max(0, warmup)):
             render_once()
@@ -315,62 +432,65 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
             env.set_states(compose(t))
             if hook and hasattr(hook, "per_frame"):
                 hook.per_frame(env, t)
-            rgb = render_once()  # (E, H, W, 3) uint8, device
-            frames = rgb.cpu().numpy()
+            rgbs = {n: r.cpu().numpy() for n, r in render_once().items()}  # each (E, H, W, 3) uint8
             for i in range(len(chunk)):
                 if t >= T[i]:  # this episode already ended — freeze, don't record
                     continue
-                frame = frames[i]
-                if save_frames:
-                    pool.submit(imageio.imwrite, str(frame_dirs[i] / f"frame_{fi:06d}.jpg"),
-                                frame, quality=90)
-                if writers[i] is not None:
-                    writers[i].append_data(frame)
+                for n in views:
+                    frame = rgbs[n][i]
+                    if save_frames:
+                        pool.submit(imageio.imwrite, str(frame_dirs[i][n] / f"frame_{fi:06d}.jpg"),
+                                    frame, quality=90)
+                    if writers[i][n] is not None:
+                        writers[i][n].append_data(frame)
                 indices[i].append(t)
 
         pool.shutdown(wait=True)
         pool = ThreadPoolExecutor(max_workers=8)
         for i, (d, meta) in enumerate(loaded):
-            if writers[i] is not None:
-                writers[i].close()
             ep_dir = Path(meta["_ep_dir"])
-            # per-cam contract, so K looks under K cam names coexist; drop a legacy
-            # single-name render.json only if it was this camera's (now superseded)
-            legacy = ep_dir / "imgs" / "render.json"
-            if legacy.exists() and json.loads(legacy.read_text()).get("camera") == cam_name:
-                legacy.unlink()
-            (ep_dir / "imgs" / f"render_{cam_name}.json").write_text(json.dumps({
-                "camera": cam_name, "size": list(size), "fps": fps, "stride": stride,
-                "sim_dt": env.dt, "frame_indices": indices[i],
-                "eye": list(eye), "target": list(target), "focal": focal,
-                "env_spacing": env_spacing,
-                "joint_names": list(env.robot.articulation.joint_names),
-                "scene_description": env.scene.describe(),
-                "success": meta.get("success"), "cell": meta.get("cell"),
-                "visual_hook": visual, "visual_draw": visual_draw, "visual_values": visual_values,
-                "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            }, indent=2) + "\n")
+            for n, v in views.items():
+                if writers[i][n] is not None:
+                    writers[i][n].close()
+                # per-cam contract, so several views/looks coexist; drop a legacy
+                # single-name render.json only if it was this camera's (now superseded)
+                legacy = ep_dir / "imgs" / "render.json"
+                if legacy.exists() and json.loads(legacy.read_text()).get("camera") == n:
+                    legacy.unlink()
+                eye, target = (placed[n][i] if n in placed else (v["eye"], v["target"]))
+                (ep_dir / "imgs" / f"render_{n}.json").write_text(json.dumps({
+                    "camera": n, "size": list(size), "fps": fps, "stride": stride,
+                    "sim_dt": env.dt, "frame_indices": indices[i],
+                    "eye": list(eye), "target": list(target), "focal": v["focal"],
+                    "link": v.get("link"), "cam_draw": (lo + i if n in placed else None),
+                    "env_spacing": env_spacing,
+                    "joint_names": list(env.robot.articulation.joint_names),
+                    "scene_description": env.scene.describe(),
+                    "success": meta.get("success"), "cell": meta.get("cell"),
+                    "visual_hook": visual, "visual_draw": visual_draw, "visual_values": visual_values,
+                    "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                }, indent=2) + "\n")
             done.append(ep_dir)
         del loaded
         torch.cuda.empty_cache() if device.startswith("cuda") else None
     pool.shutdown(wait=True)
-    return done
+    return done, list(views)
 
 
-def contact_sheet(batch_dir: Path, cam_name: str = "cam", cols: int = 5) -> Path | None:
-    """episodes x time grid from the saved frames -> <batch>/replay_sheet.png."""
+def contact_sheet(batch_dir: Path, view: str, cols: int = 5) -> Path | None:
+    """episodes x time grid from the saved frames -> <batch>/replay_sheet_<view>.png."""
     import imageio
     import numpy as np
 
     rows = []
     for ep in sorted(batch_dir.glob("ep_*")):
-        frames = sorted((ep / "imgs" / cam_name).glob("frame_*.jpg"))
+        frames = sorted((ep / "imgs" / view).glob("frame_*.jpg"))
         if not frames:
             continue
         picks = [frames[min(int(i * (len(frames) - 1) / (cols - 1)), len(frames) - 1)] for i in range(cols)]
         rows.append(np.concatenate([imageio.imread(p) for p in picks], axis=1))
     if not rows:
         return None
-    sheet = batch_dir / "replay_sheet.png"
+    sheet = batch_dir / f"replay_sheet_{view}.png"
     imageio.imwrite(str(sheet), np.concatenate(rows, axis=0))
     return sheet

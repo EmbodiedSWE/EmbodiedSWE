@@ -123,6 +123,16 @@ class BulbAssemblyScene(BaseScene):
                           "reason": "faint filament -> blazing bulb; post_step scales the ramp by it"},
     }
 
+    #: L5 external views (see BaseScene.CAMERAS); bands wiggle the eye a few cm per episode.
+    CAMERAS: ClassVar[dict[str, dict]] = {
+        "front": {"eye": (0.78, -0.89, 0.54), "target": (0.30, -0.05, 0.10), "focal": 18.15,
+                  "bands": {
+                      "eye_x": {"dist": "uniform", "lo": 0.73, "hi": 0.83},
+                      "eye_y": {"dist": "uniform", "lo": -0.94, "hi": -0.84},
+                      "eye_z": {"dist": "uniform", "lo": 0.49, "hi": 0.59},
+                  }},
+    }
+
     def __init__(self, cfg: BulbAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or BulbAssemblySceneCfg())
 

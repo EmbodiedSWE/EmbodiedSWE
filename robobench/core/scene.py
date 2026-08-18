@@ -26,6 +26,13 @@ class BaseScene(ABC):
     PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {}
     VISUAL_PARAMS: ClassVar[dict[str, dict | None]] = {}
 
+    #: Named EXTERNAL viewpoints for visual replay (data_engine render.py) — where to stand to see
+    #: THIS scene's geometry, authored next to it. Each entry: {"eye": (x,y,z), "target": (x,y,z),
+    #: "focal": mm} — env-origin-relative on the work surface — plus optional "bands": per-episode
+    #: pose randomization with the sampler grammar on {eye,target}_{x,y,z} (nominal = the declared
+    #: value). Ego (robot-mounted) views live on the ROBOT's `CAMERAS` instead.
+    CAMERAS: ClassVar[dict[str, dict]] = {}
+
     def __init__(self, cfg: Any) -> None:
         self.cfg = cfg
         self._env: BaseEnv | None = None
