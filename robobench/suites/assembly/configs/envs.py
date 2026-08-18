@@ -102,6 +102,59 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
+# The SAME pc-motherboard cell for the transfer suite: gen3n7_panda + xarm7 (panda-hand dial).
+# Scene layout verbatim from the franka binding (7 holes spanning the 0.36-0.60 m top-down band
+# from the west base, key upright in its stand). gen3n7 (~0.9 m) keeps the franka's base spot;
+# the xarm7 (~0.70 m) moves 5 cm east so the far holes pull from its reach edge (0.60 -> 0.55 m)
+# while the near holes stay outside the close-in cliff.
+#   -> "assembly.pc_motherboard.{gen3n7_panda,xarm7}.{osc,impedance,joint}"
+_PC_MB_SCENE_KW = dict(
+    workbench_pos=(0.54, 0.0),
+    bolt_init_xy=tuple((-0.24 + k * 0.075, -0.42) for k in range(7)),
+    key_init_xy=(-0.24, -0.30),
+    key_init_z=0.001,
+    key_init_quat=(1.0, 0.0, 0.0, 0.0),
+    key_stand=True,
+    reset_pos_jitter=0.0,
+)
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_motherboard",
+            scene_cfg=PcMotherboardAssemblySceneCfg(**_PC_MB_SCENE_KW),
+            robot="gen3n7_panda",
+            robot_cfg=AttachedArmRobotCfg(base_pos=(0.07, 0.0, 0.0),
+                                          arm_effort_limit=120.0, gravity_compensation=True,
+                                          # probe-verified ready pose (2026-08-18): key stand +
+                                          # both hole-row extremes track to <= 1.0 cm from here
+                                          # (the class home marched 20 cm wide in a bad branch)
+                                          default_dof_pos=(-0.1329, 0.2094, 0.1780, 1.9612,
+                                                           -0.8736, 0.6256, -0.5926)),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_motherboard",
+            scene_cfg=PcMotherboardAssemblySceneCfg(**_PC_MB_SCENE_KW),
+            robot="xarm7",
+            robot_cfg=XArm7RobotCfg(gripper="panda_hand", base_pos=(0.12, 0.0, 0.0),
+                                    arm_effort_limit=120.0, gravity_compensation=True,
+                                    # probe-verified ready pose (2026-08-18): <= 1.0 cm at the
+                                    # key stand + hole extremes (the stock folded home could
+                                    # not descend — 22 cm z-stall)
+                                    default_dof_pos=(-4.4657, 0.8562, -1.9503, 0.6564,
+                                                     0.3913, 0.5140, -2.3288)),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+
 # The same PC case with its primary PCIe x16 slot empty and a loose graphics card beside it, to be
 # stood upright and pressed straight down into the slot, scene physics only for now.
 # -> "assembly.pc_gpu"
@@ -261,6 +314,37 @@ for _robot in ("z1_lite6g", "rizon4_panda", "gen3n7_panda", "sawyer_egk25", "fes
             ),
         )
 
+# The same pc-ram work cell for the xArm7 (panda-hand dial) — completing the transfer suite's
+# pc_ram coverage. Scene cfg verbatim as above; the ~0.70 m arm takes the Jaco2's closer base
+# spot (the shared 0.72 m mount leaves the far DIMM slot at its reach edge). Ready posture =
+# the pc_gpu xarm7 binding's, tuned for the same yaw-180 stance at this cell.
+#   -> "assembly.pc_ram.xarm7.{osc, impedance, joint}"
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_ram",
+            scene_cfg=PcRamAssemblySceneCfg(
+                ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
+                ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                reset_pos_jitter=0.0,
+                ram_stand=True,
+            ),
+            robot="xarm7",
+            robot_cfg=XArm7RobotCfg(
+                gripper="panda_hand",
+                base_pos=(0.60, -0.30, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+                arm_effort_limit=120.0,
+                gravity_compensation=True,  # gravity-blind task-space laws (the bulb binding's note)
+                default_dof_pos=(-0.0659, -0.3051, 0.0759, 0.6345, 0.0281, 0.9358, -0.0097),
+            ),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+
 # The same pc-ram work cell for two of the pc_gpu embodiments (Jaco2 N7 / Cobotta Pro 1300) —
 # scene cfg verbatim as above so every embodiment faces the identical task; per-embodiment base
 # placement + ready posture only.
@@ -336,6 +420,46 @@ for _mode in ("osc", "impedance", "joint"):
                 reset_pos_jitter=0.0,
             ),
             robot="franka",
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+
+# The SAME allen-bolt cell for the transfer suite: gen3n7_panda + xarm7 (panda-hand dial).
+# Scene layout verbatim from the franka binding — platform 0.42 m, key pick ~0.36 m with its
+# far tip 0.43 m out — inside both reach envelopes (gen3n7 ~0.9 m, xarm7 ~0.70 m), so the base
+# stays at the origin. arm_effort_limit + gravity_compensation follow each arm's bulb/pc_ram kw.
+#   -> "assembly.allen_bolt.{gen3n7_panda,xarm7}.{osc,impedance,joint}"
+_ALLEN_SCENE_KW = dict(
+    platform_slots=((-0.08, 0.0),),
+    bolt_staged=True,
+    key_init_xy=((-0.24, 0.18),),
+    key_init_quat=(0.5, 0.5, 0.5, 0.5),
+    bolt_friction=0.3,
+    reset_pos_jitter=0.0,
+)
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="allen_bolt",
+            scene_cfg=AllenBoltAssemblySceneCfg(**_ALLEN_SCENE_KW),
+            robot="gen3n7_panda",
+            robot_cfg=AttachedArmRobotCfg(arm_effort_limit=120.0, gravity_compensation=True),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="allen_bolt",
+            scene_cfg=AllenBoltAssemblySceneCfg(**_ALLEN_SCENE_KW),
+            robot="xarm7",
+            robot_cfg=XArm7RobotCfg(gripper="panda_hand", arm_effort_limit=120.0,
+                                    gravity_compensation=True),
             control_mode=mode,
             env_spacing=2,
             sim_overrides={"dt": 1.0 / 240.0},
