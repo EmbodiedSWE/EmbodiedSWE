@@ -39,10 +39,12 @@ inline copies. Holds ride get_state/set_state.
     wrap_off        (2,)   site window -> wrap proxy band offsets (m): the tip-origin proxy
                            reads wider than the true gap by the fingers' own geometry
                            (default (0.025, 0.050))
-    release_at      float  absolute closure value that releases a hold (m); None -> the legacy
-                           window-top + GRASP_RELEASE_MARGIN. Small-stroke jaws NEED it: a hand
-                           whose full opening cannot cross the panda-scaled hysteresis would
-                           otherwise never let go
+    release_margin  float  release hysteresis above the SITE window-top (m); None -> the
+                           panda-scaled GRASP_RELEASE_MARGIN. Window-relative so one value
+                           holds across parts of any size. Small-stroke jaws NEED a tighter
+                           one: a hand whose full opening cannot cross the panda-scaled
+                           hysteresis would otherwise never let go; pad-dropping linkages
+                           want release early in the opening sweep
     band_dist       float  pinch-point-to-band engage radius (m); None -> the scene's
                            grasp_weld_dist. Hands whose pinch centre rides off the band by
                            construction need it (shallow long-pad bites; wrap squeezes that
@@ -113,7 +115,7 @@ class GraspWeldContract:
             pinch_axis=(0.0, 1.0, 0.0),
             wrap_off=(0.025, 0.050),
             prox_release=0.15,
-            release_at=None,
+            release_margin=None,
             band_dist=None,
         )
         ifc = getattr(getattr(self.scene.env, "robot", None), "GRASP_IFACE", None)
@@ -306,9 +308,8 @@ class GraspWeldContract:
             if mode == "wrap":
                 past = bool(released[row])
             else:
-                rel_thr = ifc["release_at"]
-                if rel_thr is None:
-                    rel_thr = wins[s][1] + self.GRASP_RELEASE_MARGIN
+                m = ifc["release_margin"]
+                rel_thr = wins[s][1] + (m if m is not None else self.GRASP_RELEASE_MARGIN)
                 past = bool(gap[row] > rel_thr)
             if past:
                 self._gw_rel_count[row, s] += 1
