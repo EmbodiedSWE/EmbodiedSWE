@@ -14,10 +14,8 @@ shoe + per-segment lace capsules synced from `body_q`). The suite carries its ow
 (`newton_sim.py`) and manager specialization (`lace_manager.py`: per-substep kinematic handle
 driving and the rod contact recipe).
 
-Runs ONLY under the Newton venv (`env_newton`) with **newton >= 1.6.0.dev0 @ f4209981** (the
-`add_rod` twist/`body_frame_origin` APIs and sticky contact matching landed after the original
-isaaclab_newton pin; see the README's newton-upgrade step). Importing this package (registration)
-stays app-free and works in either venv.
+Runs ONLY under the Newton venv (`env_newton`, newton >= 1.6 — see the README's Newton env
+setup). Importing this package (registration) stays app-free and works in either venv.
 """
 
 from . import configs  # noqa: F401  (registers the suite's named env configs into robobench.core.ENVS)

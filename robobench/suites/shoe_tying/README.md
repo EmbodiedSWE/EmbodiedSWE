@@ -39,8 +39,8 @@ env_newton/bin/python scripts/record_video.py \
     --eye 0.33 -0.31 0.40 --target-at 0.0 0.03 0.10
 ```
 
-Requires `env_newton` with the newton upgrade applied (root README, "Upgrading newton" — the
-rod APIs postdate the original isaaclab_newton pin).
+Runs under `env_newton` (root README, "Newton env" — the same newton pin as the folding and
+pouring suites).
 
 ## Pass criteria (printed at run end)
 

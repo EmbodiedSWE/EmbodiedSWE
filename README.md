@@ -67,14 +67,14 @@ python -m robobench.scripts.smoke --env assembly.ikea_table.g1.joint
 
 ```
 
-## Newton env (folding suite)
+## Newton env (folding / pouring / shoe_tying suites)
 
-The `folding` suite (T-shirt folding, `robobench/suites/folding/`) runs cloth — which needs
-IsaacLab **develop**'s Newton physics backend (MJWarp rigid + VBD cloth). That branch is not on
-PyPI, so the folding suite gets its own project-local venv, **`env_newton`** (Python 3.12,
-isaacsim 6.0, torch cu130), with the isaaclab packages installed *editable* from an IsaacLab
-**develop** checkout. The assembly suite keeps using `.venv` (isaaclab 2.3.2 / PhysX); the two
-venvs coexist — only the interpreter you launch with differs.
+The `folding`, `pouring`, and `shoe_tying` suites run on IsaacLab **develop**'s Newton physics
+backend (cloth, liquids, and rods do not exist on the PhysX stack). That branch is not on PyPI,
+so these suites get their own project-local venv, **`env_newton`** (Python 3.12, isaacsim 6.0,
+torch cu130), with the isaaclab packages installed *editable* from an IsaacLab **develop**
+checkout and one shared Newton engine pin. The assembly suite keeps using `.venv` (isaaclab
+2.3.2 / PhysX); the two venvs coexist — only the interpreter you launch with differs.
 
 Extra prerequisite: the torch cu130 wheels need an NVIDIA driver ≥ r580 (CUDA 13).
 
@@ -113,19 +113,26 @@ uv pip install --python "$PY" "${NV[@]}" \
   -e "$SRC/isaaclab_contrib" -e "$SRC/isaaclab_assets" -e "$SRC/isaaclab"
 uv pip install --python "$PY" imageio imageio-ffmpeg   # for record_video
 uv pip install --python "$PY" -e .                     # robobench itself (declares no other deps)
+
+# Newton engine — the pin ALL Newton suites (folding, pouring, shoe_tying) run and are tested
+# against. It is newer than the commit isaaclab_newton pulls transitively, so install it last:
+uv pip install --python "$PY" \
+  "newton[sim] @ git+https://github.com/newton-physics/newton.git@f420998186ec70bc39323ccc374bcb6c2be1d14f" \
+  "warp-lang>=1.16,<1.17" "newton-usd-schemas>=0.4.1"
+# -> newton 1.6.0.dev0, warp 1.16, mujoco + mujoco-warp 3.11, newton-usd-schemas 0.5
+
+# and apply the small vendored compat patch to the IsaacLab checkout (newton 1.5 renamed a few
+# APIs the pinned develop commit still uses):
+git -C ~/IsaacLab apply scripts/isaaclab_newton16_compat.patch
 ```
 
 Notes:
 
-- The Newton engine itself needs no separate install — `isaaclab_newton[all]` pins and pulls the
-  exact `newton` git commit it is built against. (The `shoe_tying` suite needs a NEWER newton
-  than that pin — see "Upgrading newton" below; all three Newton suites pass under the upgrade,
-  folding via a two-knob retune baked into its scene cfg.)
 - All seven `-e` packages are required: `isaaclab_ovphysx`/`isaaclab_physx` are hard imports of
   isaaclab's app launcher, and `isaaclab_visualizers[kit]` drives rendering (the folding smokes
   default to the kit visualizer).
 - Optional — only to run IsaacLab's in-tree reference tasks (e.g. `Isaac-Lift-Cloth-Franka-v0`),
-  not needed by the folding suite:
+  not needed by the suites:
   `uv pip install --python "$PY" "${NV[@]}" -e "$SRC/isaaclab_tasks" -e "$SRC/isaaclab_rl" -e "$SRC/isaaclab_ov"`
 
 ### 3. The folding suite
@@ -165,41 +172,7 @@ live rendering corrupts the coupled MPM physics on this stack. Record via `--dum
 (poses + particles to an `.npz`) plus offline replay (a replay renderer last exists at
 `f8c101d`: `scripts/replay_render.py`).
 
-### 5. Upgrading newton (required by the shoe_tying suite)
-
-The `shoe_tying` suite runs Newton **rods** (capsule chains + cable joints), whose APIs
-(`add_rod` twist stiffness / `body_frame_origin`, `CollisionPipeline(contact_matching="sticky")`)
-postdate the newton commit `isaaclab_newton 1.0.3` pins (`811968bf`, 1.4.0.dev0). Upgrade the
-venv's newton stack in place — the five packages move together:
-
-```bash
-uv pip install --python env_newton/bin/python \
-  "newton[sim] @ git+https://github.com/newton-physics/newton.git@f420998186ec70bc39323ccc374bcb6c2be1d14f" \
-  "warp-lang>=1.16,<1.17" "newton-usd-schemas>=0.4.1"
-# -> newton 1.6.0.dev0, warp 1.16, mujoco+mujoco-warp 3.11, newton-usd-schemas 0.5
-```
-
-newton 1.5.0 removed a few APIs the pinned IsaacLab checkout still uses; apply the vendored
-compat patch to your checkout (SolverNotifyFlags->ModelFlags alias, joint_target_pos/vel ->
-joint_target_q/qd, the new `shape_margin` arg of `evaluate_body_particle_contact`):
-
-```bash
-git -C ~/IsaacLab apply /path/to/CoSiGen/scripts/isaaclab_newton16_compat.patch
-```
-
-Status after the upgrade (2026-08-17): pouring smoke **PASS** unchanged; shoe_tying **PASS**;
-folding **PASS after a two-knob retune** baked into `TshirtFoldingSceneCfg` — `soft_contact_kd`
-1e-5 -> 1e-2 (newton 1.5 changed the contact damping units from a ratio of ke to an absolute
-coefficient) and `robot_friction_boost` None -> 6.0 (the upgrade shifted the pinch-grasp grip
-margin; boosting only the ROBOT shapes restores the lift, +135 mm vs the 60 mm gate, while the
-table keeps its tuned friction). Standalone A/B repros against a `811968bf` worktree confirmed
-the 1.6 VBD body-particle contact stack itself carries pinches fine — the shirt grasp simply
-sat at the old grip margin.
-Rollback: reinstall `newton[sim] @ git+...@811968bfb7cc7ff4e37b9260a2ba56930a3e605e`
-`warp-lang==1.14.0 mujoco-warp==3.8.0.3 mujoco==3.8.0 newton-usd-schemas==0.2.0`,
-`git -C ~/IsaacLab apply -R` the patch, and revert the two folding cfg values.
-
-### 6. The shoe_tying suite (same venv, upgraded newton)
+### 5. The shoe_tying suite (same venv)
 
 The `shoe_tying` suite (`robobench/suites/shoe_tying/`) TIES a half knot from two initially
 separate shoelaces — Newton *rods* (capsule chains + cable joints, standalone VBD/AVBD) rooted
@@ -228,5 +201,4 @@ env_newton/bin/python scripts/record_video.py \
   --eye 0.33 -0.31 0.40 --target-at 0.0 0.03 0.10
 ```
 
-See `robobench/suites/shoe_tying/README.md` for the recipe, pass criteria, and the
-gap-at-add-time landmine (`ShapeConfig.gap=0.0` — builder.rigid_gap is baked per shape).
+See `robobench/suites/shoe_tying/README.md` for the full recipe and pass criteria.
