@@ -67,14 +67,14 @@ python -m robobench.scripts.smoke --env assembly.ikea_table.g1.joint
 
 ```
 
-## Newton env (folding suite)
+## Newton env (folding / pouring / shoe_tying suites)
 
-The `folding` suite (T-shirt folding, `robobench/suites/folding/`) runs cloth — which needs
-IsaacLab **develop**'s Newton physics backend (MJWarp rigid + VBD cloth). That branch is not on
-PyPI, so the folding suite gets its own project-local venv, **`env_newton`** (Python 3.12,
-isaacsim 6.0, torch cu130), with the isaaclab packages installed *editable* from an IsaacLab
-**develop** checkout. The assembly suite keeps using `.venv` (isaaclab 2.3.2 / PhysX); the two
-venvs coexist — only the interpreter you launch with differs.
+The `folding`, `pouring`, and `shoe_tying` suites run on IsaacLab **develop**'s Newton physics
+backend (cloth, liquids, and rods do not exist on the PhysX stack). That branch is not on PyPI,
+so these suites get their own project-local venv, **`env_newton`** (Python 3.12, isaacsim 6.0,
+torch cu130), with the isaaclab packages installed *editable* from an IsaacLab **develop**
+checkout and one shared Newton engine pin. The assembly suite keeps using `.venv` (isaaclab
+2.3.2 / PhysX); the two venvs coexist — only the interpreter you launch with differs.
 
 Extra prerequisite: the torch cu130 wheels need an NVIDIA driver ≥ r580 (CUDA 13).
 
@@ -113,17 +113,26 @@ uv pip install --python "$PY" "${NV[@]}" \
   -e "$SRC/isaaclab_contrib" -e "$SRC/isaaclab_assets" -e "$SRC/isaaclab"
 uv pip install --python "$PY" imageio imageio-ffmpeg   # for record_video
 uv pip install --python "$PY" -e .                     # robobench itself (declares no other deps)
+
+# Newton engine — the pin ALL Newton suites (folding, pouring, shoe_tying) run and are tested
+# against. It is newer than the commit isaaclab_newton pulls transitively, so install it last:
+uv pip install --python "$PY" \
+  "newton[sim] @ git+https://github.com/newton-physics/newton.git@f420998186ec70bc39323ccc374bcb6c2be1d14f" \
+  "warp-lang>=1.16,<1.17" "newton-usd-schemas>=0.4.1"
+# -> newton 1.6.0.dev0, warp 1.16, mujoco + mujoco-warp 3.11, newton-usd-schemas 0.5
+
+# and apply the small vendored compat patch to the IsaacLab checkout (newton 1.5 renamed a few
+# APIs the pinned develop commit still uses):
+git -C ~/IsaacLab apply scripts/isaaclab_newton16_compat.patch
 ```
 
 Notes:
 
-- The Newton engine itself needs no separate install — `isaaclab_newton[all]` pins and pulls the
-  exact `newton` git commit it is built against.
 - All seven `-e` packages are required: `isaaclab_ovphysx`/`isaaclab_physx` are hard imports of
   isaaclab's app launcher, and `isaaclab_visualizers[kit]` drives rendering (the folding smokes
   default to the kit visualizer).
 - Optional — only to run IsaacLab's in-tree reference tasks (e.g. `Isaac-Lift-Cloth-Franka-v0`),
-  not needed by the folding suite:
+  not needed by the suites:
   `uv pip install --python "$PY" "${NV[@]}" -e "$SRC/isaaclab_tasks" -e "$SRC/isaaclab_rl" -e "$SRC/isaaclab_ov"`
 
 ### 3. The folding suite
@@ -162,6 +171,37 @@ Note: do **not** record COUPLED-substrate pouring runs with `scripts/record_vide
 live rendering corrupts the coupled MPM physics on this stack. Record via `--dump_states`
 (poses + particles to an `.npz`) plus offline replay (a replay renderer last exists at
 `f8c101d`: `scripts/replay_render.py`).
+
+### 5. The shoe_tying suite (same venv)
+
+The `shoe_tying` suite (`robobench/suites/shoe_tying/`) TIES a half knot from two initially
+separate shoelaces — Newton *rods* (capsule chains + cable joints, standalone VBD/AVBD) rooted
+at a sneaker's top eyelets — by moving their free ends through the classic four beats: cross
+into a mid-air X (pinched by 20 N spring-finger pins), thread under the junction, cross again,
+pull apart and seat on the tongue. Verdict, slack and pin-free: winding >= 140 deg on the knot
+sections, >= 6 cross-lace contacts, knot z < 155 mm. Rods have no IsaacLab asset type, so the
+scene injects them into the Newton `ModelBuilder` through the manager's per-world builder hooks
+(the in-tree MPM asset's mechanism). ONE registered env on ONE registered scene:
+`shoe_tying.knot` (robot-less; roots anchored, the free ends are kinematic handles driven per
+solver substep with closed-loop planning off the measured crossing):
+
+```bash
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
+  -m robobench.suites.shoe_tying.smokes.knot_smoke --headless
+```
+
+Rendering is Kit **RTX**: the smoke spawns a textured visual shoe USD and syncs one visual
+capsule prim per rod segment from `body_q` (the physics rod is prim-less). Record through the
+standard harness:
+
+```bash
+env_newton/bin/python scripts/record_video.py \
+  robobench.suites.shoe_tying.smokes.knot_smoke \
+  --video robobench/suites/shoe_tying/videos/knot_smoke.mp4 \
+  --eye 0.33 -0.31 0.40 --target-at 0.0 0.03 0.10
+```
+
+See `robobench/suites/shoe_tying/README.md` for the full recipe and pass criteria.
 
 ## Assembly embodiment coverage
 
