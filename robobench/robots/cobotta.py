@@ -98,8 +98,10 @@ class CobottaPro1300Robot(BaseRobot):
         sep_off=0.0492,
         stall_vel=0.02,  # rad/s: the true stall reads ~0; a looser gate mistakes the closing
         # sweep's slow tail for contact
-        release_at=0.015,  # the linkage lowers its pads as it opens: release early in the
-        # open so the descending pads clear a barely-held part
+        band_dist=0.018,  # the 67 mm pads bite ~10 mm deep near a part's top edge: the pinch
+        # centre rides off a lower grip band by construction (measured 15.0 mm on the card)
+        release_margin=0.005,  # the linkage lowers its pads as it opens: release early in
+        # the opening sweep so the descending pads clear a barely-held part
     )
 
     control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default

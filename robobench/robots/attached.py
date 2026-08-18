@@ -275,8 +275,8 @@ class Z1Lite6GRobot(_AttachedArmRobot):
         closure=("aperture",), pad_bodies=("uflite_finger1", "uflite_finger2"), sep_off=0.0,
         pinch_axis=(0.0, 1.0, 0.0),
         stall_vel=0.01,
-        release_at=0.014,  # full jaw stroke is ~17.8 mm: the default release hysteresis sits
-        # beyond what these jaws can open to
+        release_margin=0.004,  # full jaw stroke is ~17.8 mm: the panda-scaled hysteresis above
+        # a site's window-top sits beyond what these jaws can open to
         band_dist=0.018,  # short jaws pinching near a part's top edge put the pinch centre off
         # the grip band by construction
     )
