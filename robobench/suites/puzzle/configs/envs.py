@@ -13,12 +13,14 @@ from __future__ import annotations
 
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
+    AttachedArmRobotCfg,
     BimanualFrankaCfg,
     FrankaRobotCfg,
     G1RobotCfg,
     GR1T2RobotCfg,
     PiperRobotCfg,
     WxaiRobotCfg,
+    XArm7RobotCfg,
 )
 from robobench.suites.puzzle.scenes import (
     CoffeeServiceSceneCfg,
@@ -248,6 +250,52 @@ for _mode in ("osc", "joint"):
                     nullspace_dof_pos=(),
                     gripper_effort_limit=25.0,
                     gripper_stiffness=2000.0,
+                ),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# The SAME spatula cell for the transfer suite: gen3n7_panda + xarm7 (panda-hand dial).
+# Scene layout verbatim from the VERIFIED franka binding (targets 0.30-0.75 m on the +x work
+# line from the west mount). gen3n7 (~0.9 m) keeps the franka's mount; the xarm7 (~0.70 m)
+# moves 12 cm east so the far serve station pulls inside its envelope (0.75 -> 0.63 m).
+# Gripper effort capped at the franka binding's verified 25 N — a hard pinch punts the tool
+# when the close lands imperfectly (same handle, same panda hand).
+#   -> "puzzle.spatula.{gen3n7_panda,xarm7}.{osc,joint}"
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="spatula",
+                scene_cfg=_spatula_franka_cfg(),
+                robot="gen3n7_panda",
+                control_mode=mode,
+                robot_cfg=AttachedArmRobotCfg(
+                    base_pos=(-0.60, 0.05, 0.0),
+                    arm_effort_limit=120.0,
+                    gravity_compensation=True,
+                    gripper_effort_limit=25.0,
+                ),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="spatula",
+                scene_cfg=_spatula_franka_cfg(),
+                robot="xarm7",
+                control_mode=mode,
+                robot_cfg=XArm7RobotCfg(
+                    gripper="panda_hand",
+                    base_pos=(-0.48, 0.05, 0.0),
+                    arm_effort_limit=120.0,
+                    gravity_compensation=True,
+                    gripper_effort_limit=25.0,
                 ),
                 env_spacing=3,
             )
