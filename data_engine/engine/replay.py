@@ -292,7 +292,7 @@ def _load_shifted(ep_dir: Path, base_pos, device):
 
 # ----- the replay itself -------------------------------------------------------------------------
 def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int = 8,
-                 fps: int = 30, size=(640, 480), cams: list[str] | None = None,
+                 fps: int | None = None, size=(640, 480), cams: list[str] | None = None,
                  adhoc: dict | None = None, warmup: int = WARMUP_DEFAULT,
                  save_frames: bool = True, preview: bool = True, preview_speed: float = 6.0,
                  crf: int = 26, max_frames: int = 0, visual: str | None = None,
@@ -300,7 +300,12 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                  device: str = "cuda:0") -> list[Path]:
     """Replay `eps` (all from `scene`) in chunks of `num_envs`, rendering every resolved
     view each frame and writing frames/previews into each episode dir. Returns the
-    episode dirs rendered."""
+    episode dirs rendered.
+
+    Traj rows are one per env.step = one per control latch (row_dt = sim_dt x the
+    recorded decimation, both stamped in each ep's meta.json). fps=None (the default)
+    renders one frame PER LATCH — fps = the batch's control rate, the matched regime
+    for VLA export; pass fps to subsample (e.g. --fps 30 on a 240 Hz batch)."""
     import imageio
     import numpy as np
     import torch
@@ -327,7 +332,6 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         hook.setup(env)
     env.reset(seed=0)
     base_pos = env.robot.articulation.data.root_pos_w.clone()  # (E, 3) — the shift anchor
-    stride = max(1, round(1.0 / (fps * env.dt)))
     pool = ThreadPoolExecutor(max_workers=8)
 
     def render_once():
@@ -384,11 +388,21 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                 if k != "action" and not k.startswith("robot/controller")]
         T = [d["robot/joint_pos"].shape[0] for d, _ in loaded]
         t_max = max(T)
+        # a traj row = one env.step = one control latch; the recorded control rate sets
+        # the frame clock, NOT the rebuilt env's physics dt (the solve may have decimated)
+        row_dts = {m.get("sim_dt", env.dt) * m.get("decimation", 1) for _, m in loaded}
+        if len(row_dts) > 1:
+            raise SystemExit(f"[replay {scene}] chunk mixes control rates "
+                             f"({sorted(1 / d for d in row_dts)}) — render the batches separately")
+        row_dt = row_dts.pop()
+        stride = max(1, round(1.0 / (fps * row_dt))) if fps else 1
+        fps_out = int(round(1.0 / (row_dt * stride)))
         n_frames = len(range(0, t_max, stride))
         if max_frames:
             n_frames = min(n_frames, max_frames)
         print(f"[replay {scene}] chunk {lo // num_envs + 1}: {len(chunk)} eps, "
-              f"{t_max} steps @ {1 / env.dt:.0f}Hz -> {n_frames} frames each", flush=True)
+              f"{t_max} rows @ {1 / row_dt:.0f}Hz control -> {n_frames} frames each "
+              f"@ {fps_out}fps", flush=True)
 
         # per (episode, view): frame dir, preview writer; frame indices are per episode
         writers, frame_dirs, indices = [], [], []
@@ -406,7 +420,7 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                 ws[n] = None
                 if preview:
                     ws[n] = imageio.get_writer(str(img_dir / f"preview_{n}.mp4"),
-                                               fps=max(1, round(fps * preview_speed)),
+                                               fps=max(1, round(fps_out * preview_speed)),
                                                codec="libx264", quality=None, pixelformat="yuv420p",
                                                output_params=["-crf", str(crf), "-preset", "medium"])
             frame_dirs.append(fd)
@@ -454,8 +468,8 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                     writers[i][n].close()
                 eye, target = (placed[n][i] if n in placed else (v["eye"], v["target"]))
                 (ep_dir / "imgs" / f"render_{n}.json").write_text(json.dumps({
-                    "camera": n, "size": list(size), "fps": fps, "stride": stride,
-                    "sim_dt": env.dt, "frame_indices": indices[i],
+                    "camera": n, "size": list(size), "fps": fps_out, "stride": stride,
+                    "sim_dt": env.dt, "step_dt": row_dt, "frame_indices": indices[i],
                     "eye": list(eye), "target": list(target), "focal": v["focal"],
                     "link": v.get("link"), "cam_draw": (lo + i if n in placed else None),
                     "env_spacing": env_spacing,

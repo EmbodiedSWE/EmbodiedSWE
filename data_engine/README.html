@@ -339,7 +339,7 @@ scenes/
       <h3>Render (scripts/render.py — boots Isaac)</h3>
       <div class="block">.venv/bin/python data_engine/scripts/render.py --headless \
     &lt;…/data_gen/&lt;gen_name&gt;&gt; --batches bf_scene3</div>
-      <p class="note">That is the whole normal run — the defaults (8 parallel envs, 30 fps, 640×480, every camera the scene and robot declare) are what a dataset render uses. Everything tunable is in the args table below.</p>
+      <p class="note">That is the whole normal run — the defaults (8 parallel envs, one frame per control latch, 640×480, every camera the scene and robot declare) are what a dataset render uses. Everything tunable is in the args table below.</p>
       <p class="note">Generation records states only — rendering stays a separate, retroactive pass (any batch, any time, any camera). For convenience the two chain: <code>generate.py --render [--render_args "…"]</code> replays the freshly graded batch in its own process.</p>
       <p>Kinematic replay: the env rebuilds from the cell's <b>local scene</b> (exactly like <code>generate</code>), then every rendered frame is a restored recorded state — <code>env.set_states</code> on <code>num_envs</code> episodes at once, one <b>TiledCamera</b> pass rendering all of them together (that is where the parallelism lives). Physics decides nothing. The scene's <code>post_step</code> runs on each restored state <em>before</em> the render, so state-coupled visuals — the bulb's glow — land in the correct frame. Episodes recorded on any env grid replay anywhere: positions shift onto the replay slots, anchored on the deterministic robot base.</p>
       <ul class="tight">
@@ -368,7 +368,7 @@ scenes/
           <tr><td class="name">--batches</td><td class="t">all</td><td>batch folders under <code>data/</code> to replay</td></tr>
           <tr><td class="name">--episodes</td><td class="t">—</td><td>explicit <code>ep_NNNN/</code> dirs instead (overrides <code>--batches</code>; also how the dispatcher hands a scene group to its worker)</td></tr>
           <tr><td class="name">--num_envs</td><td class="t">8</td><td>episodes replayed simultaneously — one per env slot, one tiled render pass; the throughput knob (VRAM-bound)</td></tr>
-          <tr><td class="name">--fps</td><td class="t">30</td><td>output frame rate in sim time → subsampling stride over the 240 Hz states (240/30 = every 8th tick); becomes the dataset fps at export</td></tr>
+          <tr><td class="name">--fps</td><td class="t">control rate</td><td>output frame rate in sim time; default = the batch's recorded control rate (sim_dt × decimation from meta.json) = one frame per latch, the matched regime for VLA export. Pass a value to subsample (e.g. 30 on a 240 Hz batch = every 8th row); the achieved rate is stamped as the contract's fps</td></tr>
           <tr><td class="name">--size</td><td class="t">640 480</td><td>image width height</td></tr>
           <tr><td class="name">--cams</td><td class="t">all declared</td><td>which declared cameras to render, by name (the scene's + the robot's <code>CAMERAS</code>)</td></tr>
           <tr><td class="name">--eye / --target</td><td class="t">—</td><td>a one-time <b>ad-hoc</b> camera (position and look-at, env-origin-relative on the work surface, <code>surface_z</code> added automatically) — for probing a viewpoint before writing it into the scene's <code>CAMERAS</code></td></tr>

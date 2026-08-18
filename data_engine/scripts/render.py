@@ -58,7 +58,9 @@ parser.add_argument("gen_root", help="the campaign: …/<run>/data_gen/<gen_name
 parser.add_argument("--batches", nargs="*", default=[], help="batch names under data/ (default: all)")
 parser.add_argument("--episodes", nargs="*", default=[], help="explicit ep dirs (override --batches)")
 parser.add_argument("--num_envs", type=int, default=8, help="episodes replayed in parallel")
-parser.add_argument("--fps", type=int, default=30, help="dataset frame rate (stride = 1/(fps*dt))")
+parser.add_argument("--fps", type=int, default=None,
+                    help="dataset frame rate; default = the batch's recorded control rate "
+                         "(one frame per latch — the matched regime; pass e.g. 30 to subsample)")
 parser.add_argument("--size", type=int, nargs=2, default=(640, 480), metavar=("W", "H"))
 parser.add_argument("--cams", nargs="*", default=None,
                     help="declared cameras to render, by name (the scene's + robot's CAMERAS; "
@@ -117,11 +119,13 @@ if len(groups) > 1:
     for scene, group in groups.items():
         cmd = [sys.executable, __file__, str(gen_root), "--_scene", scene,
                "--episodes", *[str(e) for e in group]]
-        cmd += ["--num_envs", str(args.num_envs), "--fps", str(args.fps),
+        cmd += ["--num_envs", str(args.num_envs),
                 "--size", *map(str, args.size),
                 "--env-spacing", str(args.env_spacing),
                 "--warmup", str(args.warmup), "--preview-speed", str(args.preview_speed),
                 "--crf", str(args.crf), "--max-frames", str(args.max_frames)]
+        if args.fps is not None:
+            cmd += ["--fps", str(args.fps)]
         if args.cams is not None:
             cmd += ["--cams", *args.cams]
         if adhoc:
