@@ -157,6 +157,24 @@ class XArm7Robot(BaseRobot):
         self.EE_BODY: str = spec["ee_body"]
         self._grip_desc: str = spec["desc"]
         self._gspec = spec  # actuator/spawn defaults for cfg fields left None
+        if cfg.gripper == "xarm":
+            # Scene grasp-weld contract keys (robobench.core.grasp_weld): the vendor linkage's
+            # mirrored fingertip pads ride the finger bodies; one driven joint, followers by
+            # mimic. (The panda_hand choice needs no entry — the contract's panda defaults fit
+            # the composite; instance-level because the hand is a cfg choice.)
+            self.GRASP_IFACE = dict(
+                hand_body="xarm_gripper_base_link",
+                finger_joints="drive_joint",
+                approach=(0.0, 0.0, 1.0),
+                pinch_offset=0.1287,  # hand -> pad centre along approach (live-measured)
+                closure=("aperture",),
+                pad_bodies=("left_finger", "right_finger"),
+                pinch_axis=(0.0, 1.0, 0.0),
+                sep_off=0.052,  # finger-origin -> pad inner face, 26 mm per side
+                stall_vel=0.05,  # rad/s on the single driven linkage joint
+                band_dist=0.018,  # 67 mm pads bite ~10 mm deep near a part's top edge: the
+                # pinch centre rides off the grip band by construction (measured 11.5 mm)
+            )
         super().__init__(cfg)
 
     # ----- assets -------------------------------------------------------------------------------
