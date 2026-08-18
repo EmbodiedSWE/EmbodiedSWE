@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
+    AttachedArmRobotCfg,
     BimanualFrankaCfg,
     FrankaRobotCfg,
     G1RobotCfg,
     GR1T2RobotCfg,
     MultiRobotCfg,
+    XArm7RobotCfg,
 )
 from robobench.suites.packing.scenes import (
     PenHolderSceneCfg,
@@ -125,6 +127,76 @@ for _mode in ("osc", "joint"):
                 robot="franka",
                 control_mode=mode,
                 robot_cfg=FrankaRobotCfg(base_pos=(-0.43, 0.0, 0.55)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# The SAME tool-packing cell for the transfer suite: gen3n7_panda + xarm7 (panda-hand dial).
+# gen3n7 (~0.9 m): the franka layout verbatim from the franka's bench mount; probe-verified
+# ready pose (2026-08-18: box hover 6.3 cm — the march terminates at the box's near face —
+# item picks <= 0.9 cm). xarm7 (~0.70 m): the franka layout's box<->items span (0.65 m)
+# exceeds its usable annulus from ANY base (probe round 2026-08-18: items landed under the
+# base column at an east mount, the box out of reach from the west), so its binding shrinks
+# the cell — box pulled to (0.0, 0.10), items on a tighter arc — same task, per-embodiment
+# placement dials (the humanoid-binding convention).
+#   -> "packing.tool_packing.{gen3n7_panda,xarm7}.{osc,joint}"
+def _tool_packing_xarm7_cfg() -> ToolPackingSceneCfg:
+    return ToolPackingSceneCfg(
+        surface_z=0.55,
+        box_pos=(0.0, 0.10),
+        item_slots=((-0.24, -0.22), (-0.28, -0.30), (-0.22, -0.36)),
+        reset_pos_jitter=0.0,
+        reset_yaw_deg=0.0,
+        box_pos_jitter=0.0,
+        box_yaw_deg=0.0,
+        shuffle_slots=False,
+    )
+
+
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="tool_packing",
+                scene_cfg=_tool_packing_franka_cfg(),
+                robot="gen3n7_panda",
+                control_mode=mode,
+                robot_cfg=AttachedArmRobotCfg(base_pos=(-0.43, 0.0, 0.55),
+                                              arm_effort_limit=120.0,
+                                              gravity_compensation=True,
+                                              # probe-verified ready pose (2026-08-18, drift-
+                                              # weighted round: hold 1.4 cm over 60 steps, box
+                                              # hover 4.8 cm, item picks <= 0.9 cm), held
+                                              # actively by the nullspace
+                                              default_dof_pos=(-0.9472, 0.5453, 1.0810, 1.9326,
+                                                               0.2292, 0.2224, -2.0194),
+                                              nullspace_dof_pos=(-0.9472, 0.5453, 1.0810, 1.9326,
+                                                                 0.2292, 0.2224, -2.0194)),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="tool_packing",
+                scene_cfg=_tool_packing_xarm7_cfg(),
+                robot="xarm7",
+                control_mode=mode,
+                robot_cfg=XArm7RobotCfg(gripper="panda_hand",
+                                        base_pos=(-0.43, 0.0, 0.55),
+                                        arm_effort_limit=120.0,
+                                        gravity_compensation=True,
+                                        # probe-verified ready pose (2026-08-18, drift-weighted
+                                        # round: hold 0.0 cm, box hover 4.8 cm, item picks
+                                        # <= 3.3 cm at the shrunk cell), nullspace-held
+                                        default_dof_pos=(-1.5625, -0.8566, 1.0458, 0.7819,
+                                                         0.7351, 0.5271, 3.6916),
+                                        nullspace_dof_pos=(-1.5625, -0.8566, 1.0458, 0.7819,
+                                                           0.7351, 0.5271, 3.6916)),
                 env_spacing=3,
             )
         ),
