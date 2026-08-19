@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
@@ -110,6 +110,13 @@ class FrankaRobot(BaseRobot):
     ARM_JOINTS: tuple[str, ...] = ("panda_joint[1-7]",)
     GRIPPER_JOINTS: tuple[str, ...] = ("panda_finger_joint.*",)
     EE_BODY: str = "panda_hand"  # the OSC control frame (a real body with a Jacobian)
+
+    #: Eye-in-hand view at the standard RealSense D435 bracket pose (ManiSkill panda_wristcam /
+    #: DROID rig): beside the hand, looking parallel to the +z approach axis, ~90 deg FOV.
+    CAMERAS: ClassVar[dict[str, dict]] = {
+        "wrist": {"link": "panda_hand", "eye": (0.0465, -0.02, 0.036), "target": (0.0465, -0.02, 0.3),
+                  "focal": 10.5},
+    }
 
     # Action/target rate (s). Torque modes (osc/impedance): ~15 Hz target (Isaac `Factory-NutThread`,
     # decim 8 @ 120 Hz), latched while the torque law recomputes every physics step (see
