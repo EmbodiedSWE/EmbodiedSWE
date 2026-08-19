@@ -16,7 +16,9 @@ N(0, sigma) on `dims`. The corner cases are the classic models:
 Rules: only `dims` are noised (gripper dims never — noise there corrupts pinch
 calibration); a row whose dims are all zero is untouched (the batch_solve hold
 convention for finished envs, so completed goals are never wiggled); seeded, so
-a batch's noise replays from its recorded seed; executed dims clamp to +-1.
+a batch's noise replays from its recorded seed; executed dims clamp to +-1 ONLY
+when the action space is normalized (clean command already inside [-1, 1]) — raw
+joint-position-target spaces (radians) pass through unclamped.
 """
 
 from __future__ import annotations
@@ -58,6 +60,14 @@ class NoisyActionEnv:
 
         noise = torch.randn(*a.shape, generator=self._rng) * self._sigma * noisy.unsqueeze(1)
         executed = clean.clone()
-        executed[:, self._dims] = (a + noise).clamp(-1, 1).to(clean.device, clean.dtype)
+        perturbed = a + noise
+        # The ±1 clamp is for NORMALIZED action spaces. Raw joint-position-target spaces
+        # (radians — e.g. a Franka joint-4 target sits near -2.2) must not be squashed:
+        # clamping them bends the whole arm off its command (~20 cm at the tip) and every
+        # episode fails before the task starts. Clamp only when the clean command already
+        # lives inside [-1, 1].
+        if bool((a.abs() <= 1.0).all()):
+            perturbed = perturbed.clamp(-1, 1)
+        executed[:, self._dims] = perturbed.to(clean.device, clean.dtype)
         self.last_clean, self.last_executed = clean, executed
         return self._env.step(executed, render)
