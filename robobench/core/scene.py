@@ -8,7 +8,7 @@ are deferred so this module imports without AppLauncher.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .config import SimCfg
 
@@ -19,6 +19,20 @@ if TYPE_CHECKING:
 
 
 class BaseScene(ABC):
+    #: Sampling declarations for the data engine (see data_engine/engine/sampler.py for the
+    #: distribution grammar): each entry maps a cfg field (its default = the nominal) to a band.
+    #: PHYSICAL_PARAMS varies world physics per env at generation; VISUAL_PARAMS varies the LOOK
+    #: stage-wide per render pass at replay (lights/materials are shared prims — never per env).
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {}
+    VISUAL_PARAMS: ClassVar[dict[str, dict | None]] = {}
+
+    #: Named EXTERNAL viewpoints for visual replay (data_engine render.py) — where to stand to see
+    #: THIS scene's geometry, authored next to it. Each entry: {"eye": (x,y,z), "target": (x,y,z),
+    #: "focal": mm} — env-origin-relative on the work surface — plus optional "bands": per-episode
+    #: pose randomization with the sampler grammar on {eye,target}_{x,y,z} (nominal = the declared
+    #: value). Ego (robot-mounted) views live on the ROBOT's `CAMERAS` instead.
+    CAMERAS: ClassVar[dict[str, dict]] = {}
+
     def __init__(self, cfg: Any) -> None:
         self.cfg = cfg
         self._env: BaseEnv | None = None
@@ -71,3 +85,20 @@ class BaseScene(ABC):
         advances), so they react at sim rate even under control decimation. Default no-op. Override for
         things that must react to the new physics state every step (e.g. auto-welding a part the instant
         it seats). Not for the agent to call."""
+
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write a `PHYSICAL_PARAMS` draw PER ENV — `values[name]` is one value per env slot,
+        written through the PhysX views (frictions, masses, ...). Unlike the visual hook below
+        there is no harmless default: a scene that declares bands MUST override this, or sampled
+        batches would silently stay nominal — so the default fails loudly instead."""
+        if values:
+            raise NotImplementedError(
+                f"{type(self).__name__} declares PHYSICAL_PARAMS but does not implement "
+                "apply_physical_params")
+
+    def apply_visual_params(self, env: BaseEnv, values: dict[str, Any]) -> None:
+        """Apply the LIVE subset of a `VISUAL_PARAMS` draw — attribute writes (light intensity, a
+        texture file), material rebinds — one stage-wide value per knob. The engine already wrote the
+        whole draw onto the scene cfg BEFORE the build, so build-consumed knobs (fields `assets()`
+        reads, like a table preset) need no branch here; override only for knobs that must be written
+        onto live prims. Default no-op: every knob is build-consumed."""

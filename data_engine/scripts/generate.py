@@ -3,7 +3,8 @@
     .venv/bin/python data_engine/scripts/generate.py --headless \\
         <…/data_gen/<gen_name>> [--scene scene_0] [--strategy strategy_0] [--phase phase_1] \\
         [--batch default] [--num_envs 4] [--seed 0] \\
-        [--sigma 0.05 --prob 0.01 --duration 0.5 --dims 0:6]
+        [--sigma 0.05 --prob 0.01 --duration 0.5 --dims 0:6] \\
+        [--render] [--render_args "--cams front --fps 30"]
 
 The cell is the (scene × strategy × phase) triple; phase is optional — without it
 the strategy's solve.py runs from scratch, with it solve_by_phase.py enters at the
@@ -40,6 +41,12 @@ parser.add_argument("--solve_draw", type=int, default=0,
                          "SOLVE_PARAMS bands for the whole batch")
 parser.add_argument("--nominal", action="store_true",
                     help="no sampling at all (baseline batch: plain world, bare solve)")
+parser.add_argument("--render", action="store_true",
+                    help="after the batch is graded, replay it to RGB frames + previews "
+                         "(chains scripts/render.py in its own process — generation itself "
+                         "stays camera-free)")
+parser.add_argument("--render_args", default="",
+                    help='extra args forwarded to render.py, e.g. "--fps 30 --eye 1.0 -0.7 0.5"')
 parser.add_argument("--sigma", type=float, default=0.0, help="action-noise sigma (0 = nominal)")
 parser.add_argument("--prob", type=float, default=1.0, help="noise-window start prob per step")
 parser.add_argument("--duration", type=float, default=0.0, help="noise-window length (sim-seconds; 0 = a single step)")
@@ -59,10 +66,24 @@ from engine.generation import run_batch  # noqa: E402
 
 noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
          "dims": tuple(int(x) for x in args.dims.split(":")) if args.dims else None}
-run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
-          phase=args.phase, num_envs=args.num_envs, seed=args.seed,
-          noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu",
-          env_draw=args.env_draw, solve_draw=args.solve_draw, nominal=args.nominal)
+out = run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
+                phase=args.phase, num_envs=args.num_envs, seed=args.seed,
+                noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu",
+                env_draw=args.env_draw, solve_draw=args.solve_draw, nominal=args.nominal)
+
+if args.render:
+    # A separate process on purpose: rendering needs --enable_cameras (a different,
+    # flakier Kit config) and replays only the recorded states — generation stays
+    # camera-free and pixel decisions stay re-renderable. out = real_root/data/<batch>.
+    import shlex  # noqa: E402
+    import subprocess  # noqa: E402
+
+    cmd = [sys.executable, str(Path(__file__).resolve().parent / "render.py"),
+           str(out.parent.parent), "--batches", out.name, "--headless",
+           *shlex.split(args.render_args)]
+    print(f"[generate] chaining render: {' '.join(cmd)}", flush=True)
+    rc = subprocess.run(cmd).returncode
+    print(f"[generate] render {'DONE' if rc == 0 else f'FAILED (exit {rc})'}", flush=True)
 
 # Kit teardown regularly hangs inside app.close() (100% CPU spin, holds GPU memory) —
 # same watchdog hard-exit as robobench/scripts/smoke.py; the batch is fully written by now.

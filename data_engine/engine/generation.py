@@ -69,7 +69,9 @@ def _load(name: str, path: Path):
 
 
 def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
-              env_draw: int = 0, nominal: bool = False):
+              env_draw: int = 0, nominal: bool = False,
+              env_spacing: float | None = None,
+              scene_overrides: dict | None = None):
     """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene.
 
     World physics comes from the LOCAL scene's own `PHYSICAL_PARAMS` bands (see the module
@@ -77,7 +79,11 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
     `scene.apply_physical_params` after the build. `nominal=True` skips sampling. Returns
     (env, gen, bands, slot_drawn): the validated band specs and the per-slot draws
     (slot 0 = {}; both empty when nominal or band-less). A bad band fails here — before
-    the expensive build."""
+    the expensive build.
+
+    `scene_overrides` (replay's visual draw) constructs the scene cfg WITH those field
+    values — through the constructor, not setattr, so `__post_init__` derivations (a
+    table preset filling its usd/height) see them — and the build consumes them."""
     import dataclasses
 
     import robobench
@@ -97,7 +103,12 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
     # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1
     slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)] if bands else []
     cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
-    env = cfg.build(num_envs=num_envs, device=device, seed=seed)
+    # env_spacing: None keeps the preset's grid; replay overrides it (recorded states
+    # shift onto whatever grid the replay builds, so spacing is free there)
+    extra = {} if env_spacing is None else {"env_spacing": env_spacing}
+    if scene_overrides:
+        extra["scene_cfg"] = type(scene_cls().cfg)(**scene_overrides)
+    env = cfg.build(num_envs=num_envs, device=device, seed=seed, **extra)
     if slot_drawn:
         c = env.scene.cfg  # nominal source for slot 0
         values = {n: [getattr(c, n)] + [d[n] for d in slot_drawn[1:]] for n in bands}
@@ -142,6 +153,41 @@ def _flat(d: dict, prefix: str = "") -> dict:
         else:
             out[key] = v.detach().cpu().clone()
     return out
+
+
+def _controller_info(robot) -> dict:
+    """The EFFECTIVE control law the episode ran under, captured after the solve:
+    setup-time overrides are live writes on the controller/articulation (never in a
+    cfg file), so generation is the only moment they can be recorded. This block is
+    what makes episodes from different controllers (other presets, real teleop)
+    distinguishable downstream — the action label only means anything under it."""
+    import torch
+
+    def leaf(c) -> dict:
+        d: dict = {"class": type(c).__name__, "control_period": c._control_period}
+        cfg = getattr(c, "cfg", None)
+        if cfg is not None:
+            d["cfg"] = {k: (v.tolist() if isinstance(v, torch.Tensor) else
+                            list(v) if isinstance(v, tuple) else v)
+                        for k, v in vars(cfg).items()
+                        if isinstance(v, (int, float, bool, str, tuple, list, torch.Tensor))}
+        for name in ("_kp", "_kd"):  # task-space gains live on the instance, not the cfg
+            v = getattr(c, name, None)
+            if isinstance(v, torch.Tensor):
+                d[name.lstrip("_")] = v.tolist()
+        return d
+
+    leaves = getattr(robot.controller, "controllers", None) or [robot.controller]
+    data = robot.articulation.data
+    return {
+        "leaves": [leaf(c) for c in leaves],
+        "joint_names": list(robot.articulation.joint_names),
+        # per-joint drive gains (env 0 — identical across envs): captures e.g. the
+        # gripper stiffness the solve wrote to sim, which sets what a position
+        # target means in force terms
+        "joint_stiffness": data.joint_stiffness[0].tolist(),
+        "joint_damping": data.joint_damping[0].tolist(),
+    }
 
 
 class Recorder:
@@ -274,6 +320,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         solve(rec) if entry is None else solve(rec, entry=entry)
 
         verdicts = grader.verdict()
+        ctrl_info = _controller_info(env.robot)  # after the solve = overrides included
         T = len(rec.actions)
         arrays = {k: np.stack([s[k].numpy() for s in rec.states]) for k in rec.states[0]}
         arrays["action"] = np.stack([a.numpy() for a in rec.actions])
@@ -293,6 +340,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                 "entry": entry,
                 "seed": seed + rnd, "steps": T,
                 "sim_dt": env.dt, "decimation": env.robot.control_period,
+                "controller": ctrl_info,
                 "noise": {k: v for k, v in noise.items() if v},
                 "preset": gen["preset"],
                 "cell": cell,
