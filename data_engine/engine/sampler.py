@@ -61,14 +61,17 @@ def solve_bands(solve_module: Any) -> dict[str, dict[str, Any]]:
     return bands
 
 
-def scene_bands(scene_cls: type, scene_cfg: Any) -> dict[str, dict[str, Any]]:
-    """The scene's validated sampling declaration: the `PHYSICAL_PARAMS` entries that carry
+def scene_bands(scene_cls: type, scene_cfg: Any,
+                attr: str = "PHYSICAL_PARAMS") -> dict[str, dict[str, Any]]:
+    """The scene's validated sampling declaration: the `attr` entries that carry
     a spec (None entries are appliable-but-not-sampled). Fails loudly — a bad band must
     kill the batch before the expensive build, never silently go nominal. Every name
-    must be a real field of the scene's cfg (the nominal source)."""
-    src = f"{scene_cls.__name__}.PHYSICAL_PARAMS"
+    must be a real field of the scene's cfg (the nominal source). Same grammar for
+    `PHYSICAL_PARAMS` (generation, per env) and `VISUAL_PARAMS` (replay, per render
+    pass — see engine/replay.py)."""
+    src = f"{scene_cls.__name__}.{attr}"
     bands: dict[str, dict[str, Any]] = {}
-    for name, spec in getattr(scene_cls, "PHYSICAL_PARAMS", {}).items():
+    for name, spec in getattr(scene_cls, attr, {}).items():
         if not hasattr(scene_cfg, name):
             raise ValueError(f"{src}: '{name}' is not a field of {type(scene_cfg).__name__}")
         if spec is None:
