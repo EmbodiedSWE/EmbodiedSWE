@@ -97,13 +97,28 @@ class Jaco2N7Robot(BaseRobot):
         hand_body="j2n7s300_link_7",
         finger_joints="j2n7s300_joint_finger.*",  # proximals then tips (articulation order)
         approach=(0.001, -0.121, -0.993), pinch_offset=0.188,
-        closure=("wrap", 0.85, 1.30, 0.12),  # prox stall band (rad) + squeeze margin
+        closure=("wrap", 0.80, 1.30, 0.12),  # prox floor 0.85->0.80: a converged
+        # cage on the 7.3 mm slab stalls at 0.82 in some poses (measured; the squeeze
+        # margin still binds real contact — a free-air curl reaches the 1.32 command)  # prox stall band (rad) + squeeze margin
         pad_bodies=("j2n7s300_link_finger_tip_1", "j2n7s300_link_finger_tip_2",
                     "j2n7s300_link_finger_tip_3"),
         pinch_axis=(0.003, 0.993, -0.121),
-        wrap_off=(0.025, 0.050),  # site closure window -> tip-origin proxy band
+        pinch_src="pads",  # curling 3-finger hand: the static ray misses the band by tens of
+        # mm at some poses (measured 62.7 at a converged cage) — the tip centroid IS the pinch
+        engage_debounce=16,  # the live centroid crosses the band DURING the close sweep, so
+        # a transient half-cage can qualify for a few substeps and weld a TILTED stick
+        # (measured: GRIPPED at rot 10.3 deg; the align cannot true >11.5 deg and the press
+        # parks above the mouth) — a converged cage holds all gates for 16 substeps trivially,
+        # a mid-sweep transient cannot
+        wrap_off=(0.025, 0.050),  # proxy-band offsets (the hi was briefly widened to
+        # 0.062 from readings later shown to be PRESS-DWELL lines, not closes; converged
+        # closes read 40-52 — and the wider ceiling admitted a sloppy 66 mm cage that
+        # welded and pressed crooked, measured)  # site closure window -> tip-origin proxy band
         prox_release=0.15,
-        band_dist=0.035,  # a 3-finger squeeze displaces the wrist, riding the pinch centre
+        band_dist=0.035,  # a 3-finger cage's centroid rides off the band by the curl
+        # geometry (0.018 was tried and rejected stick engages whose every gate was true;
+        # the cross-site mis-grasp it targeted is a SOLVER aim problem — a stick-aimed
+        # close completing its curl over the card is a REAL cage the contract must honor)  # a 3-finger squeeze displaces the wrist, riding the pinch centre
         # off the band; the flank + stall gates still anchor the grasp to the part
     )
 
