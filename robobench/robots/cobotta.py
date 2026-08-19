@@ -96,12 +96,18 @@ class CobottaPro1300Robot(BaseRobot):
         closure=("aperture",), pad_bodies=("left_inner_finger", "right_inner_finger"),
         pinch_axis=(0.0, 1.0, 0.0),
         sep_off=0.0492,
-        stall_vel=0.02,  # rad/s: the true stall reads ~0; a looser gate mistakes the closing
-        # sweep's slow tail for contact
+        stall_src="gap_rate",  # the RG6's mimic-driven linkage chatters its drive dof
+        # numerically while a pinch is geometrically dead (measured: aperture constant to
+        # 0.01 mm across substeps, drive velocity flickering past every workable threshold
+        # 0.02-0.09) — stall on the aperture's stillness instead
+        stall_vel=0.06,  # legacy dof gate, still used by solve-side telemetry
         band_dist=0.018,  # the 67 mm pads bite ~10 mm deep near a part's top edge: the pinch
         # centre rides off a lower grip band by construction (measured 15.0 mm on the card)
         release_margin=0.005,  # the linkage lowers its pads as it opens: release early in
         # the opening sweep so the descending pads clear a barely-held part
+        # engage_debounce stays at the scene default (8): 6 and 7 let transit-sweep stall
+        # blips engage the wrong site (measured); gap_rate needs no shortening — a settled
+        # pinch holds 8 straight substeps trivially
     )
 
     control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default
