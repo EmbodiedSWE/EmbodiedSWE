@@ -117,19 +117,19 @@ class BulbAssemblyScene(BaseScene):
     #: sampling bands, cfg default = the nominal look. Applied once per render pass, never per env
     #: (the dome light is one shared prim).
     VISUAL_PARAMS: ClassVar[dict[str, dict | None]] = {
-        "light_intensity": {"dist": "loguniform", "lo": 800.0, "hi": 8000.0,
-                            "reason": "dim dusk -> bright lab around the 2500 nominal"},
-        "lit_intensity": {"dist": "loguniform", "lo": 2.0e5, "hi": 1.0e6,
-                          "reason": "faint filament -> blazing bulb; post_step scales the ramp by it"},
+        "light_intensity": {"dist": "uniform", "lo": 2000.0, "hi": 3000.0,
+                            "reason": "around the 2500 nominal"},
+        "lit_intensity": {"dist": "uniform", "lo": 4.0e5, "hi": 6.0e5,
+                          "reason": "around the 5e5 nominal; post_step scales the ramp by it"},
     }
 
     #: L5 external views (see BaseScene.CAMERAS); bands wiggle the eye a few cm per episode.
     CAMERAS: ClassVar[dict[str, dict]] = {
         "front": {"eye": (0.78, -0.89, 0.54), "target": (0.30, -0.05, 0.10), "focal": 18.15,
                   "bands": {
-                      "eye_x": {"dist": "uniform", "lo": 0.73, "hi": 0.83},
-                      "eye_y": {"dist": "uniform", "lo": -0.94, "hi": -0.84},
-                      "eye_z": {"dist": "uniform", "lo": 0.49, "hi": 0.59},
+                      "eye_x": {"dist": "uniform", "lo": 0.77, "hi": 0.79},
+                      "eye_y": {"dist": "uniform", "lo": -0.90, "hi": -0.88},
+                      "eye_z": {"dist": "uniform", "lo": 0.53, "hi": 0.55},
                   }},
     }
 
