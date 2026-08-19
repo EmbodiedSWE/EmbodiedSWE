@@ -155,6 +155,41 @@ def _flat(d: dict, prefix: str = "") -> dict:
     return out
 
 
+def _controller_info(robot) -> dict:
+    """The EFFECTIVE control law the episode ran under, captured after the solve:
+    setup-time overrides are live writes on the controller/articulation (never in a
+    cfg file), so generation is the only moment they can be recorded. This block is
+    what makes episodes from different controllers (other presets, real teleop)
+    distinguishable downstream — the action label only means anything under it."""
+    import torch
+
+    def leaf(c) -> dict:
+        d: dict = {"class": type(c).__name__, "control_period": c._control_period}
+        cfg = getattr(c, "cfg", None)
+        if cfg is not None:
+            d["cfg"] = {k: (v.tolist() if isinstance(v, torch.Tensor) else
+                            list(v) if isinstance(v, tuple) else v)
+                        for k, v in vars(cfg).items()
+                        if isinstance(v, (int, float, bool, str, tuple, list, torch.Tensor))}
+        for name in ("_kp", "_kd"):  # task-space gains live on the instance, not the cfg
+            v = getattr(c, name, None)
+            if isinstance(v, torch.Tensor):
+                d[name.lstrip("_")] = v.tolist()
+        return d
+
+    leaves = getattr(robot.controller, "controllers", None) or [robot.controller]
+    data = robot.articulation.data
+    return {
+        "leaves": [leaf(c) for c in leaves],
+        "joint_names": list(robot.articulation.joint_names),
+        # per-joint drive gains (env 0 — identical across envs): captures e.g. the
+        # gripper stiffness the solve wrote to sim, which sets what a position
+        # target means in force terms
+        "joint_stiffness": data.joint_stiffness[0].tolist(),
+        "joint_damping": data.joint_damping[0].tolist(),
+    }
+
+
 class Recorder:
     """Outermost wrapper: records (state_t, commanded action_t) before delegating."""
 
@@ -285,6 +320,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         solve(rec) if entry is None else solve(rec, entry=entry)
 
         verdicts = grader.verdict()
+        ctrl_info = _controller_info(env.robot)  # after the solve = overrides included
         T = len(rec.actions)
         arrays = {k: np.stack([s[k].numpy() for s in rec.states]) for k in rec.states[0]}
         arrays["action"] = np.stack([a.numpy() for a in rec.actions])
@@ -304,6 +340,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                 "entry": entry,
                 "seed": seed + rnd, "steps": T,
                 "sim_dt": env.dt, "decimation": env.robot.control_period,
+                "controller": ctrl_info,
                 "noise": {k: v for k, v in noise.items() if v},
                 "preset": gen["preset"],
                 "cell": cell,
