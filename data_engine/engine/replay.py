@@ -33,11 +33,14 @@ on {eye,target}_{x,y,z}: nominal = the declared value, drawn PER EPISODE (Halton
 index = the episode's global position in the run), each episode holding its own
 fixed camera — set before the chunk's warmup, so the denoiser never sees it move.
 
-Outputs, per (episode, view): `imgs/<view>/frame_%06d.jpg` (the dataset frames,
-README's `imgs/` slot), `imgs/render_<view>.json` (frame indices + the ACTUAL
+Outputs, per (episode, view): `imgs/<view>.mp4` (THE dataset video — one x264
+stream at the true control-rate fps; LeRobot's native storage is mp4, so frames
+never exist as files) and `imgs/render_<view>.json` (frame indices + the ACTUAL
 per-episode camera + joint names + visual draw — the export contract, per view so
-several views/looks coexist), `imgs/preview_<view>.mp4` (time-lapsed, for
-eyeballing). Per batch: `replay_sheet_<view>.png` (episodes x time contact sheet).
+several views/looks coexist). Completion is atomic: the video streams to
+`<view>.part.mp4`, renamed on close, and the json is written after — a `.part`
+file or a missing json marks a killed run, cleaned by the re-render. Per batch:
+`replay_sheet_<view>.png` (episodes x time contact sheet, sampled from the videos).
 
 Visual diversification is SCENE-OWNED, like world physics: the cell's scene.py
 declares `VISUAL_PARAMS` bands (same grammar as `PHYSICAL_PARAMS`, cfg default =
@@ -62,7 +65,7 @@ from __future__ import annotations
 
 import json
 import math
-from concurrent.futures import ThreadPoolExecutor
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -294,13 +297,12 @@ def _load_shifted(ep_dir: Path, base_pos, device):
 def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int = 8,
                  fps: int | None = None, size=(640, 480), cams: list[str] | None = None,
                  adhoc: dict | None = None, warmup: int = WARMUP_DEFAULT,
-                 save_frames: bool = True, preview: bool = True, preview_speed: float = 6.0,
-                 crf: int = 26, max_frames: int = 0, visual: str | None = None,
+                 crf: int = 18, max_frames: int = 0, visual: str | None = None,
                  visual_draw: int | None = None, env_spacing: float = 50.0,
                  device: str = "cuda:0") -> list[Path]:
     """Replay `eps` (all from `scene`) in chunks of `num_envs`, rendering every resolved
-    view each frame and writing frames/previews into each episode dir. Returns the
-    episode dirs rendered.
+    view each frame and streaming one `imgs/<view>.mp4` per (episode, view) into each
+    episode dir. Returns the episode dirs rendered.
 
     Traj rows are one per env.step = one per control latch (row_dt = sim_dt x the
     recorded decimation, both stamped in each ep's meta.json). fps=None (the default)
@@ -332,7 +334,6 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         hook.setup(env)
     env.reset(seed=0)
     base_pos = env.robot.articulation.data.root_pos_w.clone()  # (E, 3) — the shift anchor
-    pool = ThreadPoolExecutor(max_workers=8)
 
     def render_once():
         """One restored-state frame: post_step BEFORE the render (glow in-frame), then
@@ -404,26 +405,18 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
               f"{t_max} rows @ {1 / row_dt:.0f}Hz control -> {n_frames} frames each "
               f"@ {fps_out}fps", flush=True)
 
-        # per (episode, view): frame dir, preview writer; frame indices are per episode
-        writers, frame_dirs, indices = [], [], []
+        # per (episode, view): one dataset-video writer, streamed to `.part.mp4` and
+        # renamed only on close — a killed run never leaves a file that looks complete
+        writers, indices = [], []
         for d, meta in loaded:
             ep_dir = Path(meta["_ep_dir"])
             img_dir = ep_dir / "imgs"
             img_dir.mkdir(exist_ok=True)
-            fd, ws = {}, {}
+            ws = {}
             for n in views:
-                fd[n] = img_dir / n
-                if save_frames:
-                    fd[n].mkdir(exist_ok=True)
-                    for stale in fd[n].glob("frame_*.jpg"):  # a re-render must not leave old tails
-                        stale.unlink()
-                ws[n] = None
-                if preview:
-                    ws[n] = imageio.get_writer(str(img_dir / f"preview_{n}.mp4"),
-                                               fps=max(1, round(fps_out * preview_speed)),
-                                               codec="libx264", quality=None, pixelformat="yuv420p",
-                                               output_params=["-crf", str(crf), "-preset", "medium"])
-            frame_dirs.append(fd)
+                ws[n] = imageio.get_writer(str(img_dir / f"{n}.part.mp4"), fps=fps_out,
+                                           codec="libx264", quality=None, pixelformat="yuv420p",
+                                           output_params=["-crf", str(crf), "-preset", "medium"])
             writers.append(ws)
             indices.append([])
 
@@ -451,24 +444,18 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                 if t >= T[i]:  # this episode already ended — freeze, don't record
                     continue
                 for n in views:
-                    frame = rgbs[n][i]
-                    if save_frames:
-                        pool.submit(imageio.imwrite, str(frame_dirs[i][n] / f"frame_{fi:06d}.jpg"),
-                                    frame, quality=90)
-                    if writers[i][n] is not None:
-                        writers[i][n].append_data(frame)
+                    writers[i][n].append_data(rgbs[n][i])
                 indices[i].append(t)
 
-        pool.shutdown(wait=True)
-        pool = ThreadPoolExecutor(max_workers=8)
         for i, (d, meta) in enumerate(loaded):
             ep_dir = Path(meta["_ep_dir"])
             for n, v in views.items():
-                if writers[i][n] is not None:
-                    writers[i][n].close()
+                writers[i][n].close()
+                os.replace(ep_dir / "imgs" / f"{n}.part.mp4", ep_dir / "imgs" / f"{n}.mp4")
                 eye, target = (placed[n][i] if n in placed else (v["eye"], v["target"]))
                 (ep_dir / "imgs" / f"render_{n}.json").write_text(json.dumps({
-                    "camera": n, "size": list(size), "fps": fps_out, "stride": stride,
+                    "camera": n, "video": f"{n}.mp4", "video_crf": crf,
+                    "size": list(size), "fps": fps_out, "stride": stride,
                     "sim_dt": env.dt, "step_dt": row_dt, "frame_indices": indices[i],
                     "eye": list(eye), "target": list(target), "focal": v["focal"],
                     "link": v.get("link"), "cam_draw": (lo + i if n in placed else None),
@@ -482,22 +469,29 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
             done.append(ep_dir)
         del loaded
         torch.cuda.empty_cache() if device.startswith("cuda") else None
-    pool.shutdown(wait=True)
     return done, list(views)
 
 
 def contact_sheet(batch_dir: Path, view: str, cols: int = 5) -> Path | None:
-    """episodes x time grid from the saved frames -> <batch>/replay_sheet_<view>.png."""
+    """episodes x time grid sampled from the rendered videos -> <batch>/replay_sheet_<view>.png."""
     import imageio
     import numpy as np
 
     rows = []
     for ep in sorted(batch_dir.glob("ep_*")):
-        frames = sorted((ep / "imgs" / view).glob("frame_*.jpg"))
-        if not frames:
+        video = ep / "imgs" / f"{view}.mp4"
+        rjson = ep / "imgs" / f"render_{view}.json"
+        if not (video.is_file() and rjson.is_file()):
             continue
-        picks = [frames[min(int(i * (len(frames) - 1) / (cols - 1)), len(frames) - 1)] for i in range(cols)]
-        rows.append(np.concatenate([imageio.imread(p) for p in picks], axis=1))
+        n = len(json.loads(rjson.read_text())["frame_indices"])
+        if n == 0:
+            continue
+        picks = [min(int(i * (n - 1) / (cols - 1)), n - 1) for i in range(cols)]
+        reader = imageio.get_reader(str(video))
+        try:
+            rows.append(np.concatenate([reader.get_data(p) for p in picks], axis=1))
+        finally:
+            reader.close()
     if not rows:
         return None
     sheet = batch_dir / f"replay_sheet_{view}.png"
