@@ -223,6 +223,62 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
+# The SAME pc-gpu-ram work cell for the arms proven on BOTH parent tasks (pc_gpu + pc_ram) —
+# scene layout copied VERBATIM from the franka binding above so every embodiment faces the
+# identical task; base placement follows each arm's pc_gpu spot shifted with the cell (the
+# case moves 40 mm north here and the base follows, as the franka's did). xArm7 is excluded:
+# its vendor hand cannot make the task's stick pinches (the reason its pc_ram binding was
+# removed), and this task installs both sticks.
+#   -> "assembly.pc_gpu_ram.{jaco2_n7, cobotta_pro_1300}.{osc,impedance,joint}"
+_PC_GPU_RAM_ARMS = (
+    ("jaco2_n7", Jaco2N7RobotCfg, dict(
+        # the pc_ram cell's NORTH spot shifted with the cell, then 40 mm WEST: the far
+        # (slot-0) align/press fold had no elbow margin from 0.60 (aligns escaped on
+        # timeout and the press wandered ~86 mm; measured across the order-flip A/B) —
+        # 0.56 keeps every pick at this short arm's proven 0.27+ m band and relieves the
+        # far-slot fold
+        base_pos=(0.56, -0.26, 0.0),
+        base_rot=(0.0, 0.0, 0.0, 1.0),
+        default_dof_pos=(0.1629, 2.2989, -0.2511, 0.7993, -2.3822, -0.9424, -0.0279),
+        arm_effort_limit=120.0,
+        gravity_compensation=True,
+    )),
+    ("cobotta_pro_1300", CobottaPro1300RobotCfg, dict(
+        default_dof_pos=(-0.2689, -0.2062, 2.3545, -0.0002, 0.9898, -0.2685),
+        arm_effort_limit=150.0,
+        # east+south of the franka spot: the near stick's pick would sit at a 0.28 m radius
+        # from there and this 1.3 m arm's elbow tops out at its limit folding that close
+        # (measured: j3 pinned at +2.46, margin 0.15, hand 237 mm short); from here the
+        # stick picks sit at 0.34-0.49 m and the in-case work at ~0.55 m — all comfortable
+        base_pos=(0.78, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+    )),
+)
+for _robot, _cfg_cls, _kw in _PC_GPU_RAM_ARMS:
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, cfg_cls=_cfg_cls, kw=_kw, mode=_mode: EnvCfg(
+                scene="pc_gpu_ram",
+                scene_cfg=PcGpuRamAssemblySceneCfg(
+                    case_xy=(0.55, 0.04),
+                    card_init_xy=(-0.185, -0.321),
+                    card_init_z=0.030,
+                    card_init_quat=(0.70711, 0.0, 0.0, 0.70711),
+                    ram_init_xy=((-0.26, -0.32), (-0.11, -0.32)),
+                    ram_init_quat=(1.0, 0.0, 0.0, 0.0),
+                    ram_init_z=0.030,
+                    reset_pos_jitter=0.0,
+                    card_stand=True,
+                    ram_stand=True,
+                ),
+                robot=robot,
+                robot_cfg=cfg_cls(**kw),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 240.0},
+            ),
+        )
+
 # Franka arm at the pc-ram scene (the case/table preset sits at 0.55 here). Same north-strip
 # placement family as pc_gpu.franka: the base stands at (0.72, -0.34) yaw 180 with its whole
 # link0 footprint (x [-0.154, +0.072] x y +-0.095) on the top plate, and the two stick holders
@@ -740,6 +796,44 @@ for _robot, _cfg_cls in (
                     # per-robot base placement: kwargs override the franka's north-strip default
                     **{"base_pos": (0.64, -0.34, 0.0), "base_rot": (0.0, 0.0, 0.0, 1.0),
                        **_PC_GPU_ROBOT_KW[robot]},
+                ),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 240.0},
+            ),
+        )
+
+# The SAME pc-gpu work cell for the panda-hand composites — scene layout copied VERBATIM from
+# the franka binding above so every embodiment faces the identical task; shared base at the
+# franka's north-strip spot, per-arm actuator/posture dials as in their pc_ram bindings.
+#   -> "assembly.pc_gpu.{rizon4_panda, gen3n7_panda, festo_panda}.{osc,impedance,joint}"
+_PC_GPU_COMPOSITE_KW: dict[str, dict] = {
+    "rizon4_panda": dict(arm_effort_limit=150.0, gravity_compensation=True,
+                         default_dof_pos=(0.6362, -0.4773, -0.1640, 2.5330, 0.5056, 1.4094, -1.5786)),
+    "gen3n7_panda": dict(arm_effort_limit=120.0,  # authored wrist ratings are 9 N*m
+                         gravity_compensation=True,
+                         default_dof_pos=(-0.0286, 0.3731, -0.1231, 2.0578, 0.0679, 0.7191, 1.3759)),
+    "festo_panda": dict(arm_effort_limit=150.0,
+                        gravity_compensation=True,  # authored masses are all zero
+                        default_dof_pos=(-0.1269, -0.5584, 0.4606, 0.0000, 0.5567, 1.4435)),
+}
+for _robot in ("rizon4_panda", "gen3n7_panda", "festo_panda"):
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, mode=_mode: EnvCfg(
+                scene="pc_gpu",
+                scene_cfg=PcGpuAssemblySceneCfg(
+                    card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36)
+                    card_init_z=0.030,  # tab-bottom plane = the holder's floor top
+                    card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                    reset_pos_jitter=0.0,
+                    card_stand=True,
+                ),
+                robot=robot,
+                robot_cfg=AttachedArmRobotCfg(
+                    **{"base_pos": (0.64, -0.34, 0.0), "base_rot": (0.0, 0.0, 0.0, 1.0),
+                       **_PC_GPU_COMPOSITE_KW[robot]},
                 ),
                 control_mode=mode,
                 env_spacing=2,
