@@ -5,13 +5,14 @@
         --episodes vla/example_data/stamp_check/ep_0000 vla/example_data/stamp_check/ep_0001
 
     # matched-controller condition: the SAME episodes' verbatim recorded commands
-    # through the controller they ran under (law from each episode's stamped meta.json)
+    # through the controller they ran under — law from each episode's stamped
+    # meta.json (--matched-controller), or from a raw_cmd spec (bulb_osc_60hz)
     .venv/bin/python vla/eval/replay_actions.py assembly.bulb.franka.osc --matched-controller \\
         --headless --batch <…/data/<batch>>
 
-    # start points are free: --t0 9000 (all), --t0 9000 8700 (per episode, in the
-    # order passed), or --t0-frac 0.85 (fraction of each episode's own length).
-    # Late starts are the strongest sanity anchor: little room for divergence.
+    # start points are sim time: --t0 130 (seconds, all episodes), --t0 1:50 2:20
+    # (clock, per episode in the order passed), or --t0-frac 0.85 (fraction of
+    # each episode's own length). A late start is the strongest sanity anchor.
 
 The executor certification: init each env slot from an episode's recorded state
 at its start tick (mid-starts are exact — the traj stores full state every
@@ -189,7 +190,7 @@ for lo in range(0, len(eps), E):
             raise SystemExit(f"{e}: arm joints {arm_joints} != sim {sim.arm_names}")
         q_rec.append(q); closed_rec.append(closed); T.append(len(q))
         S.append(min(t0_of[e], len(q) - 1))
-        raw_act.append(traj["action"].astype(np.float32) if args.matched_controller else None)
+        raw_act.append(traj["action"].astype(np.float32) if cs == "raw_cmd" else None)
     pad = E - n
     q_rec += [q_rec[-1]] * pad; closed_rec += [closed_rec[-1]] * pad
     raw_act += [raw_act[-1]] * pad; T += [T[-1]] * pad; S += [S[-1]] * pad

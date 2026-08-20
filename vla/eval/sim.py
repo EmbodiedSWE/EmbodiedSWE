@@ -176,7 +176,7 @@ def load_sim(source: str | Path | SimSpec, *, num_envs: int = 1, device: str = "
     sensors = {n: env.iscene.sensors[n] for n in views}
 
     arm_ids, arm_names, finger_ids, finger_names = _split_joints(env)
-    _validate_against_stamp(spec, env, arm_names, finger_names)
+    _validate_against_stamp(spec, env, arm_names)
     rate = spec.control_freq_hz
 
     if spec.control_space in _JOINT_SPACES:
@@ -269,7 +269,7 @@ def _split_joints(env):
     return arm_ids, [names[i] for i in arm_ids], finger_ids, [names[i] for i in finger_ids]
 
 
-def _validate_against_stamp(spec: SimSpec, env, arm_names, finger_names) -> None:
+def _validate_against_stamp(spec: SimSpec, env, arm_names) -> None:
     stamp = spec.stamp
     if stamp is None:
         return
@@ -353,6 +353,10 @@ def _apply_stamp_controller(env, ctrl_block: dict | None) -> None:
                 print(f"[load_sim] stamp {type(leaf).__name__}.control_period: "
                       f"{leaf.control_period} -> {st['control_period']}", flush=True)
             leaf._control_period = int(st["control_period"])
+            if leaf.cfg is not None and hasattr(leaf.cfg, "dt"):
+                # keep cfg.dt consistent with the applied period (dt is inert after
+                # bind, but a stale value misleads readers and any future re-bind)
+                leaf.cfg.dt = env.dt * leaf._control_period
         for k, v in (st.get("cfg") or {}).items():
             if v is None or k in ("dt", "joint_names", "arm_joint_names", "ee_body"):
                 continue
