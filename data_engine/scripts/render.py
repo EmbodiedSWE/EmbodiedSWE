@@ -15,9 +15,10 @@
 
 Replays recorded states (`ep_NNNN/traj.npz`) kinematically — physics decides nothing —
 and renders every env in one pass per frame, `num_envs` episodes at a time, one
-TiledCamera per view. Writes per (episode, view): `imgs/<view>/frame_%06d.jpg`,
-`imgs/render_<view>.json` (the export contract), `imgs/preview_<view>.mp4`; per
-batch: `replay_sheet_<view>.png`. The scene's `post_step` runs on every restored
+TiledCamera per view. Writes per (episode, view): `imgs/<view>.mp4` (the dataset
+video, streamed during the replay — no per-frame image files) and
+`imgs/render_<view>.json` (the export contract, written last = the completion
+marker); per batch: `replay_sheet_<view>.png`. The scene's `post_step` runs on every restored
 state, so state-coupled visuals (the bulb glow) render correctly.
 
 Cameras are DECLARED, not flag defaults: the scene's `CAMERAS` are external views
@@ -77,12 +78,10 @@ parser.add_argument("--env-spacing", type=float, default=50.0, dest="env_spacing
                          "frame shows ONLY its own env — one standalone robot per image")
 parser.add_argument("--warmup", type=int, default=12,
                     help="throwaway renders per chunk start (temporal-denoiser ghost flush)")
-parser.add_argument("--no-frames", action="store_true", help="previews only, no jpg frames")
-parser.add_argument("--no-preview", action="store_true", help="frames only, no preview.mp4")
 parser.add_argument("--no-sheet", action="store_true", help="skip the per-batch contact sheet")
-parser.add_argument("--preview-speed", type=float, default=6.0, dest="preview_speed",
-                    help="preview.mp4 plays N x faster than sim time")
-parser.add_argument("--crf", type=int, default=26)
+parser.add_argument("--crf", type=int, default=18,
+                    help="x264 crf of the dataset video (18 ≈ visually lossless; "
+                         "LeRobot's own storage default is more aggressive)")
 parser.add_argument("--max-frames", type=int, default=0, dest="max_frames",
                     help="cap frames per episode (0 = all) — smoke tests")
 parser.add_argument("--visual_draw", type=int, default=None,
@@ -122,7 +121,7 @@ if len(groups) > 1:
         cmd += ["--num_envs", str(args.num_envs),
                 "--size", *map(str, args.size),
                 "--env-spacing", str(args.env_spacing),
-                "--warmup", str(args.warmup), "--preview-speed", str(args.preview_speed),
+                "--warmup", str(args.warmup),
                 "--crf", str(args.crf), "--max-frames", str(args.max_frames)]
         if args.fps is not None:
             cmd += ["--fps", str(args.fps)]
@@ -135,8 +134,7 @@ if len(groups) > 1:
             cmd += ["--visual", args.visual]
         if args.visual_draw is not None:
             cmd += ["--visual_draw", str(args.visual_draw)]
-        for f, on in [("--no-frames", args.no_frames), ("--no-preview", args.no_preview),
-                      ("--no-sheet", args.no_sheet), ("--headless", args.headless)]:
+        for f, on in [("--no-sheet", args.no_sheet), ("--headless", args.headless)]:
             if on:
                 cmd.append(f)
         print(f"[render] scene {scene}: {len(group)} episodes", flush=True)
@@ -157,12 +155,11 @@ rendered, view_names = replay_scene(
     gen_root, scene, group,
     num_envs=args.num_envs, fps=args.fps, size=tuple(args.size),
     cams=args.cams, adhoc=adhoc,
-    warmup=args.warmup, save_frames=not args.no_frames, preview=not args.no_preview,
-    preview_speed=args.preview_speed, crf=args.crf, max_frames=args.max_frames,
+    warmup=args.warmup, crf=args.crf, max_frames=args.max_frames,
     visual=args.visual or None, visual_draw=args.visual_draw, env_spacing=args.env_spacing,
     device="cuda:0" if torch.cuda.is_available() else "cpu",
 )
-if not args.no_sheet and not args.no_frames:
+if not args.no_sheet:
     for batch_dir in sorted({ep.parent for ep in rendered}):
         for view in view_names:
             sheet = contact_sheet(batch_dir, view)
