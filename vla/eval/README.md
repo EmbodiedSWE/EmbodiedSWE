@@ -8,7 +8,10 @@ into the same loader next.
     specs/            named eval setups (register_sim; one module per scene family)
     check_load.py     stage-0 loader check: build, warmup, hold, snapshot obs
     replay_actions.py re-drive recorded episodes' actions (executor certification)
-    _out/             default output dir (git-ignored scratch)
+    serve.py          the sim behind a socket — the closed-loop eval's Isaac side
+    protocol.py       wire format shared by both venvs (stdlib+numpy only)
+    lerobot_env_cosigen/  lerobot plugin (pip install -e into the lerobot venv)
+    _out/             default output dir (debug scratch, delete freely)
 
 ## load_sim — one call, three sources
 
@@ -158,9 +161,38 @@ closedness.
 - The loader builds the SUITE scene: a campaign cell's hand-modified scene.py
   is deliberately not reproduced.
 
-## Next
+## Closed-loop eval (lerobot)
 
-The lerobot eval server: a socket shim over this same loader (lerobot's venv
-is py>=3.12, Isaac's is 3.11 — two processes), with a `lerobot_env_cosigen`
-plugin so `lerobot-eval --env.type=cosigen --policy.path=...` drives EvalSim
-closed-loop. The bake stays the single source of truth end to end.
+Two processes (lerobot needs py>=3.12, Isaac is 3.11), one contract:
+
+    # once: install the plugin into the lerobot venv (auto-discovered by name)
+    uv pip install -e vla/eval/lerobot_env_cosigen \
+        --python ~/Documents/Research/lerobot/.venv/bin/python
+
+    # terminal 1 (Isaac venv) — pins the eval condition; stays warm across runs
+    .venv/bin/python vla/eval/serve.py bulb_jointpd_60hz --headless
+        # --init dataset --init-batch <…/data/<batch>>  = start from recorded
+        #   states (episode = seed % n); default = scene randomization
+
+    # terminal 2 (lerobot venv)
+    lerobot-eval --policy.path=<ckpt> --env.type=cosigen \
+        --eval.n_episodes=20 --eval.batch_size=1 --eval.use_async_envs=false
+
+serve.py is a shim over load_sim/EvalSim (all semantics live in sim.py); the
+plugin's CosigenEnv follows lerobot's classic obs route ({"pixels": {cam:
+HWC u8}, "agent_pos"} -> observation.images.<cam> / observation.state), the
+handshake hard-validates config dims vs the served sim, and the condition is
+pinned server-side — a result can never half-override the sim it ran on.
+
+Timing semantics: sim time freezes while the policy thinks (blocking socket)
+= instant inference; chunking is the policy's own select_action queue
+(n_action_steps = the re-plan horizon, a legitimate eval axis). Simulated
+latency/RTC would be a client-side wrapper executing stale-chunk ticks at
+chunk boundaries — documented, not built.
+
+Verified 2026-08-20: full `lerobot-eval` run (random-weight ACT, 1 episode,
+120 ticks) against the live sim — plugin auto-discovery, processor pipeline,
+rollout, eval_info.json + episode mp4, exit 0, ~4 ticks/s. A meaningful
+success rate now only needs a checkpoint fine-tuned on the HF bulb dataset
+(the existing pi05 LIBERO base outputs 7-D actions and cannot drive this
+8-D bake).
