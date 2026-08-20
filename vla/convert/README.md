@@ -16,7 +16,7 @@ construction; a new source costs one reader, a new label costs one pure function
 
     ~/Documents/Research/lerobot/.venv/bin/python vla/convert/convert.py \
         <…/data_gen/<gen_name>> --repo-id cosigen/bulb_franka_osc \
-        [--convention joint_vel] [--rate 15] [--batches …] [--cams front wrist] \
+        [--control_space joint_vel] [--control_freq 15] [--batches …] [--cams front wrist] \
         [--root <out>] [--task "…"] [--include-failures]
 
 Views come from each episode's `render_<view>.json` (`--cams` narrows); successful
@@ -28,12 +28,12 @@ an episode never sits in RAM.
 
 Everything else is derived; a bake is fully specified by:
 
-**`--rate`** — the label control rate. Omitted = the native control rate (one tick
+**`--control_freq`** — the label control frequency. Omitted = the native control rate (one tick
 per latch; precisely, the video fps — equal to the solver rate for matched-regime
 renders). A lower rate must divide the fps exactly and be an integer (60 → 30, 20,
 15, 12, 10).
 
-**`--convention`** — what the action column means. State is always the same
+**`--control_space`** — what the action column means. State is always the same
 (`[arm q, gripper]` at the tick whose image the policy sees):
 
 | convention  | action at tick t                       | semantics |

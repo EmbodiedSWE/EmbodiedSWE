@@ -4,18 +4,18 @@ Run with lerobot's OWN venv:
 
     ~/Documents/Research/lerobot/.venv/bin/python vla/convert/convert.py \\
         <…/data_gen/<gen_name>> --repo-id cosigen/bulb_franka_osc \\
-        [--convention joint_vel] [--rate 15] [--batches …] [--cams front wrist] \\
-        [--root <out dir>] [--task "…"] [--include-failures]
+        [--control_space joint_vel] [--control_freq 15] [--batches …] \\
+        [--cams front wrist] [--root <out dir>] [--task "…"] [--include-failures]
 
-Episodes are read through the canonical Episode form (episode.py), projected by
-ONE convention (conventions.py) at ONE control rate, and streamed frame-by-frame
+Episodes are read through the canonical Episode form (episode.py), projected into
+ONE control space (conventions.py) at ONE control frequency, streamed frame-by-frame
 into a LeRobotDataset — videos are decoded sequentially, an episode never sits in
 RAM. Sim episodes additionally carry the verbatim recorded command as a
 `raw_command` column. Successful episodes only by default.
 
 Besides the dataset, the bake writes into its meta/:
   modality.json   GR00T's named-parts map (state/action slices, video keys)
-  bake.json       THE provenance stamp: convention, rate, parts, origin,
+  bake.json       THE provenance stamp: control space + frequency, parts, origin,
                   robot_type, gripper convention, the recorded control law
                   (when the episodes carry one), source episodes + git shas.
 The stamp is the single source of truth an eval bridge reads to build the
@@ -41,10 +41,11 @@ from episode import read_sim_episode  # noqa: E402
 parser = argparse.ArgumentParser(description="bake episodes into a LeRobotDataset")
 parser.add_argument("gen_root", help="the campaign: …/<run>/data_gen/<gen_name>")
 parser.add_argument("--repo-id", required=True, dest="repo_id")
-parser.add_argument("--convention", default="joint_vel", choices=sorted(CONVENTIONS))
-parser.add_argument("--rate", type=float, default=None,
-                    help="control rate of the baked labels (Hz); default: the episodes' "
-                         "native control rate (one tick per latch); a lower rate must "
+parser.add_argument("--control_space", default="joint_vel", choices=sorted(CONVENTIONS),
+                    help="what the action column means (see conventions.py)")
+parser.add_argument("--control_freq", type=float, default=None,
+                    help="control frequency of the baked labels (Hz); default: the episodes' "
+                         "native control rate (one tick per latch); a lower frequency must "
                          "divide the video fps (pi-DROID: 15)")
 parser.add_argument("--batches", nargs="*", default=[], help="batch names under data/ (default: all)")
 parser.add_argument("--episodes", nargs="*", default=[], help="explicit ep dirs (override --batches)")
@@ -72,6 +73,16 @@ def ep_dirs() -> list[Path]:
     return [ep for d in dirs for ep in sorted(d.glob("ep_*")) if (ep / "imgs").is_dir()]
 
 
+def _law(c: dict | None) -> dict | None:
+    """A controller block normalized for identity comparison: `control_dt` is DERIVED
+    (env.dt x control_period, added to stamps 2026-08-19), so blocks from before and
+    after that date describing the same law must compare equal."""
+    if not c:
+        return c
+    return {**c, "leaves": [{k: v for k, v in l.items() if k != "control_dt"}
+                            for l in c.get("leaves", [])]}
+
+
 eps = [read_sim_episode(d, args.cams) for d in ep_dirs()]
 if not args.include_failures:
     skipped = sum(not e.success for e in eps)
@@ -84,7 +95,7 @@ views = sorted(e0.videos)
 for e in eps:
     if sorted(e.videos) != views or e.size != e0.size or e.arm_joints != e0.arm_joints:
         raise SystemExit(f"{e.ep_dir}: views/size/joints differ from {e0.ep_dir} — bake separately")
-    if e.controller != e0.controller:
+    if _law(e.controller) != _law(e0.controller):
         raise SystemExit(f"{e.ep_dir}: recorded control law differs from {e0.ep_dir} — "
                          f"mixed-law pools must be baked separately")
 mid_solve_changed = [str(e.ep_dir) for e in eps if e.meta.get("controller_changes")]
@@ -93,8 +104,8 @@ if mid_solve_changed:
           f"(raw_cmd labels span several laws; stamped block = the final one): "
           f"{mid_solve_changed[:3]}{'…' if len(mid_solve_changed) > 3 else ''}")
 
-rate = args.rate or float(e0.fps)  # no --rate = the native control rate (tick per latch)
-project = CONVENTIONS[args.convention]
+rate = args.control_freq or float(e0.fps)  # no --control_freq = native rate (tick per latch)
+project = CONVENTIONS[args.control_space]
 proj0 = project(e0, rate)
 W, H = e0.size
 features = {
@@ -110,7 +121,7 @@ if proj0.raw_command is not None:
                                "names": [f"cmd_{i}" for i in range(proj0.raw_command.shape[1])]}
 
 root = Path(args.root) if args.root else gen_root / "datasets" / args.repo_id
-print(f"[convert] {len(eps)} episodes, convention={args.convention} @ {rate:g}Hz, "
+print(f"[convert] {len(eps)} episodes, control_space={args.control_space} @ {rate:g}Hz, "
       f"views: {', '.join(views)}")
 ds = LeRobotDataset.create(args.repo_id, fps=int(rate), features=features, root=root,
                            robot_type=args.robot_type or e0.robot_type, use_videos=True)
@@ -168,7 +179,7 @@ meta_dir = root / "meta"
     "annotation": {"annotation.human.task_description": {}},
 }, indent=2) + "\n")
 (meta_dir / "bake.json").write_text(json.dumps({
-    "convention": args.convention, "rate_hz": rate,
+    "control_space": args.control_space, "control_freq_hz": rate,
     "origin": sorted({e.origin for e in eps}), "robot_type": e0.robot_type,
     "state_names": proj0.state_names, "action_names": proj0.action_names,
     "state_parts": proj0.state_parts, "action_parts": proj0.action_parts,
@@ -182,4 +193,4 @@ meta_dir = root / "meta"
     "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
 }, indent=2) + "\n")
 print(f"[convert] DONE: {len(eps)} episodes, {n_ticks} ticks, {len(views)} views, "
-      f"{args.convention} @ {rate:g}Hz -> {root}", flush=True)
+      f"{args.control_space} @ {rate:g}Hz -> {root}", flush=True)
