@@ -164,7 +164,10 @@ def _controller_info(robot) -> dict:
     import torch
 
     def leaf(c) -> dict:
-        d: dict = {"class": type(c).__name__, "control_period": c._control_period}
+        d: dict = {"class": type(c).__name__, "control_period": c._control_period,
+                   # THE effective rate — cfg's `dt` is only the pre-bind preference and
+                   # goes stale when a solve writes `_control_period` directly
+                   "control_dt": robot.env.dt * c._control_period}
         cfg = getattr(c, "cfg", None)
         if cfg is not None:
             d["cfg"] = {k: (v.tolist() if isinstance(v, torch.Tensor) else
@@ -190,18 +193,52 @@ def _controller_info(robot) -> dict:
     }
 
 
+def _ctrl_diff(a: dict, b: dict, prefix: str = "") -> dict:
+    """{path: [old, new]} for every leaf that differs between two _controller_info dicts."""
+    out: dict = {}
+    for k in set(a) | set(b):
+        va, vb, p = a.get(k), b.get(k), f"{prefix}{k}"
+        if isinstance(va, dict) and isinstance(vb, dict):
+            out.update(_ctrl_diff(va, vb, p + "."))
+        elif (isinstance(va, list) and isinstance(vb, list) and len(va) == len(vb)
+              and va and isinstance(va[0], dict)):
+            for i, (x, y) in enumerate(zip(va, vb)):
+                out.update(_ctrl_diff(x, y, f"{p}[{i}]."))
+        elif va != vb:
+            out[p] = [va, vb]
+    return out
+
+
 class Recorder:
-    """Outermost wrapper: records (state_t, commanded action_t) before delegating."""
+    """Outermost wrapper: records (state_t, commanded action_t) before delegating.
+    Also WATCHES the control law: the stamped block is one post-solve snapshot, so a
+    solve that re-gains mid-episode (phase-wise kp/kd) would otherwise be silently
+    misdescribed — sampled every CTRL_CHECK steps, each change lands in ctrl_changes."""
+
+    CTRL_CHECK = 25  # latches between law checks (phases last hundreds; cost ~0.5 ms/check)
 
     def __init__(self, env, raw_env) -> None:
         self._env, self._raw = env, raw_env
         self.states: list[dict] = []
         self.actions: list = []
+        self.ctrl_changes: list[dict] = []
+        self._ctrl_ref: dict | None = None
 
     def __getattr__(self, name: str):
         return getattr(self._env, name)
 
+    def watch_controller(self, step: int | None = None) -> None:
+        snap = _controller_info(self._raw.robot)
+        if self._ctrl_ref is None:
+            self._ctrl_ref = snap
+        elif snap != self._ctrl_ref:
+            self.ctrl_changes.append({"step": len(self.actions) if step is None else step,
+                                      "changed": _ctrl_diff(self._ctrl_ref, snap)})
+            self._ctrl_ref = snap
+
     def step(self, action, render: bool = False):
+        if len(self.actions) % self.CTRL_CHECK == 0:
+            self.watch_controller()
         self.states.append(_flat(self._raw.get_states()))
         self.actions.append(action.detach().cpu().clone())
         return self._env.step(action, render)
@@ -322,6 +359,11 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         verdicts = grader.verdict()
         ctrl_info = _controller_info(env.robot)  # after the solve = overrides included
         T = len(rec.actions)
+        rec.watch_controller(step=T)  # catch a change in the last <CTRL_CHECK latches
+        if rec.ctrl_changes:
+            print(f"[batch {batch}] WARNING: control law changed MID-SOLVE at steps "
+                  f"{[c['step'] for c in rec.ctrl_changes]} — the stamped `controller` is the "
+                  f"FINAL law; per-change diffs are in meta `controller_changes`", flush=True)
         arrays = {k: np.stack([s[k].numpy() for s in rec.states]) for k in rec.states[0]}
         arrays["action"] = np.stack([a.numpy() for a in rec.actions])
         for e in range(num_envs):
@@ -341,6 +383,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                 "seed": seed + rnd, "steps": T,
                 "sim_dt": env.dt, "decimation": env.robot.control_period,
                 "controller": ctrl_info,
+                "controller_changes": rec.ctrl_changes,
                 "noise": {k: v for k, v in noise.items() if v},
                 "preset": gen["preset"],
                 "cell": cell,
