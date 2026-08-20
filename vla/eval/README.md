@@ -1,8 +1,13 @@
 # vla/eval — closed-loop eval sims for the VLA pipeline
 
 Load the same world a dataset was baked from, drive it with policy-convention
-actions, score with the grader. Two tools today; the lerobot eval server plugs
-into the same loader next.
+actions, score with the grader. Two workflows on one loader:
+
+- **Open-loop replay** (`replay_actions.py`) — re-drive recorded episodes'
+  actions through the executor; certify the sim/executor before any policy is
+  judged. Recipe below.
+- **Closed-loop eval** (`serve.py` + the lerobot plugin) — a trained policy
+  drives the live sim through the standard `lerobot-eval` CLI. Recipe below.
 
     sim.py            load_sim() + SimSpec + the EvalSim facade
     specs/            named eval setups (register_sim; one module per scene family)
@@ -91,18 +96,33 @@ Success is grader-defined (isolated from the scene by design): the suite's
 `GRADERS` entry, fresh per episode init, `check_success()` -> `obs.success`;
 suites without a grader fall back to `scene.success()`.
 
-## replay_actions — executor certification
+## How to: open-loop replay (replay_actions)
 
+Feeds each episode's own actions back through the executor from its recorded
+state; if the demos' own actions can't re-succeed, no policy trained on them
+will. Everything runs in the Isaac venv; no lerobot involved.
+
+1. **Pick the sim source** — a registered spec (`bulb_jointpd_60hz`,
+   `bulb_osc_60hz`), the dataset's `meta/bake.json`, or `--matched-controller`
+   (law from the episodes' own stamped metas).
+2. **Pick episodes and start points** — `--episodes <dirs>` / `--batch <dir>`;
+   `--t0` in sim time (a video timestamp works verbatim), one value or one per
+   episode. Start from scratch AND from segments: a late start is the sanity
+   anchor, segment sweeps localize where a run diverges.
+3. **Run and read** `report.json`: per-episode success vs recorded,
+   first-success tick, grader progress peak/final, tracking err; watch the
+   slot-0 mp4s before trusting any number.
+
+    # joint-PD condition, from scratch and from a mid-episode segment
     .venv/bin/python vla/eval/replay_actions.py bulb_jointpd_60hz --headless \
         --episodes <ep_dirs> [--batch <dir>] [--num_envs 4] \
         [--t0 1:20 1:40 | --t0-frac 0.85] [--grip-margin 0.005]
 
-    .venv/bin/python vla/eval/replay_actions.py assembly.bulb.franka.osc \
-        --matched-controller --headless --batch <dir>
+    # matched-controller condition (the exact controller the demos ran under)
+    .venv/bin/python vla/eval/replay_actions.py bulb_osc_60hz --headless \
+        --episodes <ep_dirs>          # or: <preset> --matched-controller
 
-Feeds each episode's own actions back through the executor from its recorded
-state; if the demos' own actions can't re-succeed, no policy trained on them
-will. Semantics:
+Semantics:
 
 - Labels are regenerated from `traj.npz` with the bake's convention math
   (never read from parquet): `joint_pos` = achieved `[q[t+1], closed[t+1]]`;
@@ -138,15 +158,20 @@ recording ends.
 | jointpd scratch | 0/2 | dies at the PICK: achieved-width closedness = zero squeeze force, bulb slips on lift (convert caveat 1, confirmed on video) |
 | jointpd from 2:10 / preseat | 2/2 (trivial) | started past the seat threshold: certifies restore + grader + hold-without-unscrewing |
 | jointpd from 1:20/1:40 | **2/2, real** | first-success 31 s / 38 s INTO the replay: joint-PD **completes the threading** — contact flattening does not block thread progress |
+| jointpd from 0:36 (full threading) | 0/2 | thread advances (glow on video) but stalls short of seat over the long haul |
+| jointpd from 0:36 + 5 mm grip_margin | 0/2 | margin does NOT fix long-haul threading -> the deficit is the PRESS, not grip: joint_pos labels flatten press intent (convert caveat 1) |
+| jointpd scratch + 5 mm grip_margin | 0/2 | margin alone doesn't rescue the full run |
 | matched scratch (v1) | 0/2 | OUR BUG, fixed: stamped `_kp/_kd` silently skipped -> rot stiffness 30 not 600 (the franka.py stall signature, visible on video); apply is now hard-error-or-applied |
-| matched scratch (v2) | pending | the true sanity anchor |
-| jointpd scratch + 5 mm grip_margin | pending | does fixing the pick make the full open-loop run pass? |
+| matched scratch (v2, fixed gains) | pending | the true sanity anchor |
 
 Standing conclusions: certification of long episodes is **segmented replay +
 statistics** (bit-exact open-loop reproduction is not achievable or needed);
 the closed-loop policy eval remains the real from-scratch test; `grip_margin`
 belongs in the executor because a trained policy will also emit achieved-like
-closedness.
+closedness. The from-0:36 pair localizes the joint_pos deficit to the PRESS
+(sustained downward intent that achieved-q labels flatten): recovery paths,
+in order — eval this task in raw_cmd (`bulb_osc_60hz`), or relabel gripper +
+press from the `raw_command` column at the next bake.
 
 ## Known boundaries (all loud, never silent)
 
@@ -161,7 +186,7 @@ closedness.
 - The loader builds the SUITE scene: a campaign cell's hand-modified scene.py
   is deliberately not reproduced.
 
-## Closed-loop eval (lerobot)
+## How to: closed-loop lerobot eval
 
 Two processes (lerobot needs py>=3.12, Isaac is 3.11), one contract:
 
