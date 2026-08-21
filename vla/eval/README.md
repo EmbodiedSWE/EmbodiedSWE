@@ -162,7 +162,7 @@ recording ends.
 | jointpd from 0:36 + 5 mm grip_margin | 0/2 | margin does NOT fix long-haul threading -> the deficit is the PRESS, not grip: joint_pos labels flatten press intent (convert caveat 1) |
 | jointpd scratch + 5 mm grip_margin | 0/2 | margin alone doesn't rescue the full run |
 | matched scratch (v1) | 0/2 | OUR BUG, fixed: stamped `_kp/_kd` silently skipped -> rot stiffness 30 not 600 (the franka.py stall signature, visible on video); apply is now hard-error-or-applied |
-| matched scratch (v2, fixed gains) | pending | the true sanity anchor |
+| matched scratch (v2, fixed gains) | 0/2 | THE anchor result: even the original controller + verbatim commands can't reproduce 3 min of contact open-loop from t=0 (chaotic divergence — env origins, warmup, GPU float) while its segments pass -> long-episode certification is segmented + statistics, full-length from scratch belongs to the closed-loop policy eval |
 
 Standing conclusions: certification of long episodes is **segmented replay +
 statistics** (bit-exact open-loop reproduction is not achievable or needed);
