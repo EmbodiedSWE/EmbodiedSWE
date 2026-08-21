@@ -162,16 +162,22 @@ recording ends.
 | jointpd from 0:36 + 5 mm grip_margin | 0/2 | margin does NOT fix long-haul threading -> the deficit is the PRESS, not grip: joint_pos labels flatten press intent (convert caveat 1) |
 | jointpd scratch + 5 mm grip_margin | 0/2 | margin alone doesn't rescue the full run |
 | matched scratch (v1) | 0/2 | OUR BUG, fixed: stamped `_kp/_kd` silently skipped -> rot stiffness 30 not 600 (the franka.py stall signature, visible on video); apply is now hard-error-or-applied |
-| matched scratch (v2, fixed gains) | 0/2 | THE anchor result: even the original controller + verbatim commands can't reproduce 3 min of contact open-loop from t=0 (chaotic divergence — env origins, warmup, GPU float) while its segments pass -> long-episode certification is segmented + statistics, full-length from scratch belongs to the closed-loop policy eval |
+| matched preseat (1:50/2:20) | 2/2 (trivial) | starts were already seated: certifies restore + hold under the OSC, not threading |
+| matched scratch (v2, fixed gains) | 0/2 | THE anchor result: even the original controller + verbatim commands can't reproduce 3 min of contact open-loop from t=0 (chaotic divergence — env origins, warmup, GPU float) -> long-episode certification is segmented + statistics, full-length from scratch belongs to the closed-loop policy eval |
+| matched from 0:36 | **1/2** | the decisive cell: ep_0000 seats ON the recording's schedule (first-success ~98.9 s vs the recorded ~100 s crossing) where jointpd went 0/2 on the same segment; ep_0001 stalls at progress 0.594 — divergence hits the original controller too |
 
 Standing conclusions: certification of long episodes is **segmented replay +
 statistics** (bit-exact open-loop reproduction is not achievable or needed);
 the closed-loop policy eval remains the real from-scratch test; `grip_margin`
 belongs in the executor because a trained policy will also emit achieved-like
-closedness. The from-0:36 pair localizes the joint_pos deficit to the PRESS
-(sustained downward intent that achieved-q labels flatten): recovery paths,
-in order — eval this task in raw_cmd (`bulb_osc_60hz`), or relabel gripper +
-press from the `raw_command` column at the next bake.
+closedness. The from-0:36 triple (jointpd 0/2, jointpd+margin 0/2, matched
+1/2 with the pass ON the recording's schedule) supports BOTH effects: long-
+segment divergence degrades every executor, and the joint_pos projection
+loses strictly more — consistent with the PRESS deficit (sustained downward
+intent that achieved-q labels flatten). n=2 is thin; the definitive table is
+this sweep over the full 414-episode dataset. Recovery paths, in order —
+eval this task in raw_cmd (`bulb_osc_60hz`), or relabel gripper + press from
+the `raw_command` column at the next bake.
 
 ## Known boundaries (all loud, never silent)
 
