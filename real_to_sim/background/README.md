@@ -86,6 +86,22 @@ Fixed cameras need ONE background image; moving cameras one per frame.
 
 Concrete: `python ../examples/home_desk_franka/render.py <scene> <run>`
 
+## Test data
+
+A complete worked scene (raw captures → COLMAP workspace → trained splat →
+reference output videos) lives in the private HF dataset
+[`CoSiGen/real2sim-home-desk`](https://huggingface.co/datasets/CoSiGen/real2sim-home-desk)
+(org members have access):
+
+```bash
+hf download CoSiGen/real2sim-home-desk --repo-type dataset --local-dir data
+```
+
+Entry points after download: run the full pipeline from `data/captures/`
+(steps 2-3, slow), or skip straight to the example's calibrate/construct/render
+using the included `colmap/` workspace + checkpoint. `reference_outputs/` shows
+what the final videos should look like.
+
 ## Notes
 
 - The one law: **a splat is only sharp for views resembling the capture** —
