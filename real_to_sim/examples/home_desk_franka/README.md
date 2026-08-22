@@ -3,6 +3,12 @@
 A real home desk, captured per step 1, then: calibrated → a Franka constructed
 beside it in Isaac (external + wrist cameras) → rendered as composited videos.
 
+Data (no raw videos needed — the processed scene suffices):
+```bash
+hf download CoSiGen/real2sim-home-desk --repo-type dataset \
+    --include "colmap/*" "runs/*" --local-dir ../../background/data
+```
+
 ```bash
 python calibrate_scene.py home_desk_v2 --height 0.77 --extents 0.57 0.43   # step 4
 python demo_franka_scene.py home_desk_v2 my_run                           # step 5

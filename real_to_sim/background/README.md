@@ -88,19 +88,27 @@ Concrete: `python ../examples/home_desk_franka/render.py <scene> <run>`
 
 ## Test data
 
-A complete worked scene (raw captures → COLMAP workspace → trained splat →
-reference output videos) lives in the HF dataset
-[`CoSiGen/real2sim-home-desk`](https://huggingface.co/datasets/CoSiGen/real2sim-home-desk)
-:
+A complete worked scene lives in the public HF dataset
+[`CoSiGen/real2sim-home-desk`](https://huggingface.co/datasets/CoSiGen/real2sim-home-desk).
+Download only what your goal needs (paths land in place under `data/`):
 
+**Test THIS pipeline (steps 2–4) — raw captures only:**
 ```bash
-hf download CoSiGen/real2sim-home-desk --repo-type dataset --local-dir data
+hf download CoSiGen/real2sim-home-desk --repo-type dataset --include "captures/*" --local-dir data
+python scripts/reconstruct_cam_pose.py data/captures/home_desk_v2 home_desk_v2   # step 2
+bash scripts/train_splat.sh data/colmap/home_desk_v2 home_desk_v2                # step 3
 ```
 
-Entry points after download: run the full pipeline from `data/captures/`
-(steps 2-3, slow), or skip straight to the example's calibrate/construct/render
-using the included `colmap/` workspace + checkpoint. `reference_outputs/` shows
-what the final videos should look like.
+**Run the example (steps 4–6) — processed scene, no raw videos needed:**
+```bash
+hf download CoSiGen/real2sim-home-desk --repo-type dataset --include "colmap/*" "runs/*" --local-dir data
+# then follow ../examples/home_desk_franka/README.md
+```
+
+**Reference results** (what your videos should look like):
+```bash
+hf download CoSiGen/real2sim-home-desk --repo-type dataset --include "reference_outputs/*" --local-dir data
+```
 
 ## Notes
 
