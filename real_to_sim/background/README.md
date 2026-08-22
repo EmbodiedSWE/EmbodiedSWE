@@ -34,6 +34,11 @@ data/captures/<name>/
 
 ## Step 2 — reconstruct camera poses
 
+No capture of your own? Use ours (then `<scene>` = `home_desk_v2`):
+```bash
+hf download CoSiGen/real2sim-home-desk --repo-type dataset --include "captures/*" --local-dir data
+```
+
 ```bash
 python scripts/reconstruct_cam_pose.py data/captures/<scene> <scene>
 ```
