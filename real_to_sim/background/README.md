@@ -89,9 +89,9 @@ Concrete: `python ../examples/home_desk_franka/render.py <scene> <run>`
 ## Test data
 
 A complete worked scene (raw captures → COLMAP workspace → trained splat →
-reference output videos) lives in the private HF dataset
+reference output videos) lives in the HF dataset
 [`CoSiGen/real2sim-home-desk`](https://huggingface.co/datasets/CoSiGen/real2sim-home-desk)
-(org members have access):
+:
 
 ```bash
 hf download CoSiGen/real2sim-home-desk --repo-type dataset --local-dir data
