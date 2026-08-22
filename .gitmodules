@@ -1,3 +1,6 @@
 [submodule "sim_gen/RoboVerse"]
 	path = sim_gen/RoboVerse
 	url = https://github.com/RoboVerseOrg/RoboVerse.git
+[submodule "real_to_sim/background/3dgrut"]
+	path = real_to_sim/background/3dgrut
+	url = https://github.com/nv-tlabs/3dgrut
