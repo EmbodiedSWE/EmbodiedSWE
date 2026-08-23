@@ -21,6 +21,10 @@ source "$VENV/bin/activate"
 echo "[1/4] TRELLIS v1 source (pinned submodule)..."
 REPO="$(cd "$OBJ/../.." && pwd)"
 git -C "$REPO" submodule update --init --recursive real_to_sim/objects/trellis1
+# the vendored flexicubes repo has no .gitignore: exclude __pycache__ locally
+# so imports don't dirty the submodule chain
+EX="$(git -C "$OBJ/trellis1/trellis/representations/mesh/flexicubes" rev-parse --absolute-git-dir)/info/exclude"
+grep -qx "__pycache__/" "$EX" 2>/dev/null || echo "__pycache__/" >> "$EX"
 
 echo "[2/4] python deps..."
 uv pip install -q rembg onnxruntime open3d xatlas pyvista pymeshfix igraph scipy
