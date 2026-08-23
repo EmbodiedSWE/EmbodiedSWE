@@ -83,7 +83,8 @@ HANDSHAKE = {
 
 
 def reply_obs(conn, obs: dict) -> None:
-    arrays = {"state": obs["state"].astype(np.float32)}
+    arrays = {"state": obs["state"].astype(np.float32),
+              "progress": obs["progress"].astype(np.float32)}
     for view, imgs in obs["images"].items():
         arrays[f"img/{view}"] = imgs
     protocol.send_msg(conn, {"is_success": obs["success"].tolist()}, arrays)

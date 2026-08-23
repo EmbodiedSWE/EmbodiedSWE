@@ -235,9 +235,8 @@ for lo in range(0, len(eps), E):
                 rows[fr] = hold_rows(np.stack([raw_act[s][max(T[s] - 2, 0)]
                                                for s in range(E)]))[fr]
             obs = sim.step(rows)
-        if sim.grader is not None:
-            prog = sim.grader.progress().cpu().numpy()
-            prog_peak = np.maximum(prog_peak, prog)
+        prog = obs["progress"]  # computed once per obs inside EvalSim
+        prog_peak = np.maximum(prog_peak, prog)
         tgt = np.stack([q_rec[s][idx(s, k + 1)] for s in range(E)])
         e_t = np.abs(obs["state"][:, :-1] - tgt)
         c_ref = np.array([closed_rec[s][idx(s, k + 1)] for s in range(E)])

@@ -215,6 +215,12 @@ HWC u8}, "agent_pos"} -> observation.images.<cam> / observation.state), the
 handshake hard-validates config dims vs the served sim, and the condition is
 pinned server-side — a result can never half-override the sim it ran on.
 
+The reward channel is the grader's rubric progress (bulb: 0.2 picked +
+0.2 engaged + 0.6 threaded), so eval_info.json carries individual scores:
+per-episode `max_rewards` = peak progress (the same scale as generation's
+`score`), `sum_rewards` = area under the progress curve, and each step's
+info exposes `progress` alongside `is_success`.
+
 Timing semantics: sim time freezes while the policy thinks (blocking socket)
 = instant inference; chunking is the policy's own select_action queue
 (n_action_steps = the re-plan horizon, a legitimate eval axis). Simulated

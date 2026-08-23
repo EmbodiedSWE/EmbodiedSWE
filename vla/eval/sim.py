@@ -434,13 +434,19 @@ class EvalSim:
             images[n] = cam.data.output["rgb"].cpu().numpy()
         if self.grader is not None:
             success = self.grader.check_success().cpu().numpy().astype(bool)
+            # rubric progress (0..1, e.g. bulb: 0.2 picked + 0.2 engaged + 0.6 threaded) —
+            # THE per-episode score; called once per obs = the grader's designed cadence
+            progress = self.grader.progress().cpu().numpy().astype(np.float32)
         elif hasattr(self.env.scene, "success"):
             success = self.env.scene.success().cpu().numpy().astype(bool)
+            progress = success.astype(np.float32)
         else:
             success = np.zeros(self.env.num_envs, dtype=bool)
+            progress = np.zeros(self.env.num_envs, dtype=np.float32)
         return {"images": images,
                 "state": state.float().cpu().numpy(),
-                "success": success}
+                "success": success,
+                "progress": progress}
 
     # ----- stepping -------------------------------------------------------------------------------
     def step(self, action) -> dict:

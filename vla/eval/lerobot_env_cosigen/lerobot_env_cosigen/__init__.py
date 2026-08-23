@@ -129,14 +129,24 @@ class CosigenEnv(gym.Env):
         super().reset(seed=seed)
         header, arrays = self._rpc({"cmd": "reset",
                                     "seed": int(seed) if seed is not None else None})
-        return self._obs(arrays), {"is_success": False}
+        return self._obs(arrays), {"is_success": False,
+                                   "progress": self._progress(arrays)}
 
     def step(self, action):
         a = np.asarray(action, dtype=np.float32).reshape(1, -1)
         header, arrays = self._rpc({"cmd": "step"}, {"action": a})
         success = bool(header["is_success"][0])
-        # terminal obs returned unchanged; autoreset is the vector env's job
-        return self._obs(arrays), float(success), success, False, {"is_success": success}
+        progress = self._progress(arrays)
+        # reward = the grader's rubric progress, so lerobot's per-episode
+        # max_reward IS the score (generation's own `score` scale) and
+        # sum_reward the area under the progress curve
+        return self._obs(arrays), progress, success, False, \
+            {"is_success": success, "progress": progress}
+
+    @staticmethod
+    def _progress(arrays: dict) -> float:
+        p = arrays.get("progress")
+        return float(p[0]) if p is not None else 0.0
 
     def render(self):
         return self._last_front
