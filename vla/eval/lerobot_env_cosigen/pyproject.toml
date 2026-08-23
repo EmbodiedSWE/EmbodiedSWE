@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot_env_cosigen"
+version = "0.1.0"
+description = "lerobot eval plugin: CoSiGen scenes over a local socket (vla/eval/serve.py)"
+requires-python = ">=3.10"
+dependencies = []  # gymnasium/numpy/lerobot come from the host venv
+
+[tool.setuptools]
+packages = ["lerobot_env_cosigen"]
