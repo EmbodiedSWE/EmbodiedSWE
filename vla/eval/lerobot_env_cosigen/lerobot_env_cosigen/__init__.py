@@ -44,7 +44,8 @@ _spec.loader.exec_module(protocol)
 @EnvConfig.register_subclass("cosigen")
 @dataclass
 class CosigenEnvConfig(EnvConfig):
-    """Declares the served sim's interface; defaults = the bulb 60 Hz bake."""
+    """Declares the served sim's interface. Set the --env.* fields (dims, cameras,
+    fps) to match whatever serve.py is running — the handshake hard-validates them."""
 
     host: str = "127.0.0.1"
     port: int = 5555

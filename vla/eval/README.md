@@ -215,11 +215,11 @@ HWC u8}, "agent_pos"} -> observation.images.<cam> / observation.state), the
 handshake hard-validates config dims vs the served sim, and the condition is
 pinned server-side — a result can never half-override the sim it ran on.
 
-The reward channel is the grader's rubric progress (bulb: 0.2 picked +
-0.2 engaged + 0.6 threaded), so eval_info.json carries individual scores:
-per-episode `max_rewards` = peak progress (the same scale as generation's
-`score`), `sum_rewards` = area under the progress curve, and each step's
-info exposes `progress` alongside `is_success`.
+The reward channel is the suite grader's weighted rubric progress (0..1;
+success-as-float where a suite ships no grader), so eval_info.json carries
+individual scores: per-episode `max_rewards` = peak progress (the same scale
+as generation's `score`), `sum_rewards` = area under the progress curve, and
+each step's info exposes `progress` alongside `is_success`.
 
 Timing semantics: sim time freezes while the policy thinks (blocking socket)
 = instant inference; chunking is the policy's own select_action queue
@@ -230,6 +230,6 @@ chunk boundaries — documented, not built.
 Verified 2026-08-20: full `lerobot-eval` run (random-weight ACT, 1 episode,
 120 ticks) against the live sim — plugin auto-discovery, processor pipeline,
 rollout, eval_info.json + episode mp4, exit 0, ~4 ticks/s. A meaningful
-success rate now only needs a checkpoint fine-tuned on the HF bulb dataset
-(the existing pi05 LIBERO base outputs 7-D actions and cannot drive this
-8-D bake).
+success rate needs a checkpoint fine-tuned on a dataset whose bake matches
+the served sim (a policy trained under another convention or action width
+cannot drive it — the dims fail loudly at the seams).
