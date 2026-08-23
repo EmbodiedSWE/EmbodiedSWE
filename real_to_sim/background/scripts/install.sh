@@ -28,6 +28,9 @@ if [ ! -f "$VENV/bin/activate" ]; then
     uv venv "$VENV" --python 3.11 --prompt r2s-background
 fi
 ln -sfn ../.venv "$GRUT/.venv"   # satisfy 3dgrut's hardcoded .venv path
+# its .gitignore has ".venv/" which doesn't match a symlink -> local exclude
+EX="$(git -C "$GRUT" rev-parse --absolute-git-dir)/info/exclude"
+grep -qx ".venv" "$EX" 2>/dev/null || echo ".venv" >> "$EX"
 
 echo "[3/5] CUDA toolkit into the venv (~4 GB download, cached in /tmp)..."
 cd "$GRUT"
