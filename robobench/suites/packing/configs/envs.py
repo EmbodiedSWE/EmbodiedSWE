@@ -16,6 +16,7 @@ from robobench.robots import (
     MultiRobotCfg,
 )
 from robobench.suites.packing.scenes import (
+    EggCartonSceneCfg,
     PenHolderSceneCfg,
     ToolPackingSceneCfg,
 )
@@ -26,6 +27,38 @@ SUITE = "packing"
 # ---- RoboDojo fill-pen-holder (difficulty-floor tier, bimanual-friendly) ----------------------
 # Scene physics only (NullRobot oracle/smoke). -> "packing.pen_holder"
 register_env(SUITE, lambda: EnvCfg(scene="pen_holder", robot="null", env_spacing=3))
+
+
+# ---- RoboDojo fill-egg-holder (long-horizon humanoid tier) ------------------------------------
+# Scene physics only (NullRobot oracle/smoke). -> "packing.egg_carton"
+register_env(SUITE, lambda: EnvCfg(scene="egg_carton", robot="null", env_spacing=3))
+
+
+def _egg_carton_g1_cfg() -> EggCartonSceneCfg:
+    """G1 bimanual layout: basket left, four-cell carton right, both in its measured band."""
+    return EggCartonSceneCfg(
+        surface_z=0.7,
+        basket_pos=(-0.14, 0.12),
+        carton_pos=(0.14, 0.12),
+    )
+
+
+# -> "packing.egg_carton.g1.{joint,pink_ik}".  Fixed-base G1 stands in front of the
+# packing table; each hand can cover one side while the 2x2 carton remains at midline reach.
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="egg_carton",
+                scene_cfg=_egg_carton_g1_cfg(),
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
 
 
 # Robot bindings. Placements are STARTING guesses copied from the stacking-toy / packing measured
