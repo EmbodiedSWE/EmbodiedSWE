@@ -68,15 +68,46 @@ python scripts/generate_mesh_multi.py data/captures/<name>/ <name>
 view coverage, but baked RGB texture only (no PBR). Use when single-shot
 guesses an important side wrong; prefer `generate_mesh.py` otherwise.
 
-## Step 3 — rescale + assemble the USD (TODO)
+## Step 3 — calibrate into a sim-ready USD
 
-Planned: `assemble_usd.py` — scale `mesh.glb` to the caliper measurements,
-convert via Isaac's asset converter, attach it as the visual prim of a
-rigid-body Xform with a separate collision prim (fitted primitive or CoACD,
-`purpose = guide`) and measured mass. Until then: the bulb/screw assets under
-`robobench` show the target prim layout.
+```bash
+python ../examples/home_desk_franka/calibrate_object.py <name> \
+    --diameter 0.08 --mass 0.35 [--flip]
+```
 
-## Step 4 — place it in a scene (TODO)
+Runs in the repo's Isaac venv (self-bootstraps; launch with any venv python).
+Scales the mesh to the caliper measurement, converts it to the visual prim of
+a rigid-body USD, and authors the separate physics: a lathe-profile stack of
+cylinder colliders from the mesh's own cross-sections (`purpose=guide`,
+invisible; `--collision cylinder` for a single bbox cylinder), a friction
+material, and the mass. Origin = bottom center, so placing at (x, y, 0)
+stands it on the work surface. Check the printed height; use `--flip` if a
+render shows it upside down (the bbox can't tell the ends apart).
 
-Spawn the USD in a calibrated scene (`../background` step 5) at its measured
-pose on the work surface; the mask-composite render carries it automatically.
+## Step 4 — place it in a scene
+
+```bash
+python ../examples/home_desk_franka/demo_franka_scene.py <scene> <run> \
+    --object <name>:x,y,yaw_deg
+python ../examples/home_desk_franka/render.py <scene> <run>
+```
+
+Objects are rigid bodies on the calibrated surface; the mask composite
+carries them automatically. When objects are present the demo arm tries to
+pick the first one (RMPflow). See `../examples/home_desk_franka/README.md`.
+
+## Test data
+
+The worked bottle (photos → mesh → USD) lives in the public HF dataset
+[`CoSiGen/real2sim-home-desk`](https://huggingface.co/datasets/CoSiGen/real2sim-home-desk):
+
+```bash
+# from real_to_sim/objects — lands in place under data/
+hf download CoSiGen/real2sim-home-desk --repo-type dataset \
+    --include "objects/bottle/*" --local-dir data
+```
+
+Gets `data/objects/bottle/`: the input `photos/`, the generated `mesh.glb` +
+`preview.mp4`, and the baked `bottle.usd` (8 cm diameter, ready to spawn — steps
+2–3 already done for you). To reproduce generation from the photos:
+`python scripts/generate_mesh_multi.py data/objects/bottle/photos bottle_regen`.

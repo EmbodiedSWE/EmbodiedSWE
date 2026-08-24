@@ -35,7 +35,7 @@ WSDIR = DATA / "colmap" / SCENE
 RUND = DATA / "outputs" / RUN
 REC = RUND / "franka_desk"
 RB = BG / "scripts" / "render_background.py"
-CLASSES = {"robot", "table"}
+CLASSES = {"robot", "table", "object"}
 
 ckpt = json.load(open(WSDIR / "scene.json"))["checkpoint"]
 
