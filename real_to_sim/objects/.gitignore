@@ -1,0 +1,9 @@
+# stage env + build artifacts
+.venv/
+.setup_shim/
+# all object data (captures, generated meshes, usd) — may be a dir or a symlink
+data
+data/
+# python
+__pycache__/
+*.pyc
