@@ -67,9 +67,9 @@ python -m robobench.scripts.smoke --env assembly.ikea_table.g1.joint
 
 ```
 
-## Newton env (folding / pouring / shoe_tying suites)
+## Newton env (folding / pouring / shoe_tying / dough suites)
 
-The `folding`, `pouring`, and `shoe_tying` suites run on IsaacLab **develop**'s Newton physics
+The `folding`, `pouring`, `shoe_tying`, and `dough` suites run on IsaacLab **develop**'s Newton physics
 backend (cloth, liquids, and rods do not exist on the PhysX stack). That branch is not on PyPI,
 so these suites get their own project-local venv, **`env_newton`** (Python 3.12, isaacsim 6.0,
 torch cu130), with the isaaclab packages installed *editable* from an IsaacLab **develop**
@@ -202,3 +202,23 @@ env_newton/bin/python scripts/record_video.py \
 ```
 
 See `robobench/suites/shoe_tying/README.md` for the full recipe and pass criteria.
+
+### 6. The dough suite (same venv)
+
+The `dough` suite (`robobench/suites/dough/`) runs **elastoplastic dough** (implicit MPM with
+finite stiffness + von-Mises yield + full cohesion — Newton's "mud" recipe stiffened for shape
+retention) coupled with MJWarp rigid dynamics. The task: ROLL THE DOUGH OUT — grasp the rolling
+pin through the scene's auto-weld contract and flatten the ball into a thin, wide wrapper with
+low sliding passes (`scene.success()` gates the rolled sheet plus conservation guards; pushing
+is the MPM colliders' one verified dough transport — see the suite README's physics findings).
+ONE registered env on ONE registered scene: `dough.dumpling` (robot-less material tuning:
+pure-MPM substrate, kinematic pin). The suite ships the task only — robot bindings and
+solutions live in the gitignored `experiments/` workspace, which builds its own
+`EnvCfg(scene="dumpling", robot=...)` on the coupled substrate.
+
+Same coupled-substrate recording rule as pouring: never record live — dump states during the
+run and replay offline via `scripts/replay_render.py` (local-only, last in-tree at `f8c101d`;
+its latte-specific particle-key mapping needs one generalization for dough dumps: map each MPM
+object's prim leaf, lowercased, to the same-named dump key — `dough`).
+
+See `robobench/suites/dough/README.md` for the scene, material notes, and pass criteria.
