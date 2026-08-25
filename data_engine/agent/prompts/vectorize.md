@@ -4,13 +4,13 @@ You are inside a **data_gen campaign** that multiplies one verified robobench
 solve into a large demonstration dataset. Farming throughput comes from running
 multiple environments in one simulation: `generate --num_envs {num_envs}` steps
 {num_envs} worlds together, each with its own sampled parameters, and grades
-every episode. The current wide probe failed its yield requirement. Diagnose
-that failure from the solve and the complete probe log, then make the solve
-correct for independently varying environments. Common causes include
-single-row state reads, targets derived from one environment and broadcast to
-all rows, a shared phase clock for environments with different progress, and
-batch-unsafe helper state. Do not assume which cause applies before reading the
-evidence.
+every episode. The current wide probe failed the mechanical gate (the batch
+must complete env-batched with at least one success). Diagnose that failure
+from the solve and the probe log, then make the solve correct for
+independently varying environments. Common causes include single-row state
+reads, targets derived from one environment and broadcast to all rows, a
+shared phase clock for environments with different progress, and batch-unsafe
+helper state. Do not assume which cause applies before reading the evidence.
 
 ## Facts
 
@@ -21,9 +21,12 @@ evidence.
 
 ## Failing wide-run evidence
 
-```
-{fail_log}
-```
+The COMPLETE failing-probe log ({fail_log_size}) is at:
+
+    {fail_log_path}
+
+Read it with your shell (grep/tail/sed — it is a full {num_envs}-env Isaac run,
+so search it rather than dumping it whole).
 
 ## How to vectorize
 
@@ -54,10 +57,13 @@ tensors and the action interface accepts per-env rows. The standard lift:
     generate --headless {gen} --scene scene_0 --strategy strategy_0 \
         --num_envs {num_envs} --seed {probe_seed}
 
-The batch meta under `{gen}/data/` records per-episode verdicts. The actual
-orchestrator gate for this campaign is at least {required_successes}/{num_envs}
-successes (`wide_yield={wide_yield:.3f}`). Nominal one-env behavior must not
-regress (`--nominal --num_envs 1 --seed 0`). Iterate until both checks hold.
+The batch meta under `{gen}/data/` records per-episode verdicts. The
+orchestrator's gate is mechanical: the wide batch must complete env-batched
+with AT LEAST ONE success. Yield beyond that is farm economics — every extra
+percent of yield is farm batches saved, so push it as high as the strategy
+honestly allows, but do not distort the strategy to chase it. Nominal one-env
+behavior must not regress (`--nominal --num_envs 1 --seed 0`). Iterate until
+both checks hold.
 
 You are running autonomously: no one answers questions; your final message ends
 the session. Leave `VECTORIZE_NOTES.md` next to the solve: what you changed and

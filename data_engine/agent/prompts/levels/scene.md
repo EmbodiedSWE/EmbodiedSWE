@@ -96,11 +96,15 @@ to the scene's reset). To stop a dial from being sampled, set its entry to
 `None`; don't delete the line — the nominal values are applied through the
 same list, so deleting changes the normal world too.
 
-Optional follow-up, not a requirement for shipping a scene cell: if the task
-has meaningful physical or visual knobs and time remains, declaring
-`PHYSICAL_PARAMS`, camera pose bands, or `VISUAL_PARAMS` lets later scripted
-stages sample them. Derive ranges from the scene's nominal values and measured
-yield; do not invent ranges merely to populate the interfaces.
+`VISUAL_PARAMS` is a REQUIRED deliverable on every scene you ship — including
+`scene_0` if it lacks one. It is the entire look axis of the downstream visual
+multiplication: without it, every extra render pass varies nothing but camera
+pose. Band the render-only knobs the scene actually has (materials, colors,
+lighting; nominal = today's look; never a color the task's semantics or grader
+depend on, never anything physics reads). `PHYSICAL_PARAMS` and camera pose
+bands remain judgment calls: declare them when the task has meaningful knobs,
+with ranges derived from the scene's nominal values and measured yield — do
+not invent ranges merely to populate the interfaces.
 
 ## Verification
 

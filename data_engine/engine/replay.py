@@ -297,7 +297,8 @@ def _load_shifted(ep_dir: Path, base_pos, device):
 def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int = 8,
                  fps: int | None = None, size=(640, 480), cams: list[str] | None = None,
                  adhoc: dict | None = None, warmup: int = WARMUP_DEFAULT,
-                 crf: int = 18, max_frames: int = 0, visual: str | None = None,
+                 crf: int = 18, max_frames: int = 0, trim_margin: int = -1,
+                 visual: str | None = None,
                  visual_draw: int | None = None, env_spacing: float = 50.0,
                  device: str = "cuda:0") -> list[Path]:
     """Replay `eps` (all from `scene`) in chunks of `num_envs`, rendering every resolved
@@ -387,7 +388,18 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         # can't restore a partial tree), and kinematic replay never applies an action
         keys = [k for k in loaded[0][0]
                 if k != "action" and not k.startswith("robot/controller")]
-        T = [d["robot/joint_pos"].shape[0] for d, _ in loaded]
+
+        def ep_rows(d: dict, m: dict) -> int:
+            rows = d["robot/joint_pos"].shape[0]
+            # trim the padded post-success tail: wide batches hold every finished
+            # env until the slowest one ends, and meta.success_step (earliest
+            # SUSTAINED success, generation-time graded) marks where this env was
+            # actually done. margin keeps the settle visible.
+            if trim_margin >= 0 and m.get("success_step") is not None:
+                rows = min(rows, int(m["success_step"]) + trim_margin)
+            return rows
+
+        T = [ep_rows(d, m) for d, m in loaded]
         t_max = max(T)
         # a traj row = one env.step = one control latch; the recorded control rate sets
         # the frame clock, NOT the rebuilt env's physics dt (the solve may have decimated)

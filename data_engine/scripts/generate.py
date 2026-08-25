@@ -2,17 +2,21 @@
 
     .venv/bin/python data_engine/scripts/generate.py --headless \\
         <…/data_gen/<gen_name>> [--scene scene_0] [--strategy strategy_0] [--phase phase_1] \\
-        [--batch default] [--num_envs 4] [--seed 0] \\
-        [--sigma 0.05 --prob 0.01 --duration 0.5 --dims 0:6] \\
+        [--batch default] [--num_envs 4] [--seed 0] [--noise_scale 1.0] \\
         [--render] [--render_args "--cams front --fps 30"]
 
 The cell is the (scene × strategy × phase) triple; phase is optional — without it
 the strategy's solve.py runs from scratch, with it solve_by_phase.py enters at the
 phase's declared entries: the batch sweeps ALL the cell's reset/ files, one rollout
 per file, and within a rollout every reset_N builder in the file shapes an even share
-of the envs. Noise defaults to off (the
-nominal configuration); --dims (e.g. 0:6 = franka-osc arm) is required when
-sigma > 0 — gripper dims are never noised.
+of the envs.
+
+Noise is SOLVE-AUTHORED: a solve passes per-step perturbations through
+`env.step(action, noise=...)` (its own phase knowledge decides where and how
+much), and `--noise_scale` is the pipeline's master switch — 0 (default) executes
+every batch clean even if the solve offers noise; 1.0 executes the offered noise
+at authored strength. Recorded action labels are clean by construction either
+way; the executed perturbations are recorded verbatim in traj.npz `action_noise`.
 """
 
 from __future__ import annotations
@@ -49,15 +53,12 @@ parser.add_argument("--render", action="store_true",
                          "stays camera-free)")
 parser.add_argument("--render_args", default="",
                     help='extra args forwarded to render.py, e.g. "--fps 30 --eye 1.0 -0.7 0.5"')
-parser.add_argument("--sigma", type=float, default=0.0, help="action-noise sigma (0 = nominal)")
-parser.add_argument("--prob", type=float, default=1.0, help="noise-window start prob per step")
-parser.add_argument("--duration", type=float, default=0.0, help="noise-window length (sim-seconds; 0 = a single step)")
-parser.add_argument("--dims", default="", help="noised action dims as a:b (required if sigma > 0)")
+parser.add_argument("--noise_scale", type=float, default=0.0,
+                    help="master switch for solve-authored noise (env.step(..., noise=…)): "
+                         "0 = execute clean (default; probes/farm), 1.0 = execute the "
+                         "authored perturbations (compound)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
-
-if args.sigma > 0 and not args.dims:
-    parser.error("--dims is required when --sigma > 0")
 
 app = AppLauncher(args).app
 
@@ -67,11 +68,10 @@ sys.path.insert(0, str(DATA_ENGINE_ROOT.parent))
 sys.path.insert(0, str(DATA_ENGINE_ROOT))
 from engine.generation import run_batch  # noqa: E402
 
-noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
-         "dims": tuple(int(x) for x in args.dims.split(":")) if args.dims else None}
 out = run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
                 phase=args.phase, num_envs=args.num_envs, seed=args.seed,
-                noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu",
+                noise_scale=args.noise_scale,
+                device="cuda:0" if torch.cuda.is_available() else "cpu",
                 env_draw=args.env_draw, solve_draw=args.solve_draw, nominal=args.nominal)
 
 if args.render:

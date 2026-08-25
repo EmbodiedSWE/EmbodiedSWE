@@ -52,6 +52,14 @@ sequential exploration is also valid while developing a new idea. If
 `DGEN_NUM_ENVS` is set, it is the downstream scripted-stage width and is the
 right final compatibility test.
 
+Solves may author DART-style disturbances through the recorder's noise
+channel — `env.step(action, noise=perturbation)` — which executes
+`action + NOISE_SCALE * perturbation` while recording the clean `action` as
+the label. `NOISE_SCALE` is pipeline-controlled (`generate --noise_scale`,
+default 0), so authored noise is inert in normal testing. You also have a
+`view` tool that attaches video frames or images to the conversation — use it
+whenever judging motion from a rendered episode beats reading logs.
+
 ## How you work
 
 1. **Study first**: the start point's code (the working scene, grader and

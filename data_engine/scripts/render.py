@@ -84,6 +84,11 @@ parser.add_argument("--crf", type=int, default=18,
                          "LeRobot's own storage default is more aggressive)")
 parser.add_argument("--max-frames", type=int, default=0, dest="max_frames",
                     help="cap frames per episode (0 = all) — smoke tests")
+parser.add_argument("--trim-margin", type=int, default=-1, dest="trim_margin",
+                    help="rows kept past each episode's meta.success_step (its earliest "
+                         "sustained-success step): trims the padded post-success tail wide "
+                         "batches append to finished envs. -1 (default) = no trimming; "
+                         "episodes without success_step always render in full")
 parser.add_argument("--visual_draw", type=int, default=None,
                     help="sample the scene's own VISUAL_PARAMS bands at this index and apply the "
                          "look stage-wide for the whole pass (omit = the nominal look); K looks of "
@@ -124,7 +129,8 @@ if len(groups) > 1:
                 "--size", *map(str, args.size),
                 "--env-spacing", str(args.env_spacing),
                 "--warmup", str(args.warmup),
-                "--crf", str(args.crf), "--max-frames", str(args.max_frames)]
+                "--crf", str(args.crf), "--max-frames", str(args.max_frames),
+                "--trim-margin", str(args.trim_margin)]
         if args.fps is not None:
             cmd += ["--fps", str(args.fps)]
         if args.cams is not None:
@@ -158,6 +164,7 @@ rendered, view_names = replay_scene(
     num_envs=args.num_envs, fps=args.fps, size=tuple(args.size),
     cams=args.cams, adhoc=adhoc,
     warmup=args.warmup, crf=args.crf, max_frames=args.max_frames,
+    trim_margin=args.trim_margin,
     visual=args.visual or None, visual_draw=args.visual_draw, env_spacing=args.env_spacing,
     device="cuda:0" if torch.cuda.is_available() else "cpu",
 )

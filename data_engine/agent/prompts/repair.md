@@ -17,14 +17,17 @@ job is to fix the solve so a nominal run succeeds.
 
 ## Failing-run evidence
 
-```
-{fail_log}
-```
+The COMPLETE failing-probe log ({fail_log_size}) is at:
+
+    {fail_log_path}
+
+Read it with your shell (grep/tail/sed — it is the full Isaac run, so search it
+rather than dumping it whole).
 
 ## How to work
 
 1. Read the grader first: know exactly what predicate must hold at episode end.
-2. Read the solve and the complete failing log. Diagnose the first divergence
+2. Read the solve and the failing log. Diagnose the first divergence
    from the grader's required final state; do not infer a fix from the final
    score alone.
 3. Edit `solve.py` in place. Prefer the smallest behavioral correction that

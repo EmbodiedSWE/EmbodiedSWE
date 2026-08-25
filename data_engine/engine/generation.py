@@ -15,15 +15,18 @@ reset-files × num_envs episodes (no phase: num_envs — scale comes from MORE
 BATCHES, each with fresh world draws, not from repeating rollouts in one boot):
 
     build the env from the campaign preset on the cell's LOCAL scene copy
-    per rollout: reset(seed+rollout) [→ phase reset] → grader → noise → recorder → solve
+    per rollout: reset(seed+rollout) [→ phase reset] → grader → recorder → solve
     grade every trajectory, write data/<batch>/ep_NNNN/{traj.npz, meta.json}
     finish with the batch meta.json: config, yield, per-episode verdicts
 
-The stack around the unmodified solve:  solve(Recorder(NoisyActionEnv(env))).
+The stack around the solve:  solve(Recorder(env)).
 Grading is generation's own job, no env wrapper: the cell's grader is
 constructed at the entry state and its verdict() read from the final state.
 States are recorded BEFORE each step (state_t, action_t pairs); the recorded action
-is the solve's commanded (clean) one — the noise wrapper perturbs only what executes.
+is the solve's commanded (clean) one. Noise is SOLVE-AUTHORED: the solve may pass
+`noise=` to step() (DART-style executed perturbation, its own phase knowledge
+choosing where/how much), gated by run_batch's `noise_scale` master switch — the
+Recorder guarantees structurally that labels never contain it (see Recorder).
 Episode states come from env.get_states(), so any recorded step can later be
 restored with set_states (phase resets draw their entry states from these).
 
@@ -251,14 +254,36 @@ class Recorder:
     Env-batch width is asserted at the FIRST recorded step: a scalar solve in a wide
     world must die in seconds, not after simulating the whole episode (a 512-env
     pen_holder probe once ran 3123 steps before the save-time check caught it).
-    The save-time checks in run_batch remain as the backstop for later corruption."""
+    The save-time checks in run_batch remain as the backstop for later corruption.
+
+    THE NOISE CHANNEL (DART/MimicGen-style, agent-authored): a solve may pass
+    `noise=` to step(); the clean action is recorded FIRST and `action +
+    noise_scale * noise` is what executes. Labels structurally never contain the
+    noise — there is no code path from the perturbation into self.actions. The
+    solve decides where and how much (its phase knowledge); the pipeline decides
+    IF, through noise_scale (0 = probes/farm run noise-free even if the solve
+    offers noise; compound enables it). Every perturbation is also recorded
+    verbatim (self.noises) so downstream consumers can reconstruct the clean
+    command in any derived space (e.g. joint targets, which the controller
+    computes from the EXECUTED action).
+
+    SUCCESS PROBING (tail trim): when a probe callback is given, the grader's
+    per-env success is sampled every PROBE_EVERY latches; the save path derives
+    each env's earliest SUSTAINED-success step so replay/export can drop the
+    padded station-keeping tail that wide batches append to every finished env."""
 
     CTRL_CHECK = 25  # latches between law checks (phases last hundreds; cost ~0.5 ms/check)
+    PROBE_EVERY = 30  # latches between grader success samples (~2 s at 15 Hz control)
 
-    def __init__(self, env, raw_env, num_envs: int) -> None:
+    def __init__(self, env, raw_env, num_envs: int, noise_scale: float = 0.0,
+                 success_probe=None) -> None:
         self._env, self._raw, self._num_envs = env, raw_env, num_envs
+        self._noise_scale = float(noise_scale)
+        self._success_probe = success_probe
         self.states: list[dict] = []
         self.actions: list = []
+        self.noises: list = []  # scaled executed perturbation per step (zeros when clean)
+        self.success_samples: list[tuple[int, list[bool]]] = []
         self.joint_targets: list = []  # COMMANDED joint targets per tick (see step)
         self._intent_ok: bool | None = None  # all-position-mode leaves? resolved lazily
         self.ctrl_changes: list[dict] = []
@@ -266,6 +291,24 @@ class Recorder:
 
     def __getattr__(self, name: str):
         return getattr(self._env, name)
+
+    def success_steps(self, final_success: list[bool]) -> list[int | None]:
+        """Per env: the earliest sampled step from which success held THROUGH the
+        end (None = env failed, or success was never sampled). Conservative by
+        construction: a transient mid-episode success that later regressed never
+        shortens the episode."""
+        out: list[int | None] = []
+        for e in range(self._num_envs):
+            if not final_success[e] or not self.success_samples:
+                out.append(None)
+                continue
+            step = None
+            for s, mask in reversed(self.success_samples):
+                if not mask[e]:
+                    break
+                step = s
+            out.append(step)
+        return out
 
     def watch_controller(self, step: int | None = None) -> None:
         snap = _controller_info(self._raw.robot)
@@ -276,7 +319,7 @@ class Recorder:
                                       "changed": _ctrl_diff(self._ctrl_ref, snap)})
             self._ctrl_ref = snap
 
-    def step(self, action, render: bool = False):
+    def step(self, action, render: bool = False, noise=None):
         if len(self.actions) % self.CTRL_CHECK == 0:
             self.watch_controller()
         state = _flat(self._raw.get_states())
@@ -295,9 +338,27 @@ class Recorder:
                     f"shape={tuple(action.shape)}, expected axis 0 == num_envs "
                     f"({self._num_envs}). The solve must emit one action row per env."
                 )
+        # THE LABEL: recorded before any perturbation exists in this scope.
         self.states.append(state)
         self.actions.append(action.detach().cpu().clone())
-        ret = self._env.step(action, render)
+        executed = action
+        if noise is not None and self._noise_scale != 0.0:
+            if tuple(noise.shape) != tuple(action.shape):
+                raise RuntimeError(
+                    f"noise shape {tuple(noise.shape)} must match the action shape "
+                    f"{tuple(action.shape)} — one perturbation row per env."
+                )
+            scaled = (self._noise_scale * noise).detach()
+            executed = action + scaled.to(action.device, action.dtype)
+            self.noises.append(scaled.cpu().clone())
+        else:
+            self.noises.append(None)  # densified to zeros at save time
+        if self._success_probe is not None and \
+                len(self.actions) % self.PROBE_EVERY == 0:
+            self.success_samples.append(
+                (len(self.actions), self._success_probe())
+            )
+        ret = self._env.step(executed, render)
         # The COMMANDED joint targets that governed this step (written by the controller
         # during it, held by the actuator PD) — controller INTENT, which achieved-state
         # labels flatten: a press/squeeze is a sustained target offset past contact.
@@ -324,15 +385,13 @@ class Recorder:
 def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scene_0",
               strategy: str = "strategy_0", phase: str | None = None,
               num_envs: int = 4, seed: int = 0,
-              noise: dict | None = None, device: str = "cuda:0",
+              noise_scale: float = 0.0, device: str = "cuda:0",
               env_draw: int = 0, solve_draw: int = 0, nominal: bool = False) -> Path:
     import numpy as np
     import torch
 
-    from .noise import NoisyActionEnv
     from .sampler import sample, solve_bands
 
-    noise = noise or {}
     gen_root = Path(gen_root)
     scene_dir = gen_root / "scenes" / scene
     strategy_dir = scene_dir / "strategies" / strategy
@@ -386,9 +445,10 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         print(f"[batch {batch}] solve params (one set, whole batch): {solve_drawn}", flush=True)
     sha = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
-    dims = noise.get("dims")
 
     verdicts_all = []
+    noise_rows = noise_rows_perturbed = 0
+    noise_abs_sum, noise_abs_max, noise_elems = 0.0, 0.0, 0
     # one rollout per reset file (no phase = a single rollout) — every entry
     # covered once per batch; more episodes = more batches
     rollouts = max(1, len(conditions))
@@ -431,13 +491,15 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             entry = reset_name if has_port else None  # the file IS the phase
         grader = grader_cls(env)
         grader.setup()  # baselines captured at the entry state
-        stack = NoisyActionEnv(env, dims=slice(*dims) if dims else slice(0, 0),
-                               sigma=noise.get("sigma", 0.0), prob=noise.get("prob", 1.0),
-                               duration=noise.get("duration", 0.0), seed=seed + rnd)
-        rec = Recorder(stack, env, num_envs)
+        rec = Recorder(
+            env, env, num_envs, noise_scale=noise_scale,
+            success_probe=lambda: [bool(v["success"]) for v in grader.verdict()],
+        )
         print(f"[batch {batch}] rollout {rnd + 1}/{rollouts}"
               + (f" ({reset_name})" if reset_name else "")
-              + f": solve on {num_envs} envs …", flush=True)
+              + f": solve on {num_envs} envs"
+              + (f", noise_scale={noise_scale}" if noise_scale else "") + " …",
+              flush=True)
         solve(rec) if entry is None else solve(rec, entry=entry)
 
         verdicts = grader.verdict()
@@ -471,6 +533,22 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             )
         if len(rec.joint_targets) == T:  # commanded-target channel (see Recorder.step)
             arrays["robot/joint_target"] = np.stack([t.numpy() for t in rec.joint_targets])
+        # The executed perturbation, verbatim (zeros on clean steps): action labels
+        # stay clean by construction; every derived channel (joint targets, achieved
+        # state) reflects the noisy execution, and this array is what lets any
+        # consumer reconstruct the clean command in a derived space.
+        if any(n is not None for n in rec.noises):
+            zero = np.zeros_like(arrays["action"][0])
+            arrays["action_noise"] = np.stack(
+                [n.numpy() if n is not None else zero for n in rec.noises])
+            row_norms = np.abs(arrays["action_noise"]).sum(
+                axis=tuple(range(2, arrays["action_noise"].ndim)))
+            noise_rows_perturbed += int((row_norms > 0).sum())
+            noise_abs_sum += float(np.abs(arrays["action_noise"]).sum())
+            noise_abs_max = max(noise_abs_max, float(np.abs(arrays["action_noise"]).max()))
+            noise_elems += arrays["action_noise"].size
+        noise_rows += T * num_envs
+        success_steps = rec.success_steps([bool(v["success"]) for v in verdicts])
         for e in range(num_envs):
             ep = rnd * num_envs + e
             ep_dir = out / f"ep_{ep:04d}"
@@ -486,13 +564,19 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                 "reset": reset_name, "reset_fn": (fn_of_env[e] if fn_of_env else None),
                 "entry": entry,
                 "seed": seed + rnd, "steps": T,
+                # earliest sustained-success step (None = failed / never sampled):
+                # replay + export may trim the padded post-success tail here
+                "success_step": success_steps[e],
                 "sim_dt": env.dt, "decimation": env.robot.control_period,
                 "controller": ctrl_info,
                 "controller_changes": rec.ctrl_changes,
-                # sigma == 0 means no noise was applied: recording the default
-                # prob/duration then would fake a noise provenance
-                "noise": ({k: v for k, v in noise.items() if v}
-                          if noise.get("sigma") else {}),
+                # noise provenance: scale the pipeline enabled + whether THIS episode
+                # actually saw perturbed steps (the verbatim vectors live in traj.npz
+                # `action_noise`; action labels are clean by construction)
+                "noise": ({"scale": noise_scale,
+                           "perturbed": bool("action_noise" in arrays
+                                             and np.abs(arrays["action_noise"][:, e]).sum() > 0)}
+                          if noise_scale else {}),
                 "preset": gen["preset"],
                 "cell": cell,
                 "git_sha": sha,
@@ -507,8 +591,13 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     (out / "meta.json").write_text(json.dumps({
         "batch": batch, "cell": cell,
         "preset": gen["preset"], "num_envs": num_envs, "seed": seed,
-        "noise": ({k: v for k, v in noise.items() if v}
-                  if noise.get("sigma") else {}),
+        # measured noise coverage — the orchestrator's mandatory-noise gate reads
+        # this (an agent that ships zero effective noise cannot pass compound)
+        "noise": ({"scale": noise_scale,
+                   "perturbed_row_frac": round(noise_rows_perturbed / max(1, noise_rows), 4),
+                   "mean_abs": round(noise_abs_sum / max(1, noise_elems), 6),
+                   "max_abs": round(noise_abs_max, 6)}
+                  if noise_scale else {}),
         # the scene's band specs + this batch's slice of the index space (provenance)
         "params": {"physical_params": bands, "env_draw": env_draw, "nominal": nominal,
                    "per_env": slot_drawn,

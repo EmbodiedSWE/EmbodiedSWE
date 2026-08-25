@@ -15,24 +15,38 @@ Stage pipeline (each stage idempotent — a killed run resumes under the same --
                success-only grader when the suite has none, + oracle strategy)
     NOMINAL    1-env oracle probe; failure escalates: alternate candidates -> agent
                repair sessions -> proceed regardless (never a blocking gate)
-    WIDE       num_envs-wide probe gated on REAL yield (wide_yield share of envs);
-               failure loops evidence-fed vectorize sessions until it passes
+    WIDE       num_envs-wide MECHANICAL probe (the batch must complete env-batched
+               with at least one success); failure loops evidence-fed vectorize
+               sessions, bounded by vectorize_rounds — never a pipeline-killing
+               exit: width stays enforced by construction (every scripted batch
+               launches at num_envs; a scalar solve crashes instantly and its
+               cell quarantines), and yield is an economics signal, not a gate
     SESSIONS   one authoring session per level (scene/strategy/phase): agent-created
-               cells, each proven by graded test batches
+               cells, each proven by graded test batches; scene sessions must ship
+               VISUAL_PARAMS (verified; one targeted follow-up session if missing)
     FARM       coverage-balanced batches across cells (fewest successes first,
-               least-recently-farmed tie-break, 0-yield cells quarantined)
-               until target_eps farmed successes
-    COMPOUND   scripted physics diversification: noise/DR variant batches, num_envs
-               variants graded PER SIM PASS, until compound_eps verified survivors
-    MULTIPLY   visual diversification of every verified episode (jittered cameras +
-               scene VISUAL_PARAMS looks); replay-rendered, no re-testing — physics
-               verification is inherited from the source episode
+               least-recently-farmed tie-break, 0-yield cells quarantined) until
+               EVERY live cell holds per_cell_target successes — completion is
+               per-cell coverage, never a global count one wide batch can satisfy
+    NOISE      one agent session: WATCH a rendered verified episode (view tool),
+               then author per-phase executed-action noise INTO the solve through
+               the env.step(action, noise=...) channel (labels stay clean by
+               construction); accepted only when a num_envs probe run at
+               compound_noise_scale clears the yield floor AND shows real
+               measured noise coverage
+    COMPOUND   scripted physics diversification: fresh num_envs rollouts of fertile
+               cells with new draws + the accepted agent-authored noise enabled,
+               graded per sim pass, until compound_eps verified survivors
+    MULTIPLY   visual diversification of every verified episode: pass 0 renders the
+               scene's declared cameras (nominal), passes 1..multiply_draws-1 add a
+               jittered camera named draw<j> + the scene's VISUAL_PARAMS look j —
+               all replay-rendered (video-native), success inherited, post-success
+               tails trimmed at meta.success_step + trim_margin
 
 Failure semantics: generate/render outcomes are recorded as batch/pass results;
-required control-plane commands raise with their complete output. VECTORIZE_FAIL
-is a hard exit because scripted stages require wide execution. status.json tracks
-the live stage, orchestration.json is the durable resume ledger, and manifest.json
-indexes verified episodes.
+required control-plane commands raise with their complete output. status.json
+tracks the live stage, orchestration.json is the durable resume ledger, and
+manifest.json indexes verified episodes.
 """
 
 from __future__ import annotations
@@ -72,7 +86,9 @@ class Stage(str, Enum):
     WIDE = "wide_probe"
     VECTORIZE = "session_vectorize"
     SESSION = "session"
+    SESSION_VISUAL = "session_visual"
     FARM = "farm"
+    NOISE_PLAN = "session_noise"
     COMPOUND = "compound"
     COMPOUND_DONE = "compound_done"
     MULTIPLY = "multiply"
@@ -80,20 +96,6 @@ class Stage(str, Enum):
     INCOMPLETE = "INCOMPLETE"
     FAILED = "FAILED"
     WALL_BUDGET = "WALL_BUDGET"
-    VECTORIZE_FAIL = "VECTORIZE_FAIL"
-
-
-@dataclass(frozen=True)
-class NoiseBand:
-    """One burst-gated action-noise setting (engine/noise.py semantics)."""
-
-    sigma: float      # N(0, sigma) on the noised dims inside a window
-    prob: float       # window-start probability per control step
-    duration: float   # window length, sim-seconds
-
-    def cli(self, dims: str) -> list[str]:
-        return ["--sigma", str(self.sigma), "--prob", str(self.prob),
-                "--duration", str(self.duration), "--dims", dims]
 
 
 @dataclass(frozen=True)
@@ -103,46 +105,57 @@ class Config:
     run_dir: Path
     name: str = "gen_auto"
     sessions: tuple[str, ...] = ("scene", "strategy", "phase")
-    # None = use the authoring condition's budget_min. Repair/vectorize sessions
-    # have no condition file and use intervention_session_min.
+    # None = use the authoring condition's budget_min. Repair/vectorize/noise
+    # sessions have no condition file and use intervention_session_min.
     session_min: float | None = None
     intervention_session_min: float = 120.0
     agent_cmd: str = ""               # "" = no agent runtime: skip agent stages
     isaac_py: str = sys.executable
     wall_hours: float = 20.0
 
-    # farm: the agent-authored base set of verified episodes
-    target_eps: int = 50
+    # farm completion is PER CELL: every live (non-quarantined) cell must hold this
+    # many verified successes. A global count is meaningless when one num_envs-wide
+    # batch of the base cell can satisfy it while every authored cell stays unfarmed.
+    per_cell_target: int = 50
     # General default; deployment launchers choose the production width explicitly.
     num_envs: int = 4
-    # a cell that has attempted this many episodes with ZERO successes leaves the
+    # a cell that has attempted this many batches with ZERO successes leaves the
     # pool: min-successes scheduling alone pins the farm on a never-succeeding cell
     # (it always has the fewest successes, so it wins every pick)
     quarantine_zero_yield_batches: int = 3
-    # optional in-farm noise (0 = never): kept for ablations; compounding is COMPOUND's job
-    noise_share: int = 0
-    farm_noise: NoiseBand = NoiseBand(0.08, 0.02, 0.4)
-    noise_dims: str = "0:7"           # arm only — noised gripper dims corrupt pinches
 
-    # Wide probe requires meaningful yield; a mere nonzero smoke result can let
-    # effectively scalar solves into scripted farming and compounding.
-    wide_yield: float = 0.25
+    # The wide probe is a MECHANICAL gate: the batch must complete env-batched
+    # (fail-fast catches scalar solves in seconds) and produce at least one
+    # success (a wide-running solve whose envs interfere yields zero). Yield
+    # beyond that is economics — low-yield cells just cost more farm batches —
+    # so vectorize sessions are BOUNDED, not a fight to a quality bar.
     wide_probe_seed: int = 50
     nominal_seeds: tuple[int, ...] = (0, 1, 2)
     repair_rounds: int = 2
+    vectorize_rounds: int = 4
 
-    # compound: scripted physics diversification, num_envs variants tested per batch
+    # compound: scripted physics diversification — fresh num_envs rollouts with new
+    # draws + the agent-authored solve noise executed at compound_noise_scale.
+    # The noise plan is accepted only if a probe clears noise_floor_yield AND shows
+    # at least noise_min_coverage perturbed (step, env) rows: mandatory, measured.
     compound_eps: int = 450
     compound_hours: float = 10.0
-    compound_ladder: tuple[NoiseBand, ...] = (
-        NoiseBand(0.04, 0.02, 0.3), NoiseBand(0.08, 0.02, 0.4), NoiseBand(0.12, 0.03, 0.5))
+    compound_noise_scale: float = 1.0
+    noise_rounds: int = 3
+    noise_floor_yield: float = 0.05
+    noise_min_coverage: float = 0.02
 
-    # multiply: visual passes per verified episode (pass 0 = nominal view, runs last)
-    multiply_draws: int = 2
+    # multiply: visual passes per verified episode. Pass 0 = the scene's declared
+    # cameras, nominal look; pass j >= 1 = one jittered camera named draw<j> + the
+    # scene's VISUAL_PARAMS look j. Video-native (imgs/<view>.mp4 + render json).
+    multiply_draws: int = 5
     multiply_hours: float = 18.0
     render_envs: int = 16             # episodes replayed in parallel per render pass
     render_chunk: int = 192           # ep dirs per render.py invocation (argv sanity)
     render_kit_args: str = ""         # deployment-specific Kit settings, if any
+    # rows kept past each episode's sustained-success step in every render
+    # (~3 s at 15 Hz): the recovery is data, the parked tail is not. -1 = no trim.
+    trim_margin: int = 45
     cam_eye: tuple[float, float, float] = (1.05, 1.05, 0.85)
     cam_target: tuple[float, float, float] = (0.42, 0.0, 0.15)
     cam_eye_jitter: tuple[float, float, float] = (0.30, 0.30, 0.20)
@@ -164,15 +177,21 @@ class Config:
             raise ValueError(f"unknown authoring sessions: {sorted(unknown)}")
         if self.num_envs < 1:
             raise ValueError("num_envs must be >= 1")
-        if not 0.0 <= self.wide_yield <= 1.0:
-            raise ValueError("wide_yield must be in [0, 1]")
-        for name in ("target_eps", "compound_eps", "multiply_draws"):
+        for name in ("per_cell_target", "compound_eps", "multiply_draws"):
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} must be >= 0")
         if self.quarantine_zero_yield_batches < 1:
             raise ValueError("quarantine_zero_yield_batches must be >= 1")
-        if self.compound_eps and not self.compound_ladder:
-            raise ValueError("compound_ladder cannot be empty when compounding is enabled")
+        if not 0.0 <= self.noise_floor_yield <= 1.0:
+            raise ValueError("noise_floor_yield must be in [0, 1]")
+        if not 0.0 <= self.noise_min_coverage <= 1.0:
+            raise ValueError("noise_min_coverage must be in [0, 1]")
+        if self.compound_eps and self.compound_noise_scale <= 0:
+            raise ValueError("compound_noise_scale must be > 0 when compounding is "
+                             "enabled (noise is mandatory in compound)")
+        for name in ("repair_rounds", "vectorize_rounds", "noise_rounds"):
+            if getattr(self, name) < 1:
+                raise ValueError(f"{name} must be >= 1")
         if self.multiply_draws and self.render_envs < 1:
             raise ValueError("render_envs must be >= 1 when multiply is enabled")
 
@@ -355,11 +374,19 @@ class Campaign:
         """FARM batches only: session test batches must not satisfy the farm target."""
         return self.successes("batch_farm_*")
 
-    def log_text(self, batch: str) -> str:
-        """Evidence is deliberately returned in full: repair/vectorize sessions
-        must see the complete debugging output."""
-        p = self.logs / f"{batch}.log"
-        return p.read_text() if p.is_file() else "(no log)"
+    def log_path(self, batch: str) -> Path:
+        """Evidence goes into briefs BY PATH, never inline: the complete log stays
+        on disk for the agent's shell (nothing truncated), and a brief can never
+        blow the model's context window — a 512-env probe log once weighed in at
+        over a million tokens and killed 433 consecutive pc_ram sessions."""
+        return self.logs / f"{batch}.log"
+
+    def log_size(self, batch: str) -> str:
+        p = self.log_path(batch)
+        if not p.is_file():
+            return "missing — the batch died before Isaac wrote anything"
+        n = p.stat().st_size
+        return f"{n / 1e6:.1f} MB" if n >= 1e6 else f"{n / 1e3:.0f} KB"
 
     # ---- status + manifest
 
@@ -643,7 +670,8 @@ class Orchestrator:
                     "repair", gen=self.camp.gen,
                     solve=self.camp.solve_py(BASE_CELL),
                     grader=self.camp.grader_py("scene_0"),
-                    fail_log=self.camp.log_text(last_batch),
+                    fail_log_path=self.camp.log_path(last_batch),
+                    fail_log_size=self.camp.log_size(last_batch),
                     nominal_seeds=", ".join(map(str, self.cfg.nominal_seeds)),
                     num_envs=self.farm_envs))
                 if result.ok:
@@ -665,13 +693,17 @@ class Orchestrator:
         print(f"[orchestrate] nominal {verdict}", flush=True)
 
     def ensure_wide(self) -> None:
-        """The scripted stages (FARM/COMPOUND) run num_envs-wide; the solve must
-        genuinely drive parallel envs. Vectorize sessions repeat — each fed the
-        newest failure evidence — until a probe clears the yield bar. No scalar
-        fallback: silently narrowing the width is banned (user directive)."""
+        """The scripted stages (FARM/COMPOUND) always LAUNCH num_envs-wide — width
+        is enforced by construction, and silently narrowing it is banned (user
+        directive). This stage checks the MECHANICAL property those launches need:
+        the solve completes an env-batched wide batch with at least one success.
+        Yield beyond that is economics (a low-yield cell just costs more farm
+        batches), so vectorize sessions are BOUNDED by vectorize_rounds and the
+        pipeline proceeds afterward either way: a still-scalar solve crashes its
+        wide batches in seconds (fail-fast) and quarantines, while authoring
+        sessions can still ship vectorized cells."""
         if self.farm_envs <= 1:
             return
-        need = max(2, round(self.cfg.wide_yield * self.farm_envs))
 
         def wide_ok() -> tuple[bool, str]:
             """Probes are named by the fingerprint of the code they grade, so
@@ -685,9 +717,11 @@ class Orchestrator:
                  "--seed", str(self.cfg.wide_probe_seed)],
             )
             got = meta.get("successes") or 0
-            print(f"[orchestrate] wide probe {name}: {got}/{self.farm_envs} "
-                  f"(need >= {need})", flush=True)
-            return got >= need, name
+            print(f"[orchestrate] wide probe {name}: "
+                  f"{'no meta (crashed)' if not meta else got}/{self.farm_envs} "
+                  "(mechanical gate: completes env-batched with >= 1 success)",
+                  flush=True)
+            return bool(meta) and got >= 1, name
 
         self.camp.write_status(Stage.WIDE)
         wide, last_failed = wide_ok()
@@ -704,7 +738,8 @@ class Orchestrator:
             )
         ):
             rnd -= 1  # retry the incomplete round; transient exits do not consume it
-        while not wide and self.agent.available and self.budget_left():
+        while (not wide and self.agent.available and self.budget_left()
+               and rnd < self.cfg.vectorize_rounds):
             rnd += 1
             prefix = f"vectorize_{rnd:03d}_attempt_"
             successful = [
@@ -715,14 +750,13 @@ class Orchestrator:
                 attempt = len(self.camp.session_attempts(prefix)) + 1
                 tag = f"{prefix}{attempt:03d}"
                 self.camp.write_status(Stage.VECTORIZE, round=rnd, attempt=attempt)
-                print(f"[orchestrate] wide probe failing — vectorize round {rnd}, "
-                      f"attempt {attempt}", flush=True)
+                print(f"[orchestrate] wide probe failing — vectorize round {rnd}/"
+                      f"{self.cfg.vectorize_rounds}, attempt {attempt}", flush=True)
                 result = self.agent.run(tag, self.agent.brief(
                     "vectorize", gen=self.camp.gen, num_envs=self.farm_envs,
                     solve=self.camp.solve_py(BASE_CELL),
-                    fail_log=self.camp.log_text(last_failed),
-                    required_successes=need,
-                    wide_yield=self.cfg.wide_yield,
+                    fail_log_path=self.camp.log_path(last_failed),
+                    fail_log_size=self.camp.log_size(last_failed),
                     probe_seed=self.cfg.wide_probe_seed))
                 if result.ok:
                     successful = [result.as_dict()]
@@ -733,14 +767,15 @@ class Orchestrator:
             if not successful:
                 break
             wide, last_failed = wide_ok()
-        if not wide:
-            self.camp.write_status(Stage.VECTORIZE_FAIL, vectorize_rounds=rnd)
-            print(f"[orchestrate] wide probe still failing after {rnd} vectorize sessions "
-                  "and no budget left — stopping (wide batches are required for the "
-                  "scripted compound stage; report to the user)", flush=True)
-            sys.exit(4)
-        print(f"[orchestrate] wide probe OK — {self.farm_envs}-env batches enabled",
-              flush=True)
+        self.camp.write_status(Stage.WIDE, wide_ok=wide, vectorize_rounds=rnd)
+        if wide:
+            print(f"[orchestrate] wide probe OK — {self.farm_envs}-env batches enabled",
+                  flush=True)
+        else:
+            print(f"[orchestrate] wide probe still failing after {rnd} vectorize "
+                  "round(s) — PROCEEDING: batches keep launching wide (never "
+                  "narrowed); a scalar base cell will crash-quarantine while "
+                  "authored cells can still farm", flush=True)
 
     def run_sessions(self) -> None:
         """One authoring session per configured level, via the framework's official
@@ -784,6 +819,42 @@ class Orchestrator:
                 print(f"[orchestrate] session {level} exited {result.returncode}; "
                       "completion marker not written", flush=True)
 
+    def ensure_visual_params(self) -> None:
+        """VISUAL_PARAMS is a REQUIRED scene deliverable — it is multiply's whole
+        look axis (the v18 wave shipped 13 tasks where every draw pass was camera
+        jitter only, because no scene declared any). The scene brief demands it;
+        scenes still lacking it afterward get one targeted follow-up session,
+        verified by re-reading the scene files, not by the session's say-so."""
+        if not self.agent.available:
+            return
+        marker = self.camp.gen / ".session_visual.json"
+        if read_json(marker).get("ok") or not self.budget_left():
+            return
+        scenes = sorted({c.scene for c in self.camp.cells()})
+        missing = [s for s in scenes
+                   if "VISUAL_PARAMS" not in self.camp.scene_py(s).read_text()]
+        if not missing:
+            write_json_atomic(marker, {"ok": True, "missing_before": []})
+            return
+        self.camp.write_status(Stage.SESSION_VISUAL, scenes_missing=missing)
+        print(f"[orchestrate] VISUAL_PARAMS missing in {missing} — targeted session",
+              flush=True)
+        result = self.agent.run("visual_params", self.agent.brief(
+            "visual_params", gen=self.camp.gen,
+            scenes=", ".join(missing),
+            scene_paths="\n".join(str(self.camp.scene_py(s)) for s in missing),
+            num_envs=self.farm_envs))
+        still = [s for s in scenes
+                 if "VISUAL_PARAMS" not in self.camp.scene_py(s).read_text()]
+        outcome = {**result.as_dict(), "ok": result.ok and not still,
+                   "missing_before": missing, "missing_after": still}
+        if outcome["ok"]:
+            write_json_atomic(marker, outcome)
+            print("[orchestrate] VISUAL_PARAMS present in every scene", flush=True)
+        else:
+            print(f"[orchestrate] VISUAL_PARAMS still missing in {still} — their "
+                  "multiply draw passes will vary camera pose only", flush=True)
+
     def farm(self) -> bool:
         """Coverage-balanced batches across cells until target_eps successes.
 
@@ -803,64 +874,197 @@ class Orchestrator:
         def stat(cell: Cell) -> list[int]:
             return stats.setdefault(cell.key, [0, 0, -1])
 
+        def live_cells(pool: list[Cell]) -> list[Cell]:
+            return [c for c in pool
+                    if not (stat(c)[0] >= self.cfg.quarantine_zero_yield_batches
+                            and stat(c)[1] == 0)]
+
+        def unmet(pool: list[Cell]) -> list[Cell]:
+            """Completion is PER CELL: every live cell must reach per_cell_target.
+            A global count is one wide base-cell batch away from 'done', which
+            would ship none of the authored diversity (the v18 wave did exactly
+            that: 13 tasks, one farm batch each, zero authored-cell episodes)."""
+            return [c for c in live_cells(pool)
+                    if stat(c)[1] < self.cfg.per_cell_target]
+
         self.camp.write_status(Stage.FARM, cells=len(self.camp.cells()),
                                farm_envs=self.farm_envs)
         idx = len(list(self.camp.gen.glob("data/batch_farm_*")))
         while self.budget_left():
             manifest = self.camp.write_manifest()
-            farmed = self.camp.farm_successes()
-            self.camp.write_status(Stage.FARM, successful=manifest["successful_episodes"],
-                                   farm_successful=farmed,
-                                   total=manifest["total_episodes"], batches=idx,
-                                   farm_envs=self.farm_envs)
-            if farmed >= self.cfg.target_eps:
-                break
             pool = self.camp.cells()
-            live = [c for c in pool
-                    if not (stat(c)[0] >= self.cfg.quarantine_zero_yield_batches
-                            and stat(c)[1] == 0)]
-            if not live:
+            todo = unmet(pool)
+            self.camp.write_status(
+                Stage.FARM, successful=manifest["successful_episodes"],
+                farm_successful=self.camp.farm_successes(),
+                total=manifest["total_episodes"], batches=idx,
+                farm_envs=self.farm_envs,
+                per_cell_target=self.cfg.per_cell_target,
+                cells_done=len(live_cells(pool)) - len(todo),
+                cells_live=len(live_cells(pool)),
+                quarantined=sorted(c.key for c in pool
+                                   if not any(c is l for l in live_cells(pool))),
+                per_cell={c.key: stat(c)[1] for c in pool},
+            )
+            if not live_cells(pool):
                 print("[orchestrate] all cells quarantined (0 successes after "
                       f">={self.cfg.quarantine_zero_yield_batches} batches each) "
-                      "— closing the farm",
-                      flush=True)
+                      "— closing the farm", flush=True)
                 break
-            if len(live) < len(pool):
-                self.camp.write_status(Stage.FARM, quarantined=sorted(
-                    c.key for c in pool if not any(c is l for l in live)))
-            cell = min(live, key=lambda c: (stat(c)[1], stat(c)[2], c.key))
+            if not todo:
+                break
+            cell = min(todo, key=lambda c: (stat(c)[1], stat(c)[2], c.key))
             idx += 1
-            extra = ["--num_envs", str(self.farm_envs),
-                     "--seed", str(self.cfg.farm_seed_base + idx),
-                     "--env_draw", str(idx * max(1, self.farm_envs - 1)),
-                     "--solve_draw", str(idx)]
-            if self.cfg.noise_share and idx % self.cfg.noise_share == 0:
-                extra += self.cfg.farm_noise.cli(self.cfg.noise_dims)
-            meta = self.run_batch(cell, f"batch_farm_{idx:04d}", extra)
+            meta = self.run_batch(
+                cell, f"batch_farm_{idx:04d}",
+                ["--num_envs", str(self.farm_envs),
+                 "--seed", str(self.cfg.farm_seed_base + idx),
+                 "--env_draw", str(idx * max(1, self.farm_envs - 1)),
+                 "--solve_draw", str(idx)])
             s = stat(cell)
             s[0] += 1  # a crashed batch still counts toward zero-yield quarantine
             s[1] += meta.get("successes", 0)
             s[2] = idx
 
         manifest = self.camp.write_manifest()
-        done = self.camp.farm_successes() >= self.cfg.target_eps
+        pool = self.camp.cells()
+        done = bool(live_cells(pool)) and not unmet(pool)
         self.camp.write_status(Stage.FARM,
                                farm_complete=done,
                                successful=manifest["successful_episodes"],
                                farm_successful=self.camp.farm_successes(),
-                               total=manifest["total_episodes"])
+                               total=manifest["total_episodes"],
+                               per_cell={c.key: stat(c)[1] for c in pool})
         print(f"[orchestrate] farm {'complete' if done else 'incomplete'}: "
-              f"{self.camp.farm_successes()} farmed / {manifest['successful_episodes']} "
-              f"total successful episodes -> {self.camp.gen / 'manifest.json'}", flush=True)
+              f"{self.camp.farm_successes()} farmed across {len(pool)} cells "
+              f"(target {self.cfg.per_cell_target}/cell) -> "
+              f"{self.camp.gen / 'manifest.json'}", flush=True)
         return done
 
-    def compound(self) -> bool:
-        """Scripted physics diversification: per batch, re-run a fertile cell's solve
-        across num_envs envs — each env its own physics draw + noise windows from the
-        ladder — and keep what the grader passes. Coverage stays even by always
-        extending the cell with the fewest compound successes."""
+    def ensure_noise_plan(self) -> bool:
+        """The compound stage's mandatory noise, authored by an agent that has
+        WATCHED the task: the session receives a rendered verified episode
+        (the view tool attaches its frames), reads the solve's phase structure,
+        and writes per-phase perturbations into the solve through the
+        env.step(action, noise=...) channel — labels stay clean structurally
+        (see engine.generation.Recorder). Acceptance is measured, never
+        claimed: a num_envs probe at compound_noise_scale must clear
+        noise_floor_yield AND noise_min_coverage. Bounded by noise_rounds."""
+        if self.cfg.compound_eps <= 0:
+            return False
+        if self.camp.ledger().get("noise_plan", {}).get("ok"):
+            return True
+        if not self.agent.available:
+            print("[orchestrate] no agent runtime — noise plan (mandatory for "
+                  "compound) cannot be authored", flush=True)
+            return False
+        by_scene = self.camp.successful_episode_dirs(("batch_farm_*",))
+        base_eps = by_scene.get("scene_0") or next(iter(by_scene.values()), [])
+        if not base_eps:
+            print("[orchestrate] no verified farm episodes — nothing to author "
+                  "noise against", flush=True)
+            return False
+        need = max(1, round(self.cfg.noise_floor_yield * self.farm_envs))
+
+        def probe() -> tuple[bool, str, dict]:
+            name, meta = self._run_or_read_batch(
+                BASE_CELL, f"batch_noise_probe_{self._probe_fingerprint()}",
+                ["--num_envs", str(self.farm_envs),
+                 "--seed", str(self.cfg.wide_probe_seed),
+                 "--noise_scale", str(self.cfg.compound_noise_scale)],
+            )
+            got = meta.get("successes") or 0
+            cov = float((meta.get("noise") or {}).get("perturbed_row_frac") or 0.0)
+            ok = bool(meta) and got >= need and cov >= self.cfg.noise_min_coverage
+            print(f"[orchestrate] noise probe {name}: yield {got}/{self.farm_envs} "
+                  f"(need >= {need}), measured coverage {cov:.3f} (need >= "
+                  f"{self.cfg.noise_min_coverage}) -> "
+                  f"{'ACCEPTED' if ok else 'rejected'}", flush=True)
+            return ok, name, meta
+
+        def sample_video() -> Path | None:
+            """The episode the agent watches. Rendered once, reused on retries."""
+            ep = base_eps[0]
+            vids = sorted(ep.glob("imgs/*.mp4"))
+            if vids:
+                return vids[0]
+            cmd = [self.cfg.isaac_py, ROOT / "scripts" / "render.py", self.camp.gen,
+                   "--episodes", ep, "--num_envs", "4", "--no-sheet", "--headless"]
+            if "CAMERAS" not in self.camp.scene_py(BASE_CELL.scene).read_text():
+                cmd += ["--eye", *map(str, self.cfg.cam_eye),
+                        "--target", *map(str, self.cfg.cam_target)]
+            if self.cfg.render_kit_args:
+                cmd += [f"--kit_args={self.cfg.render_kit_args}"]
+            sh(cmd, log=self.camp.logs / "noise_sample_render.log",
+               timeout=self.cfg.batch_timeout_s, check=False)
+            vids = sorted(ep.glob("imgs/*.mp4"))
+            return vids[0] if vids else None
+
+        # a passing probe may already exist for the current code (resume path)
+        accepted, batch_name, meta = probe()
+        rnd = max((int(m.group(1)) for tag, _ in self.camp.session_attempts("noise_")
+                   if (m := re.match(r"noise_(\d{3})_attempt_", tag))), default=0)
+        while (not accepted and self.budget_left()
+               and rnd < self.cfg.noise_rounds):
+            rnd += 1
+            prefix = f"noise_{rnd:03d}_attempt_"
+            successful = [o for _, o in self.camp.session_attempts(prefix)
+                          if o.get("ok")]
+            while not successful and self.budget_left():
+                attempt = len(self.camp.session_attempts(prefix)) + 1
+                tag = f"{prefix}{attempt:03d}"
+                self.camp.write_status(Stage.NOISE_PLAN, round=rnd, attempt=attempt)
+                video = sample_video()
+                print(f"[orchestrate] noise plan round {rnd}/{self.cfg.noise_rounds}, "
+                      f"attempt {attempt} (video: {video})", flush=True)
+                result = self.agent.run(tag, self.agent.brief(
+                    "noise", gen=self.camp.gen,
+                    solve=self.camp.solve_py(BASE_CELL),
+                    video=(video or "NOT RENDERED — render it yourself first (see "
+                                    "the render command below)"),
+                    sample_ep=base_eps[0],
+                    num_envs=self.farm_envs,
+                    noise_scale=self.cfg.compound_noise_scale,
+                    need_successes=need,
+                    min_coverage=self.cfg.noise_min_coverage,
+                    probe_seed=self.cfg.wide_probe_seed,
+                    fail_log_path=self.camp.log_path(batch_name),
+                    fail_log_size=self.camp.log_size(batch_name)))
+                if result.ok:
+                    successful = [result.as_dict()]
+                else:
+                    print(f"[orchestrate] noise round {rnd} attempt {attempt} exited "
+                          f"{result.returncode}; retrying the same round", flush=True)
+            if not successful:
+                break
+            accepted, batch_name, meta = probe()
+        self.camp.update_ledger(noise_plan={
+            "ok": accepted, "batch": batch_name, "rounds": rnd,
+            "yield": meta.get("successes"), "noise": meta.get("noise"),
+        })
+        if not accepted:
+            print(f"[orchestrate] NO accepted noise plan after {rnd} round(s) — "
+                  "compound (mandatory noise) will be skipped; report to the user",
+                  flush=True)
+        return accepted
+
+    def compound(self, noise_ok: bool) -> bool:
+        """Scripted physics diversification: per batch, re-run a fertile cell's
+        solve across num_envs envs — each env its own physics draw, the accepted
+        agent-authored noise executing at compound_noise_scale — and keep what the
+        grader passes. Coverage stays even by always extending the cell with the
+        fewest compound successes."""
         if self.cfg.compound_eps <= 0:
             return True
+        if not noise_ok:
+            self.camp.write_status(
+                Stage.COMPOUND_DONE,
+                compound_successful=self.camp.successes("batch_compound_*"),
+                compound_target=self.cfg.compound_eps,
+                compound_skipped_no_noise_plan=True)
+            print("[orchestrate] compound SKIPPED: noise is mandatory here and no "
+                  "noise plan was accepted", flush=True)
+            return False
         cmp_deadline = self.camp.deadline("compound", self.cfg.compound_hours)
 
         def compound_done() -> int:
@@ -878,7 +1082,6 @@ class Orchestrator:
                 if str(m.get("cell")) in got:
                     got[str(m.get("cell"))] += m.get("successes", 0)
             cell = min(fertile, key=lambda c: got[c.key])
-            band = self.cfg.compound_ladder[idx % len(self.cfg.compound_ladder)]
             idx += 1
             self.camp.write_status(Stage.COMPOUND, compound_successful=compound_done(),
                                    compound_target=self.cfg.compound_eps, batches=idx)
@@ -887,7 +1090,7 @@ class Orchestrator:
                             "--seed", str(self.cfg.compound_seed_base + idx),
                             "--env_draw", str(idx * max(1, self.farm_envs - 1)),
                             "--solve_draw", str(idx),
-                            *band.cli(self.cfg.noise_dims)])
+                            "--noise_scale", str(self.cfg.compound_noise_scale)])
         n = compound_done()
         self.camp.write_status(Stage.COMPOUND_DONE, compound_successful=n,
                                compound_target=self.cfg.compound_eps)
@@ -913,16 +1116,30 @@ class Orchestrator:
                                episodes=n_eps)
         marker_dir = self.camp.gen / ".multiply"
         marker_dir.mkdir(exist_ok=True)
+
+        def pass_views(ep: Path, j: int) -> list[str]:
+            """Views this pass owns in the render contract (imgs/render_<view>.json):
+            pass 0 = every declared/nominal view (anything not named draw<k>);
+            pass j = its own draw<j> camera."""
+            views = [p.stem.removeprefix("render_")
+                     for p in (ep / "imgs").glob("render_*.json")]
+            if j:
+                return [v for v in views if v == f"draw{j}"]
+            return [v for v in views if not re.fullmatch(r"draw\d+", v)]
+
+        missing_visual: list[str] = []
         for scene, eps in by_scene.items():
             if time.time() > mul_deadline:
                 print("[orchestrate] multiply budget exhausted", flush=True)
                 return False
             has_visual = "VISUAL_PARAMS" in self.camp.scene_py(scene).read_text()
+            if not has_visual:
+                missing_visual.append(scene)
             # Markers bind to the exact episode set they rendered: if a resumed
             # run grew the verified pool (farm/compound continued after a crash),
             # a stale "ok" must not leave the new episodes without this pass.
             eps_rel = [str(e.relative_to(self.camp.gen)) for e in eps]
-            for j in list(range(1, self.cfg.multiply_draws)) + [0]:
+            for j in range(self.cfg.multiply_draws):
                 pass_marker = marker_dir / f"{scene}_pass_{j}.json"
                 marker = read_json(pass_marker)
                 if marker.get("ok") and marker.get("episode_set") == eps_rel:
@@ -930,17 +1147,15 @@ class Orchestrator:
                 if time.time() > mul_deadline:
                     print("[orchestrate] multiply budget exhausted", flush=True)
                     return False
-                # A retried pass starts from a clean destination. Pass markers make
-                # completed passes immutable; unmarked partial outputs are disposable.
+                # A retried pass starts from a clean slate for ITS OWN views only
+                # (other passes' videos and contracts are immutable): stale
+                # render_<view>.json must not vouch for a re-render that died.
                 for ep in eps:
-                    shutil.rmtree(ep / "imgs", ignore_errors=True)
-                    if j:
-                        shutil.rmtree(ep / f"imgs_draw{j}", ignore_errors=True)
+                    for view in pass_views(ep, j):
+                        (ep / "imgs" / f"render_{view}.json").unlink(missing_ok=True)
+                        (ep / "imgs" / f"{view}.mp4").unlink(missing_ok=True)
                 rng = Random(self.cfg.visual_seed_base + j)
                 jit = (lambda base, band: [b + rng.uniform(-w, w) for b, w in zip(base, band)])
-                eye = jit(self.cfg.cam_eye, self.cfg.cam_eye_jitter) if j else list(self.cfg.cam_eye)
-                tgt = (jit(self.cfg.cam_target, self.cfg.cam_target_jitter) if j
-                       else list(self.cfg.cam_target))
                 pass_ok = True
                 for lo in range(0, len(eps), self.cfg.render_chunk):
                     remaining = mul_deadline - time.time()
@@ -951,48 +1166,64 @@ class Orchestrator:
                     cmd = [self.cfg.isaac_py, ROOT / "scripts" / "render.py", self.camp.gen,
                            "--episodes", *chunk,
                            "--num_envs", str(self.cfg.render_envs), "--no-sheet",
-                           "--eye", *map(str, eye), "--target", *map(str, tgt),
-                           ]
-                    if has_visual and j:
-                        cmd += ["--visual_draw", str(j)]
+                           "--trim-margin", str(self.cfg.trim_margin)]
+                    if j:
+                        # one jittered camera per draw, named draw<j> — its videos
+                        # and contracts coexist with the nominal views, and the
+                        # LeRobot bake selects it with --cams draw<j>
+                        cmd += ["--eye", *map(str, jit(self.cfg.cam_eye,
+                                                       self.cfg.cam_eye_jitter)),
+                                "--target", *map(str, jit(self.cfg.cam_target,
+                                                          self.cfg.cam_target_jitter)),
+                                "--cam", f"draw{j}",
+                                "--cams", f"draw{j}"]  # this pass renders ONLY its own view
+                        if has_visual:
+                            cmd += ["--visual_draw", str(j)]
+                    elif "CAMERAS" not in self.camp.scene_py(scene).read_text():
+                        # nominal pass with no declared cameras: the configured
+                        # default view, under its standard name
+                        cmd += ["--eye", *map(str, self.cfg.cam_eye),
+                                "--target", *map(str, self.cfg.cam_target)]
                     if self.cfg.render_kit_args:
                         cmd += [f"--kit_args={self.cfg.render_kit_args}"]
                     p = sh(cmd, log=self.camp.logs / f"multiply_{scene}_d{j}_{lo}.log",
                            timeout=remaining, check=False)
                     pass_ok &= p.returncode == 0
-                n_frames = sum(1 for e in eps for _ in e.glob("imgs/*/frame_*.jpg"))
+                n_videos = sum(len(pass_views(e, j)) for e in eps)
                 missing = [str(e.relative_to(self.camp.gen))
-                           for e in eps if not any(e.glob("imgs/*/frame_*.jpg"))]
+                           for e in eps if not pass_views(e, j)]
                 # a render that produced nothing must be LOUD (a whole multiply pass
                 # once silently no-opped on render-incapable GPUs)
                 print(f"[orchestrate] multiply {scene} pass={j} "
-                      f"(visual_draw={'yes' if has_visual and j else 'no'}): {n_frames} "
-                      f"frames {'' if n_frames else '— RENDER PRODUCED NOTHING, check the log'}",
+                      f"(visual_draw={'yes' if has_visual and j else 'no'}): "
+                      f"{n_videos} videos "
+                      f"{'' if n_videos else '— RENDER PRODUCED NOTHING, check the log'}",
                       flush=True)
                 if missing:
-                    print("[orchestrate] multiply missing frames for episodes:\n"
+                    print("[orchestrate] multiply missing videos for episodes:\n"
                           + "\n".join(missing), flush=True)
                     pass_ok = False
                 if not pass_ok:
                     self.camp.write_status(
                         Stage.MULTIPLY, multiply_ok=False, scene=scene, visual_pass=j,
-                        missing_episodes=missing,
+                        missing_episodes=missing, scenes_without_visual_params=missing_visual,
                     )
                     return False
-                if j:
-                    for e in eps:
-                        imgs = e / "imgs"
-                        imgs.rename(e / f"imgs_draw{j}")
                 write_json_atomic(
                     pass_marker,
                     {"ok": True, "scene": scene, "visual_pass": j,
                      "episodes": len(eps), "episode_set": eps_rel,
-                     "frames": n_frames,
+                     "videos": n_videos,
                      "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds")},
                 )
+        if missing_visual:
+            print("[orchestrate] WARNING: no VISUAL_PARAMS in: "
+                  + ", ".join(missing_visual)
+                  + " — their draw passes vary camera pose only", flush=True)
         write_json_atomic(
             self.camp.gen / ".multiply_done",
             {"ok": True, "episodes": n_eps,
+             "scenes_without_visual_params": missing_visual,
              "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds")},
         )
         print("[orchestrate] multiply pass complete", flush=True)
@@ -1006,8 +1237,10 @@ class Orchestrator:
             self.ensure_nominal()
             self.ensure_wide()
             self.run_sessions()
+            self.ensure_visual_params()
             farm_done = self.farm()
-            compound_done = self.compound()
+            noise_ok = self.ensure_noise_plan()
+            compound_done = self.compound(noise_ok)
             multiply_done = self.multiply()
             complete = farm_done and compound_done and multiply_done
             manifest = self.camp.write_manifest()
@@ -1042,16 +1275,6 @@ def parse_int_tuple(value: str) -> tuple[int, ...]:
     return result
 
 
-def parse_noise_band(value: str) -> NoiseBand:
-    try:
-        sigma, prob, duration = (float(v.strip()) for v in value.split(","))
-    except (TypeError, ValueError) as exc:
-        raise argparse.ArgumentTypeError(
-            "expected SIGMA,PROB,DURATION (for example 0.08,0.02,0.4)"
-        ) from exc
-    return NoiseBand(sigma, prob, duration)
-
-
 def parse_vec3(value: str) -> tuple[float, float, float]:
     try:
         xyz = tuple(float(v.strip()) for v in value.split(","))
@@ -1075,8 +1298,9 @@ def build_config(argv: list[str] | None = None) -> Config:
     ap.add_argument("--intervention-session-min", type=float,
                     default=d.intervention_session_min,
                     help="repair/vectorize session budget (these have no condition YAML)")
-    ap.add_argument("--target-eps", type=int, default=d.target_eps,
-                    help="farmed successful episodes: the diverse base set")
+    ap.add_argument("--per-cell-target", type=int, default=d.per_cell_target,
+                    help="verified successes required of EVERY live cell before the "
+                         "farm closes (per-cell coverage, never a global count)")
     ap.add_argument("--num-envs", type=int, default=d.num_envs,
                     help="scripted-stage batch width (farm/probe/compound)")
     ap.add_argument("--wall-hours", type=float, default=d.wall_hours)
@@ -1084,31 +1308,35 @@ def build_config(argv: list[str] | None = None) -> Config:
                     help="agent loop launcher (gets --prompt-file/--workdir/--cap-min/"
                          "--transcript/--env); '' skips all agent stages")
     ap.add_argument("--isaac-py", default=d.isaac_py)
-    ap.add_argument("--wide-yield", type=float, default=d.wide_yield,
-                    help="wide probe pass bar: share of envs that must succeed")
     ap.add_argument("--wide-probe-seed", type=int, default=d.wide_probe_seed)
     ap.add_argument("--nominal-seeds", type=parse_int_tuple,
                     default=d.nominal_seeds,
                     help="comma-separated seeds for the nominal probe")
     ap.add_argument("--repair-rounds", type=int, default=d.repair_rounds)
+    ap.add_argument("--vectorize-rounds", type=int, default=d.vectorize_rounds,
+                    help="bounded vectorize sessions; afterward the pipeline proceeds "
+                         "(batches always launch wide; scalar cells crash-quarantine)")
     ap.add_argument("--quarantine-zero-yield-batches", type=int,
                     default=d.quarantine_zero_yield_batches,
                     help="completed zero-success batches before a cell leaves the farm pool")
-    ap.add_argument("--noise-share", type=int, default=d.noise_share,
-                    help="every Nth FARM batch runs with action noise (0 = never)")
-    ap.add_argument("--noise-sigma", type=float, default=d.farm_noise.sigma)
-    ap.add_argument("--noise-prob", type=float, default=d.farm_noise.prob)
-    ap.add_argument("--noise-duration", type=float, default=d.farm_noise.duration)
-    ap.add_argument("--noise-dims", default=d.noise_dims,
-                    help="noised action dims (arm only — gripper noise corrupts pinches)")
     ap.add_argument("--compound-eps", type=int, default=d.compound_eps,
                     help="verified noise/DR variants to collect (0 disables)")
     ap.add_argument("--compound-hours", type=float, default=d.compound_hours)
-    ap.add_argument("--compound-noise", type=parse_noise_band, action="append",
-                    default=None, metavar="SIGMA,PROB,DURATION",
-                    help="noise band for the compound ladder; repeat for multiple bands")
+    ap.add_argument("--compound-noise-scale", type=float,
+                    default=d.compound_noise_scale,
+                    help="noise_scale compound batches run at (solve-authored noise)")
+    ap.add_argument("--noise-rounds", type=int, default=d.noise_rounds,
+                    help="bounded noise-plan authoring sessions")
+    ap.add_argument("--noise-floor-yield", type=float, default=d.noise_floor_yield,
+                    help="share of envs a noised probe must keep succeeding")
+    ap.add_argument("--noise-min-coverage", type=float, default=d.noise_min_coverage,
+                    help="minimum measured share of perturbed (step, env) rows — "
+                         "noise is mandatory and gamed-zero noise must not pass")
     ap.add_argument("--multiply-draws", type=int, default=d.multiply_draws,
                     help="visual replay passes per verified episode (0 disables)")
+    ap.add_argument("--trim-margin", type=int, default=d.trim_margin,
+                    help="rows rendered past each episode's sustained-success step "
+                         "(-1 = never trim)")
     ap.add_argument("--multiply-hours", type=float, default=d.multiply_hours)
     ap.add_argument("--render-envs", type=int, default=d.render_envs,
                     help="episodes replayed in parallel per multiply render pass")
@@ -1135,16 +1363,18 @@ def build_config(argv: list[str] | None = None) -> Config:
         session_min=a.session_min,
         intervention_session_min=a.intervention_session_min,
         agent_cmd=a.agent_cmd, isaac_py=a.isaac_py,
-        wall_hours=a.wall_hours, target_eps=a.target_eps, num_envs=a.num_envs,
+        wall_hours=a.wall_hours, per_cell_target=a.per_cell_target,
+        num_envs=a.num_envs,
         quarantine_zero_yield_batches=a.quarantine_zero_yield_batches,
-        noise_share=a.noise_share,
-        farm_noise=NoiseBand(a.noise_sigma, a.noise_prob, a.noise_duration),
-        noise_dims=a.noise_dims, wide_yield=a.wide_yield,
         wide_probe_seed=a.wide_probe_seed, nominal_seeds=a.nominal_seeds,
-        repair_rounds=a.repair_rounds,
+        repair_rounds=a.repair_rounds, vectorize_rounds=a.vectorize_rounds,
         compound_eps=a.compound_eps, compound_hours=a.compound_hours,
-        compound_ladder=tuple(a.compound_noise or d.compound_ladder),
+        compound_noise_scale=a.compound_noise_scale,
+        noise_rounds=a.noise_rounds,
+        noise_floor_yield=a.noise_floor_yield,
+        noise_min_coverage=a.noise_min_coverage,
         multiply_draws=a.multiply_draws, multiply_hours=a.multiply_hours,
+        trim_margin=a.trim_margin,
         render_envs=a.render_envs, render_chunk=a.render_chunk,
         render_kit_args=a.render_kit_args,
         cam_eye=a.camera_eye, cam_target=a.camera_target,
