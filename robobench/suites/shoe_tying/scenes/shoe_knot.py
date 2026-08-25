@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from robobench.core import SCENES, BaseCfg, BaseScene, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene
 from robobench.suites.shoe_tying.newton_sim import RodSimCfg
 
 if TYPE_CHECKING:
@@ -267,47 +267,48 @@ class ShoeKnotSceneCfg(BaseCfg):
     """All numbers are the standalone script's proven 3/3 values — a tuned artifact (the knot's
     self-holding depends on the friction/bending/contact recipe)."""
 
-    rod_radius: float = info(0.0024, doc="capsule radius [m]")
-    seg_len_factor: float = info(2.4, doc="segment length = factor * rod_radius (arc-length resample)")
+    rod_radius: float = 0.0024  # capsule radius [m]
+    seg_len_factor: float = 2.4  # segment length = factor * rod_radius (arc-length resample)
     # --- lace material / rod joints ---
-    lace_density: float = tunable(1500.0)
-    lace_ke: float = tunable(1.0e4)
-    lace_kd: float = tunable(0.0)
-    lace_mu: float = tunable(1.0)  # [TUNE] real laces are grippy; at 0.9 the released knot crept
+    lace_density: float = 1500.0
+    lace_ke: float = 1.0e4
+    lace_kd: float = 0.0
+    lace_mu: float = 1.0  # [TUNE] real laces are grippy; at 0.9 the released knot crept
     # open over ~1 s, at 0.7 (smooth-cable default) it never held
-    stretch_ke: float = tunable(5.0e5)
-    stretch_kd: float = tunable(1.0e-1)
-    bend_ke: float = tunable(3.0e-1)  # [TUNE] bending turns wrap curvature into contact normal
+    stretch_ke: float = 5.0e5
+    stretch_kd: float = 1.0e-1
+    bend_ke: float = 3.0e-1  # [TUNE] bending turns wrap curvature into contact normal
     # force (a bent rod presses onto what it wraps); at 0.12-0.20 the release shed 60-120 deg
     # of winding, at 0.30 it sheds ~0 and the knot holds
-    bend_kd: float = tunable(4.0e-2)
-    twist_ke: float = tunable(3.0e-1)
-    twist_kd: float = tunable(4.0e-2)
+    bend_kd: float = 4.0e-2
+    twist_ke: float = 3.0e-1
+    twist_kd: float = 4.0e-2
     # --- shoe / work-surface / permanent-lace contact ---
-    shoe_length: float = info(0.30, doc="shoe rescaled to this heel-toe length [m]")
-    shoe_ke: float = tunable(1.0e4)
-    shoe_kd: float = tunable(0.0)
-    shoe_mu: float = tunable(0.8)
-    surface_ke: float = tunable(1.0e4)  # table + permanent-lace contact = the standalone
-    surface_kd: float = tunable(0.0)  # builder's default_shape_cfg values (the laces' free
-    surface_mu: float = tunable(0.7)  # ends drape onto this surface)
+    shoe_length: float = 0.30  # shoe rescaled to this heel-toe length [m]
+    shoe_ke: float = 1.0e4
+    shoe_kd: float = 0.0
+    shoe_mu: float = 0.8
+    surface_ke: float = 1.0e4  # table + permanent-lace contact = the standalone
+    surface_kd: float = 0.0  # builder's default_shape_cfg values (the laces' free
+    surface_mu: float = 0.7  # ends drape onto this surface)
     # --- environment (folding's layout: ground sunk, a box table as the work surface) ---
-    surface_z: float = info(0.2, doc="table-top height [m]; the shoe (and the whole task frame) "
-                            "sits here — record_video.py anchors its camera on this field")
-    table_size: tuple[float, float, float] = info((0.8, 0.8, 0.2), doc="box table full extents "
-                                                  "[m]; centered under the shoe, top at surface_z")
+    # table-top height [m]; the shoe (and the whole task frame) sits here — record_video.py anchors its camera
+    # on this field
+    surface_z: float = 0.2
+    # box table full extents [m]; centered under the shoe, top at surface_z
+    table_size: tuple[float, float, float] = (0.8, 0.8, 0.2)
     # --- solver (consumed by sim_cfg) ---
-    num_substeps: int = tunable(12)
-    vbd_iterations: int = tunable(10)
-    rigid_contact_buffer: int = info(512, doc="per-body body-body contact list capacity")
+    num_substeps: int = 12
+    vbd_iterations: int = 10
+    rigid_contact_buffer: int = 512  # per-body body-body contact list capacity
     # --- goal gates (the slack-and-pin-free check window) ---
-    winding_min_deg: float = info(140.0, doc="knot-section winding floor [deg]; failures unwind to 0")
-    contacts_min: int = info(6, doc="cross-lace contact-pair floor while slack (snugness)")
-    knot_z_max: float = info(0.155, doc="seat gate [m]: the mid-air junction sits at 0.165-0.190")
-    settled_contacts_max: int = info(3, doc="settled cross-lace contacts must stay below this "
-                                     "(proves the laces start NOT intertwined)")
-    light_intensity: float = tunable(3000.0)
-    shoe_visual_usd: str = info("", doc="'' -> the vendored assets/shoe_right_visual.usda")
+    winding_min_deg: float = 140.0  # knot-section winding floor [deg]; failures unwind to 0
+    contacts_min: int = 6  # cross-lace contact-pair floor while slack (snugness)
+    knot_z_max: float = 0.155  # seat gate [m]: the mid-air junction sits at 0.165-0.190
+    # settled cross-lace contacts must stay below this (proves the laces start NOT intertwined)
+    settled_contacts_max: int = 3
+    light_intensity: float = 3000.0
+    shoe_visual_usd: str = ""  # '' -> the vendored assets/shoe_right_visual.usda
 
     def __post_init__(self) -> None:
         self.shoe_visual_usd = self.shoe_visual_usd or str(_ASSETS / "shoe_right_visual.usda")

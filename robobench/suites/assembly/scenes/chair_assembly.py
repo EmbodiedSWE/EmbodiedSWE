@@ -53,7 +53,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -66,33 +66,33 @@ class ChairAssemblySceneCfg(BaseCfg):
     """Config for `ChairAssemblyScene`. Geometry constants are measured from the split scan
     parts (assets/chair/chair_parts.json provenance) — see scripts/author_chair_rigs.py."""
 
-    # --- tunable: rubric thresholds ----------------------------------------------------------
-    tau_xy: float = tunable(0.010)  # max lateral error of a mating feature, base frame (m)
-    tau_z: float = tunable(0.026)  # max along-axis error at the seated pose (m).
+    # --- rubric thresholds ----------------------------------------------------------
+    tau_xy: float = 0.010  # max lateral error of a mating feature, base frame (m)
+    tau_z: float = 0.026  # max along-axis error at the seated pose (m).
     # Spans the rig's measured bimodal assembled band about the band-centre
     # seat plane (see back_seat_pos): both rest families are complete,
     # nut-threadable assemblies. Lateral (0.010) and ori (0.94) stay strict.
-    ori_cos: float = tunable(0.94)  # min axis-alignment cosine (the source's 0.94, verbatim)
-    settle_speed: float = tunable(0.05)  # max child |v| at the moment of welding (m/s)
+    ori_cos: float = 0.94  # min axis-alignment cosine (the source's 0.94, verbatim)
+    settle_speed: float = 0.05  # max child |v| at the moment of welding (m/s)
     # A nut is seated once it has threaded far enough down the exposed stud tip.
-    nut_seat_depth: float = tunable(0.020)  # min travel from the thread tip (m); full thread 0.025
+    nut_seat_depth: float = 0.020  # min travel from the thread tip (m); full thread 0.025
     # Part friction (static = dynamic), set at bind — the nut_thread scene's proven pairing:
     # the moving threaded part runs slick against a grippier fixed part.
-    nut_friction: float = tunable(0.01)
-    base_friction: float = tunable(1.2)  # chair base: studs, shell contacts, AND feet on the
+    nut_friction: float = 0.01
+    base_friction: float = 1.2  # chair base: studs, shell contacts, AND feet on the
     # floor. 1.2 (was 0.75): the insertion press slid the on-side base 35 mm north at 0.75
     # (fp326 plow, measured); the higher grip keeps the base planted under the press.
-    back_friction: float = tunable(0.3)  # the shell riding the leg-top rail / shanks
+    back_friction: float = 0.3  # the shell riding the leg-top rail / shanks
 
     # Weld-on-closure grasping (the benchmark's auto-weld contract, the pc_motherboard
     # machinery generalized to EVERY hand on the stage — a bi-Franka binding has two):
     # close the fingers across a part's grip band and it welds to that hand; open wide to
     # release. Gripper envs only (no-op under robot="null").
-    grasp_weld: bool = tunable(True)
+    grasp_weld: bool = True
     # Engage radius 25 mm (the mb scene uses 10): the chair's grip bands sit on big parts
     # with no confusable geometry nearby, and a Franka pinching the backrest's 6 cm shell
     # measurably stalls in-window with its pinch centre ~2 cm off the nominal band line.
-    grasp_weld_dist: float = tunable(0.025)
+    grasp_weld_dist: float = 0.025
     # Measured-rotation screw joints (the pc_motherboard screw mechanic, nut-side): an
     # engaged nut stays DYNAMIC — something must physically hold and rotate it — but its
     # AXIAL advance is written from its measured rotation about the stud axis at the true
@@ -101,92 +101,92 @@ class ChairAssemblySceneCfg(BaseCfg):
     # resistance (helix ratio 0.00 on the vertical vise probe; nut_thread's fixed-base
     # ARTICULATION bolt threads correctly on the same box — a movable chair cannot pin
     # its studs to the world, so the joint IS the thread here).
-    screw_pitch: float = tunable(0.002)  # m per revolution (M16x2), TWO-WAY (nuts unscrew)
-    screw_lash_deg: float = tunable(30.0)  # engaged rotation before the helix couples
-    screw_engage_lat: float = tunable(0.004)  # max lateral offset to count as on-tip (m)
-    screw_engage_window: float = tunable(0.004)  # tip +/- this in y = the engage band (m)
+    screw_pitch: float = 0.002  # m per revolution (M16x2), TWO-WAY (nuts unscrew)
+    screw_lash_deg: float = 30.0  # engaged rotation before the helix couples
+    screw_engage_lat: float = 0.004  # max lateral offset to count as on-tip (m)
+    screw_engage_window: float = 0.004  # tip +/- this in y = the engage band (m)
 
-    # --- tunable: randomization (the task-family knobs) ---------------------------------------
-    reset_pos_jitter: float = tunable(0.04)  # uniform +/- xy jitter per loose part at reset (m)
-    reset_yaw_deg: float = tunable(60.0)  # uniform +/- yaw per loose part at reset
-    seat_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the chair base at reset (m)
-    seat_yaw_base: float = tunable(0.0)  # fixed base yaw (deg) — bindings orient the chair
+    # --- randomization (the task-family knobs) ---------------------------------------
+    reset_pos_jitter: float = 0.04  # uniform +/- xy jitter per loose part at reset (m)
+    reset_yaw_deg: float = 60.0  # uniform +/- yaw per loose part at reset
+    seat_jitter: float = 0.03  # uniform +/- xy jitter of the chair base at reset (m)
+    seat_yaw_base: float = 0.0  # fixed base yaw (deg) — bindings orient the chair
     # to their workspace (rubric is base-frame, so yaw is transparent to judging)
-    seat_yaw_deg: float = tunable(20.0)  # uniform +/- yaw jitter on top of the base yaw
-    shuffle_slots: bool = tunable(True)  # per-episode random part->slot permutation
-    legs_preattached: bool = tunable(True)  # False = the flat-pack variant (NOT YET AUTHORED)
+    seat_yaw_deg: float = 20.0  # uniform +/- yaw jitter on top of the base yaw
+    shuffle_slots: bool = True  # per-episode random part->slot permutation
+    legs_preattached: bool = True  # False = the flat-pack variant (NOT YET AUTHORED)
 
-    # --- tunable: placement (kept name-compatible with the robot bindings in configs/envs.py) --
+    # --- placement (kept name-compatible with the robot bindings in configs/envs.py) --
     # Default work pose: a LOW assembly platform (the suite's tables would put a 1 m chair's
     # studs at ~1.4 m, outside Franka reach; the floor puts them at 0.40 m, the envelope's
     # low edge). 0.25 m lands the studs at ~0.65 m; robots stand ON the platform.
-    surface_z: float = tunable(0.25)  # work-surface height; 0 = the chair stands on the floor
-    seat_pos: tuple = tunable((0.0, 0.0))  # chair-base centre on the surface
-    spawn_radii: tuple = tunable((0.45, 0.62))  # scatter ring radii for the 3 loose parts
-    spawn_arc: tuple = tunable((200.0, 340.0))  # scatter arc (deg) around the base
+    surface_z: float = 0.25  # work-surface height; 0 = the chair stands on the floor
+    seat_pos: tuple = (0.0, 0.0)  # chair-base centre on the surface
+    spawn_radii: tuple = (0.45, 0.62)  # scatter ring radii for the 3 loose parts
+    spawn_arc: tuple = (200.0, 340.0)  # scatter arc (deg) around the base
     # Explicit part placement, overriding the arc when non-empty (the siblings'
     # `nut_init_xy` pattern): one (x, y, yaw_deg) per manifest part [back, nut_0, nut_1].
     # The packing-table top is 2.47 x 0.76 m — radial scatter around the chair walks off
     # its short axis, so robot bindings lay parts along the LONG axis instead.
-    spawn_slots: tuple = tunable(())
+    spawn_slots: tuple = ()
     # Staging riser (a low parts pallet) under the backrest's slot: lying flat on the
     # bench, the panel's only jaw-sized pinches (the 54 mm bottom lip, the 60-66 mm
     # low side bands) sit within ~3 cm of the tabletop — inside the palm's own
     # height, MEASURED unreachable (the hand body intersects the bench). The riser
     # lifts them into free air. (x, y) centre, scene frame; () = no riser.
-    riser_pos: tuple = tunable(())
-    riser_size: tuple = info((0.42, 0.30, 0.12))
-    back_spawn_dz: float = tunable(0.0)  # extra back spawn height (set = riser height)
+    riser_pos: tuple = ()
+    riser_size: tuple = (0.42, 0.30, 0.12)
+    back_spawn_dz: float = 0.0  # extra back spawn height (set = riser height)
     # Leaning rack (a tall staging block): the backrest spawns LEANING against it at
     # `back_lean_deg`, nearly upright. Every welded-wrist rotation beyond ~25 deg
     # stalls against this controller (measured across 8 variants: solo/dual, either
     # arm, gains 30-90, gravity on/off) while grasps, dual translations, and <=25 deg
     # rolls are reliable — so the staging supplies the uprightness instead of the
     # arms. (x, y) centre, scene frame; () = no rack.
-    rack_pos: tuple = tunable(())
-    rack_size: tuple = info((0.34, 0.20, 0.45))
-    back_lean_deg: float = tunable(0.0)  # 0 = lying face-up; >0 = leaning this far up
+    rack_pos: tuple = ()
+    rack_size: tuple = (0.34, 0.20, 0.45)
+    back_lean_deg: float = 0.0  # 0 = lying face-up; >0 = leaning this far up
     # Chair-base root pose OVERRIDE at reset (scene frame, z relative to the surface):
     # (x, y, z, qw, qx, qy, qz). Non-empty -> the base spawns in exactly this pose
     # (e.g. LYING ON ITS SIDE: legs horizontal, stud pair vertical) instead of
     # standing at seat_pos; seat_pos/seat_yaw/seat_jitter are ignored. The pose
     # should be a MEASURED free rest (drop-probe it) so the spawn is a pure settle.
-    base_root_pose: tuple = tunable(())
+    base_root_pose: tuple = ()
     # Backrest root pose OVERRIDE at reset, same contract (measured rest only —
     # the curved shell WALKS if dropped off-equilibrium, and a footprint that
     # clips a robot base detonates at 12 m/s, both measured). Overrides the
     # back's spawn slot and its jitters.
-    back_root_pose: tuple = tunable(())
+    back_root_pose: tuple = ()
     # Uniform scale on the three CHAIR PARTS (base+studs, back+holes, nuts) and
     # every derived geometric constant (lengths x s, masses x s^3, aperture
     # windows x s). The full-size shell sits at the parallel jaw's limit (54-72 mm
     # pinches vs the 80 mm jaw) and its 2.5 kg exceeds the wrist's rotation
     # authority; ~0.75 moves both from marginal to comfortable. Bindings must
     # supply MEASURED rest poses for the scaled parts (the rests change).
-    part_scale: float = tunable(1.0)
+    part_scale: float = 1.0
 
-    # --- info: measured structure (assets/chair, authored by author_chair_rigs.py) -------------
+    # --- measured structure (assets/chair, authored by author_chair_rigs.py) -------------
     # The work surface is the suite's vendored Heavy-Duty PackingTable (the ikea/mb table),
     # SUNK so its top lands at `surface_z` (the ikea pattern: the buried part clips below
     # the floor, purely cosmetic). A procedural slab was tried and looked wrong.
-    workbench_usd: str = info("")  # empty -> the vendored packing table
+    workbench_usd: str = ""  # empty -> the vendored packing table
     # float = isotropic; a (sx, sy, sz) tuple scales axes independently (e.g. widen the
     # top without stretching the length or height). Authored in cm.
-    workbench_scale: Any = info(0.01)
-    workbench_height: float = info(0.994)  # its intrinsic top height at this scale
+    workbench_scale: Any = 0.01
+    workbench_height: float = 0.994  # its intrinsic top height at this scale
     # ---- Dunbar LADDERBACK geometry (split_dunbar_chair.py + author_chair_lb_rigs.py):
     # base = seat + front legs + stretchers/aprons; back = 2 full-height rear posts +
     # 4 ladder slats (real flat-packs bolt the seat unit onto the rear-post unit).
     # Studs root in the side-apron ends, axis +y, through the posts' 124 mm depth.
-    base_mass: float = info(6.0)
-    back_mass: float = info(2.5)
-    nut_mass: float = info(0.03)  # M16 nut (kg), nut_thread verbatim
-    stud_x: float = info(0.214)  # stud axes at (+/- stud_x, stud_z), base frame, pointing +y
-    stud_z: float = info(0.367)  # side-apron band centre (measured 0.338..0.395)
-    shank_y0: float = info(0.150)  # smooth shank from here (40 mm embedded in the apron end)
-    thread_y0: float = info(0.3302)  # exposed thread base (usable nut travel starts here)
-    thread_y1: float = info(0.3550)  # thread tip
-    slab_rear_y: float = info(0.1816)  # the posts' front (mating) plane at the seated pose
+    base_mass: float = 6.0
+    back_mass: float = 2.5
+    nut_mass: float = 0.03  # M16 nut (kg), nut_thread verbatim
+    stud_x: float = 0.214  # stud axes at (+/- stud_x, stud_z), base frame, pointing +y
+    stud_z: float = 0.367  # side-apron band centre (measured 0.338..0.395)
+    shank_y0: float = 0.150  # smooth shank from here (40 mm embedded in the apron end)
+    thread_y0: float = 0.3302  # exposed thread base (usable nut travel starts here)
+    thread_y1: float = 0.3550  # thread tip
+    slab_rear_y: float = 0.1816  # the posts' front (mating) plane at the seated pose
     # back origin at the seated pose, base frame. 0.1816 is the source mesh's
     # assembled plane; the PREDICATE plane sits 12 mm (unscaled) deeper = the
     # centre of the rig's measured BIMODAL assembled band. A clearance-fit
@@ -197,19 +197,19 @@ class ChairAssemblySceneCfg(BaseCfg):
     # NUT clamps the final position by design), so seated spans the band via
     # tau_z. Lateral/ori gates stay strict; the nut-thread gate is the real
     # success metric downstream.
-    back_seat_pos: tuple = info((0.0, 0.1696, 0.0))
-    back_hole_z: float = info(0.367)  # hole height in the BACK's frame (0.0 + 0.367 = 0.367)
-    hole_r_in: float = info(0.019)  # 38 mm collision holes over the 15.6 mm shanks
-    nut_r_in: float = info(0.008)  # M16 nut bore radius (ordering-violation detector)
-    base_height: float = info(0.473)  # floor -> seat top
-    back_height: float = info(0.979)  # post bottoms -> post tops
-    back_depth: float = info(0.140)  # post front face -> slat rear extreme
-    light_intensity: float = info(2500.0)
+    back_seat_pos: tuple = (0.0, 0.1696, 0.0)
+    back_hole_z: float = 0.367  # hole height in the BACK's frame (0.0 + 0.367 = 0.367)
+    hole_r_in: float = 0.019  # 38 mm collision holes over the 15.6 mm shanks
+    nut_r_in: float = 0.008  # M16 nut bore radius (ordering-violation detector)
+    base_height: float = 0.473  # floor -> seat top
+    back_height: float = 0.979  # post bottoms -> post tops
+    back_depth: float = 0.140  # post front face -> slat rear extreme
+    light_intensity: float = 2500.0
     # Asset USDs; empty -> the packaged parts under assets/chair + assets/factory.
-    asset_dir: str = info("")
-    base_usd: str = info("")
-    back_usd: str = info("")
-    nut_usd: str = info("")
+    asset_dir: str = ""
+    base_usd: str = ""
+    back_usd: str = ""
+    nut_usd: str = ""
 
     def __post_init__(self) -> None:
         if not self.legs_preattached:

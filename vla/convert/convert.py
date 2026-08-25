@@ -4,7 +4,7 @@ Run with lerobot's OWN venv:
 
     ~/Documents/Research/lerobot/.venv/bin/python vla/convert/convert.py \\
         <…/data_gen/<gen_name>> --repo-id cosigen/bulb_franka_osc \\
-        [--control_space joint_vel] [--control_freq 15] [--batches …] \\
+        [--control_space joint_vel] [--control_freq 15]  (default space: joint_target) [--batches …] \\
         [--cams front wrist] [--root <out dir>] [--task "…"] [--include-failures]
 
 Episodes are read through the canonical Episode form (episode.py), projected into
@@ -41,7 +41,7 @@ from episode import read_sim_episode  # noqa: E402
 parser = argparse.ArgumentParser(description="bake episodes into a LeRobotDataset")
 parser.add_argument("gen_root", help="the campaign: …/<run>/data_gen/<gen_name>")
 parser.add_argument("--repo-id", required=True, dest="repo_id")
-parser.add_argument("--control_space", default="joint_vel", choices=sorted(CONVENTIONS),
+parser.add_argument("--control_space", default="joint_target", choices=sorted(CONVENTIONS),
                     help="what the action column means (see conventions.py)")
 parser.add_argument("--control_freq", type=float, default=None,
                     help="control frequency of the baked labels (Hz); default: the episodes' "

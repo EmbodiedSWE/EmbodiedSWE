@@ -59,7 +59,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -449,42 +449,42 @@ def _pod_spawner_cfg(*, body_r: float, height: float, mass: float, visual_usd: s
 class CoffeeServiceSceneCfg(BaseCfg):
     """Config for `CoffeeServiceScene`."""
 
-    # --- tunable: appliance rules (difficulty dials) -----------------------------------------
-    brew_steps: int = tunable(600)  # brew substeps (~5 s at 120 Hz)
-    press_depth: float = tunable(0.0025)  # key depression that registers a press (m)
-    rearm_depth: float = tunable(0.001)  # key must pop back above this to re-arm
-    cover_open_pos: float = tunable(-0.088)  # slide (m, south -) at/below = bay OPEN
-    cover_closed_pos: float = tunable(-0.010)  # slide at/above = bay CLOSED
-    cup_r_tol: float = tunable(0.050)  # cup centre within this of the spout axis.
+    # --- appliance rules (difficulty dials) -----------------------------------------
+    brew_steps: int = 600  # brew substeps (~5 s at 120 Hz)
+    press_depth: float = 0.0025  # key depression that registers a press (m)
+    rearm_depth: float = 0.001  # key must pop back above this to re-arm
+    cover_open_pos: float = -0.088  # slide (m, south -) at/below = bay OPEN
+    cover_closed_pos: float = -0.010  # slide at/above = bay CLOSED
+    cup_r_tol: float = 0.050  # cup centre within this of the spout axis.
     # 5 cm (not 3): the spout axis sits only 13 mm in front of the nook's back wall
     # (measured 2026-08-09), so a mug's centre CANNOT reach the axis — machines pour
     # into a mug's back third. The staged target is cup_stage_y_off south of the axis.
-    cup_stage_y_off: float = info(-0.040)  # staged cup centre, y-offset from the spout
-    pod_xy_tol: float = tunable(0.020)  # pod centre within this of the pocket axis
-    settle_speed: float = tunable(0.05)  # max |v| when judging placement (m/s)
-    served_tilt_deg: float = tunable(20.0)  # cup upright gate on the tray
-    served_z_tol: float = tunable(0.015)  # cup bottom within this of the tray dish (m)
+    cup_stage_y_off: float = -0.040  # staged cup centre, y-offset from the spout
+    pod_xy_tol: float = 0.020  # pod centre within this of the pocket axis
+    settle_speed: float = 0.05  # max |v| when judging placement (m/s)
+    served_tilt_deg: float = 20.0  # cup upright gate on the tray
+    served_z_tol: float = 0.015  # cup bottom within this of the tray dish (m)
 
     # Weld-on-closure grasping (the benchmark's auto-weld contract — ported verbatim
     # from the microwave port; see its cfg for the full rationale). Default OFF: only
     # the franka binding turns it on.
-    grasp_weld: bool = tunable(False)
-    grasp_weld_dist: float = tunable(0.012)
+    grasp_weld: bool = False
+    grasp_weld_dist: float = 0.012
 
-    # --- tunable: randomization (the task-family knobs) --------------------------------------
-    reset_pos_jitter: float = tunable(0.02)  # uniform +/- xy jitter on pod + cup at reset
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- yaw per object at reset
+    # --- randomization (the task-family knobs) --------------------------------------
+    reset_pos_jitter: float = 0.02  # uniform +/- xy jitter on pod + cup at reset
+    reset_yaw_deg: float = 180.0  # uniform +/- yaw per object at reset
 
-    # --- tunable: placement --------------------------------------------------------------------
-    cm_pos: tuple = tunable((0.0, 0.20))  # machine MODEL ORIGIN on the surface (spout faces -y)
-    tray_pos: tuple = tunable((0.42, -0.10))  # serving-tray centre on the surface
-    cup_slot: tuple = tunable((0.34, -0.08))  # cup start, on the tray dish
-    pod_slot: tuple = tunable((0.49, -0.14))  # pod start, on the tray dish
-    table: str = info("packing")
-    table_depth_scale: float = tunable(1.5)
-    surface_z: float | None = info(None)
-    workbench_pos: tuple[float, float] | None = info(None)
-    workbench_usd: str = info("")
+    # --- placement --------------------------------------------------------------------
+    cm_pos: tuple = (0.0, 0.20)  # machine MODEL ORIGIN on the surface (spout faces -y)
+    tray_pos: tuple = (0.42, -0.10)  # serving-tray centre on the surface
+    cup_slot: tuple = (0.34, -0.08)  # cup start, on the tray dish
+    pod_slot: tuple = (0.49, -0.14)  # pod start, on the tray dish
+    table: str = "packing"
+    table_depth_scale: float = 1.5
+    surface_z: float | None = None
+    workbench_pos: tuple[float, float] | None = None
+    workbench_usd: str = ""
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
                       "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.05, 0.0),
@@ -494,90 +494,90 @@ class CoffeeServiceSceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
 
-    # --- info: structure (the vendored machine, measured in ITS frame, 2026-08-09) ------------
+    # --- structure (the vendored machine, measured in ITS frame, 2026-08-09) ------------
     # `cm_pos` places the MODEL ORIGIN on the counter; every offset below is model-frame.
     # Source of truth: scripts/prep_coffee_assets.py (cap-x) — measured from the meshes.
-    outer: tuple = info((0.166, 0.639, 0.398))  # overall bbox (x, y incl. tank, z)
-    body_x: tuple = info((-0.090, 0.076))
+    outer: tuple = (0.166, 0.639, 0.398)  # overall bbox (x, y incl. tank, z)
+    body_x: tuple = (-0.090, 0.076)
     # the machine's top face has a REAL rectangular opening under the slider:
-    chest_x: tuple = info((-0.045, 0.030))
-    chest_y: tuple = info((-0.195, -0.010))
+    chest_x: tuple = (-0.045, 0.030)
+    chest_y: tuple = (-0.195, -0.010)
     # Sliding cover: x -0.048..0.035, y -0.236..-0.005, z 0.388..0.397. Slides SOUTH
     # (negative y; the north path is blocked by the key caps). Authored grip ridge on
     # its south end (the horizontal plate itself cannot be pinched fingers-down).
-    cover_y: tuple = info((-0.236, -0.005))
-    cover_z: tuple = info((0.388, 0.397))
+    cover_y: tuple = (-0.236, -0.005)
+    cover_z: tuple = (0.388, 0.397)
     # 0.125 (was 0.105): fully open, the plate's north edge sat only 10 mm south
     # of the pod pocket and dropped pods FLANGE-CAUGHT on it (v9 telemetry
     # 2026-08-10: settle z 0.411 = resting on the open cover's rim, never in the
     # pocket). 2 cm more travel puts the edge 3 cm clear; the cover overhangs
     # open air to the south by design, nothing to collide with.
-    cover_travel: float = info(0.125)
-    ridge_center: tuple = info((-0.006, -0.222, 0.408))  # cover-frame; top z 0.419
-    ridge_size: tuple = info((0.036, 0.014, 0.022))
+    cover_travel: float = 0.125
+    ridge_center: tuple = (-0.006, -0.222, 0.408)  # cover-frame; top z 0.419
+    ridge_size: tuple = (0.036, 0.014, 0.022)
     # Pod pocket (authored, inside the real hollow chest): centre + interior square.
-    pocket_off: tuple = info((-0.007, -0.100))
+    pocket_off: tuple = (-0.007, -0.100)
     # 0.030 with 6 mm walls (was 0.026 with 12 mm): drop scatter (~13-15 mm
     # measured) caught the pod flange on the wide wall rims and the old z-band
     # counted rim-caught pods as seated (2026-08-10). Outer span 72 mm still
     # fits the real 75 mm top opening.
-    pocket_half: float = info(0.030)  # interior half-width (pod flange r 0.0185 + slack)
+    pocket_half: float = 0.030  # interior half-width (pod flange r 0.0185 + slack)
     # 0.345 (scan said 0.352): a seated pod's dome ended flush with the cover's
     # underside (2 mm), and the CLOSING COVER SCOOPED THE POD onto its lid in 3
     # of 5 chain runs (gate probe 2026-08-10). The 7 mm deeper physics floor
     # sinks the pod visual slightly into the scanned pocket floor — hidden
     # inside the dark bay — and buys a 9 mm dome-to-cover margin.
-    pocket_floor_z: float = info(0.345)
-    pocket_wall_top_z: float = info(0.386)
+    pocket_floor_z: float = 0.345
+    pocket_wall_top_z: float = 0.386
     # START key: top-facing, presses DOWN (prismatic Z). Spring sized like the
     # microwave keys (m=0.05 baked, k=120 N/m).
-    btn_off: tuple = info((-0.0304, 0.0544, 0.3950))  # key base, model frame
-    btn_size: tuple = info((0.0244, 0.0244, 0.0060))  # collider (cap + travel body)
-    btn_travel: float = info(0.004)
-    btn_k: float = info(120.0)
-    btn_c: float = info(4.0)
-    btn_mass: float = info(0.05)  # the key body's mass — post_step feeds its weight
+    btn_off: tuple = (-0.0304, 0.0544, 0.3950)  # key base, model frame
+    btn_size: tuple = (0.0244, 0.0244, 0.0060)  # collider (cap + travel body)
+    btn_travel: float = 0.004
+    btn_k: float = 120.0
+    btn_c: float = 4.0
+    btn_mass: float = 0.05  # the key body's mass — post_step feeds its weight
     # forward: this key presses DOWN, so gravity acts along the press axis (the
     # microwave's keys were horizontal) and the bare spring sagged the key onto its
     # bottom stop at rest (oracle run 1, 2026-08-09: permanently "pressed")
     # Spout + cup platform.
-    spout_off: tuple = info((-0.006, -0.193))  # spout axis, model frame
-    spout_bot_z: float = info(0.238)
-    platform_x: tuple = info((-0.078, 0.064))
-    platform_y: tuple = info((-0.320, -0.167))
-    platform_top_z: float = info(0.080)
-    head_y: tuple = info((-0.221, -0.150))  # brew-head overhang above the nook
-    head_bot_z: float = info(0.258)
-    wall_t: float = info(0.02)
+    spout_off: tuple = (-0.006, -0.193)  # spout axis, model frame
+    spout_bot_z: float = 0.238
+    platform_x: tuple = (-0.078, 0.064)
+    platform_y: tuple = (-0.320, -0.167)
+    platform_top_z: float = 0.080
+    head_y: tuple = (-0.221, -0.150)  # brew-head overhang above the nook
+    head_bot_z: float = 0.258
+    wall_t: float = 0.02
     # Cup (green mug scan over a procedural octagonal vessel).
-    cup_inner_r: float = info(0.040)
-    cup_wall_t: float = info(0.006)
-    cup_h: float = info(0.072)
-    cup_bot_t: float = info(0.008)
-    cup_mass: float = info(0.25)
-    liquid_r: float = info(0.032)
-    liquid_z: float = info(0.014)
-    liquid_empty: tuple = info((0.85, 0.83, 0.78))  # bare ceramic floor
-    liquid_full: tuple = info((0.24, 0.13, 0.07))  # coffee
+    cup_inner_r: float = 0.040
+    cup_wall_t: float = 0.006
+    cup_h: float = 0.072
+    cup_bot_t: float = 0.008
+    cup_mass: float = 0.25
+    liquid_r: float = 0.032
+    liquid_z: float = 0.014
+    liquid_empty: tuple = (0.85, 0.83, 0.78)  # bare ceramic floor
+    liquid_full: tuple = (0.24, 0.13, 0.07)  # coffee
     # Pod (reconstructed capsule visual over a solid octagonal core).
-    pod_r: float = info(0.0185)  # flange radius (the visual's true extent)
-    pod_body_r: float = info(0.015)  # collider core radius
-    pod_h: float = info(0.0276)
-    pod_mass: float = info(0.02)
+    pod_r: float = 0.0185  # flange radius (the visual's true extent)
+    pod_body_r: float = 0.015  # collider core radius
+    pod_h: float = 0.0276
+    pod_mass: float = 0.02
     # Serving tray (17-inch scan over a flat kinematic dish collider).
-    tray_dish_r: float = info(0.205)  # usable dish radius (rim inside 0.219)
-    tray_h: float = info(0.020)  # dish floor height (the scan's rolled rim sits higher)
-    n_segments: int = info(8)
-    contact_offset: float = info(0.003)
-    n_stages: int = info(7)
+    tray_dish_r: float = 0.205  # usable dish radius (rim inside 0.219)
+    tray_h: float = 0.020  # dish floor height (the scan's rolled rim sits higher)
+    n_segments: int = 8
+    contact_offset: float = 0.003
+    n_stages: int = 7
     # Asset files; empty -> the vendored wrappers under `suites/puzzle/assets/`.
-    asset_dir: str = info("")
-    cm_body_usd: str = info("")
-    cm_cover_usd: str = info("")
-    cm_btn_usd: str = info("")
-    cup_usd: str = info("")
-    tray_usd: str = info("")
-    pod_usd: str = info("")
+    asset_dir: str = ""
+    cm_body_usd: str = ""
+    cm_cover_usd: str = ""
+    cm_btn_usd: str = ""
+    cup_usd: str = ""
+    tray_usd: str = ""
+    pod_usd: str = ""
 
     # Derived (filled in __post_init__).
     cup_outer_r: float = field(default=None, init=False)

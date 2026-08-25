@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from robobench.core import SCENES, BaseCfg, BaseScene, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene
 from robobench.suites.dough.newton_sim import DoughSimCfg
 
 if TYPE_CHECKING:
@@ -88,80 +88,81 @@ class DumplingSceneCfg(BaseCfg):
     wrapper holds shape instead of slumping."""
 
     # --- MPM solver / seeding ---
-    voxel_size: float = tunable(0.0025)  # [TUNE] MPM grid voxel [m]; 2 voxels through the 5 mm target
+    voxel_size: float = 0.0025  # [TUNE] MPM grid voxel [m]; 2 voxels through the 5 mm target
     # sheet (pouring runs 0.003); finer resolves the wrapper cross-section, slower
-    particles_per_cell: float = tunable(2.0)  # pouring's floor — below 2.0 under-resolves the
+    particles_per_cell: float = 2.0  # pouring's floor — below 2.0 under-resolves the
     # constitutive model (its 1.6 note: a deep narrow fill collapsed into a sticky blob)
-    max_iterations: int = tunable(100)  # rheology iterations (pouring's proven value)
+    max_iterations: int = 100  # rheology iterations (pouring's proven value)
     # --- dough material (wheat dough: cohesive elasto-viscoplastic) ---
-    dough_density: float = tunable(1100.0)  # wheat dough ~1.05-1.2 g/cm^3
-    dough_young_modulus: float = tunable(2.0e5)  # [TUNE] finite E so passes MATE the sheet smoothly; the
+    dough_density: float = 1100.0  # wheat dough ~1.05-1.2 g/cm^3
+    dough_young_modulus: float = 2.0e5  # [TUNE] finite E so passes MATE the sheet smoothly; the
     # mud recipe keeps the solver's rigid-plastic 1e15 default — too crisp
-    dough_poisson: float = tunable(0.45)  # near-incompressible
-    dough_yield_stress: float = tunable(2.0e3)  # [TUNE] von-Mises tau_y [Pa]; mud's 300 self-slumps in
+    dough_poisson: float = 0.45  # near-incompressible
+    dough_yield_stress: float = 2.0e3  # [TUNE] von-Mises tau_y [Pa]; mud's 300 self-slumps in
     # seconds; self-weight stress ~rho*g*t ~= 54 Pa << 2 kPa << pin-contact kPa..10s kPa, so the
     # wrapper holds shape at rest yet yields under the pass
-    dough_yield_pressure: float = tunable(1.0e10)  # mud value: never yields as a granular (no crumble)
-    dough_tensile_ratio: float = tunable(1.0)  # mud value: FULL cohesion (tension cutoff never truncates)
-    dough_viscosity: float = tunable(20.0)  # [TUNE] rate resistance; mud's 100 is honey-drag
-    dough_friction: float = tunable(0.0)  # mud value: dough strength is cohesive, not frictional
-    dough_damping: float = tunable(0.05)  # kills post-pass ringing (pouring liquids run 0.02)
+    dough_yield_pressure: float = 1.0e10  # mud value: never yields as a granular (no crumble)
+    dough_tensile_ratio: float = 1.0  # mud value: FULL cohesion (tension cutoff never truncates)
+    dough_viscosity: float = 20.0  # [TUNE] rate resistance; mud's 100 is honey-drag
+    dough_friction: float = 0.0  # mud value: dough strength is cohesive, not frictional
+    dough_damping: float = 0.05  # kills post-pass ringing (pouring liquids run 0.02)
     # hardening/dilatancy stay 0: snow's hardening=10 packs stiff — dough must stay re-workable
     # --- geometry [m] ---
-    dough_ball_radius: float = tunable(0.022)  # d=4.4 cm ball; its volume rolls into a ~5 mm sheet of
+    dough_ball_radius: float = 0.022  # d=4.4 cm ball; its volume rolls into a ~5 mm sheet of
     # radius ~5.3 cm (a 10-11 cm wrapper) — ~23k particles at voxel 0.0025 / ppc 2
     # --- layout (the folding suite's ambient frame: table top at 0.2, visual ground sunk) ---
-    surface_z: float = info(0.2, doc="table-top height [m]; record_video.py anchors the camera on this")
-    table_size: tuple[float, float, float] = info((0.8, 0.8, 0.2), doc="table box extents [m]")
-    table_center_x: float = info(0.05, doc="table center x [m]; top spans x in [-0.35, 0.45]")
-    table_friction: float = tunable(0.8)  # [TUNE] floured-board grip: the dough must NOT ride the
+    surface_z: float = 0.2  # table-top height [m]; record_video.py anchors the camera on this
+    table_size: tuple[float, float, float] = (0.8, 0.8, 0.2)  # table box extents [m]
+    table_center_x: float = 0.05  # table center x [m]; top spans x in [-0.35, 0.45]
+    table_friction: float = 0.8  # [TUNE] floured-board grip: the dough must NOT ride the
     # sliding pin — pass flattening lives on table mu >> barrel mu
-    light_intensity: float = tunable(3000.0)
+    light_intensity: float = 3000.0
     # --- rolling pin: ONE free rigid body (capsule barrel along +x + grip stub + end-caps) ---
-    pin_barrel_radius: float = tunable(0.020)
-    pin_barrel_half_len: float = tunable(0.070)  # 14 cm cylindrical section spans the ~11 cm wrapper
-    pin_grip_width: float = info(0.022)  # square stub cross-section = the pouring MUG bar's grip_w
+    pin_barrel_radius: float = 0.020
+    pin_barrel_half_len: float = 0.070  # 14 cm cylindrical section spans the ~11 cm wrapper
+    pin_grip_width: float = 0.022  # square stub cross-section = the pouring MUG bar's grip_w
     # (fingers engage with PD headroom at aperture ~11 mm)
-    pin_grip_height: float = tunable(0.05)  # stub top clears the hand body during the top-down pinch
-    pin_mass: float = tunable(0.35)  # wooden pin [kg]; carried by the weld, so mostly cosmetic
-    pin_cap_cross: float = info(0.032)  # square END-CAP cross-section [m]. The caps rest FLAT
+    pin_grip_height: float = 0.05  # stub top clears the hand body during the top-down pinch
+    pin_mass: float = 0.35  # wooden pin [kg]; carried by the weld, so mostly cosmetic
+    pin_cap_cross: float = 0.032  # square END-CAP cross-section [m]. The caps rest FLAT
     # across the cradle slot edges, locking the parked pin against axis-spin GEOMETRICALLY: a
     # bare barrel in the slot is an inverted pendulum (top-heavy stub), and MuJoCo's regularized
     # contact friction only creeps, never sticks — the stub would end up sideways, unpinchable
     # for a top-down grasp. Sized so the resting barrel floats ~2 mm clear of the slot edges
     # while the cap corners stay above the lowest commanded pass floor.
-    pin_cap_len: float = info(0.020)  # end-cap axial length [m]; caps cover the capsule domes
-    pin_friction: float = tunable(0.05)  # [TUNE] barrel MPM/table friction — LOW: a welded pin SLIDES
+    pin_cap_len: float = 0.020  # end-cap axial length [m]; caps cover the capsule domes
+    pin_friction: float = 0.05  # [TUNE] barrel MPM/table friction — LOW: a welded pin SLIDES
     # over the dough (one-way coupling can't spin a passive roller), and a sliding pass must
     # squeeze the sheet flat, not plow it sideways
-    pin_grip_friction: float = tunable(0.8)  # stub faces the fingers (rigid grip)
-    pin_stand: tuple[float, float] = info((-0.14, -0.20), doc="cradle center xy [m]; also the park spot,"
-                                          " offset clear of the rolling strokes over the dough at x~0")
-    cradle_gap: float = info(0.015, doc="cradle inner-face half-gap [m]; the end-caps bridge it")
-    cradle_height: float = tunable(0.025)  # cradle block height [m]
-    pin_dynamic: bool = info(True, doc="False in the robot-less binding: kinematic pin, scripted "
-                             "pose writes (the pure-MPM manager ghosts kinematic bodies into colliders)")
+    pin_grip_friction: float = 0.8  # stub faces the fingers (rigid grip)
+    # cradle center xy [m]; also the park spot, offset clear of the rolling strokes over the dough at x~0
+    pin_stand: tuple[float, float] = (-0.14, -0.20)
+    cradle_gap: float = 0.015  # cradle inner-face half-gap [m]; the end-caps bridge it
+    cradle_height: float = 0.025  # cradle block height [m]
+    # False in the robot-less binding: kinematic pin, scripted pose writes (the pure-MPM manager ghosts
+    # kinematic bodies into colliders)
+    pin_dynamic: bool = True
     # --- auto-weld grasp contract (the pouring suite's proven values) ---
-    auto_weld_dist: float = tunable(0.03)  # pinch-point-to-stub-center engage radius [m]
-    auto_weld_close_margin: float = tunable(0.003)  # engage when aperture < stub half-width + this [m]
-    auto_weld_release: float = tunable(0.02)  # release when aperture opens past this [m] (hysteresis)
+    auto_weld_dist: float = 0.03  # pinch-point-to-stub-center engage radius [m]
+    auto_weld_close_margin: float = 0.003  # engage when aperture < stub half-width + this [m]
+    auto_weld_release: float = 0.02  # release when aperture opens past this [m] (hysteresis)
     # --- success gates (sample over a settle window and gate medians; instantaneous in success()) ---
-    flatten_h95_max: float = tunable(0.009)  # wrapper q95 height above the table [m]; ball starts ~0.044
-    spread_r90_min: float = tunable(0.038)  # q90 radius about the dough centroid [m]. An ideal-volume
+    flatten_h95_max: float = 0.009  # wrapper q95 height above the table [m]; ball starts ~0.044
+    spread_r90_min: float = 0.038  # q90 radius about the dough centroid [m]. An ideal-volume
     # 5.3 cm disc would give sqrt(0.9)*R ~= 0.050, but a really rolled sheet rounds its rim:
     # kinematic-pin runs land ~0.042, franka runs 0.040-0.047; the settled BALL reads ~0.020 —
     # 0.038 keeps wide separation from the failure mode on both sides
-    extent_max: float = tunable(0.14)  # final max xy-extent of the dough [m] (a rolled wrapper spans
+    extent_max: float = 0.14  # final max xy-extent of the dough [m] (a rolled wrapper spans
     # ~0.11; smears and squirts blow past this)
-    conserve_min: float = tunable(0.995)  # fraction of the dough still in the work zone
-    floor_z_slack: float = tunable(0.008)  # min particle z >= surface_z - this (nothing punched through)
+    conserve_min: float = 0.995  # fraction of the dough still in the work zone
+    floor_z_slack: float = 0.008  # min particle z >= surface_z - this (nothing punched through)
     # --- rendering (the pouring suite's Fabric workaround values) ---
-    dough_color: tuple[float, float, float] = info((0.93, 0.87, 0.70), doc="dough particle display color")
-    table_color: tuple[float, float, float] = info((0.04, 0.04, 0.045), doc="table-top display color; "
-                                                   "metallic black (the allen_bolt lab-table look) so the "
-                                                   "pale dough reads against it")
-    visual_update_frequency: int = info(4, doc="Kit particle visual update period [render frames]")
-    visual_width_scale: float = tunable(2.2)  # display width vs physical particle diameter
+    dough_color: tuple[float, float, float] = (0.93, 0.87, 0.70)  # dough particle display color
+    # table-top display color; metallic black (the allen_bolt lab-table look) so the pale dough reads against
+    # it
+    table_color: tuple[float, float, float] = (0.04, 0.04, 0.045)
+    visual_update_frequency: int = 4  # Kit particle visual update period [render frames]
+    visual_width_scale: float = 2.2  # display width vs physical particle diameter
 
     @property
     def pin_home_z(self) -> float:

@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
@@ -60,53 +60,53 @@ if TYPE_CHECKING:
 
 @dataclass
 class ToolPackingSceneCfg(BaseCfg):
-    """Config for `ToolPackingScene`. Each field is a `tunable()` curriculum/difficulty dial
-    or an `info()` structural constant (see `robobench.core.BaseCfg`)."""
+    """Config for `ToolPackingScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed."""
 
-    # --- tunable: rubric thresholds ---------------------------------------------------------
-    drawer_closed_tol: float = tunable(0.015)  # drawer joint within this of 0 = closed (m)
-    door_closed_deg: float = tunable(6.0)  # door joint within this of 0 = closed (deg)
-    settle_speed: float = tunable(0.05)  # max item |v| when judging (m/s)
-    settle_joint_speed: float = tunable(0.05)  # max |drawer v| (m/s) / |door w| (rad/s) x10
-    reset_pos_jitter: float = tunable(0.02)  # uniform +/- xy jitter per item at reset (m)
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- yaw per item at reset
-    box_pos_jitter: float = tunable(0.02)  # uniform +/- xy jitter of the toolbox at reset (m)
-    box_yaw_deg: float = tunable(10.0)  # uniform +/- yaw of the toolbox at reset
-    shuffle_slots: bool = tunable(True)  # per-episode random item->scatter-slot permutation
-    fix_base: bool = tunable(True)  # False: the cabinet is free-standing (difficulty variant)
+    # --- rubric thresholds ---------------------------------------------------------
+    drawer_closed_tol: float = 0.015  # drawer joint within this of 0 = closed (m)
+    door_closed_deg: float = 6.0  # door joint within this of 0 = closed (deg)
+    settle_speed: float = 0.05  # max item |v| when judging (m/s)
+    settle_joint_speed: float = 0.05  # max |drawer v| (m/s) / |door w| (rad/s) x10
+    reset_pos_jitter: float = 0.02  # uniform +/- xy jitter per item at reset (m)
+    reset_yaw_deg: float = 180.0  # uniform +/- yaw per item at reset
+    box_pos_jitter: float = 0.02  # uniform +/- xy jitter of the toolbox at reset (m)
+    box_yaw_deg: float = 10.0  # uniform +/- yaw of the toolbox at reset
+    shuffle_slots: bool = True  # per-episode random item->scatter-slot permutation
+    fix_base: bool = True  # False: the cabinet is free-standing (difficulty variant)
 
-    # --- tunable: placement (table-relative xy; the lab table itself sits at TABLES pos) -------
-    box_pos: tuple = tunable((0.12, 0.0))  # toolbox centre on the table
-    box_yaw_deg_nominal: float = tunable(-90.0)  # doors/drawers face local -y; -90 -> toward -x
-    items_center: tuple = tunable((-0.52, 0.0))  # scatter row centre — OUTSIDE the doors'
+    # --- placement (table-relative xy; the lab table itself sits at TABLES pos) -------
+    box_pos: tuple = (0.12, 0.0)  # toolbox centre on the table
+    box_yaw_deg_nominal: float = -90.0  # doors/drawers face local -y; -90 -> toward -x
+    items_center: tuple = (-0.52, 0.0)  # scatter row centre — OUTSIDE the doors'
     # swing sweep WITH margins: the door edge reaches box_centre_x - 0.465 (half-depth
     # 0.245 + panel 0.22), worst-case -0.365 under the +/-10 deg box yaw and 2 cm box
     # jitter; an item's own reach from its slot is up to 0.132 (scissors half-length
     # + slot jitter), so the row centre needs x <= -0.50 (-0.28 put scattered items
     # INSIDE the arc — the sweeping door shoved a knife through the -1.5 mm gate)
-    item_spacing: float = tunable(0.16)  # y gap between scatter slots
+    item_spacing: float = 0.16  # y gap between scatter slots
     # Explicit per-item scatter slots (table-relative xy, manifest order), overriding the
     # items_center row. Robot bindings need this: the doors sweep the whole front strip when
     # they open, so items must start on an arc OUTSIDE the sweep yet inside reach.
-    item_slots: tuple | None = tunable(None)
+    item_slots: tuple | None = None
 
-    # --- info: cabinet choice + per-cabinet structure (filled from CABINETS) -------------------
-    cabinet: str = info("chest")  # which CABINETS preset; chest = doorless 4-drawer default
+    # --- cabinet choice + per-cabinet structure (filled from CABINETS) -------------------
+    cabinet: str = "chest"  # which CABINETS preset; chest = doorless 4-drawer default
     # manifest: (item name, assigned drawer, mass kg, spawn scale, rest z-lift m).
     # Stapler at 0.55: the bays' REAL interior height above the raised tray floor is
     # ~5-6 cm — the scan's full-size 8.1 cm stapler cannot close inside any drawer, so it
     # ships as a pocket stapler (4.5 cm tall flat).
-    manifest: tuple | None = info(None)
-    drawers: tuple | None = info(None)  # rubric order; joints joint_drawer_<k>
+    manifest: tuple | None = None
+    drawers: tuple | None = None  # rubric order; joints joint_drawer_<k>
     # Drawer-frame tray interior (vendoring script measurement on the BAKED asset): an item
     # origin inside this box is IN the tray.
-    tray_center: tuple | None = info(None)
-    tray_half: tuple | None = info(None)
-    drawer_travel: float | None = info(None)  # prismatic limits [-travel, 0]; 0 = shut
-    door_limits_deg: tuple | None = info(None)  # left opens negative, right positive
-    box_body: str | None = info(None)  # articulation link names in the vendored USD
-    drawer_bodies: tuple | None = info(None)
-    door_joints: tuple | None = info(None)  # () = doorless cabinet
+    tray_center: tuple | None = None
+    tray_half: tuple | None = None
+    drawer_travel: float | None = None  # prismatic limits [-travel, 0]; 0 = shut
+    door_limits_deg: tuple | None = None  # left opens negative, right positive
+    box_body: str | None = None  # articulation link names in the vendored USD
+    drawer_bodies: tuple | None = None
+    door_joints: tuple | None = None  # () = doorless cabinet
     CABINETS: ClassVar[dict[str, dict[str, Any]]] = {
         # Movian 4-drawer chest (2026-08-08): doorless, 4 prismatic drawers with real pull
         # handles; drawer #4 ("bottom") is an unassigned distractor. Tray boxes are the
@@ -141,22 +141,22 @@ class ToolPackingSceneCfg(BaseCfg):
             "door_joints": ("joint_door_left", "joint_door_right"),
         },
     }
-    contact_offset: float = info(0.003)  # items: the closed-drawer stapler headroom is
+    contact_offset: float = 0.003  # items: the closed-drawer stapler headroom is
     # ~5 mm — the ~2 cm default would press phantom contact through every shut drawer
-    box_contact_offset: float = info(0.001)  # toolbox links: the cabinet's INTERNAL design
+    box_contact_offset: float = 0.001  # toolbox links: the cabinet's INTERNAL design
     # gaps (drawer-to-shell, door-to-corner) are 1-2 mm, so with self-collision enabled a
     # 3 mm speculative margin would hold every closed drawer in permanent phantom contact
-    light_intensity: float = info(2500.0)
+    light_intensity: float = 2500.0
     # Selectable work surface (same presets as the assembly scenes). Default = the
     # general-purpose packing table (the ikea/microwave bench; the lab table is an
     # industrial GPU-assembly bench and stays available as a preset).
-    table: str = info("packing")
-    table_depth_scale: float = info(1.5)  # y-stretch: the packing top is 2.47 x 0.76 m,
+    table: str = "packing"
+    table_depth_scale: float = 1.5  # y-stretch: the packing top is 2.47 x 0.76 m,
     # and toolbox + scatter row + an on-table robot base need ~1 m of depth (the
     # microwave task's deepening, adopted with it)
-    surface_z: float | None = info(None)
-    workbench_pos: tuple[float, float] | None = info(None)
-    workbench_usd: str = info("")
+    surface_z: float | None = None
+    workbench_pos: tuple[float, float] | None = None
+    workbench_usd: str = ""
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
                       "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.5, 0.0),
@@ -165,8 +165,8 @@ class ToolPackingSceneCfg(BaseCfg):
                     "orient": (1.0, 0.0, 0.0, 0.0), "surface_z": 0.994, "pos": (0.0, 0.0),
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
-    asset_dir: str = info("")
-    toolbox_usd: str = info("")
+    asset_dir: str = ""
+    toolbox_usd: str = ""
     item_usds: dict = field(default=None, init=False)
 
     def __post_init__(self) -> None:

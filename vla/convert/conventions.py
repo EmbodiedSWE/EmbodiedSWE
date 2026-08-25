@@ -6,10 +6,17 @@ generic tracking target for t -> t + 1/rate. At a fixed rate, position and
 velocity carry the same information (v = (q_next - q) * rate), so these are
 dialects, not different data:
 
-    joint_pos   state [q, grip], action [q_next, grip_next]      (GR00T / LeRobot school)
-    joint_vel   state [q, grip], action [(q_next-q)*rate, grip_next]  (pi-DROID: 15 Hz)
-    raw_cmd     state [q, grip], action = the recorded controller command, verbatim
-                (the sim-only matched-controller benchmark arm; needs ep.raw_action)
+    joint_pos     state [q, grip], action [q_next, grip_next]      (GR00T / LeRobot school)
+    joint_vel     state [q, grip], action [(q_next-q)*rate, grip_next]  (pi-DROID: 15 Hz)
+    joint_target  state [q, grip], action = the COMMANDED joint targets in force at t
+                  (controller intent: presses/squeezes survive as sustained target offsets
+                  the achieved-state labels flatten; gripper UNCLAMPED — >1 = squeeze force.
+                  Needs ep.joint_target: sim episodes recorded with the intent channel,
+                  position-mode arms — under a torque law the recorded targets are inert,
+                  check the episode's stamped `controller`. Deploys through any joint PD,
+                  same executor as joint_pos.)
+    raw_cmd       state [q, grip], action = the recorded controller command, verbatim
+                  (the sim-only matched-controller benchmark arm; needs ep.raw_action)
 
 Whatever the convention, sim episodes also carry the verbatim command as an extra
 `raw_command` column — force intent (press = sustained offset) survives every
@@ -82,6 +89,24 @@ def joint_vel(ep: Episode, rate_hz: float) -> Projected:
                      ep.raw_action[ts] if ep.raw_action is not None else None)
 
 
+def joint_target(ep: Episode, rate_hz: float) -> Projected:
+    """Action = the commanded arm joint targets + commanded gripper closedness at tick t —
+    the target IN FORCE over t -> t+1/rate (`raw_cmd`'s alignment, not `joint_pos`'s
+    next-achieved), so the label is the causal command, intent included."""
+    if ep.joint_target is None:
+        raise SystemExit(f"{ep.ep_dir}: joint_target needs the recorded commanded-target channel "
+                         f"(robot/joint_target in traj.npz) — sim episodes from a position-mode "
+                         f"arm, recorded after the channel landed")
+    ks, ts, _ = _ticks(ep, rate_hz)
+    state, s_names, s_parts = _state(ep, ts)
+    action = np.concatenate([ep.joint_target[ts], ep.gripper_target[ts, None]], axis=1).astype(np.float32)
+    n = len(ep.arm_joints)
+    return Projected(ks, state, action, s_names,
+                     [f"{j}_target" for j in ep.arm_joints] + ["gripper"],
+                     s_parts, {"arm_qpos_target": (0, n), "gripper_target": (n, n + 1)},
+                     ep.raw_action[ts] if ep.raw_action is not None else None)
+
+
 def raw_cmd(ep: Episode, rate_hz: float) -> Projected:
     if ep.raw_action is None:
         raise SystemExit(f"{ep.ep_dir}: raw_cmd needs the recorded command (sim episodes only)")
@@ -93,4 +118,5 @@ def raw_cmd(ep: Episode, rate_hz: float) -> Projected:
                      s_parts, {"raw_cmd": (0, action.shape[1])}, None)
 
 
-CONVENTIONS = {"joint_pos": joint_pos, "joint_vel": joint_vel, "raw_cmd": raw_cmd}
+CONVENTIONS = {"joint_pos": joint_pos, "joint_vel": joint_vel,
+               "joint_target": joint_target, "raw_cmd": raw_cmd}

@@ -16,7 +16,7 @@ construction; a new source costs one reader, a new label costs one pure function
 
     ~/Documents/Research/lerobot/.venv/bin/python vla/convert/convert.py \
         <…/data_gen/<gen_name>> --repo-id cosigen/bulb_franka_osc \
-        [--control_space joint_vel] [--control_freq 15] [--batches …] [--cams front wrist] \
+        [--control_space joint_vel] [--control_freq 15]  (default space: joint_target) [--batches …] [--cams front wrist] \
         [--root <out>] [--task "…"] [--include-failures]
 
 Views come from each episode's `render_<view>.json` (`--cams` narrows); successful
@@ -33,13 +33,14 @@ per latch; precisely, the video fps — equal to the solver rate for matched-reg
 renders). A lower rate must divide the fps exactly and be an integer (60 → 30, 20,
 15, 12, 10).
 
-**`--control_space`** — what the action column means. State is always the same
-(`[arm q, gripper]` at the tick whose image the policy sees):
+**`--control_space`** — what the action column means (default: `joint_target`). State is
+always the same (`[arm q, gripper]` at the tick whose image the policy sees):
 
 | convention  | action at tick t                       | semantics |
 |-------------|----------------------------------------|-----------|
 | `joint_pos` | achieved `q` at t+1/rate + gripper     | absolute tracking target; GR00T / LeRobot school; the sim-real workhorse — any joint PD executes it |
 | `joint_vel` | `(q_next − q)·rate` + gripper          | π₀.₅-DROID exactly (15 Hz). NOT the measured `joint_vel`: the finite difference — "the average velocity that reaches the next pose", the form a tracker integrates |
+| `joint_target` | the COMMANDED joint targets in force at t + commanded gripper closedness (UNCLAMPED: >1 = squeeze) | THE DEFAULT — controller intent: presses/squeezes survive as sustained target offsets that achieved labels flatten. Position-mode campaigns only (joint/diff_ik/pink_ik; the recorder omits the channel under a torque-mode arm, and this bake then refuses loudly — use joint_pos/joint_vel/raw_cmd for osc campaigns) |
 | `raw_cmd`   | the recorded controller command, verbatim | LIBERO/MimicGen school; the sim-only matched-controller benchmark arm — deploy through the SAME controller |
 
 At a fixed rate these are the same information (v = Δq·rate), so conventions are

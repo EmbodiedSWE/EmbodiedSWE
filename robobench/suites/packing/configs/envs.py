@@ -117,7 +117,7 @@ def _tool_packing_franka_cfg() -> ToolPackingSceneCfg:
 # (the repo's franka-binding convention), preserving the measured base->box offset of
 # the validated lab-table layout (0.53 east, 0.16 north; box world (0.10, 0.16), base
 # west of the work with the doors swinging clear).
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (
@@ -236,7 +236,7 @@ for _mode in ("joint", "pink_ik"):
 # base rides ON the packing tabletop at surface height (the microwave franka
 # convention); y -0.30 keeps it clear of the scatter with the whole plate on the
 # deepened 1.14 m top
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (

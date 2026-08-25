@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -35,59 +35,58 @@ if TYPE_CHECKING:
 
 @dataclass
 class IkeaTableAssemblySceneCfg(BaseCfg):
-    """Config for `IkeaTableAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial
-    or an `info()` structural constant (see `robobench.core.BaseCfg`); `cfg.tunables()` lists the
-    dials. Nothing is locked — a curriculum/debug variant is just a `.copy()` with a few changed.
+    """Config for `IkeaTableAssemblyScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed. Nothing is locked — a curriculum/debug variant is just a `.copy()` with a few changed.
     """
 
-    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
+    # --- the curriculum / difficulty dials -----------------------------------------------
     # A leg is "seated on a stud" when — all measured in the tabletop's own frame — it is at/below
     # `seat_z` above the slab, within `align_xy` of some stud, and tilted <= `align_axis_deg` off the
     # stud axis (order-independent: any leg may seat on any stud). It then welds once it is also
     # descending slower than `seat_speed` (a debounce so a transient bounce doesn't weld too early).
-    seat_z: float = tunable(0.012)  # max height above the slab top (m)
-    align_xy: float = tunable(0.02)  # max horizontal distance (m) from the nearest stud
-    align_axis_deg: float = tunable(10.0)  # max tilt of the leg's screw axis off the stud axis (deg)
-    seat_speed: float = tunable(0.05)  # max descent speed (m/s) at the moment of welding
-    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter per leg at reset (m); 0 = none
+    seat_z: float = 0.012  # max height above the slab top (m)
+    align_xy: float = 0.02  # max horizontal distance (m) from the nearest stud
+    align_axis_deg: float = 10.0  # max tilt of the leg's screw axis off the stud axis (deg)
+    seat_speed: float = 0.05  # max descent speed (m/s) at the moment of welding
+    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter per leg at reset (m); 0 = none
 
-    # --- info: structure, reset layout, masses, workbench, asset paths (fixed) --------------------
-    num_legs: int = info(4)
+    # --- structure, reset layout, masses, workbench, asset paths (fixed) --------------------
+    num_legs: int = 4
     # Four leg slots, inset ~2.5 cm from the edges of the 0.55 m top (matches the baked studs).
-    slots: tuple[tuple[float, float], ...] = info(((0.25, 0.25), (-0.25, 0.25), (0.25, -0.25), (-0.25, -0.25)))
-    leg_start_z: float = info(0.026)  # leg height above the slab top at spawn (nut origin)
-    table_thickness: float = info(0.05)  # furniture slab thickness (its bottom rests on the surface)
-    leg_mass: float = info(0.12)  # informational; the real value is baked into leg.usd
-    light_intensity: float = info(2500.0)
+    slots: tuple[tuple[float, float], ...] = ((0.25, 0.25), (-0.25, 0.25), (0.25, -0.25), (-0.25, -0.25))
+    leg_start_z: float = 0.026  # leg height above the slab top at spawn (nut origin)
+    table_thickness: float = 0.05  # furniture slab thickness (its bottom rests on the surface)
+    leg_mass: float = 0.12  # informational; the real value is baked into leg.usd
+    light_intensity: float = 2500.0
     # Reset layout — the legs' start pose. Default: laid down on their side (90° about x), in a row on
     # ONE side of the centre line (+x), from leg0 (nearest the centre) outward to the last leg — the
     # tabletop sits on the OPPOSITE side (see `table_offset`). Tune the row + lying pose below; a
     # curriculum/robot may set `leg_init_xy` to override the row.
-    leg_init_xy: tuple[tuple[float, float], ...] = info(())  # per-leg start xy (workbench-rel.); () -> the row below
-    leg_row_x0: float = info(-0.05)  # [TUNE] x of leg0; smaller = closer to centre/inside, larger = toward the +x edge
-    leg_row_y: float = info(-0.03)  # [TUNE: reach] more negative = toward the robot
-    leg_spacing: float = info(0.12)  # [TUNE: spread] x gap between adjacent legs (leg k at x0 + k*spacing, +x)
-    leg_init_z: float = info(0.022)  # [TUNE: to the asset] leg-origin height above the surface when lying (~radius)
-    leg_init_quat: tuple[float, float, float, float] = info((2 ** -0.5, 2 ** -0.5, 0.0, 0.0))  # [TUNE] wxyz; 90° about x -> lying
+    leg_init_xy: tuple[tuple[float, float], ...] = ()  # per-leg start xy (workbench-rel.); () -> the row below
+    leg_row_x0: float = -0.05  # [TUNE] x of leg0; smaller = closer to centre/inside, larger = toward the +x edge
+    leg_row_y: float = -0.03  # [TUNE: reach] more negative = toward the robot
+    leg_spacing: float = 0.12  # [TUNE: spread] x gap between adjacent legs (leg k at x0 + k*spacing, +x)
+    leg_init_z: float = 0.022  # [TUNE: to the asset] leg-origin height above the surface when lying (~radius)
+    leg_init_quat: tuple[float, float, float, float] = (2 ** -0.5, 2 ** -0.5, 0.0, 0.0)  # [TUNE] wxyz; 90° about x -> lying
     # Tabletop: slid to the OPPOSITE side of the centre line from the legs (default -x), by `table_offset`
     # (studs move with it; `seated()` is measured in the table frame, so the offset is transparent).
-    table_offset: tuple[float, float] = info((-0.45, 0.0))  # [TUNE] tabletop xy offset from the workbench centre
+    table_offset: tuple[float, float] = (-0.45, 0.0)  # [TUNE] tabletop xy offset from the workbench centre
     # Workbench: the furniture lies on the vendored Heavy-Duty PackingTable (a static work surface).
     # `surface_z` is the DESIRED working-surface height; the workbench is placed so its top lands there
     # — i.e. sunk below (or raised above) the floor by `surface_z - workbench_height`. Lower it for a
     # shorter robot's reach (Isaac likewise sinks this same table to ~0.7 m for the G1; at 0.994 the
     # bench sits flush on the floor as before). The sunk part clips below the ground — purely cosmetic
     # (the bench is kinematic), exactly as in the Isaac pick-place env.
-    surface_z: float = info(0.994)  # working-surface height (m); the furniture spawns here
-    workbench_height: float = info(0.994)  # the PackingTable's intrinsic top-above-its-base (at workbench_scale)
-    workbench_pos: tuple[float, float] = info((0.0, 0.0))  # xy the workbench (and furniture) sit at
-    workbench_usd: str = info("")  # empty -> vendored Heavy-Duty packing table under assets/props/
-    workbench_scale: float = info(0.01)  # the table USD is authored in cm; scale to metres
+    surface_z: float = 0.994  # working-surface height (m); the furniture spawns here
+    workbench_height: float = 0.994  # the PackingTable's intrinsic top-above-its-base (at workbench_scale)
+    workbench_pos: tuple[float, float] = (0.0, 0.0)  # xy the workbench (and furniture) sit at
+    workbench_usd: str = ""  # empty -> vendored Heavy-Duty packing table under assets/props/
+    workbench_scale: float = 0.01  # the table USD is authored in cm; scale to metres
     # Asset files. Empty -> the packaged ikea_table assets (leg.usd + table.usd, which reference the
     # shared Factory nut/bolt under ../factory/ relatively, so the tree stays relocatable).
-    asset_dir: str = info("")
-    leg_usd: str = info("")
-    table_usd: str = info("")
+    asset_dir: str = ""
+    leg_usd: str = ""
+    table_usd: str = ""
 
     def __post_init__(self) -> None:
         if not self.leg_init_xy:  # default: legs lying in a row, leg0 at the centre, going outward (+x)
