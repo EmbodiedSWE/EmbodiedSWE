@@ -54,12 +54,27 @@ parser.add_argument("--root", default="", help="dataset dir (default: <gen_root>
 parser.add_argument("--task", default="", help="language instruction (default: the scene's Goal sentence)")
 parser.add_argument("--robot-type", default="", dest="robot_type")
 parser.add_argument("--include-failures", action="store_true", dest="include_failures")
+parser.add_argument("--vcodec", default="h264",
+                    help="dataset video codec (lerobot names: h264, hevc, libsvtav1/av1, auto=hardware). "
+                         "Default h264: decodes everywhere (torchcodec/pyav/decord, every NVDEC "
+                         "generation); lerobot's own default is libsvtav1")
+parser.add_argument("--crf", type=float, default=23,
+                    help="video quality (codec-specific; x264: 18 ≈ visually lossless, 23 = standard)")
+parser.add_argument("--gop-seconds", type=float, default=0.25, dest="gop_seconds",
+                    help="keyframe interval in SECONDS (g = round(fps * this), min 1): bounds the "
+                         "worst-case random-access seek at a fixed wall-clock cost regardless of the "
+                         "control rate. 0.25 s → g=15 at 60 Hz, g=4 at 15 Hz. lerobot's default is "
+                         "g=2 (fastest seeks, ~4-5x the bytes)")
+parser.add_argument("--pix-fmt", default="yuv420p", dest="pix_fmt", help="video pixel format")
+parser.add_argument("--preset", default=None,
+                    help="encoder speed/quality preset (codec-specific; default: codec's own)")
 parser.add_argument("--filter-idle", action="store_true", dest="filter_idle",
                     help="drop dead ticks (robot AND objects static AND no command intent); "
                          "presses and active settling are kept — see filters.py")
 args = parser.parse_args()
 
 import imageio.v2 as imageio  # noqa: E402
+from lerobot.configs.video import RGBEncoderConfig  # noqa: E402
 from lerobot.datasets.lerobot_dataset import LeRobotDataset  # noqa: E402
 
 gen_root = Path(args.gen_root)
@@ -123,8 +138,13 @@ if proj0.raw_command is not None:
 root = Path(args.root) if args.root else gen_root / "datasets" / args.repo_id
 print(f"[convert] {len(eps)} episodes, control_space={args.control_space} @ {rate:g}Hz, "
       f"views: {', '.join(views)}")
+encoder = RGBEncoderConfig(vcodec=args.vcodec, pix_fmt=args.pix_fmt, crf=args.crf,
+                           g=max(1, round(rate * args.gop_seconds)), preset=args.preset)
+print(f"[convert] video: {encoder.vcodec} crf={encoder.crf:g} g={encoder.g} "
+      f"({args.gop_seconds:g}s keyframe interval) {encoder.pix_fmt}", flush=True)
 ds = LeRobotDataset.create(args.repo_id, fps=int(rate), features=features, root=root,
-                           robot_type=args.robot_type or e0.robot_type, use_videos=True)
+                           robot_type=args.robot_type or e0.robot_type, use_videos=True,
+                           rgb_encoder=encoder)
 
 
 def frame_stream(video: Path, wanted: list[int]):
@@ -185,6 +205,8 @@ meta_dir = root / "meta"
     "state_parts": proj0.state_parts, "action_parts": proj0.action_parts,
     "gripper": "closedness in [0,1]: 0 = fully open, 1 = fully closed",
     "idle_filter": {"enabled": args.filter_idle, "dropped_ticks": n_dropped},
+    "video_encoder": {"vcodec": encoder.vcodec, "pix_fmt": encoder.pix_fmt, "crf": encoder.crf,
+                      "g": encoder.g, "gop_seconds": args.gop_seconds, "preset": encoder.preset},
     "raw_command": proj0.raw_command is not None,
     "controller": e0.controller,
     "mid_solve_controller_changes": mid_solve_changed,
