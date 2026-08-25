@@ -33,7 +33,7 @@ from robobench.controllers import (
     TaskSpaceControllerCfg,
     TaskSpaceImpedanceController,
 )
-from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg, info, tunable
+from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation
@@ -47,51 +47,51 @@ class FrankaRobotCfg(BaseRobotCfg):
     `base_pos`/`base_rot` are placement dials; `fixed_base` + the asset are structural. The arm PD gains
     are used only in "joint" mode (OSC zeroes them for torque control); the gripper PD is always on."""
 
-    fixed_base: bool = info(True)  # weld the base to the world (a table-mounted arm)
-    base_pos: tuple[float, float, float] = tunable((0.0, 0.0, 0.0))  # base at the table level
-    base_rot: tuple[float, float, float, float] = tunable((1.0, 0.0, 0.0, 0.0))  # wxyz; faces +x
+    fixed_base: bool = True  # weld the base to the world (a table-mounted arm)
+    base_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # base at the table level
+    base_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # wxyz; faces +x
     # Arm position-PD gains — used in "joint" mode only (OSC sets the arm actuators to torque mode).
-    arm_stiffness: float = tunable(400.0)
-    arm_damping: float = tunable(80.0)
+    arm_stiffness: float = 400.0
+    arm_damping: float = 80.0
     # Arm actuator effort cap [N*m]; None -> keep the preset's real-Panda limits (87/12). Raise for
     # scripted joint-position tracking that must not crawl at the real limits (kinematic-demo ports).
-    arm_effort_limit: float | None = tunable(None)
+    arm_effort_limit: float | None = None
     # Body-level gravity compensation fraction (Newton/MuJoCo backend only; 1.0 = weightless arm).
     # The preset's PhysX `disable_gravity` flag is IGNORED by the Newton pipeline — MuJoCo needs
     # `gravcomp`, else a kp=400 servo sags ~tau_g/kp (~0.1 rad on the shoulder when extended).
     # None -> leave the preset untouched (required under the PhysX/2.x venv).
-    gravity_compensation: float | None = tunable(None)
+    gravity_compensation: float | None = None
     # PhysX-side gravity compensation: disable gravity on the robot's links (the real Panda
     # gravity-compensates internally; the task-space torque law here has NO gravity term, so
     # with gravity on, extended poses spend the task gains fighting the arm's own weight —
     # MEASURED: commanded reorientations at low work poses stall 56-76 deg from target while
     # the same rotations track to 1-7 deg from the light tuck pose).
-    disable_arm_gravity: bool = tunable(False)
+    disable_arm_gravity: bool = False
     # Gripper PD gains (always position-controlled; holds / grasps the part).
-    gripper_stiffness: float = tunable(2000.0)
-    gripper_damping: float = tunable(100.0)
+    gripper_stiffness: float = 2000.0
+    gripper_damping: float = 100.0
     # Gripper actuator effort cap [N]; None -> keep the preset's default. Raise for pinch grips
     # that must not saturate (e.g. 500.0 for cloth, the isaaclab soft-lift tasks' value).
-    gripper_effort_limit: float | None = tunable(None)
+    gripper_effort_limit: float | None = None
     # Home posture of the 7 arm joints: the arm resets here. A forward-facing ready pose; retune per
     # task (e.g. to start the gripper near the work).
-    default_dof_pos: tuple[float, ...] = tunable((0.0015, -0.197, -0.0014, -1.976, -0.00028, 1.78, 0.786))
+    default_dof_pos: tuple[float, ...] = (0.0015, -0.197, -0.0014, -1.976, -0.00028, 1.78, 0.786)
     # Posture the task-space nullspace pulls toward; () -> use default_dof_pos. A non-singular elbow
     # config that actively resolves the arm's redundancy (keeps the wrist from drifting); kept separate
     # from the home pose on purpose.
-    nullspace_dof_pos: tuple[float, ...] = tunable((-1.3003, -0.4015, 1.1791, -2.1493, 0.4001, 1.9425, 0.4754))
+    nullspace_dof_pos: tuple[float, ...] = (-1.3003, -0.4015, 1.1791, -2.1493, 0.4001, 1.9425, 0.4754)
     # Nullspace posture stiffness; None -> the controller's default (10.0). MEASURED: at 10.0
     # the posture spring overpowers the task torque for world-z reorientations (stalls 76 deg
     # from target with every joint far from its limits) — soften it when a task needs large
     # wrist reorientation. Damping follows critically (2*sqrt(kp)).
-    kp_null: float | None = tunable(None)
+    kp_null: float | None = None
     # Task-space stiffness override [xyz, rpy]; None -> the controller's default
     # (100,100,100, 30,30,30). MEASURED: at rot-gain 30 a wrist welded to a ~2.5 kg
     # payload rolls ~16 deg toward a commanded 100 deg reorientation and equilibrates
     # (free-space: 1 deg residual) — the rotation channel needs more authority under
     # payload coupling.
-    task_prop_gains: tuple[float, ...] | None = tunable(None)
-    franka_usd: str = info("")  # "" -> the vendored robots/assets/franka/panda_instanceable.usd
+    task_prop_gains: tuple[float, ...] | None = None
+    franka_usd: str = ""  # "" -> the vendored robots/assets/franka/panda_instanceable.usd
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parent / "assets" / "franka"

@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -49,79 +49,79 @@ if TYPE_CHECKING:
 class SyringeDosingSceneCfg(BaseCfg):
     """Config for `SyringeDosingScene`."""
 
-    # --- tunable: difficulty dials -----------------------------------------------------------
-    seat_tol: float = tunable(0.006)  # max lateral tip offset that still counts as seated (m)
-    seat_band: float = tunable(0.012)  # tip must hover within this above the well rim (m)
-    dose_band: tuple = tunable((0.23, 0.43))  # per-tube acceptance band: 33% +/- 10%
+    # --- difficulty dials -----------------------------------------------------------
+    seat_tol: float = 0.006  # max lateral tip offset that still counts as seated (m)
+    seat_band: float = 0.012  # tip must hover within this above the well rim (m)
+    dose_band: tuple = (0.23, 0.43)  # per-tube acceptance band: 33% +/- 10%
     # of capacity (relaxed from +/-5% — the tight band priced in kinematic-oracle
     # metering precision, not an arm pressing the plunger through o-ring friction)
-    draw_min: float = tunable(0.95)  # min drawn fraction for the draw stage
+    draw_min: float = 0.95  # min drawn fraction for the draw stage
     # O-ring feel: the prismatic joint's Coulomb friction + viscous damping (the
     # plunger is a REAL body now — an arm hooks the thumb plate and pulls). The
     # friction holds the 0.06 kg plunger wherever it lands, including vertical.
-    plunger_friction: float = tunable(1.5)  # joint Coulomb friction (N)
-    plunger_damping: float = tunable(4.0)  # joint viscous damping (N*s/m)
-    reset_jitter: float = tunable(0.015)  # +/- xy jitter of the well plate per episode (m)
-    debug_forensics: bool = tunable(False)  # per-substep draw-loss ledgers (smoke diagnosis only)
+    plunger_friction: float = 1.5  # joint Coulomb friction (N)
+    plunger_damping: float = 4.0  # joint viscous damping (N*s/m)
+    reset_jitter: float = 0.015  # +/- xy jitter of the well plate per episode (m)
+    debug_forensics: bool = False  # per-substep draw-loss ledgers (smoke diagnosis only)
 
-    # --- tunable: placement -------------------------------------------------------------------
-    surface_z: float = tunable(0.0)  # 0 + medical_cart -> auto-set to the shelf top
+    # --- placement -------------------------------------------------------------------
+    surface_z: float = 0.0  # 0 + medical_cart -> auto-set to the shelf top
     # Cart-shelf layout: everything in the shelf's free WEST half (the east half is
     # occupied by the fused cloth/instrument decor, the two vials sit at
     # (-0.126/-0.066, -0.046) and have colliders). No stand: the syringe LIES FLAT
     # on the shelf at home_pos (tip west, thumb east) and is parked by laying it
     # back down there.
-    home_pos: tuple = tunable((-0.06, -0.08))  # lying syringe centre on the surface.
+    home_pos: tuple = (-0.06, -0.08)  # lying syringe centre on the surface.
     # The syringe lies ALONG X (tip west, plate east): a y-lying syringe forces
     # its plate to y>=+0.09 where every wrist column hits the north guard rail —
     # unreachable by both arms in all orientation families (jobs 19-27,
     # 2026-08-11). Lying along x keeps the whole syringe south of the rail wall.
-    rack_pos: tuple = tunable((0.0, 0.14))  # tube-rack centre (north strip, east
+    rack_pos: tuple = (0.0, 0.14)  # tube-rack centre (north strip, east
     # of the home column; the 1.02 m glass tubes must sit outside both arms'
     # LOW-reach sweeps — park carries dogleg south of them)
-    res_pos: tuple = tunable((0.14, -0.05))  # reservoir beaker centre: EAST of
+    res_pos: tuple = (0.14, -0.05)  # reservoir beaker centre: EAST of
     # the home footprint (17 mm clear of the lying plate end — at x=0.02 the
     # beaker overlapped the boot pose) at the PROVEN south latitude (y=+0.03
     # sat in the rack shadow that kills the two-hand seat, job_0038/pod-8;
     # x=-0.16 jammed the left hand past its own base, job_0034). Warm-pod
     # validated: boot rest clean, grasp 8.0 mm, seat corridor 2.8 mm.
 
-    # --- info: workbench ------------------------------------------------------------------------
-    workbench: str = info("medical_cart")  # "medical_cart" (vendored cart) | "bench" (slab)
-    cart_shelf_z: float = info(0.7492)  # cart top-shelf surface (vendor measurement)
-    bench_size: tuple = info((1.1, 0.9))
-    # --- info: arm-side table (along the cart's NORTH long side, below the shelf) --------------
+    # --- workbench ------------------------------------------------------------------------
+    workbench: str = "medical_cart"  # "medical_cart" (vendored cart) | "bench" (slab)
+    cart_shelf_z: float = 0.7492  # cart top-shelf surface (vendor measurement)
+    bench_size: tuple = (1.1, 0.9)
+    # --- arm-side table (along the cart's NORTH long side, below the shelf) --------------
     # The cart's shelf has no room for robot bases: the packing table (the chair /
     # tool-packing general-purpose bench) runs along the cart's long side, and the
     # bimanual arms mount spread out on its cart-side edge, working the shelf from
     # above the north guard rail.
-    side_table: bool = info(True)
-    table_pos: tuple = info((0.0, 0.65))  # table centre (long axis along x)
-    table_top_z: float = info(0.71)  # tabletop height (~4 cm below the shelf)
-    table_height: float = info(0.994)  # packing-table intrinsic top height (scale 0.01)
+    side_table: bool = True
+    table_pos: tuple = (0.0, 0.65)  # table centre (long axis along x)
+    table_top_z: float = 0.71  # tabletop height (~4 cm below the shelf)
+    table_height: float = 0.994  # packing-table intrinsic top height (scale 0.01)
 
-    # --- info: tube rack (vendor measurements, rack frame) --------------------------------------
-    tube_mouths: tuple = info(((-0.094, -0.036), (0.0, -0.036), (0.094, -0.036)))
-    tube_rim_dz: float = info(0.2724)  # mouth rim above the rack origin
-    tube_inner_r: float = info(0.017)
-    # --- info: syringe (A23D scan, vendor measurements — barrel + plunger USDs) ----------------
-    barrel_r: float = info(0.030)
-    barrel_l: float = info(0.2222)
-    nozzle_l: float = info(0.0288)  # luer tip below the barrel tube bottom (no needle:
+    # --- tube rack (vendor measurements, rack frame) --------------------------------------
+    tube_mouths: tuple = ((-0.094, -0.036), (0.0, -0.036), (0.094, -0.036))
+    tube_rim_dz: float = 0.2724  # mouth rim above the rack origin
+    tube_inner_r: float = 0.017
+    # --- syringe (A23D scan, vendor measurements — barrel + plunger USDs) ----------------
+    barrel_r: float = 0.030
+    barrel_l: float = 0.2222
+    nozzle_l: float = 0.0288  # luer tip below the barrel tube bottom (no needle:
     # the scan's hypodermic was a loose prop staged beside the syringe, dropped)
-    stroke: float = info(0.12)  # plunger travel = syringe capacity (geometric max 0.18)
-    plunger_l: float = info(0.1813)
-    plunger_seat: float = info(-0.0084)  # plunger-centre offset along the barrel axis
+    stroke: float = 0.12  # plunger travel = syringe capacity (geometric max 0.18)
+    plunger_l: float = 0.1813
+    plunger_seat: float = -0.0084  # plunger-centre offset along the barrel axis
     # at travel 0 (fully pushed): the rod is buried, its centre just below the barrel's
-    plunger_mass: float = info(0.06)  # single source for assets() AND gravity comp
-    res_r: float = info(0.035)  # reservoir beaker radius
-    res_h: float = info(0.05)
-    well_r: float = info(0.018)  # seat-target radius at each tube mouth
+    plunger_mass: float = 0.06  # single source for assets() AND gravity comp
+    res_r: float = 0.035  # reservoir beaker radius
+    res_h: float = 0.05
+    well_r: float = 0.018  # seat-target radius at each tube mouth
 
     # Derived: lying barrel-centre height over the surface (spawned slightly high on
     # the flange radius; it settles onto shelf contact in the first steps).
     barrel_home_h: float = field(default=None, init=False)
-    asset_dir: str = info("")
+    asset_dir: str = ""
 
     def __post_init__(self) -> None:
         from pathlib import Path

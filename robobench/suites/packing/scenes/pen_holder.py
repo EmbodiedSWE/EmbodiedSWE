@@ -61,7 +61,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -76,42 +76,42 @@ class PenHolderSceneCfg(BaseCfg):
     `holder_tilt_max_deg`) are ported verbatim and stay SOFT by design — this is a floor
     task; harden only for curriculum variants."""
 
-    # --- tunable: rubric thresholds (source values, verbatim) --------------------------------
-    xy_tol: float = tunable(0.035)  # pen bottom within this of the holder axis (source 3.5 cm).
+    # --- rubric thresholds (source values, verbatim) --------------------------------
+    xy_tol: float = 0.035  # pen bottom within this of the holder axis (source 3.5 cm).
     # Honest by construction: max physical in-cup offset = corner reach - pen r
     # = 38.2 - 5.8 mm = 3.2 cm < xy_tol, so any pencil physically inside counts; a pen
     # leaning OUTSIDE the shell is >= 4 cm away.
-    depth_min: float = tunable(0.035)  # pen bottom below the rim by more than this (source 3.5 cm)
-    holder_tilt_max_deg: float = tunable(45.0)  # holder axis within this of world-up (source 45)
-    pen_align_max_deg: float = tunable(45.0)  # pen axis within this of the HOLDER axis, tip-up
+    depth_min: float = 0.035  # pen bottom below the rim by more than this (source 3.5 cm)
+    holder_tilt_max_deg: float = 45.0  # holder axis within this of world-up (source 45)
+    pen_align_max_deg: float = 45.0  # pen axis within this of the HOLDER axis, tip-up
     # (port interpretation of the source's tip-below-root clause, in our tip-up convention;
     # geometry already bounds an in-cup pen's lean — this clause rejects tip-DOWN insertions).
-    settle_speed: float = tunable(0.05)  # max |v| (pen AND holder) when judging (m/s)
-    placed_tilt_deg: float = tunable(10.0)  # "standing upright" gate for the 100-score set-down
-    placed_z_tol: float = tunable(0.010)  # holder bottom within this of the surface (m)
+    settle_speed: float = 0.05  # max |v| (pen AND holder) when judging (m/s)
+    placed_tilt_deg: float = 10.0  # "standing upright" gate for the 100-score set-down
+    placed_z_tol: float = 0.010  # holder bottom within this of the surface (m)
 
-    # --- tunable: randomization (the task-family knobs) --------------------------------------
-    reset_pos_jitter: float = tunable(0.04)  # uniform +/- xy jitter (holder AND pens) at reset
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- yaw per body at reset (pens lie flat)
-    subset_sample: bool = tunable(True)  # per-episode pen-count sampling (demo sets False)
-    min_present: int = tunable(1)  # per-family lower bound of sampled pen count
+    # --- randomization (the task-family knobs) --------------------------------------
+    reset_pos_jitter: float = 0.04  # uniform +/- xy jitter (holder AND pens) at reset
+    reset_yaw_deg: float = 180.0  # uniform +/- yaw per body at reset (pens lie flat)
+    subset_sample: bool = True  # per-episode pen-count sampling (demo sets False)
+    min_present: int = 1  # per-family lower bound of sampled pen count
 
-    # --- tunable: placement (table-relative xy; the table itself sits at TABLES pos) ---------
-    surface_z: float | None = tunable(None)  # work-surface height (m); None -> the preset's
-    holder_pos: tuple = tunable((0.22, 0.0))  # holder centre on the surface (source: right half)
-    pens_center: tuple = tunable((-0.10, 0.0))  # scatter-arc centre (source: pens on left half)
-    spawn_radii: tuple = tunable((0.18,))  # scatter arc radii (robot cfgs: front arc)
-    spawn_arc: tuple = tunable((90.0, 270.0))  # scatter arc (deg) around pens_center
+    # --- placement (table-relative xy; the table itself sits at TABLES pos) ---------
+    surface_z: float | None = None  # work-surface height (m); None -> the preset's
+    holder_pos: tuple = (0.22, 0.0)  # holder centre on the surface (source: right half)
+    pens_center: tuple = (-0.10, 0.0)  # scatter-arc centre (source: pens on left half)
+    spawn_radii: tuple = (0.18,)  # scatter arc radii (robot cfgs: front arc)
+    spawn_arc: tuple = (90.0, 270.0)  # scatter arc (deg) around pens_center
 
-    # --- info: work surface (the ikea/motherboard/tool_packing vendored-table pattern) ---------
+    # --- work surface (the ikea/motherboard/tool_packing vendored-table pattern) ---------
     # Default = the general-purpose packing table (the ikea/microwave bench; the lab
     # table is an industrial GPU-assembly bench and stays available as a preset).
-    table: str = info("packing")  # which work surface: "lab_table" | "packing"
-    table_depth_scale: float = info(1.5)  # y-stretch: the packing top is 2.47 x 0.76 m,
+    table: str = "packing"  # which work surface: "lab_table" | "packing"
+    table_depth_scale: float = 1.5  # y-stretch: the packing top is 2.47 x 0.76 m,
     # and scatter + holder + an on-table robot base need ~0.9 m of depth (the microwave
     # task's deepening, adopted with it)
-    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    workbench_pos: tuple[float, float] | None = None  # xy the table sits at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     # Same presets as the sibling scenes, with ONE local default position. The lab
     # table's collision behaves as if rotated 180 deg from its authored orient (MEASURED
     # by a pen ladder: the supported region is x in [pos-1.03, pos+0.25],
@@ -131,38 +131,38 @@ class PenHolderSceneCfg(BaseCfg):
                     "kinematic": True},
     }
 
-    # --- info: structure (holder/pencil constants MEASURED at bake time by ---------------------
+    # --- structure (holder/pencil constants MEASURED at bake time by ---------------------
     # scripts/vendor_pen_holder_assets.py — keep in sync with its printed "scene constants")
     # The vendored hexagonal cup: wall-collider inner inradius (flats) and the corner
     # reach (= inradius / cos 30). Funnel = inner_r - pen_r ~= 27 mm; honesty bound
     # = corner reach - pen_r = 32 mm < the 35 mm xy_tol, so the shell still enforces
     # the tolerance by construction. Four pencils fit on the floor.
-    holder_inner_r: float = info(0.0331)  # hexagon flat inradius (wall-collider inner face)
-    holder_corner_r: float = info(0.0382)  # hexagon corner reach from the axis
-    holder_outer_r: float = info(0.0400)  # outer corner radius (side-lying rest height)
+    holder_inner_r: float = 0.0331  # hexagon flat inradius (wall-collider inner face)
+    holder_corner_r: float = 0.0382  # hexagon corner reach from the axis
+    holder_outer_r: float = 0.0400  # outer corner radius (side-lying rest height)
     # Height/lean: a pencil with its bottom at a wall and shaft on the opposite rim leans
     # atan((33+38)/116) ~= 32 deg — inside the 45 deg tip-up cone with margin.
-    holder_h: float = info(0.120)
-    floor_local_z: float = info(-0.0559)  # cup floor top, holder body frame (4.1 mm plate)
-    holder_mass: float = info(0.20)
+    holder_h: float = 0.120
+    floor_local_z: float = -0.0559  # cup floor top, holder body frame (4.1 mm plate)
+    holder_mass: float = 0.20
     # Contact offset trades phantom contact against fast-contact capture: the ~25 mm funnel
     # tolerates a generous 5 mm speculative margin, and the margin is what catches a
     # 13 mm/step end-on pen impact before the thin walls could be tunneled.
-    contact_offset: float = info(0.005)
-    tip_h: float = info(0.0)  # the graphite tip IS the asset's +z end (no add-on cone)
-    pen_mass: float = info(0.012)  # a 150 mm mechanical pencil with its mechanism
+    contact_offset: float = 0.005
+    tip_h: float = 0.0  # the graphite tip IS the asset's +z end (no add-on cone)
+    pen_mass: float = 0.012  # a 150 mm mechanical pencil with its mechanism
     # (family name, count, barrel radius, full length) — one family of four identical
     # vendored mechanical pencils (r/l measured at bake time).
-    families: tuple = info((
+    families: tuple = (
         ("pencil", 4, 0.0058, 0.1500),
-    ))
+    )
     # Off-camera ground depot for absent pens; grid extent 1.0 + 2*0.14 + pen 0.21 < half of
     # env_spacing 3 (the stacking-toy depot analysis).
-    parking_pos: tuple = info((1.0, 1.0))
+    parking_pos: tuple = (1.0, 1.0)
     # Asset USDs; empty -> the vendored assets committed under `assets/pen_holder/`.
-    asset_dir: str = info("")
-    holder_usd: str = info("")
-    pencil_usd: str = info("")
+    asset_dir: str = ""
+    holder_usd: str = ""
+    pencil_usd: str = ""
 
     # Derived (filled in __post_init__).
     manifest: tuple = field(default=None, init=False)  # ((name, fam_idx, pen_r, barrel_l), ...)

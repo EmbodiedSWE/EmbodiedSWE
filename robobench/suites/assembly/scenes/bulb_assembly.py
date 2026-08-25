@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
@@ -26,59 +26,59 @@ if TYPE_CHECKING:
 
 @dataclass
 class BulbAssemblySceneCfg(BaseCfg):
-    """Config for `BulbAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial or an
-    `info()` structural constant (see `robobench.core.BaseCfg`); `cfg.tunables()` lists the dials.
+    """Config for `BulbAssemblyScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed.
     Nothing is locked — a curriculum/debug variant is just a `.copy()` with a few changed.
     """
 
-    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
+    # --- the curriculum / difficulty dials -----------------------------------------------
     # A bulb is "seated" when, in a socket's frame, its origin is at/below `seat_z` above the socket origin,
     # within `align_xy` of the axis, and tilted <= `align_axis_deg` off it (any bulb may seat in any socket).
     # seat_z calibrated to the asset: seated origin ~22 mm up vs ~35 mm+ resting on the bore mouth.
-    seat_z: float = tunable(0.027)  # max bulb-origin height above the socket origin (m) to count as seated
-    align_xy: float = tunable(0.015)  # max lateral distance (m) from the nearest socket axis
-    align_axis_deg: float = tunable(12.0)  # max tilt of the bulb's screw axis off the socket axis (deg)
+    seat_z: float = 0.027  # max bulb-origin height above the socket origin (m) to count as seated
+    align_xy: float = 0.015  # max lateral distance (m) from the nearest socket axis
+    align_axis_deg: float = 12.0  # max tilt of the bulb's screw axis off the socket axis (deg)
     # The bulb LIGHTS UP as it screws home: the centre-contact spring compresses progressively, so
     # contact resistance falls and current rises with depth — the light ramps from dark at first
     # contact (light_start_z) to fully bright at the seated depth (light_full_z = seat_z), following
     # progress**light_gamma (higher gamma = fainter early turns, steeper finish), the filament colour
     # warming yellow -> white along the way (cool filament at low current). Driven per-step by the
     # glass OmniPBR emissive inputs (verified live-settable).
-    light_start_z: float = tunable(0.032)  # depth (m, socket frame) where the glow begins (~free-rest height)
-    light_full_z: float = tunable(0.027)  # depth at/below which it is fully bright (default = seat_z)
-    light_gamma: float = tunable(3.0)  # brightness = lit_intensity * progress**gamma
-    lit_intensity: float = tunable(500000.0)  # emissive_intensity fully lit (0 disables the mechanic)
-    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter per bulb at reset (m)
+    light_start_z: float = 0.032  # depth (m, socket frame) where the glow begins (~free-rest height)
+    light_full_z: float = 0.027  # depth at/below which it is fully bright (default = seat_z)
+    light_gamma: float = 3.0  # brightness = lit_intensity * progress**gamma
+    lit_intensity: float = 500000.0  # emissive_intensity fully lit (0 disables the mechanic)
+    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter per bulb at reset (m)
     # Part friction (static = dynamic), split per shape on the bulb: the metal cap/thread stays slick so
     # it threads steadily, while the GLASS is grippy — torque on the round glass is pad friction only, and
     # below ~0.3 no parallel-jaw gripper can self-lock on it (verified robot-unsolvable at glass mu=0.01).
-    bulb_friction: float = tunable(0.01)  # the cap/thread shape
-    bulb_glass_friction: float = tunable(0.3)  # the glass envelope shape
-    socket_friction: float = tunable(0.75)
+    bulb_friction: float = 0.01  # the cap/thread shape
+    bulb_glass_friction: float = 0.3  # the glass envelope shape
+    socket_friction: float = 0.75
 
-    # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
-    num_pairs: int = info(1)  # number of socket+bulb pairs
+    # --- structure, reset layout, masses, asset paths (fixed) -------------------------------
+    num_pairs: int = 1  # number of socket+bulb pairs
     # Socket xy slots, relative to the table centre. One socket per slot.
-    socket_slots: tuple[tuple[float, float], ...] = info(((0.0, 0.0),))
-    socket_opening_z: float = info(0.0385)  # bore-mouth height above the socket origin (m), from build_socket
-    bulb_mass: float = info(0.05)  # informational; the real value (+ inertia) is baked into bulb.usd
-    light_intensity: float = info(2500.0)  # the scene's dome light
+    socket_slots: tuple[tuple[float, float], ...] = ((0.0, 0.0),)
+    socket_opening_z: float = 0.0385  # bore-mouth height above the socket origin (m), from build_socket
+    bulb_mass: float = 0.05  # informational; the real value (+ inertia) is baked into bulb.usd
+    light_intensity: float = 2500.0  # the scene's dome light
     # Bulbs' start pose. Default: each bulb lying on its side (90° about x -> screw axis horizontal) in a
     # row on the +x side of the sockets, ready to be picked up. A curriculum/robot may set `bulb_init_xy`.
-    bulb_init_xy: tuple[tuple[float, float], ...] = info(())  # per-bulb start xy (table-rel.); () -> the row below
-    bulb_row_x0: float = info(0.13)  # x of bulb0 (the loose bulbs lie to the +x side of the sockets)
-    bulb_row_y: float = info(0.0)  # y of the row
-    bulb_spacing: float = info(0.12)  # x gap between adjacent bulbs (bulb k at x0 + k*spacing)
-    bulb_init_z: float = info(0.024)  # bulb-origin DROP height above the surface; the lying bulb then settles
+    bulb_init_xy: tuple[tuple[float, float], ...] = ()  # per-bulb start xy (table-rel.); () -> the row below
+    bulb_row_x0: float = 0.13  # x of bulb0 (the loose bulbs lie to the +x side of the sockets)
+    bulb_row_y: float = 0.0  # y of the row
+    bulb_spacing: float = 0.12  # x gap between adjacent bulbs (bulb k at x0 + k*spacing)
+    bulb_init_z: float = 0.024  # bulb-origin DROP height above the surface; the lying bulb then settles
     # tilted ~25 deg (its Ø20 cap end droops to the table, origin ends ~5 mm up) — read the live pose, don't
     # assume a horizontal axis at this height.
-    bulb_init_quat: tuple[float, float, float, float] = info((2 ** -0.5, 2 ** -0.5, 0.0, 0.0))  # wxyz; 90° about x -> lying
+    bulb_init_quat: tuple[float, float, float, float] = (2 ** -0.5, 2 ** -0.5, 0.0, 0.0)  # wxyz; 90° about x -> lying
     # Selectable work surface. `table` picks a preset in `TABLES`; the three fields below default to it
     # when left None/empty, or override it (e.g. raise `surface_z` so a standing robot can reach).
-    table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
-    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = info(None)  # xy the table (and sockets) sit at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    table: str = "lab_table"  # which work surface: "lab_table" | "packing"
+    surface_z: float | None = None  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = None  # xy the table (and sockets) sit at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     # Work-surface presets (vendored under assets/props/) — same set as nut_thread.
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
@@ -89,9 +89,9 @@ class BulbAssemblySceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
     # Bulb + socket USDs. Empty -> the packaged standalone assets under assets/bulb/.
-    asset_dir: str = info("")
-    bulb_usd: str = info("")
-    socket_usd: str = info("")
+    asset_dir: str = ""
+    bulb_usd: str = ""
+    socket_usd: str = ""
 
     def __post_init__(self) -> None:
         if not self.bulb_init_xy:  # default: bulbs lying in a row to the +x side of the sockets
