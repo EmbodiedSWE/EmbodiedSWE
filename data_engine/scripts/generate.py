@@ -24,6 +24,8 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+DATA_ENGINE_ROOT = Path(__file__).resolve().parents[1]
+
 parser = argparse.ArgumentParser(description="generate one batch of graded episodes")
 parser.add_argument("gen_root", help="the campaign: …/<run>/data_gen/<gen_name>")
 parser.add_argument("--scene", default="scene_0")
@@ -61,7 +63,8 @@ app = AppLauncher(args).app
 
 import torch  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(DATA_ENGINE_ROOT.parent))
+sys.path.insert(0, str(DATA_ENGINE_ROOT))
 from engine.generation import run_batch  # noqa: E402
 
 noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
@@ -78,7 +81,7 @@ if args.render:
     import shlex  # noqa: E402
     import subprocess  # noqa: E402
 
-    cmd = [sys.executable, str(Path(__file__).resolve().parent / "render.py"),
+    cmd = [sys.executable, str(DATA_ENGINE_ROOT / "scripts" / "render.py"),
            str(out.parent.parent), "--batches", out.name, "--headless",
            *shlex.split(args.render_args)]
     print(f"[generate] chaining render: {' '.join(cmd)}", flush=True)

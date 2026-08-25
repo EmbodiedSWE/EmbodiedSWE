@@ -43,8 +43,14 @@ and where to start.
   session's start point. One cell per distinct idea; run it as often as you
   have ideas.
 - `generate --headless /workspace --scene <s> [--strategy <t>] [--phase <p>]
-  --num_envs 4 --seed 0` — test-launch a cell: batched rollouts, every episode
+  --num_envs <N> --seed 0` — test-launch a cell: batched rollouts, every episode
   graded, yield written to the batch meta under `data/`.
+
+Choose test width deliberately. Use parallel environments when the solve
+supports them and the experiment benefits from multiple independent verdicts;
+sequential exploration is also valid while developing a new idea. If
+`DGEN_NUM_ENVS` is set, it is the downstream scripted-stage width and is the
+right final compatibility test.
 
 ## How you work
 
@@ -64,12 +70,10 @@ and where to start.
 
 ## Practical notes
 
-Running and verifying each new diversification costs real time: a test batch
-boots Isaac (minutes) and rolls out full episodes (tens of minutes). So don't
-serialize ideation behind verification — propose and author MANY cells up
-front, and test while you keep authoring. It is OK if the session ends before
-some cells got a test: leave them in place, clearly marked UNTESTED in their
-summary — testing them is a cheap job for whoever comes next.
+Generation boots Isaac and rolls out full episodes. Author independent ideas
+before waiting on one test, and keep working while batches run. If the session
+ends before a cell is tested, mark it `UNTESTED` in `SUMMARY.md`; never imply
+that an untested cell is proven.
 
 ## Leave behind
 

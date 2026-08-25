@@ -192,11 +192,32 @@ def _controller_info(robot) -> dict:
                 d[name.lstrip("_")] = v.tolist()
         return d
 
-    leaves = getattr(robot.controller, "controllers", None) or [robot.controller]
-    data = robot.articulation.data
+    children = getattr(robot, "robots", None)
+    if isinstance(children, dict):
+        return {
+            "class": type(robot).__name__,
+            "action_slices": {
+                name: [s.start, s.stop]
+                for name, s in robot.action_slices.items()
+            },
+            "children": {
+                name: _controller_info(child) for name, child in children.items()
+            },
+        }
+
+    controller = getattr(robot, "controller", None)
+    articulation = getattr(robot, "articulation", None)
+    if controller is None or articulation is None:
+        raise RuntimeError(
+            f"cannot capture controller metadata for {type(robot).__name__}: "
+            "expected either a robots mapping or a bound controller + articulation"
+        )
+    leaves = getattr(controller, "controllers", None) or [controller]
+    data = articulation.data
     return {
+        "class": type(robot).__name__,
         "leaves": [leaf(c) for c in leaves],
-        "joint_names": list(robot.articulation.joint_names),
+        "joint_names": list(articulation.joint_names),
         # per-joint drive gains (env 0 — identical across envs): captures e.g. the
         # gripper stiffness the solve wrote to sim, which sets what a position
         # target means in force terms
@@ -225,12 +246,17 @@ class Recorder:
     """Outermost wrapper: records (state_t, commanded action_t) before delegating.
     Also WATCHES the control law: the stamped block is one post-solve snapshot, so a
     solve that re-gains mid-episode (phase-wise kp/kd) would otherwise be silently
-    misdescribed — sampled every CTRL_CHECK steps, each change lands in ctrl_changes."""
+    misdescribed — sampled every CTRL_CHECK steps, each change lands in ctrl_changes.
+
+    Env-batch width is asserted at the FIRST recorded step: a scalar solve in a wide
+    world must die in seconds, not after simulating the whole episode (a 512-env
+    pen_holder probe once ran 3123 steps before the save-time check caught it).
+    The save-time checks in run_batch remain as the backstop for later corruption."""
 
     CTRL_CHECK = 25  # latches between law checks (phases last hundreds; cost ~0.5 ms/check)
 
-    def __init__(self, env, raw_env) -> None:
-        self._env, self._raw = env, raw_env
+    def __init__(self, env, raw_env, num_envs: int) -> None:
+        self._env, self._raw, self._num_envs = env, raw_env, num_envs
         self.states: list[dict] = []
         self.actions: list = []
         self.joint_targets: list = []  # COMMANDED joint targets per tick (see step)
@@ -253,7 +279,23 @@ class Recorder:
     def step(self, action, render: bool = False):
         if len(self.actions) % self.CTRL_CHECK == 0:
             self.watch_controller()
-        self.states.append(_flat(self._raw.get_states()))
+        state = _flat(self._raw.get_states())
+        if not self.states:
+            for k, v in state.items():
+                if v.ndim < 1 or v.shape[0] != self._num_envs:
+                    raise RuntimeError(
+                        f"state leaf {k!r} is not env-batched at the first step: "
+                        f"shape={tuple(v.shape)}, expected axis 0 == num_envs "
+                        f"({self._num_envs}). Fix the scene, robot, controller, or "
+                        "solve that collapsed the environment dimension."
+                    )
+            if action.ndim < 1 or action.shape[0] != self._num_envs:
+                raise RuntimeError(
+                    "commanded action is not env-batched at the first step: "
+                    f"shape={tuple(action.shape)}, expected axis 0 == num_envs "
+                    f"({self._num_envs}). The solve must emit one action row per env."
+                )
+        self.states.append(state)
         self.actions.append(action.detach().cpu().clone())
         ret = self._env.step(action, render)
         # The COMMANDED joint targets that governed this step (written by the controller
@@ -309,6 +351,13 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     if slot_drawn:
         print(f"[batch {batch}] physical params per-env (slot 0 nominal): {slot_drawn}", flush=True)
     grader_cls = load_grader_cls(scene_dir)
+    # Delivered solutions are FOLDERS (init copies "solve.py plus its siblings"), and real
+    # solves import those siblings bare (`from helpers import ...`) — the eval harness ran
+    # them with the solution dir as sys.path[0]. Loading by file path skips that, so put the
+    # strategy dir (and the phase cell dir, whose port may have its own siblings) on sys.path.
+    for extra in ([strategy_dir / "phases" / phase] if phase else []) + [strategy_dir]:
+        if str(extra) not in sys.path:
+            sys.path.insert(0, str(extra))
     if phase is None:
         solve_mod = _load("datagen_solve", strategy_dir / "solve.py")
         solve = solve_mod.solve
@@ -385,7 +434,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         stack = NoisyActionEnv(env, dims=slice(*dims) if dims else slice(0, 0),
                                sigma=noise.get("sigma", 0.0), prob=noise.get("prob", 1.0),
                                duration=noise.get("duration", 0.0), seed=seed + rnd)
-        rec = Recorder(stack, env)
+        rec = Recorder(stack, env, num_envs)
         print(f"[batch {batch}] rollout {rnd + 1}/{rollouts}"
               + (f" ({reset_name})" if reset_name else "")
               + f": solve on {num_envs} envs …", flush=True)
@@ -399,8 +448,27 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             print(f"[batch {batch}] WARNING: control law changed MID-SOLVE at steps "
                   f"{[c['step'] for c in rec.ctrl_changes]} — the stamped `controller` is the "
                   f"FINAL law; per-change diffs are in meta `controller_changes`", flush=True)
-        arrays = {k: np.stack([s[k].numpy() for s in rec.states]) for k in rec.states[0]}
+        # Every recorded state leaf must be env-batched (dim 1 = num_envs) for
+        # per-env save/replay. Never replicate a malformed leaf: that can turn
+        # one environment's controller or scene state into apparently valid but
+        # incorrect data for every row.
+        arrays = {}
+        for k in rec.states[0]:
+            v = np.stack([s[k].numpy() for s in rec.states])
+            if v.ndim < 2 or v.shape[1] != num_envs:
+                raise RuntimeError(
+                    f"recorded state leaf {k!r} is not env-batched: shape={v.shape}, "
+                    f"expected axis 1 == num_envs ({num_envs}). Fix the scene, robot, "
+                    "controller, or solve that collapsed the environment dimension."
+                )
+            arrays[k] = v
         arrays["action"] = np.stack([a.numpy() for a in rec.actions])
+        if arrays["action"].ndim < 2 or arrays["action"].shape[1] != num_envs:
+            raise RuntimeError(
+                "recorded action is not env-batched: "
+                f"shape={arrays['action'].shape}, expected axis 1 == "
+                f"num_envs ({num_envs}). The solve must emit one action row per env."
+            )
         if len(rec.joint_targets) == T:  # commanded-target channel (see Recorder.step)
             arrays["robot/joint_target"] = np.stack([t.numpy() for t in rec.joint_targets])
         for e in range(num_envs):
@@ -421,7 +489,10 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                 "sim_dt": env.dt, "decimation": env.robot.control_period,
                 "controller": ctrl_info,
                 "controller_changes": rec.ctrl_changes,
-                "noise": {k: v for k, v in noise.items() if v},
+                # sigma == 0 means no noise was applied: recording the default
+                # prob/duration then would fake a noise provenance
+                "noise": ({k: v for k, v in noise.items() if v}
+                          if noise.get("sigma") else {}),
                 "preset": gen["preset"],
                 "cell": cell,
                 "git_sha": sha,
@@ -436,7 +507,8 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     (out / "meta.json").write_text(json.dumps({
         "batch": batch, "cell": cell,
         "preset": gen["preset"], "num_envs": num_envs, "seed": seed,
-        "noise": {k: v for k, v in noise.items() if v},
+        "noise": ({k: v for k, v in noise.items() if v}
+                  if noise.get("sigma") else {}),
         # the scene's band specs + this batch's slice of the index space (provenance)
         "params": {"physical_params": bands, "env_draw": env_draw, "nominal": nominal,
                    "per_env": slot_drawn,

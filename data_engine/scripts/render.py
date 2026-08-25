@@ -101,7 +101,9 @@ if (args.eye is None) != (args.target is None):
 adhoc = ({"name": args.cam, "eye": tuple(args.eye), "target": tuple(args.target),
           "focal": args.focal} if args.eye else None)
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+DATA_ENGINE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(DATA_ENGINE_ROOT.parent))
+sys.path.insert(0, str(DATA_ENGINE_ROOT))
 from engine.replay import batch_scene, collect_episodes, group_by_scene  # noqa: E402
 
 gen_root = Path(args.gen_root)

@@ -14,7 +14,8 @@ scene against it and warns on drift; a nominal batch is the real check.
     │   │                           the copy loads beside the suite and EDITS TAKE EFFECT
     │   ├─ assets/<sub> -> …        symlinks, only the asset subdirs this scene references
     │   │                           (scenes resolve assets relative to their own file)
-    │   ├─ grader/grader.py         suite grader copy, re-pointed at the local scene class
+    │   ├─ grader/grader.py         suite grader copy re-pointed locally, or a campaign-local
+    │   │                           success-only grader when the suite registers none
     │   └─ strategies/strategy_0/
     │       ├─ meta.json
     │       ├─ solve.py             the eval solution (whole solution folder) — never modified
@@ -39,6 +40,47 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 META_STUB = {"episodes": 0, "successes": 0, "success_rate": None, "batches": [], "refreshed": None}
+
+SUCCESS_GRADER = '''"""Campaign-local success-only grader.
+
+The source suite does not register a rubric grader for this scene.  The scene's
+own success() predicate is therefore the sole rubric item and authoritative
+episode verdict.  Registering a suite grader later makes future campaigns use
+that grader instead; this baked campaign remains reproducible.
+"""
+
+from robobench.core import BaseGrader
+
+import importlib.util as _ilu
+import sys as _sys
+from pathlib import Path as _Path
+
+if "datagen_local_scene" not in _sys.modules:
+    import robobench as _rb
+
+    _rb.discover()
+    _p = _Path(__file__).resolve().parent.parent / "scene" / "scene.py"
+    _spec = _ilu.spec_from_file_location("datagen_local_scene", _p)
+    _m = _ilu.module_from_spec(_spec)
+    _sys.modules["datagen_local_scene"] = _m
+    _spec.loader.exec_module(_m)
+
+{cls} = _sys.modules["datagen_local_scene"].{cls}
+
+
+class {cls}SuccessGrader(BaseGrader):
+    SCENE = {cls}
+    RUBRIC = (("succeeded", 1.0),)
+
+    def setup(self) -> None:
+        pass
+
+    def succeeded(self):
+        return self.scene.success().float()
+
+    def check_success(self):
+        return self.scene.success()
+'''
 
 
 # ---- resolution ----------------------------------------------------------------------------------
@@ -66,10 +108,14 @@ def resolve_suite(preset: str) -> dict:
     """
     suite, scene = preset.split(".")[0:2]
     scenes_dir = REPO_ROOT / "robobench" / "suites" / suite / "scenes"
-    scene_path = None
+    scene_path = scene_cls = None
     for p in sorted(scenes_dir.glob("*.py")):
-        if re.search(rf'@SCENES\.register\("{re.escape(scene)}"\)', p.read_text()):
-            scene_path = p
+        m = re.search(
+            rf'@SCENES\.register\("{re.escape(scene)}"\)\s*\nclass\s+(\w+)',
+            p.read_text(),
+        )
+        if m:
+            scene_path, scene_cls = p, m.group(1)
             break
     if scene_path is None:
         raise SystemExit(f"no suite scene registers '{scene}' under {scenes_dir}")
@@ -83,10 +129,16 @@ def resolve_suite(preset: str) -> dict:
             im = re.search(rf"from \.(\w+) import [\w, ]*\b{m.group(1)}\b", text)
             if im:
                 grader_path = grader_init.parent / f"{im.group(1)}.py"
-    if grader_path is None or not grader_path.is_file():
-        raise SystemExit(f"no grader registered for scene '{scene}' in {grader_init}")
+    if grader_path is not None and not grader_path.is_file():
+        grader_path = None
 
-    return {"suite": suite, "scene": scene, "scene_path": scene_path, "grader_path": grader_path}
+    return {
+        "suite": suite,
+        "scene": scene,
+        "scene_cls": scene_cls,
+        "scene_path": scene_path,
+        "grader_path": grader_path,
+    }
 
 
 # ---- bakes ---------------------------------------------------------------------------------------
@@ -162,16 +214,34 @@ def init(run_dir: str | Path, name: str | None = None, force: bool = False) -> P
 
     bake_scene(suite["scene_path"], scene0 / "scene" / "scene.py")
     # suite scenes resolve assets as `Path(__file__).parents[1] / "assets" / "<sub>"` — for
-    # the copy that is scene_0/assets/. Link only the subdirs this scene references (the
-    # same under-approximation as eval's extractor), each a relative symlink to the suite's.
-    subs = sorted(set(ASSET_REF_RE.findall((scene0 / "scene" / "scene.py").read_text())))
+    # the copy that is scene_0/assets/. Link EVERY suite asset subdir (they are symlinks —
+    # free): the previous referenced-only under-approximation missed scenes that name their
+    # assets through cfg indirection (syringe's medical_cart -> FileNotFoundError at build).
     suite_assets = suite["scene_path"].parents[1] / "assets"
-    for sub in subs:
-        if (suite_assets / sub).is_dir():
+    if suite_assets.is_dir():
+        for sub_dir in sorted(p for p in suite_assets.iterdir() if p.is_dir()):
             (scene0 / "assets").mkdir(exist_ok=True)
-            (scene0 / "assets" / sub).symlink_to(
-                os.path.relpath(suite_assets / sub, scene0 / "assets"), target_is_directory=True)
-    bake_grader(suite["grader_path"], scene0 / "grader" / "grader.py")
+            (scene0 / "assets" / sub_dir.name).symlink_to(
+                os.path.relpath(sub_dir, scene0 / "assets"), target_is_directory=True)
+    # Cross-suite asset borrowing (the chair-assembly convention): scenes reach sibling
+    # suites' assets as `Path(cfg.asset_dir).parents[1] / "<suite>/assets/..."`, which from
+    # the campaign copy resolves to `<gen>/scenes/<suite>/...` — so link every sibling suite
+    # there. Cell dirs are `scene_N`, so the names cannot collide.
+    for sib in sorted(p for p in (REPO_ROOT / "robobench" / "suites").iterdir() if p.is_dir()):
+        link = gen / "scenes" / sib.name
+        if not link.exists():
+            link.symlink_to(os.path.relpath(sib, gen / "scenes"), target_is_directory=True)
+    grader_dst = scene0 / "grader" / "grader.py"
+    if suite["grader_path"] is not None:
+        bake_grader(suite["grader_path"], grader_dst)
+        grader_source = os.path.relpath(suite["grader_path"], REPO_ROOT)
+    else:
+        grader_dst.write_text(SUCCESS_GRADER.format(cls=suite["scene_cls"]))
+        grader_source = "campaign-local scene.success()"
+        print(
+            f"WARNING: no suite grader registered for '{suite['scene']}'; "
+            "baked a campaign-local success-only grader"
+        )
 
     # the delivered solution folder becomes strategy_0 — solve.py plus its siblings
     for p in run["solution"].iterdir():
@@ -190,7 +260,7 @@ def init(run_dir: str | Path, name: str | None = None, force: bool = False) -> P
         f"source_run: ../..            # the eval run this campaign multiplies",
         f"solution: workspace/solution # what strategy_0 was ported from",
         f"scene_source: {os.path.relpath(suite['scene_path'], REPO_ROOT)}   # live repo: one tree with grader + core",
-        f"grader_source: {os.path.relpath(suite['grader_path'], REPO_ROOT)}",
+        f"grader_source: {grader_source}",
         f"created: {datetime.now(timezone.utc).isoformat(timespec='seconds')}",
         f"git_sha: {sha}",
     ]) + "\n"

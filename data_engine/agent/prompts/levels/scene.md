@@ -5,7 +5,7 @@ it into many verified episodes. At the scene level you multiply the **world**:
 each cell you make is one new version of the world the task happens in — with
 its judge kept truthful — and the same delivered solve is run in it, batch
 after batch, every episode graded. Different worlds are what make the
-dataset's episodes genuinely different: different clutter, different tables,
+dataset's episodes observably different: different clutter, different tables,
 different starting arrangements.
 
 One rule above all: **the delivered solve must still succeed in your world.**
@@ -13,16 +13,13 @@ A world nobody can solve produces no data. When in doubt, change less.
 
 ## Gentle modifications only
 
-Make simple, believable edits — the kind a real workshop would show from one
-day to the next:
+Make simple, believable edits that preserve the task's contact-critical
+mechanics:
 
-- **Add unrelated objects** (an apple beside the bulb, a mug, a screwdriver
-  near the work area). They must not interfere with the task: keep them out
-  of the space the parts and the hand move through, resting stably on the
-  surface — not floating, not intersecting anything.
-- **Add more of the target objects** (a second bulb and socket, extra
-  screws), when the task naturally extends to them. This changes what "done"
-  means, so the judge must change with it (next section).
+- **Add non-task clutter** when it can rest stably outside the task and robot
+  motion volumes. Visual-only assets are set dressing, not graspable objects.
+- **Add task instances** when the task naturally extends to multiple targets.
+  This changes what "done" means, so the judge must change with it.
 - **Change the work surface**: a taller or lower table, or a different table
   model. Moving the surface moves the task in the robot's workspace, so do
   the small calculation for the new poses (heights, approach points) and
@@ -51,14 +48,12 @@ Where a change shifts what success looks like, rewrite the scene's own check
 functions AND `grader/grader.py` so they describe the new world truthfully.
 Two ways this happens:
 
-- **Directly** — you extended the task: with two bulbs instead of one, "done"
-  now means both are seated; with extra screws, all of them fastened.
+- **Directly** — you extended the task to more target instances, so success
+  now requires all of them.
 - **By accident** — you added something "irrelevant" that the judge happens
-  to measure. In a packing task judged by "no loose parts left on the bench",
-  an innocent mug placed on the bench fails every episode; a distractor near
-  the goal can trip a "nearest object" check. Before calling an object
-  irrelevant, read what the grader actually measures and make sure the new
-  object is invisible to it — or update the judge.
+  to measure. A distractor can alter a nearest-object check or a loose-object
+  count. Before calling an object irrelevant, read what the grader measures
+  and make sure the new object is invisible to it — or update the judge.
 
 Where the meaning of success didn't move, leave the grader alone. An episode
 graded by an outdated judge is worse than no episode: it is wrong data that
@@ -101,9 +96,15 @@ to the scene's reset). To stop a dial from being sampled, set its entry to
 `None`; don't delete the line — the nominal values are applied through the
 same list, so deleting changes the normal world too.
 
+Optional follow-up, not a requirement for shipping a scene cell: if the task
+has meaningful physical or visual knobs and time remains, declaring
+`PHYSICAL_PARAMS`, camera pose bands, or `VISUAL_PARAMS` lets later scripted
+stages sample them. Derive ranges from the scene's nominal values and measured
+yield; do not invent ranges merely to populate the interfaces.
+
 ## Verification
 
-    generate --headless /workspace --scene scene_N --num_envs 8 --seed 0
+    generate --headless /workspace --scene scene_N --num_envs <N> --seed 0
 
 This generates one batch of data on your scene, under `/workspace/data/<batch>/`:
 one `ep_NNNN/` folder per episode, success/fail in each episode's `meta.json`,

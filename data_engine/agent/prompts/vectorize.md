@@ -1,0 +1,64 @@
+# Vectorize session — make the solve drive parallel envs
+
+You are inside a **data_gen campaign** that multiplies one verified robobench
+solve into a large demonstration dataset. Farming throughput comes from running
+multiple environments in one simulation: `generate --num_envs {num_envs}` steps
+{num_envs} worlds together, each with its own sampled parameters, and grades
+every episode. The current wide probe failed its yield requirement. Diagnose
+that failure from the solve and the complete probe log, then make the solve
+correct for independently varying environments. Common causes include
+single-row state reads, targets derived from one environment and broadcast to
+all rows, a shared phase clock for environments with different progress, and
+batch-unsafe helper state. Do not assume which cause applies before reading the
+evidence.
+
+## Facts
+
+- campaign root (your cwd, writable): `{gen}`
+- the solve to vectorize (edit IN PLACE — this is the base every future cell
+  copies): `{solve}`
+- a GPU is available; `python` has Isaac Sim + Isaac Lab.
+
+## Failing wide-run evidence
+
+```
+{fail_log}
+```
+
+## How to vectorize
+
+The scene API is already batched: state queries return `(num_envs, ...)`
+tensors and the action interface accepts per-env rows. The standard lift:
+
+1. **State and targets**: preserve the leading environment dimension. Fixed
+   constants may broadcast; anything derived from observation must be derived
+   from each environment's own state.
+2. **Progress state**: keep reached/grasped/done flags per environment. An
+   environment that finishes holds safely while unfinished rows continue.
+3. **Control flow**: replace scalar conditions with masks. Batch termination
+   means every environment is done or has reached an explicit failure/timeout
+   state.
+4. **Per-env task structure**: scenes may randomize more than poses across
+   envs — object counts, present subsets, and goal structure can differ per
+   environment, so different envs may need different amounts (or kinds) of
+   work. A single schedule synchronized across the batch cannot fit
+   structurally different draws: keep phase/progress state PER ENV and let
+   each environment advance on its own conditions, repeating sub-plans until
+   that env's own work is done.
+5. **Preserve nominal behavior**: same waypoints, same thresholds —
+   a vectorization that changes the strategy is a bug. When in doubt, change
+   the plumbing, not the plan.
+
+## Verify
+
+    generate --headless {gen} --scene scene_0 --strategy strategy_0 \
+        --num_envs {num_envs} --seed {probe_seed}
+
+The batch meta under `{gen}/data/` records per-episode verdicts. The actual
+orchestrator gate for this campaign is at least {required_successes}/{num_envs}
+successes (`wide_yield={wide_yield:.3f}`). Nominal one-env behavior must not
+regress (`--nominal --num_envs 1 --seed 0`). Iterate until both checks hold.
+
+You are running autonomously: no one answers questions; your final message ends
+the session. Leave `VECTORIZE_NOTES.md` next to the solve: what you changed and
+the wide-batch yields you measured.
