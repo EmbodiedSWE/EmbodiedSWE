@@ -221,6 +221,8 @@ class Recorder:
         self._env, self._raw = env, raw_env
         self.states: list[dict] = []
         self.actions: list = []
+        self.joint_targets: list = []  # COMMANDED joint targets per tick (see step)
+        self._intent_ok: bool | None = None  # all-position-mode leaves? resolved lazily
         self.ctrl_changes: list[dict] = []
         self._ctrl_ref: dict | None = None
 
@@ -241,7 +243,28 @@ class Recorder:
             self.watch_controller()
         self.states.append(_flat(self._raw.get_states()))
         self.actions.append(action.detach().cpu().clone())
-        return self._env.step(action, render)
+        ret = self._env.step(action, render)
+        # The COMMANDED joint targets that governed this step (written by the controller
+        # during it, held by the actuator PD) — controller INTENT, which achieved-state
+        # labels flatten: a press/squeeze is a sustained target offset past contact.
+        # Recorded ONLY when every leaf controller writes position targets (joint/diff_ik/
+        # pink_ik): under a torque-mode arm (osc/impedance) the arm columns of the target
+        # buffer are the inert reset pose — stamping them would let a joint_target bake
+        # silently produce frozen-home actions. Absent channel -> the convention refuses
+        # loudly instead. Single-articulation robots only (a MultiRobot has no one vector).
+        if self._intent_ok is None:
+            ctrl = getattr(self._raw.robot, "controller", None)
+            leaves = getattr(ctrl, "controllers", [ctrl] if ctrl is not None else [])
+            self._intent_ok = (
+                getattr(self._raw.robot, "articulation", None) is not None
+                and bool(leaves)
+                and all(getattr(c, "command_type", None) == "position" for c in leaves)
+            )
+        if self._intent_ok:
+            art = self._raw.robot.articulation
+            if art.data.joint_pos_target is not None:
+                self.joint_targets.append(art.data.joint_pos_target.detach().cpu().clone())
+        return ret
 
 
 def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scene_0",
@@ -366,6 +389,8 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                   f"FINAL law; per-change diffs are in meta `controller_changes`", flush=True)
         arrays = {k: np.stack([s[k].numpy() for s in rec.states]) for k in rec.states[0]}
         arrays["action"] = np.stack([a.numpy() for a in rec.actions])
+        if len(rec.joint_targets) == T:  # commanded-target channel (see Recorder.step)
+            arrays["robot/joint_target"] = np.stack([t.numpy() for t in rec.joint_targets])
         for e in range(num_envs):
             ep = rnd * num_envs + e
             ep_dir = out / f"ep_{ep:04d}"
