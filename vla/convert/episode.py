@@ -46,6 +46,14 @@ class Episode:
     raw_action: np.ndarray | None    # (T, A) the recorded controller command (sim)
     objects: dict[str, np.ndarray] | None = None  # {name: (T, K, 13) pos+quat+vels} scene bodies
     controller: dict | None = None   # the recorded control law (meta.json block), if stamped
+    #: COMMANDED arm joint targets (T, n_arm) — controller intent, recorded from the applied
+    #: actuator targets (sim, position-mode arms). None on episodes recorded before the channel
+    #: existed, on torque-mode arms (the stamp's law says), and on real logs without it.
+    joint_target: np.ndarray | None = None
+    #: COMMANDED gripper closedness (T,) — same normalization as `gripper` but UNCLAMPED:
+    #: a squeeze is a target past the measured width, so values may exceed 1 (that overshoot
+    #: IS the force intent; clamping it re-flattens what this channel exists to keep).
+    gripper_target: np.ndarray | None = None
     meta: dict = field(default_factory=dict)
 
 
@@ -54,8 +62,10 @@ def _goal_sentence(desc: str) -> str:
     return tail[1].strip() if len(tail) == 2 else desc.strip()
 
 
-def _split_gripper(joint_names: list[str], joint_pos: np.ndarray):
-    """(arm_joints, q, closedness): fingers found by name marker, normalized by travel."""
+def _split_gripper(joint_names: list[str], joint_pos: np.ndarray, clip: bool = True):
+    """(arm_joints, q, closedness): fingers found by name marker, normalized by travel.
+    `clip=False` for COMMANDED targets: a squeeze command sits past the measured width, so
+    commanded closedness legitimately exceeds 1 — that overshoot is the force intent."""
     fingers = [i for i, n in enumerate(joint_names) if any(m in n.lower() for m in _FINGER_MARKERS)]
     arm = [i for i in range(len(joint_names)) if i not in fingers]
     if not fingers:
@@ -67,7 +77,7 @@ def _split_gripper(joint_names: list[str], joint_pos: np.ndarray):
                              f"add its travel before converting")
         travel.append(FINGER_TRAVEL[joint_names[i]])
     frac = joint_pos[:, fingers] / np.asarray(travel, np.float32)
-    closed = 1.0 - np.clip(frac.mean(axis=1), 0.0, 1.0)
+    closed = 1.0 - (np.clip(frac.mean(axis=1), 0.0, 1.0) if clip else frac.mean(axis=1))
     return [joint_names[i] for i in arm], joint_pos[:, arm], closed.astype(np.float32)
 
 
@@ -90,6 +100,10 @@ def read_sim_episode(ep_dir: Path, cams: list[str] | None = None) -> Episode:
     traj = np.load(ep_dir / "traj.npz")
     arm_joints, q, closed = _split_gripper(r0["joint_names"],
                                            traj["robot/joint_pos"].astype(np.float32))
+    jt, gt = None, None
+    if "robot/joint_target" in traj:  # commanded-target channel (same joint order as joint_pos)
+        _, jt, gt = _split_gripper(r0["joint_names"],
+                                   traj["robot/joint_target"].astype(np.float32), clip=False)
     return Episode(
         ep_dir=ep_dir, origin="sim", robot_type=meta.get("preset", "unknown"),
         rate_hz=1.0 / (meta["sim_dt"] * meta.get("decimation", 1)),
@@ -101,5 +115,5 @@ def read_sim_episode(ep_dir: Path, cams: list[str] | None = None) -> Episode:
         raw_action=traj["action"].astype(np.float32) if "action" in traj else None,
         objects={k.removeprefix("scene/"): traj[k].astype(np.float32)
                  for k in traj.files if k.startswith("scene/")} or None,
-        controller=meta.get("controller"), meta=meta,
+        controller=meta.get("controller"), joint_target=jt, gripper_target=gt, meta=meta,
     )

@@ -88,7 +88,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import GraspWeldContract, SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import GraspWeldContract, SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -105,69 +105,69 @@ class SpatulaFlipServeSceneCfg(BaseCfg):
     knobs; the smoke's calibration sweep publishes the carry tilt budget they produce.
     Structure constants are MEASURED from the scanned assets (kitchen_parts.json)."""
 
-    # --- tunable: the curriculum knob ---------------------------------------------------------
-    goal: str = tunable("flip_serve")  # "serve" (v0) | "flip" (v1) | "flip_serve" (v2)
+    # --- the curriculum knob ---------------------------------------------------------
+    goal: str = "flip_serve"  # "serve" (v0) | "flip" (v1) | "flip_serve" (v2)
 
-    # --- tunable: rubric thresholds -----------------------------------------------------------
-    lift_gate: float = tunable(0.05)  # blade/payload height above the surface = "lifted"
+    # --- rubric thresholds -----------------------------------------------------------
+    lift_gate: float = 0.05  # blade/payload height above the surface = "lifted"
     # (the source's own >5 cm lift gate, kept)
-    flip_min_deg: float = tunable(150.0)  # orientation change about a horizontal axis = flipped
-    blade_align_max_deg: float = tunable(30.0)  # bread axis vs blade axis while riding it
-    flat_tilt_max_deg: float = tunable(15.0)  # "resting flat" gate (pan floor and plate)
-    rest_z_tol: float = tunable(0.012)  # bread bottom within this of the resting surface (m)
-    served_xy_frac: float = tunable(0.75)  # bread centre within this fraction of the plate radius
-    settle_speed: float = tunable(0.05)  # max |v| when judging a resting bread (m/s)
-    spill_settle_steps: int = tunable(12)  # sustained bare-surface rest before one spill
-    arrival_window: int = tunable(600)  # served must fire within this many steps of the last
+    flip_min_deg: float = 150.0  # orientation change about a horizontal axis = flipped
+    blade_align_max_deg: float = 30.0  # bread axis vs blade axis while riding it
+    flat_tilt_max_deg: float = 15.0  # "resting flat" gate (pan floor and plate)
+    rest_z_tol: float = 0.012  # bread bottom within this of the resting surface (m)
+    served_xy_frac: float = 0.75  # bread centre within this fraction of the plate radius
+    settle_speed: float = 0.05  # max |v| when judging a resting bread (m/s)
+    spill_settle_steps: int = 12  # sustained bare-surface rest before one spill
+    arrival_window: int = 600  # served must fire within this many steps of the last
     # loaded step (5 s at 120 Hz — the no-toss/no-shove contact-history clause; covers the
     # lower-and-tip end game, where the payload dips under the lift gate). Sized for THIS
     # plate: the bamboo dish is a slope, and a slice tipped off the blade can slide/settle
     # for 3-4 s before it rests flat (measured) — a real toss still never counts, because
     # a thrown slice was never loaded near the plate at all.
-    wedge_low_band: float = tunable(0.03)  # blade_under counts only with the bread bottom
+    wedge_low_band: float = 0.03  # blade_under counts only with the bread bottom
     # within this of the pan floor (the wedge happens IN the pan, not in mid-air)
 
-    # --- tunable: physics (the feasibility-spike knobs) ----------------------------------------
+    # --- physics (the feasibility-spike knobs) ----------------------------------------
     # Friction pair sized from BOTH ends (round-2 GPU lesson): PhysX combines by AVERAGE, so
     # blade-bread ~ (0.33 static / 0.29 dynamic). Low enough that the wedge SLIPS under the
     # payload instead of sticking to it and bulldozing; high enough that the carry has a real
     # tilt budget: atan(0.33) ~ 18 deg. Bread-pan stays grippier (the pan rig bakes the old
     # board's 0.6/0.55) so the pan anchors the payload while the blade slides beneath — and
     # the pan WALL is now a hard anchor no jab can shove the payload past.
-    bread_mass: float = tunable(0.06)
-    bread_friction: tuple = tunable((0.5, 0.45))  # static, dynamic (moist crumb)
-    blade_friction: tuple = tunable((0.15, 0.12))  # molded slick face — the slippery half
-    spatula_mass: float = tunable(0.15)
+    bread_mass: float = 0.06
+    bread_friction: tuple = (0.5, 0.45)  # static, dynamic (moist crumb)
+    blade_friction: tuple = (0.15, 0.12)  # molded slick face — the slippery half
+    spatula_mass: float = 0.15
     # Weld-on-closure grasping (the benchmark's auto-weld contract, the pc_motherboard
     # pattern — the machinery at the end of this scene class): close the fingers across
     # the spatula's handle and the tool welds to the hand; open wide to release. The
     # TOOL-ONLY rule is untouched — the contract's one site is the handle, never the
     # payload. Gripper envs only (no-op under robot="null").
-    grasp_weld: bool = tunable(True)
-    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
+    grasp_weld: bool = True
+    grasp_weld_dist: float = 0.010  # pinch-point-to-grip-band engage radius (m)
 
-    # --- tunable: randomization (the task-family knobs) ----------------------------------------
-    bread_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the bread in the pan
-    plate_jitter: float = tunable(0.04)  # uniform +/- xy jitter of the plate
-    spatula_jitter: float = tunable(0.03)  # uniform +/- xy jitter of the spatula rest pose
-    spatula_yaw_deg: float = tunable(15.0)  # uniform +/- yaw jitter of the spatula
-    reset_yaw_deg: float = tunable(180.0)  # uniform +/- bread yaw (kills any memorizable layout)
-    sample_size: bool = tunable(True)  # per-episode bread-size sampling (demo sets False)
+    # --- randomization (the task-family knobs) ----------------------------------------
+    bread_jitter: float = 0.03  # uniform +/- xy jitter of the bread in the pan
+    plate_jitter: float = 0.04  # uniform +/- xy jitter of the plate
+    spatula_jitter: float = 0.03  # uniform +/- xy jitter of the spatula rest pose
+    spatula_yaw_deg: float = 15.0  # uniform +/- yaw jitter of the spatula
+    reset_yaw_deg: float = 180.0  # uniform +/- bread yaw (kills any memorizable layout)
+    sample_size: bool = True  # per-episode bread-size sampling (demo sets False)
 
-    # --- tunable: placement -----------------------------------------------------------------
-    pan_pos: tuple = tunable((-0.16, 0.05))  # pan BOWL centre on the surface
-    pan_yaw_deg: float = tunable(90.0)  # pan yaw; at 0 the handle points +x, default +y
+    # --- placement -----------------------------------------------------------------
+    pan_pos: tuple = (-0.16, 0.05)  # pan BOWL centre on the surface
+    pan_yaw_deg: float = 90.0  # pan yaw; at 0 the handle points +x, default +y
     # (away from a robot working at -y — out of the wedge corridor)
-    plate_pos: tuple = tunable((0.17, 0.06))  # plate centre (before jitter)
-    spatula_pos: tuple = tunable((0.02, -0.20))  # spatula rest (blade-bottom centre)
+    plate_pos: tuple = (0.17, 0.06)  # plate centre (before jitter)
+    spatula_pos: tuple = (0.02, -0.20)  # spatula rest (blade-bottom centre)
 
-    # --- info: selectable work surface (the pc_motherboard presets, ported verbatim) ----------
-    table: str = info("packing")  # which work surface: "lab_table" | "packing"
+    # --- selectable work surface (the pc_motherboard presets, ported verbatim) ----------
+    table: str = "packing"  # which work surface: "lab_table" | "packing"
     # ("packing" = the microwave_meal look, requested 2026-08-05; Franka bindings pin
     # surface_z=0.0 — the table-mounted-arm-at-ground-level pattern from envs.py)
-    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
-    workbench_pos: tuple | None = info(None)  # xy the table sits at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    surface_z: float | None = None  # table-top height (m); None -> the preset's
+    workbench_pos: tuple | None = None  # xy the table sits at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
                       "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.0, 0.0),
@@ -177,50 +177,50 @@ class SpatulaFlipServeSceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
 
-    # --- info: structure (measured from the scans; see kitchen_parts.json) ---------------------
+    # --- structure (measured from the scans; see kitchen_parts.json) ---------------------
     # spatula: blade footprint + thickness (the rubric's blade-frame constants), handle incline
-    blade_l: float = info(0.1168)
-    blade_w: float = info(0.0893)
-    blade_t: float = info(0.0055)  # molded blade max thickness (tip box is thinner)
-    handle_angle_deg: float = info(21.1)
+    blade_l: float = 0.1168
+    blade_w: float = 0.0893
+    blade_t: float = 0.0055  # molded blade max thickness (tip box is thinner)
+    handle_angle_deg: float = 21.1
     # fry pan: interior floor disc, rim, bowl/handle extents (bowl centre = body origin)
-    pan_floor_top: float = info(0.0035)  # interior floor above the pan's base plane
-    pan_r_floor: float = info(0.1095)  # flat interior floor radius
-    pan_rim_top: float = info(0.0532)  # rim height above the base plane
-    pan_r_rim_in: float = info(0.1304)  # rim inner radius
-    pan_r_out: float = info(0.1361)  # bowl outer radius (the bare-surface exclusion)
+    pan_floor_top: float = 0.0035  # interior floor above the pan's base plane
+    pan_r_floor: float = 0.1095  # flat interior floor radius
+    pan_rim_top: float = 0.0532  # rim height above the base plane
+    pan_r_rim_in: float = 0.1304  # rim inner radius
+    pan_r_out: float = 0.1361  # bowl outer radius (the bare-surface exclusion)
     # bamboo plate: recess floor + rim
-    plate_r: float = info(0.1504)
-    plate_floor_top: float = info(0.0126)  # recess floor above the plate's base plane
-    plate_rim_top: float = info(0.0476)
+    plate_r: float = 0.1504
+    plate_floor_top: float = 0.0126  # recess floor above the plate's base plane
+    plate_rim_top: float = 0.0476
     # bread: base scan dims (half-extent / thickness) x the per-family uniform scales
-    bread_r0: float = info(0.0308)
-    bread_h0: float = info(0.0215)
+    bread_r0: float = 0.0308
+    bread_h0: float = 0.0215
     # (family name, uniform scale): three sizes, ONE present per episode.
-    families: tuple = info((("bread_s", 1.15), ("bread_m", 1.30), ("bread_l", 1.45)))
+    families: tuple = (("bread_s", 1.15), ("bread_m", 1.30), ("bread_l", 1.45))
     # Off-camera ground depot for absent breads (the pen-holder depot analysis: extent well
     # under half of env_spacing 3).
-    parking_pos: tuple = info((1.0, 1.0))
+    parking_pos: tuple = (1.0, 1.0)
     # On-blade z band for the bread bottom in the blade frame: a riding slice rests on the
     # tapered blade top (1.5-5.5 mm); the upper margin absorbs offset slop. The lower bound
     # EXCLUDES a slice the blade merely slid toward while it rests on the pan floor
     # (bottom ~ -0/+0.5 mm in the blade frame) — round 1's false-positive wedge check.
-    on_blade_z_band: tuple = info((0.0005, 0.015))
-    blade_contact_offset: float = info(0.001)  # below the thin tip box thickness
-    bread_contact_offset: float = info(0.001)
-    pan_contact_offset: float = info(0.002)
+    on_blade_z_band: tuple = (0.0005, 0.015)
+    blade_contact_offset: float = 0.001  # below the thin tip box thickness
+    bread_contact_offset: float = 0.001
+    pan_contact_offset: float = 0.002
     # DYNAMIC pan: real contact response against a KINEMATICALLY driven tool (a
     # kinematic-vs-kinematic pair generates no contacts, so a pose-pinned tool clips
     # straight through a kinematic pan — the NullRobot smoke's penetration bug). Heavy
     # + heavily damped so jab reactions nudge it millimetres, not across the table.
-    pan_dynamic: bool = info(False)
-    pan_mass: float = info(2.5)
+    pan_dynamic: bool = False
+    pan_mass: float = 2.5
     # Asset USDs; empty -> the authored rigs committed under `assets/kitchen/`.
-    asset_dir: str = info("")
-    spatula_usd: str = info("")
-    bread_usd: str = info("")
-    pan_usd: str = info("")
-    plate_usd: str = info("")
+    asset_dir: str = ""
+    spatula_usd: str = ""
+    bread_usd: str = ""
+    pan_usd: str = ""
+    plate_usd: str = ""
 
     # Derived (filled in __post_init__).
     pan_floor_z: float = field(default=None, init=False)  # bread rest height in the pan

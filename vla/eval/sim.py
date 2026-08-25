@@ -28,7 +28,11 @@ for _p in (str(_REPO), str(_REPO / "data_engine"), str(_REPO / "vla" / "convert"
 
 import episode as _convert  # vla/convert: FINGER_TRAVEL, _FINGER_MARKERS, _goal_sentence
 
-_JOINT_SPACES = ("joint_pos", "joint_vel")
+# joint-space control_spaces: executed by the joint tracker (absolute/velocity/commanded
+# targets + gripper closedness). joint_target = the commanded-intent labels: same layout
+# as joint_pos but closedness is UNCLAMPED (>1 = squeeze force), so its executor skips
+# the [0,1] clamp — and grip_margin should stay 0 (the label already carries the squeeze).
+_JOINT_SPACES = ("joint_pos", "joint_vel", "joint_target")
 
 
 # ----- the spec + the local registry --------------------------------------------------------------
@@ -38,7 +42,7 @@ class SimSpec:
     stamp_to_spec derives one from a dataset's bake.json."""
 
     preset: str                                   # world: the ENVS name
-    control_space: str | None = None              # raw_cmd | joint_pos | joint_vel; None = preset controller
+    control_space: str | None = None              # raw_cmd | joint_pos | joint_vel | joint_target; None = preset controller
     control_freq_hz: float | None = None          # latch rate for the joint conventions
     finger_drives: tuple[float, float] | None = None   # (stiffness, damping) written onto the finger joints
     tracker_gains: tuple[float, float] | None = None   # arm PD override (joint conventions); None = preset's
@@ -459,20 +463,24 @@ class EvalSim:
             a = a.unsqueeze(0)
         cs = self.spec.control_space
         if cs in _JOINT_SPACES:
-            q_arm = a[:, :-1] if cs == "joint_pos" else \
-                self._q()[:, self.arm_ids] + a[:, :-1] / self.rate_hz
-            return self.step_targets(q_arm, a[:, -1])
+            q_arm = self._q()[:, self.arm_ids] + a[:, :-1] / self.rate_hz if cs == "joint_vel" \
+                else a[:, :-1]  # joint_pos / joint_target: absolute targets
+            # joint_target closedness is intent: >1 = squeeze, must survive to the finger targets
+            return self.step_targets(q_arm, a[:, -1], clamp_closedness=cs != "joint_target")
         self.env.step(a, render=True)
         return self.obs()
 
-    def step_targets(self, q_arm, closedness) -> dict:
+    def step_targets(self, q_arm, closedness, clamp_closedness: bool = True) -> dict:
         """The layer step() lands in: absolute arm targets + closedness -> one rendered latch.
-        `spec.grip_margin` biases the finger target past the labeled width (squeeze force)."""
+        `spec.grip_margin` biases the finger target past the labeled width (squeeze force — the
+        joint_pos-era workaround; joint_target labels carry the squeeze themselves, so they run
+        `clamp_closedness=False` and margin 0). The finger floor stays 0 (= the joint limit)."""
         import torch
 
-        fingers = ((1.0 - torch.as_tensor(closedness, dtype=torch.float32,
-                                          device=self.env.device).clamp(0.0, 1.0)
-                    ).unsqueeze(-1) * self.travel - self.spec.grip_margin).clamp_min(0.0)
+        c = torch.as_tensor(closedness, dtype=torch.float32, device=self.env.device)
+        if clamp_closedness:
+            c = c.clamp(0.0, 1.0)
+        fingers = ((1.0 - c).unsqueeze(-1) * self.travel - self.spec.grip_margin).clamp_min(0.0)
         self.env.step(torch.cat([torch.as_tensor(q_arm, dtype=torch.float32,
                                                  device=self.env.device), fingers], dim=1),
                       render=True)
@@ -487,7 +495,7 @@ class EvalSim:
         # compensate grip_margin so holding is a fixed point, not a per-latch ratchet
         closed = (self._closedness() - self.spec.grip_margin / float(self.travel.mean())
                   ).clamp(0.0, 1.0).unsqueeze(1)
-        if cs == "joint_pos":
+        if cs in ("joint_pos", "joint_target"):
             return torch.cat([q[:, self.arm_ids], closed], dim=1).cpu().numpy()
         if cs == "joint_vel":
             return torch.cat([torch.zeros_like(q[:, self.arm_ids]), closed], dim=1).cpu().numpy()

@@ -31,6 +31,9 @@ Conventions (mirroring vla/convert/conventions.py at stride 1):
   joint_vel  action_t = [(q_rec[t+1]-q_rec[t])*rate, closed[t+1]]  (integrated
              from LIVE q — honest, drift compounds; --integrate dataset targets
              q_rec[t+1] instead = the pure tracker test)
+  joint_target action_t = [q_cmd[t], closed_cmd[t]] — the recorded commanded targets
+             IN FORCE at t (traj robot/joint_target; intent preserved: the closedness
+             is UNCLAMPED, >1 = squeeze; position-mode campaigns only)
   raw_cmd    action_t = traj["action"][t] verbatim (--matched-controller;
              closed-loop by nature: the controller re-anchors on the live EE pose)
 
@@ -52,6 +55,10 @@ parser.add_argument("--episodes", nargs="*", default=[], help="episode dirs")
 parser.add_argument("--batch", default="", help="batch dir — every ep_* inside")
 parser.add_argument("--matched-controller", dest="matched_controller", action="store_true",
                     help="replay traj['action'] verbatim under the episodes' stamped controller law")
+parser.add_argument("--control-space", dest="control_space", default="",
+                    choices=("", "joint_pos", "joint_vel", "joint_target"),
+                    help="override the executor convention — e.g. replay a fresh campaign's "
+                         "traj.npz as joint_target with no bake; the rate is the recorded rate")
 parser.add_argument("--num_envs", type=int, default=4, help="episodes replayed in parallel")
 parser.add_argument("--t0", nargs="*", default=[],
                     help="start time(s) in SIM SECONDS ('130', '250.5', or clock '4:10' / "
@@ -78,6 +85,24 @@ from isaaclab.app import AppLauncher  # noqa: E402
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
+
+# joint_target fast-fail: check the channel exists BEFORE the ~2 min Kit boot (npz header
+# read only). Torque-mode (osc/impedance) campaigns never carry it — that absence is the
+# design (frozen-home arm targets must not replay); the in-loop guard stays as the backstop.
+if args.control_space == "joint_target":
+    import numpy as _np
+
+    _eps = [Path(e) for e in args.episodes]
+    if args.batch:
+        _eps += sorted(p for p in Path(args.batch).glob("ep_*") if (p / "traj.npz").is_file())
+    for _e in _eps:
+        if (_e / "traj.npz").is_file() and \
+                "robot/joint_target" not in _np.load(_e / "traj.npz").files:
+            raise SystemExit(
+                f"{_e}: no robot/joint_target in traj.npz — joint_target replay needs a "
+                f"position-mode campaign (joint/diff_ik/pink_ik) recorded after the intent "
+                f"channel landed; for osc/impedance campaigns use --matched-controller "
+                f"(raw_cmd) or --control-space joint_pos/joint_vel")
 
 app = AppLauncher(args).app
 
@@ -137,6 +162,8 @@ if phys[eps[0]]:
     overrides["physical_params"] = phys[eps[0]]  # match the recorded world by default
 if args.grip_margin is not None:
     overrides["grip_margin"] = args.grip_margin
+if args.control_space:
+    overrides.update(control_space=args.control_space, control_freq_hz=rec_rate)
 if args.matched_controller:
     if not m0.get("controller"):
         raise SystemExit("--matched-controller needs episodes with a stamped controller "
@@ -147,7 +174,7 @@ device = "cuda:0" if torch.cuda.is_available() else "cpu"
 sim = load_sim(args.source, num_envs=min(args.num_envs, len(eps)), device=device, **overrides)
 cs = sim.spec.control_space
 if cs is None:
-    raise SystemExit("replay needs a control law (joint_pos/joint_vel/raw_cmd) — "
+    raise SystemExit("replay needs a control law (joint_pos/joint_vel/joint_target/raw_cmd) — "
                      "a bare preset has nothing to certify (add --matched-controller?)")
 if abs(sim.rate_hz - rec_rate) > 1e-6:
     raise SystemExit(f"episode rows at {rec_rate:.1f} Hz but executor latches at "
@@ -181,7 +208,7 @@ results = []
 for lo in range(0, len(eps), E):
     chunk = eps[lo:lo + E]
     n = len(chunk)
-    q_rec, closed_rec, raw_act, T, S = [], [], [], [], []
+    q_rec, closed_rec, raw_act, jt_rec, gt_rec, T, S = [], [], [], [], [], [], []
     for e in chunk:
         traj = np.load(e / "traj.npz")
         arm_joints, q, closed = _convert._split_gripper(
@@ -191,9 +218,21 @@ for lo in range(0, len(eps), E):
         q_rec.append(q); closed_rec.append(closed); T.append(len(q))
         S.append(min(t0_of[e], len(q) - 1))
         raw_act.append(traj["action"].astype(np.float32) if cs == "raw_cmd" else None)
+        if cs == "joint_target":
+            if "robot/joint_target" not in traj:
+                raise SystemExit(f"{e}: joint_target replay needs the recorded commanded-target "
+                                 f"channel (robot/joint_target in traj.npz) — position-mode "
+                                 f"campaigns recorded after the channel landed")
+            _, jt, gt = _convert._split_gripper(
+                list(sim.env.robot.articulation.joint_names),
+                traj["robot/joint_target"].astype(np.float32), clip=False)
+            jt_rec.append(jt); gt_rec.append(gt)
+        else:
+            jt_rec.append(None); gt_rec.append(None)
     pad = E - n
     q_rec += [q_rec[-1]] * pad; closed_rec += [closed_rec[-1]] * pad
-    raw_act += [raw_act[-1]] * pad; T += [T[-1]] * pad; S += [S[-1]] * pad
+    raw_act += [raw_act[-1]] * pad; jt_rec += [jt_rec[-1]] * pad
+    gt_rec += [gt_rec[-1]] * pad; T += [T[-1]] * pad; S += [S[-1]] * pad
     k_end = max(T[s] - 1 - S[s] for s in range(E))
     if args.cap:
         k_end = min(k_end, args.cap)
@@ -216,7 +255,12 @@ for lo in range(0, len(eps), E):
     idx = lambda s, k: min(S[s] + k, T[s] - 1)  # noqa: E731  this slot's traj row at clock k
     for k in range(k_end):
         active = np.array([S[s] + k + 1 < T[s] for s in range(E)])
-        if cs == "joint_pos" or (cs == "joint_vel" and args.integrate == "dataset"):
+        if cs == "joint_target":  # the commanded targets in force at tick k, intent unclamped
+            q_t = np.stack([jt_rec[s][idx(s, k)] for s in range(E)])
+            c_t = np.array([gt_rec[s][idx(s, k)] for s in range(E)], np.float32)
+            obs = sim.step_targets(torch.as_tensor(q_t, device=device),
+                                   torch.as_tensor(c_t, device=device), clamp_closedness=False)
+        elif cs == "joint_pos" or (cs == "joint_vel" and args.integrate == "dataset"):
             q_t = np.stack([q_rec[s][idx(s, k + 1)] for s in range(E)])
             c_t = np.array([closed_rec[s][idx(s, k + 1)] for s in range(E)], np.float32)
             obs = sim.step_targets(torch.as_tensor(q_t, device=device),

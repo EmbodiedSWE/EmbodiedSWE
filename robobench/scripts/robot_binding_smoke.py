@@ -8,9 +8,10 @@ counterpart of each suite's NullRobot smoke), one binding per run:
   3. wiggle the hand/gripper (composite controller's LAST sub-controller) toward the
      far joint limits and back — >=80% of driven joints track within 0.15 rad;
   4. reach: march the end-effector to a hover above `--reach_body` (an iscene key,
-     e.g. 'barrel', 'cup') — residual < 8 cm.
-     Supported control modes: `pink_ik` (humanoids: absolute wrist poses) and `osc`
-     (Franka: end-effector pose deltas). `joint` bindings skip the reach.
+     e.g. 'reservoir', 'cup') — residual < 8 cm.
+     Supported control modes: `pink_ik` (humanoids: absolute wrist poses; franka: one absolute
+     hand pose) and `osc` / `diff_ik` (Franka: end-effector pose deltas). `joint` bindings skip
+     the reach.
 
     python -m robobench.scripts.robot_binding_smoke --env puzzle.syringe.franka.osc \
         --reach_body barrel --headless
@@ -140,12 +141,15 @@ def main() -> None:
                if mode == "joint" else None)
 
     def build_action(ee_pos_delta_or_abs: torch.Tensor, grips: torch.Tensor) -> torch.Tensor:
-        """pink_ik: absolute wrist poses (L pose7 + R pose7 + hands). osc: 6 EE deltas
-        + grips. joint: current arm positions + grips (hold)."""
+        """pink_ik: absolute poses — humanoids L pose7 + R pose7 + hands, single-arm grippers
+        (franka) one hand pose7 + grips. osc/diff_ik: 6 EE deltas + grips. joint: current arm
+        positions + grips (hold)."""
         if mode == "pink_ik":
-            return torch.cat([l0[:, :3] - origins, l0[:, 3:7],
-                              ee_pos_delta_or_abs, ee0[:, 3:7], grips], dim=1)
-        if mode == "osc":
+            if getattr(env.robot, "EE_BODIES", None):  # two-frame humanoid
+                return torch.cat([l0[:, :3] - origins, l0[:, 3:7],
+                                  ee_pos_delta_or_abs, ee0[:, 3:7], grips], dim=1)
+            return torch.cat([ee_pos_delta_or_abs, ee0[:, 3:7], grips], dim=1)
+        if mode in ("osc", "diff_ik"):
             return torch.cat([ee_pos_delta_or_abs,
                               torch.zeros(1, 3, device=device), grips], dim=1)
         return torch.cat([art.data.joint_pos[:, arm_ids], grips], dim=1)
@@ -153,7 +157,7 @@ def main() -> None:
     def hold_action() -> torch.Tensor:
         if mode == "pink_ik":
             return build_action(ee0[:, :3] - origins, grip0)
-        if mode == "osc":
+        if mode in ("osc", "diff_ik"):
             return build_action(torch.zeros(1, 3, device=device), grip0)
         return build_action(None, grip0)
 
@@ -189,7 +193,7 @@ def main() -> None:
         if mode == "pink_ik":
             cur = art.data.body_link_state_w[:, ee_i, :3] - origins
             step(build_action(cur, target), 120)
-        elif mode == "osc":
+        elif mode in ("osc", "diff_ik"):
             step(build_action(torch.zeros(1, 3, device=device), target), 120)
         else:
             step(build_action(None, target), 120)
@@ -220,7 +224,7 @@ def main() -> None:
     # the safe dial beaches the hand on the box top). VIRTUAL CARRIER target (the
     # crate smoke's method): marching from the LIVE wrist throttles progress by the
     # tracking lag every step and stalls short (first generic version).
-    if args.reach_body and mode in ("pink_ik", "osc"):
+    if args.reach_body and mode in ("pink_ik", "osc", "diff_ik"):
         body_pos = env.iscene[args.reach_body].data.root_pos_w.clone() - origins
         off = torch.tensor([[float(v) for v in args.hover.split(",")]], device=device)
         goals = []
@@ -306,5 +310,14 @@ def _hard_exit_teardown() -> None:
 
 
 if __name__ == "__main__":
-    main()
-    _hard_exit_teardown()
+    # try/finally: an exception in main() must STILL hard-exit — without it the crash falls
+    # through to Kit's atexit handlers, which spin at 100% CPU forever (measured 2026-08-24:
+    # two headless runs wedged ~30 min each on a KeyError).
+    try:
+        main()
+    except BaseException:
+        import traceback as _tb
+
+        _tb.print_exc()
+    finally:
+        _hard_exit_teardown()
