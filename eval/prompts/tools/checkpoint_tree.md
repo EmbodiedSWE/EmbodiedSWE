@@ -28,12 +28,25 @@ How to work with it:
   * Save whenever a stage lands — a grasp that finally holds, an aligned part, a completed
     sub-goal. Label the STATE reached in your task's own terms ("part_0 secured", "cloth
     folded over the crease", "container half filled"), not the action attempted.
+  * Before you store a state, check its quality and think through whether you really want
+    to continue from it — whether continuing from it is really helpful. Avoid storing
+    low-quality states or states with clear issues.
   * Pass `program=` so the node records exactly the code that reached it — a later you (or a
-    later script) can reread the winning program instead of reconstructing it.
+    later script) can reread the winning program instead of reconstructing it. The
+    workspace modules that script imports (e.g. your helpers.py) are archived with it, as
+    they were at save time — so the recorded program still means the same thing after you
+    edit those modules.
   * Branch instead of gambling: before a change that could ruin a good state, save; if the
     variation is worse, `goto()` the parent and branch again. Nothing earned is lost.
   * Read `tried_from()` before re-attempting anything. Two branches failing with the same
     state_diff means the approach is wrong, not under-tuned.
+  * A checkpoint may be suboptimal or broken in itself. Before building off one, check
+    whether it is really where you want to start from — when attempts from a node keep
+    failing, suspect the node before the attempts; starting from scratch is sometimes the
+    better move.
+  * You will ultimately be graded by a full end-to-end program running from a fresh reset.
+    So aside from building off checkpoints, actively validate full end-to-end programs as
+    you go — a stage that works only from a restored checkpoint is not yet a result.
   * Nodes persist under /workspace/.checkpoints across all your scripts.
 
 State is whatever `env.get_states()` returns, restored with `env.set_states()`. This

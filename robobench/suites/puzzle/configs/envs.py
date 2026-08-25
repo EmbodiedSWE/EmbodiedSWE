@@ -127,8 +127,10 @@ for _mode in ("osc", "joint"):
 # shelf), spread 0.56 m apart on its cart-side edge and facing south over the north
 # guard rail: left arm west (rack/syringe side), right arm east.
 # NOT yet reach-verified on the cart layout (2026-08-09).
+# diff_ik/pink_ik added 2026-08-25 for the IK campaign: the composite forwards the mode
+# to its two Franka children, which validate it themselves (franka #61 wiring).
 _FACE_SOUTH = (0.7071068, 0.0, 0.0, -0.7071068)  # yaw -90: franka +x -> world -y
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (

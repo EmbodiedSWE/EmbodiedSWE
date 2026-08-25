@@ -196,15 +196,186 @@ def canonicalize_openai(request: dict, response: dict) -> dict:
     }
 
 
+def _responses_item_to_message(item: dict) -> dict | None:
+    """Convert one OpenAI Responses API item (input or output) to an Anthropic-style
+    message, or None for items that carry no conversational content."""
+    kind = item.get("type", "message")
+    if kind == "message":
+        role = item.get("role", "user")
+        content = item.get("content")
+        blocks: list = []
+        if isinstance(content, str):
+            blocks = [{"type": "text", "text": content}]
+        else:
+            for part in content or []:
+                if not isinstance(part, dict):
+                    blocks.append({"type": "text", "text": str(part)})
+                elif part.get("type") in ("input_text", "output_text", "text"):
+                    blocks.append({"type": "text", "text": part.get("text", "")})
+                elif part.get("type") == "input_image":
+                    url = part.get("image_url", "")
+                    if isinstance(url, str) and url.startswith("data:"):
+                        header, _, data = url.partition(",")
+                        media_type = header[len("data:"):].split(";")[0] or "image/png"
+                        blocks.append({"type": "image", "source": {
+                            "type": "base64", "media_type": media_type, "data": data}})
+                    else:
+                        blocks.append({"type": "image", "source": {"type": "url", "url": url}})
+                else:
+                    blocks.append({"type": "text", "text": json.dumps(part, ensure_ascii=False)})
+        return {"role": "assistant" if role == "assistant" else role, "content": blocks}
+    if kind == "function_call":
+        args = item.get("arguments", "{}")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError as e:
+                print(f"WARNING: unparseable function_call arguments ({e}): {args[:200]!r}")
+                args = {"_raw": args}
+        return {"role": "assistant", "content": [{
+            "type": "tool_use", "id": item.get("call_id", item.get("id", "")),
+            "name": item.get("name", ""), "input": args}]}
+    if kind == "custom_tool_call":
+        # codex's freeform tools (e.g. `exec`): input is a raw string, not JSON args.
+        raw = item.get("input", "")
+        try:
+            args = json.loads(raw) if isinstance(raw, str) else raw
+            if not isinstance(args, dict):
+                args = {"input": raw}
+        except json.JSONDecodeError:
+            args = {"input": raw}
+        return {"role": "assistant", "content": [{
+            "type": "tool_use", "id": item.get("call_id", item.get("id", "")),
+            "name": item.get("name", ""), "input": args}]}
+    if kind in ("function_call_output", "custom_tool_call_output"):
+        output = item.get("output", "")
+        if isinstance(output, list):   # [{type:"input_text", text}, ...] -> text blocks
+            output = [{"type": "text", "text": p.get("text", "")} if isinstance(p, dict)
+                      else {"type": "text", "text": str(p)} for p in output]
+        return {"role": "user", "content": [{
+            "type": "tool_result", "tool_use_id": item.get("call_id", ""),
+            "content": output}]}
+    if kind == "reasoning":
+        summary = item.get("summary") or []
+        text = "\n".join(p.get("text", "") for p in summary if isinstance(p, dict))
+        if not text and not item.get("encrypted_content"):
+            return None
+        return {"role": "assistant", "content": [{
+            "type": "thinking", "thinking": text,
+            "signature": item.get("encrypted_content", "") or ""}]}
+    # Hosted/unknown item kinds (web_search_call, local_shell_call, ...): keep the record
+    # readable rather than dropping it silently.
+    print(f"WARNING: unhandled responses item type {kind!r}; folding as text")
+    return {"role": "assistant", "content": [{
+        "type": "text", "text": json.dumps(item, ensure_ascii=False)}]}
+
+
+def _responses_tools_to_anthropic(tools: list, prefix: str = "") -> list:
+    """Responses-format tools are FLAT ({type:'function', name, ...}), unlike chat's nesting.
+    codex additionally nests them in namespaces (an `additional_tools` input item); those
+    flatten to dotted names ("functions.exec"), which is how the calls reference them."""
+    result = []
+    for t in tools or []:
+        if t.get("type") == "namespace":
+            result.extend(_responses_tools_to_anthropic(
+                t.get("tools") or [], prefix=f"{prefix}{t.get('name', '')}."))
+            continue
+        if t.get("type") not in (None, "function", "custom"):
+            continue   # hosted tools (web_search etc.) have no schema to carry
+        schema = t.get("parameters")
+        if not schema and t.get("format"):   # custom (freeform) tools carry a format instead
+            schema = {"type": "custom", "format": t["format"]}
+        result.append({
+            "name": f"{prefix}{t.get('name', '')}",
+            "description": t.get("description", ""),
+            "input_schema": schema or {},
+        })
+    return result
+
+
+def canonicalize_openai_responses(request: dict, response: dict) -> dict:
+    """OpenAI Responses API (what codex speaks): instructions -> system, input items ->
+    messages, output items -> the response blocks."""
+    system_blocks: list = []
+    instructions = request.get("instructions")
+    if instructions:
+        system_blocks.append({"type": "text", "text": instructions})
+
+    raw_input = request.get("input")
+    items = ([{"type": "message", "role": "user", "content": raw_input}]
+             if isinstance(raw_input, str) else list(raw_input or []))
+
+    # codex sends its tool definitions as `additional_tools` INPUT ITEMS (namespaced), not
+    # as the top-level `tools` field. They are definitions, not conversation: they join the
+    # tool list and never become messages.
+    tools = _responses_tools_to_anthropic(request.get("tools"))
+    kept: list = []
+    for item in items:
+        if item.get("type") == "additional_tools":
+            tools.extend(_responses_tools_to_anthropic(item.get("tools") or []))
+        else:
+            kept.append(item)
+    items = kept
+
+    messages: list = []
+    body_start = 0
+    for item in items:   # leading system/developer messages join the system prompt
+        if item.get("type", "message") == "message" and item.get("role") in ("system", "developer"):
+            conv = _responses_item_to_message(item)
+            if conv:
+                system_blocks.extend(conv["content"])
+            body_start += 1
+        else:
+            break
+    for item in items[body_start:]:
+        conv = _responses_item_to_message(item)
+        if conv is None:
+            continue
+        if (
+            messages
+            and conv["role"] == messages[-1]["role"]
+            and conv["content"]
+            and messages[-1]["content"]
+            and (
+                (conv["content"][0].get("type") == "tool_result"
+                 and messages[-1]["content"][-1].get("type") == "tool_result")
+                or conv["role"] == "assistant"
+            )
+        ):
+            # Consecutive assistant items (reasoning -> message -> function_call) are ONE
+            # assistant turn in Anthropic form, exactly as consecutive tool results are one
+            # user message. Deterministic, so prefix hashing still matches across requests.
+            messages[-1]["content"].extend(conv["content"])
+        else:
+            messages.append(conv)
+
+    response_blocks: list = []
+    for item in response.get("output") or []:
+        conv = _responses_item_to_message(item)
+        if conv and conv["role"] == "assistant":
+            response_blocks.extend(conv["content"])
+
+    return {
+        "system_blocks": system_blocks,
+        "tools": tools,
+        "messages": messages,
+        "response_blocks": response_blocks,
+    }
+
+
 def canonicalize(record: dict) -> dict | None:
     """Canonicalize a raw log record; returns None for unusable records."""
     response = record.get("response")
     if record.get("status") != 200 or not isinstance(response, dict):
         return None
-    if response.get("type") == "error" or "error" in response:
+    # `.get("error")`, not `"error" in response`: a Responses API object always carries an
+    # `error` FIELD (null on success), so membership rejected every successful codex record.
+    if response.get("type") == "error" or response.get("error"):
         return None
     if record.get("api_format") == "openai":
         canon = canonicalize_openai(record["request"], response)
+    elif record.get("api_format") == "openai_responses":
+        canon = canonicalize_openai_responses(record["request"], response)
     else:
         canon = canonicalize_anthropic(record["request"], response)
     canon["request_id"] = record["request_id"]

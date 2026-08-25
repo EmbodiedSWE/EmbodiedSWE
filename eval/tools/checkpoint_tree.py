@@ -12,8 +12,9 @@
 Why disk and not memory: every script you run is a new process that boots its own simulator,
 so a state kept in RAM dies with it. Nodes live under `<root>/` (default
 `/workspace/.checkpoints`): `tree.json` (the manifest), `<cid>.pt` (the state),
-`<cid>.code.py` (the program that produced it, when given), `<cid>.png` (a snapshot, when a
-viewer is attached).
+`<cid>.code.py` (the program that produced it, when given), `<cid>.modules/` (the
+workspace-local modules that program imported, archived as they were at save time),
+`<cid>.png` (a snapshot, when a viewer is attached).
 
 The tree is a tree: `save()` hangs the new node off whichever node is current, so a risky
 variation costs nothing already earned — `goto()` the parent and branch again. Every node
@@ -79,6 +80,10 @@ class Node:
     log: str = ""
     snapshot: str = ""
     success: bool | None = None
+    # each articulation's joint positions with their limits at save time, read straight from
+    # the articulation data — raw values, no derived scores (the joint configuration is part
+    # of the state being adopted, and raw radians in the diff proved illegible)
+    joints: str = ""
 
     def as_json(self) -> dict:
         return {
@@ -88,6 +93,7 @@ class Node:
             "action": self.action, "state_diff": self.state_diff,
             "scene_diff": self.scene_diff, "code_name": self.code_name,
             "log": self.log, "snapshot": self.snapshot, "success": self.success,
+            "joints": self.joints,
         }
 
     @classmethod
@@ -98,7 +104,7 @@ class Node:
                    action=d.get("action", ""), state_diff=d.get("state_diff", ""),
                    scene_diff=d.get("scene_diff", ""), code_name=d.get("code_name", ""),
                    log=d.get("log", ""), snapshot=d.get("snapshot", ""),
-                   success=d.get("success"))
+                   success=d.get("success"), joints=d.get("joints", ""))
 
 
 def _walk_state(tree, prefix=""):
@@ -114,6 +120,38 @@ def _walk_state(tree, prefix=""):
 
 def _short(name: str) -> str:
     return name.replace("scene.", "").replace("robot.", "robot ").replace(".root_state", "")
+
+
+def _joints_text(env) -> str:
+    """One line per articulation: each joint's position with its limits, read straight from
+    the articulation data. Raw values only — the agent draws its own conclusions.
+
+    The articulation dict lives on the Isaac Lab InteractiveScene (`env.iscene` in robobench
+    envs), which covers every articulation in the world — all robots and articulated scene
+    assets alike."""
+    try:
+        arts = (getattr(getattr(env, "iscene", None), "articulations", None)
+                or getattr(getattr(env, "scene", None), "articulations", None) or {})
+        lines = []
+        for name, art in arts.items():
+            data = art.data
+            pos = data.joint_pos[0]
+            lims = getattr(data, "soft_joint_pos_limits", None)
+            if lims is None:
+                lims = getattr(data, "joint_pos_limits", None)
+            if lims is None:
+                continue
+            lims = lims[0]
+            names = list(getattr(art, "joint_names", []) or [])
+            if len(names) != pos.shape[0]:
+                names = [f"joint{i}" for i in range(pos.shape[0])]
+            parts = [f"{n} {float(p):+.3f} in [{float(lim[0]):+.3f}, {float(lim[1]):+.3f}]"
+                     for n, p, lim in zip(names, pos, lims)]
+            lines.append(f"{name}: " + ", ".join(parts))
+        return "; ".join(lines)
+    except Exception as exc:  # noqa: BLE001 -- a readout bug must not lose the save
+        print(f"[checkpoint_tree] joints readout failed: {exc!r}", flush=True)
+        return ""
 
 
 def state_diff_text(parent_state, new_state, pos_tol: float = 2e-3,
@@ -292,6 +330,10 @@ class CheckpointTree:
              program: str | Path | None = None, log: str = "") -> str:
         """Save the CURRENT world state as a child of the current node. Returns its id.
 
+        Before storing a state, check its quality and think through whether you really
+        want to continue from it — avoid storing low-quality states or states with clear
+        issues.
+
         label    the STATE reached, in the task's own terms ("part_0 secured in its mount",
                  "cloth folded over the crease"), not the action attempted
         note     measurements worth keeping next to the state
@@ -323,6 +365,7 @@ class CheckpointTree:
             if src.is_file():
                 shutil.copyfile(src, self.root / f"{cid}.code.py")
                 code_name = src.name
+                self._archive_imports(cid, src)
             else:
                 print(f"[checkpoint_tree] program {src} not found; node saved without code",
                       flush=True)
@@ -342,12 +385,15 @@ class CheckpointTree:
         except Exception:  # noqa: BLE001 -- optional flag only
             success = None
 
+        joints = _joints_text(self.env)
+
         self.nodes[cid] = Node(
             cid=cid, parent=parent,
             depth=(self.nodes[parent].depth + 1) if parent and parent in self.nodes else 0,
             label=label, note=note, created=time.time(), children=[],
             action=action or label, state_diff=diff, code_name=code_name,
             log=str(log or ""), snapshot=str(snapshot or ""), success=success,
+            joints=joints,
         )
         if parent and parent in self.nodes:
             self.nodes[parent].children.append(cid)
@@ -355,6 +401,10 @@ class CheckpointTree:
         self._save_manifest()
         self._say(f"saved {cid} '{label}'" + (f" (parent {parent})" if parent else " (root)")
                   + (" [SUCCESS]" if success else ""))
+        if joints:
+            self._say(f"joints at {cid}: {joints}")
+        self._say(f"check the quality of {cid} before building from it — continuing from a "
+                  f"low-quality state or one with clear issues costs every later branch")
         # scene_diff is the agent's to write, and BOTH images it needs exist right now:
         # this node's snapshot was just captured, the parent's at its own save. Hand over
         # the exact paths and the exact call, so "look, then describe" costs one step.
@@ -363,6 +413,42 @@ class CheckpointTree:
             self._say(f"scene_diff: LOOK at {parent_snap} (parent) vs {snapshot} (this), "
                       f"then tree.annotate('{cid}', scene_diff='what visibly changed')")
         return cid
+
+    def _archive_imports(self, cid: str, src: Path) -> None:
+        """Copy the workspace-local modules `src` imports to `<cid>.modules/`, so the node's
+        recorded edge stays reconstructable after those modules are edited later. (The node's
+        code is a faithful record only together with the module versions it ran against.)"""
+        import ast
+
+        try:
+            parsed = ast.parse(src.read_text())
+        except Exception as exc:  # noqa: BLE001 -- an unparsable script must not lose the save
+            print(f"[checkpoint_tree] could not parse {src.name} for imports ({exc!r}); "
+                  f"node saved without its imported modules", flush=True)
+            return
+        names: set[str] = set()
+        for node in ast.walk(parsed):
+            if isinstance(node, ast.Import):
+                names.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    names.add(node.module.split(".")[0])
+                elif node.level:  # `from . import helpers`
+                    names.update(a.name.split(".")[0] for a in node.names)
+        archived = []
+        for name in sorted(names):
+            mod = src.parent / f"{name}.py"
+            if not mod.is_file() or mod.resolve() == src.resolve():
+                continue  # stdlib/installed/tool modules have no file next to the script
+            try:
+                dest = self.root / f"{cid}.modules"
+                dest.mkdir(exist_ok=True)
+                shutil.copyfile(mod, dest / f"{name}.py")
+                archived.append(name)
+            except Exception as exc:  # noqa: BLE001 -- an archive bug must not lose the save
+                print(f"[checkpoint_tree] archiving {name}.py failed: {exc!r}", flush=True)
+        if archived:
+            self._say(f"archived imported module(s) {', '.join(archived)} to {cid}.modules/")
 
     def goto(self, cid: str) -> str:
         """Restore the world to a saved node and make it current.
@@ -382,6 +468,10 @@ class CheckpointTree:
         self.current = cid
         self._save_manifest()
         self._say(f"world restored to {cid} '{self.nodes[cid].label}'")
+        if self.nodes[cid].joints:
+            self._say(f"joints at {cid}: {self.nodes[cid].joints}")
+        self._say(f"a checkpoint may be suboptimal or broken in itself — check that "
+                  f"{cid} is really where you want to start from")
         return self.tried_from(cid)
 
     def annotate(self, cid: str, *, action: str | None = None,
@@ -455,6 +545,8 @@ class CheckpointTree:
                 out.append(f"{pad}      scene diff: {n.scene_diff}")
             if n.note:
                 out.append(f"{pad}      note: {n.note}")
+            if n.joints:
+                out.append(f"{pad}      joints: {n.joints}")
             if n.snapshot:
                 out.append(f"{pad}      snapshot: {n.snapshot}")
             for ch in n.children:

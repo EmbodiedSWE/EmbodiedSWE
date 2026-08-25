@@ -10,9 +10,11 @@ Principle: no bundle ships unbooted.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -92,15 +94,36 @@ os._exit(0)
 """
     py = VENV_PY if VENV_PY.exists() else Path(sys.executable)
     print(f"[validate] booting registered preset '{preset}' from the extracted tree ...")
+    # A FILE under /tmp, not `python -c`: isaacsim 6 (Newton)'s AppLauncher parses sys.argv for
+    # Kit args, and a bare "-c" argv[0] is misread as a Kit arg and segfaults Kit at startup
+    # (measured on Modal L4, 2026-08-15). Writing it under /tmp (not the tree) keeps the tree
+    # byte-identical to its hash, and sys.path[0] becomes /tmp (no robobench there), so
+    # PYTHONPATH=tree still resolves the extracted robobench — same isolation as before.
+    boot_file = Path(tempfile.mkdtemp()) / "_boot_validate.py"
+    boot_file.write_text(code)
+    # Inherit the parent env (the GPU driver mount's LD_LIBRARY_PATH, which Kit needs on Modal),
+    # then override PYTHONPATH to the extracted tree so its robobench — not the repo's — is used.
+    env = dict(os.environ)
+    env.update({
+        "PYTHONPATH": str(tree), "HOME": str(Path.home()),
+        "PYTHONDONTWRITEBYTECODE": "1",  # keep the validated tree byte-identical to its hash
+        "OMNI_KIT_ACCEPT_EULA": "YES", "ACCEPT_EULA": "Y", "PRIVACY_CONSENT": "Y",
+        "NVIDIA_DRIVER_CAPABILITIES": "all",
+        # Isaac's breakpad crash-handler segfaults in a restricted container (cannot fork to
+        # write a dump), killing Kit at startup; disabling it lets Kit boot.
+        "OMNI_KIT_CRASH_REPORTER": "0", "CARB_CRASHREPORTER_ENABLED": "0",
+        "OMNI_KIT_ALLOW_ROOT": "1",
+    })
     r = subprocess.run(
-        [str(py), "-c", code],
+        [str(py), str(boot_file)],
         cwd=str(tree),  # cwd MUST NOT contain the real robobench (sys.path shadows PYTHONPATH)
-        env={
-            "PYTHONPATH": str(tree), "HOME": str(Path.home()), "PATH": "/usr/bin:/bin",
-            "PYTHONDONTWRITEBYTECODE": "1",  # keep the validated tree byte-identical to its hash
-            "OMNI_KIT_ACCEPT_EULA": "YES", "ACCEPT_EULA": "Y", "PRIVACY_CONSENT": "Y",
-        },
-        capture_output=True, text=True, timeout=600,
+        env=env,
+        # 2400, not 600: a first boot on a cold kit cache COOKS the scene's SDF collision
+        # meshes (the pc slot channels take the longest), and 600 s killed exactly those
+        # builds (pc_gpu / pc_gpu_ram, 2026-08-14) while every warm-cache boot passes in
+        # ~60 s. The timeout still exists so a genuinely hung boot cannot stall a build
+        # pipeline forever.
+        capture_output=True, text=True, timeout=2400,
     )
     if "BOOT_OK" not in r.stdout:
         missing = []

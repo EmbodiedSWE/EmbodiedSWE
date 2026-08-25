@@ -80,7 +80,12 @@ def build_experiment(
         # an asset the extractor could not see, supply it and boot again — asset
         # detection is a heuristic, so the prover is also what repairs it. The boot runs
         # at the build seed, so describe.md harvests the same initial condition grading uses.
-        for _ in range(4):
+        # 12 boots, not 4: scenes that check their own assets reveal exactly ONE missing
+        # directory per boot (the FileNotFoundError path), and the richer scenes reference
+        # more than three undetected asset dirs — tool_packing (chest, stapler, scissors,
+        # knife, ...) and coffee (machine, cup, tray, capsule, ...) both exhausted the old
+        # cap while repairing perfectly well (2026-08-14).
+        for _ in range(12):
             try:
                 describe_text = validate.boot_preset(bench, preset, seed=seed)
                 break

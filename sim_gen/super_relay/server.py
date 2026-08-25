@@ -58,6 +58,8 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+import chat_bridge
+
 logger = logging.getLogger("super_relay")
 
 ANTHROPIC_BASE = "https://api.anthropic.com/v1"
@@ -365,6 +367,8 @@ def create_app(
     read_timeout: int = 600,
     upstream_base: str = ANTHROPIC_BASE,
     force_model: str | None = None,
+    responses_via_chat: str | None = None,
+    spool_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Super Relay", version="1.0.0")
     req_logger = RequestLogger(log_dir)
@@ -432,8 +436,43 @@ def create_app(
             return ""
         return ((body.get("error") or {}).get("metadata") or {}).get("provider_name") or ""
 
+    async def _spool_roundtrip(url: str, payload: dict) -> tuple[int, dict]:
+        """Fulfil one upstream call through the file spool instead of the network.
+
+        Written for the corp-API case where the POD must not talk to the API at all: the
+        relay drops `{id, url, payload}` under <spool>/req/, a laptop-side daemon (outbound
+        SSH only — see eval/scripts/laptop_aidp_bridge.py) picks it up, makes the API call
+        from inside the corp network, and writes `{status, body}` to <spool>/resp/<id>.json.
+        No credentials and no network path to the API ever exist on the pod.
+        """
+        req_dir, resp_dir = spool_dir / "req", spool_dir / "resp"
+        req_dir.mkdir(parents=True, exist_ok=True)
+        resp_dir.mkdir(parents=True, exist_ok=True)
+        rid = new_request_id()
+        tmp = req_dir / f".{rid}.tmp"
+        tmp.write_text(json.dumps({"id": rid, "url": url, "payload": payload},
+                                  ensure_ascii=False))
+        tmp.rename(req_dir / f"{rid}.json")  # atomic: the daemon never sees partial JSON
+        resp_path = resp_dir / f"{rid}.json"
+        deadline = asyncio.get_event_loop().time() + read_timeout
+        while asyncio.get_event_loop().time() < deadline:
+            if resp_path.is_file():
+                try:
+                    out = json.loads(resp_path.read_text())
+                except json.JSONDecodeError:
+                    await asyncio.sleep(0.2)  # the daemon is mid-write; its rename is next
+                    continue
+                resp_path.unlink(missing_ok=True)
+                return int(out.get("status", 502)), out.get("body") or {}
+            await asyncio.sleep(0.5)
+        (req_dir / f"{rid}.json").unlink(missing_ok=True)  # withdraw the stale request
+        return 504, {"error": {"message": f"spool: no response within {read_timeout}s "
+                                          f"(laptop bridge down?)"}}
+
     async def _forward_with_retries(url: str, payload: dict, headers: dict) -> tuple[int, dict]:
         """POST to upstream, retrying 429/5xx and network errors with backoff."""
+        if spool_dir is not None:
+            return await _spool_roundtrip(url, payload)
         last_error: Exception | None = None
         for attempt in range(1, max_retries + 1):
             try:
@@ -662,6 +701,42 @@ def create_app(
 
         payload = dict(body)
         payload["model"] = model
+
+        # Chat-only upstream (e.g. AIDP modelhub): translate the codex turn to chat
+        # completions and back. The LOG still carries the ORIGINAL Responses request and a
+        # codex-shaped Responses object, so trajectories stay format-identical with the
+        # OpenAI-direct path and build_training_trajs needs no changes.
+        if responses_via_chat:
+            chat_payload, custom_names = chat_bridge.responses_to_chat(payload)
+            chat_payload["model"] = model
+            chat_headers = {"Content-Type": "application/json", "X-TT-LOGID": request_id}
+            status, chat_body = await _forward_with_retries(
+                responses_via_chat, chat_payload, chat_headers)
+            # Strict gateways reject fields they don't model — strip optional ones and retry.
+            for field in chat_bridge.OPTIONAL_CHAT_FIELDS:
+                if status != 400 or field not in chat_payload:
+                    continue
+                logger.warning("[%s] upstream rejected the chat payload (%s); retrying "
+                               "without %r", request_id,
+                               json.dumps(chat_body)[:200], field)
+                chat_payload.pop(field)
+                status, chat_body = await _forward_with_retries(
+                    responses_via_chat, chat_payload, chat_headers)
+            if status != 200:
+                req_logger.log(request_id, session_id, "openai_responses", body,
+                               chat_body, status, provider="chat-bridge")
+                if not stream_requested:
+                    return JSONResponse(chat_body, status_code=status)
+                err = f"data: {json.dumps(chat_body, ensure_ascii=False)}\n\n".encode()
+                return StreamingResponse(iter([err]), media_type="text/event-stream")
+            resp_body = chat_bridge.chat_to_responses(chat_body, body, custom_names)
+            req_logger.log(request_id, session_id, "openai_responses", body, resp_body,
+                           200, provider="chat-bridge")
+            if not stream_requested:
+                return JSONResponse(resp_body)
+            return StreamingResponse(iter(chat_bridge.responses_sse(resp_body)),
+                                     media_type="text/event-stream")
+
         headers = _auth_headers(request, anthropic=False)
         url = f"{upstream_base}/responses"
 
@@ -674,8 +749,25 @@ def create_app(
         # Streaming passthrough. The final `response.completed` event carries the whole
         # response object, so that is what the log gets — the same completeness the
         # anthropic path buys by calling upstream non-streaming.
+        #
+        # The record is written THE MOMENT `response.completed` arrives, not after the
+        # loop: codex closes the connection as soon as it has that event, which cancels
+        # this generator with CancelledError/GeneratorExit — neither is `Exception`, so a
+        # post-loop log line never ran and the relay served 200s while recording NOTHING
+        # (measured 2026-08-14: a full codex session, 0 bytes of trajectory). The
+        # `finally` covers every other early exit: whatever we know is written before the
+        # generator is torn down, so no completed request can end unrecorded.
         async def event_stream():
             final: dict | None = None
+            logged = False
+
+            def log_once(resp_body: dict, status: int) -> None:
+                nonlocal logged
+                if not logged:
+                    logged = True
+                    req_logger.log(request_id, session_id, "openai_responses", body,
+                                   resp_body, status, provider=provider)
+
             try:
                 async with client.stream("POST", url, json=_with_ignored(payload),
                                          headers=headers) as resp:
@@ -685,8 +777,7 @@ def create_app(
                             err_body = json.loads(text)
                         except Exception:  # noqa: BLE001
                             err_body = {"error": {"message": text[:2000]}}
-                        req_logger.log(request_id, session_id, "openai_responses", body,
-                                       err_body, resp.status_code, provider=provider)
+                        log_once(err_body, resp.status_code)
                         yield f"data: {json.dumps(err_body, ensure_ascii=False)}\n\n".encode()
                         return
                     async for line in resp.aiter_lines():
@@ -695,23 +786,19 @@ def create_app(
                                 chunk = json.loads(line[len("data: "):])
                                 if chunk.get("type") == "response.completed":
                                     final = chunk.get("response")
+                                    log_once(final, 200)
                             except json.JSONDecodeError:
                                 pass
                         if line:
                             yield (line + "\n").encode()
                         else:
                             yield b"\n"
-                req_logger.log(request_id, session_id, "openai_responses", body,
-                               final if final is not None
-                               else {"error": {"message": "stream ended without "
-                                                          "response.completed"}},
-                               200 if final is not None else 502, provider=provider)
             except Exception as e:  # noqa: BLE001
                 logger.error("[%s] responses streaming error: %s", request_id, e, exc_info=True)
-                err = {"error": {"message": str(e)}}
-                req_logger.log(request_id, session_id, "openai_responses", body, err, 500,
-                               provider=provider)
-                yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n".encode()
+                log_once({"error": {"message": str(e)}}, 500)
+                yield f"data: {json.dumps({'error': {'message': str(e)}}, ensure_ascii=False)}\n\n".encode()
+            finally:
+                log_once({"error": {"message": "stream ended without response.completed"}}, 502)
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -739,6 +826,8 @@ def main(
     heartbeat_interval: int = 15,
     read_timeout: int = 600,
     upstream_base: str = ANTHROPIC_BASE,
+    responses_via_chat: str | None = None,
+    spool_dir: str | None = None,
 ):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = create_app(
@@ -749,6 +838,8 @@ def main(
         read_timeout=read_timeout,
         upstream_base=upstream_base,
         force_model=force_model,
+        responses_via_chat=responses_via_chat,
+        spool_dir=Path(spool_dir) if spool_dir else None,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -775,6 +866,17 @@ if __name__ == "__main__":
     parser.add_argument("--upstream-base", default=ANTHROPIC_BASE,
                         help="upstream API base URL (default: Anthropic; use "
                              "https://openrouter.ai/api/v1 for OpenRouter)")
+    parser.add_argument("--responses-via-chat",
+                        default=os.environ.get("SUPER_RELAY_RESPONSES_VIA_CHAT"),
+                        help="FULL chat-completions URL (auth included, e.g. the AIDP "
+                             "crawl URL with ?ak=...) — /v1/responses traffic is bridged "
+                             "to it instead of a Responses upstream (or "
+                             "SUPER_RELAY_RESPONSES_VIA_CHAT)")
+    parser.add_argument("--spool-dir", default=os.environ.get("SUPER_RELAY_SPOOL_DIR"),
+                        help="fulfil upstream calls through <dir>/req and <dir>/resp files "
+                             "instead of the network (a laptop-side daemon makes the real "
+                             "API calls; see eval/scripts/laptop_aidp_bridge.py). "
+                             "URL flags then only label the request kind for the daemon.")
     args = parser.parse_args()
     main(
         host=args.host,
@@ -786,4 +888,6 @@ if __name__ == "__main__":
         read_timeout=args.read_timeout,
         upstream_base=args.upstream_base,
         force_model=args.force_model,
+        responses_via_chat=args.responses_via_chat,
+        spool_dir=args.spool_dir,
     )

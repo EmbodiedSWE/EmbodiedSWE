@@ -114,6 +114,75 @@ class BaseEnv:
             self.iscene.update(self.dt)
             self.robot.post_step()
             self.scene.post_step()
+        self._statelog_tick()
+
+    def _statelog_tick(self) -> None:
+        """REACHED-STATE LOG (grading source of record): when COSIGEN_STATELOG is set,
+        every env — including ones the agent boots in its own scripts — periodically
+        saves its full state, and ALWAYS saves on a score improvement. Runs are then
+        graded on states actually reached in the run, no replay required. Off (and
+        zero-cost) when the env var is unset."""
+        import os
+        if not hasattr(self, "_slog_dir"):
+            d = os.environ.get("COSIGEN_STATELOG")
+            self._slog_dir = None
+            if d:
+                from pathlib import Path
+                self._slog_dir = Path(d) / f"pid{os.getpid()}"
+                try:
+                    self._slog_dir.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    self._slog_dir = None
+            self._slog_n = 0
+            self._slog_seq = 0
+            self._slog_best = float("-inf")
+            self._slog_every = int(os.environ.get("COSIGEN_STATELOG_EVERY", "200"))
+            self._slog_cap = int(os.environ.get("COSIGEN_STATELOG_CAP", "1500"))
+        if self._slog_dir is None:
+            return
+        self._slog_n += 1
+        score = None
+        try:
+            if hasattr(self.scene, "score"):
+                s = self.scene.score()
+                score = float(s.float().max() if hasattr(s, "max") else s) / 100.0
+            elif hasattr(self.scene, "success"):
+                s = self.scene.success()
+                score = float(s.max() if hasattr(s, "max") else s)
+        except Exception as exc:  # noqa: BLE001 -- scoring must never break stepping
+            if not getattr(self, "_slog_score_warned", False):
+                self._slog_score_warned = True
+                import sys
+                print(f"[statelog] score probe failed (reported once): {exc!r}", file=sys.stderr)
+        improved = score is not None and score > self._slog_best + 1e-9
+        if not improved and self._slog_n % self._slog_every != 0:
+            return
+        if not improved and self._slog_seq >= self._slog_cap:
+            return  # cap periodic snapshots; improvements are always kept
+        try:
+            import time
+
+            import torch
+            tag = "peak" if improved else "tick"
+            payload = {"states": self.get_states(), "score": score,
+                       "t_wall": time.time(), "sim_step": self._slog_n, "tag": tag}
+            try:
+                succ = self.scene.success()
+                payload["success"] = bool(succ.all() if hasattr(succ, "all") else succ)
+            except Exception:  # noqa: BLE001
+                pass
+            # tmp+rename: a process killed mid-save must never leave a corrupt snapshot
+            # that later poisons grading (readers still tolerate load failures)
+            final = self._slog_dir / f"{self._slog_seq:06d}_{tag}.pt"
+            tmp = self._slog_dir / f".{self._slog_seq:06d}_{tag}.tmp"
+            torch.save(payload, tmp)
+            tmp.rename(final)
+            self._slog_seq += 1
+            if improved:
+                self._slog_best = score
+        except Exception as exc:  # noqa: BLE001 -- logging must never break the run
+            import sys
+            print(f"[statelog] snapshot failed: {exc!r}", file=sys.stderr)
 
     def describe(self) -> str:
         """CURATED **natural-language** description for the agent: the scene's NL (objects + the

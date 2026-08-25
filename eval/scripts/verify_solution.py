@@ -69,7 +69,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--preset", required=True)
     ap.add_argument("--solution", required=True)
-    ap.add_argument("--max-seconds", type=float, default=1800)
+    # 3600, not 1800 (raised 2026-08-15 with user approval): the audit of the first campaign
+    # showed honest contact-rich solves need 35-49 min to replay (nut_thread fable-5: seats
+    # the nut at ~36 min, killed at 30 every time), so the old guard returned false verdicts
+    # on any solution slower than itself. The watchdog still exists for genuinely hung solves.
+    ap.add_argument("--max-seconds", type=float, default=3600)
     args = ap.parse_args()
 
     # ENFORCE the budget. This argument existed but was never read, and an unbounded check is

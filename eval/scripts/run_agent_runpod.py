@@ -1,0 +1,1028 @@
+#!/usr/bin/env python3
+"""Launch ONE agent run against a built experiment stage — on a RUNPOD POD, not docker.
+
+This file is run_agent_sandbox.py with ONE substitution: the SWALM Env Manager sandbox
+becomes a disposable RunPod GPU pod (RTX 4090) reached over SSH, because this campaign runs
+outside the ByteDance network. Everything else is run_agent_sandbox.py's code, unchanged
+where the substrate allows — the condition yaml, the task folder, the sha256 task manifest,
+the submission stamping, the budget loop, the in-pod trajectory relay, the resume path,
+run.json. A run that differs anywhere else is a run nobody can reproduce against the sandbox
+path, which is the whole point of keeping them identical.
+
+Every place the substrate forces a difference is marked `SUBSTRATE:`:
+  1. create_sandbox -> RunPod REST create pod (same image role, same entry). No pool: a pod
+     provisions from the network-volume env snapshot in ~2 min, so each run creates a fresh
+     pod and (by default) terminates it at teardown — the sandbox pool existed because a
+     sandbox cost 40-90 min to provision, and that reason does not exist here.
+  2. Portal upload/download -> tar streams over SSH; /bench and /task are uploaded and made
+     root-owned read-only, /workspace + /submissions are mirrored back every poll.
+  3. No baked L1 image: the pod restores /opt/cosigen (Isaac venv + repo), node, the agent
+     CLIs and the relay venv from ENV_SNAPSHOT on the attached network volume (mounted at
+     /snapshot — NOT /workspace, which the harness contract owns).
+  4. The relay runs in-pod as in the sandbox path, but its upstream is the real API
+     (api.anthropic.com for claude, api.openai.com for codex) with a relay-owned key; the
+     agent only ever sees a placeholder credential.
+  5. `docker logs` -> the entry script's stdout, pulled back as the same container.log.
+
+    python eval/scripts/run_agent_runpod.py experiments/<exp> \\
+        [--agent claude|codex] [--model <id>] [--budget-min 240] \\
+        [--config no_tools] [--keep-going] [--run NAME] [--resume-from DIR] [--dry-run]
+
+Codex runs speak the relay's OpenAI chat-completions endpoint: the launcher writes
+/home/agent/.codex/config.toml pinning a `relay` model provider (wire_api "chat") before the
+entry starts, so the same agent-entry.sh codex adapter works untouched.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import json
+import shlex
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from envbuild import prompts  # noqa: E402
+from envbuild.condition import load as load_condition  # noqa: E402
+
+# Hardcoded on purpose (user directive: no env-var fallbacks for keys).
+RUNPOD_KEY = "***REMOVED-SECRET***"
+ANTHROPIC_KEY = ("sk-ant-api03-TiY0vWZvGI5IjicOJGaYRD-DkzLq6lH1ihCSBN4cJCShhEfGWXPvnGwSNOdoQPb"
+                 "_useOr9y8jvn2QgKn1u34EQ-rXpLcQAA")
+OPENAI_KEY = ("sk-proj-xV_ukdY524Uxtrz0RPANBXfZIX9Azw2J5Nj5XJlgwqu8_KgEjTz3AxF_sHvMnomUtwErbzDw6"
+              "vT3BlbkFJVTC9MwXXYQXjpBx09iDDkkA8BvPCnDi-il9DQFr7bQvB9Q6yXydAotr40G99VWfOd8rWqMlmUA")
+
+REST = "https://rest.runpod.io/v1"
+POD_IMAGE = "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
+GPU_TYPE = "NVIDIA GeForce RTX 4090"
+DATACENTER = "EU-RO-1"                    # where the cosigen-forge network volumes live
+NETWORK_VOLUME_ID = "sv0rdbpy30"          # cosigen-forge-1 (200 GB), holds ENV_SNAPSHOT
+SNAPSHOT_MOUNT = "/snapshot"              # SUBSTRATE: NOT /workspace — the harness owns that
+ENV_SNAPSHOT = f"{SNAPSHOT_MOUNT}/cosigen_env2.tar.zst"
+
+ANTHROPIC_BASE = "https://api.anthropic.com/v1"
+OPENAI_BASE = "https://api.openai.com/v1"
+# AIDP modelhub gateway (chat-completions only; the relay can bridge codex's Responses API
+# onto it — see sim_gen/super_relay/chat_bridge.py). NOT USABLE FROM CLOUD VMs: it resolves
+# to a ByteDance-internal 10.x address (measured from Modal 2026-08-15, ConnectTimeout), so
+# cloud runs use the direct OpenAI API (user directive 2026-08-15) and this stays for
+# corp-network use only.
+AIDP_CHAT_URL = ("https://aidp.bytedance.net/api/modelhub/online/v2/crawl"
+                 "?ak=odiVodksVzIsXAf35pKNXjGVgz0DSSdj_GPT_AK")
+# The same gateway through the laptop bridge (--gpt-via-tunnel): the pod's 127.0.0.1:8899 is
+# a reverse SSH tunnel to the laptop's AIDP forwarder (eval/scripts/laptop_aidp_forwarder.py
+# + laptop_tunnel_daemon.py), which makes the call from inside the corp network. Plain http
+# on the loopback leg; the tunnel itself is SSH-encrypted, laptop->AIDP is https.
+TUNNEL_AIDP_URL = ("http://127.0.0.1:8899/api/modelhub/online/v2/crawl"
+                   "?ak=odiVodksVzIsXAf35pKNXjGVgz0DSSdj_GPT_AK")
+
+CC_VERSION = "2.1.216"       # the version eval/docker pins (baked into ENV_SNAPSHOT)
+VENV = "/opt/cosigen/.venv"  # the Isaac venv the snapshot restores
+AGENT_USER = "agent"         # Dockerfile.l1-agent's non-root user
+RELAY_DIR = "/opt/relay"     # root-owned 700, so the agent cannot read the trajectory
+RELAY_VENV = "/opt/relay-venv"
+
+
+# ---------------------------------------------------------------------------------------
+# SUBSTRATE layer: everything below replaces exactly what the Env Manager sandbox calls
+# (create/attach/execute/upload/download/delete) did, and nothing else.
+# ---------------------------------------------------------------------------------------
+
+import urllib.request  # noqa: E402
+import urllib.error    # noqa: E402
+
+
+def rest(method: str, path: str, body: dict | None = None) -> dict:
+    req = urllib.request.Request(
+        f"{REST}{path}", method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": f"Bearer {RUNPOD_KEY}", "content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")[:500]
+        raise RuntimeError(f"runpod {method} {path} -> {exc.code}: {detail}") from exc
+    data = json.loads(raw) if raw.strip() else {}
+    return data if isinstance(data, dict) else {"items": data}
+
+
+@dataclass
+class Pod:
+    id: str
+    ip: str
+    port: int
+    ssh_key: str
+
+
+def sh(pod: Pod, cmd: str, user: str = "root", timeout: float = 600,
+       env: dict | None = None, quiet: bool = False) -> tuple[int, str]:
+    """A command on the pod. SSH as root; agent-user commands go through runuser, exactly
+    as agent-entry.sh itself drops privileges."""
+    if not quiet:
+        print(f"  [{user}] {cmd[:120]}", flush=True)
+    env_prefix = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in (env or {}).items())
+    inner = f"/bin/sh -c {shlex.quote(cmd)}"
+    if user == "root":
+        full = f"env {env_prefix} {inner}" if env_prefix else inner
+    else:
+        full = (f"runuser -u {user} -- env HOME=/home/{user} "
+                f"{env_prefix} {inner}")
+    proc = subprocess.run(
+        ["ssh", "-i", pod.ssh_key, "-p", str(pod.port),
+         "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=20",
+         "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4",
+         f"root@{pod.ip}", full],
+        capture_output=True, text=True, timeout=timeout)
+    text = (proc.stdout + proc.stderr).rstrip()
+    if not quiet and text:
+        print(text[:800], flush=True)
+    return proc.returncode, text
+
+
+def upload_dir(pod: Pod, local: Path, remote: str) -> int:
+    """SUBSTRATE for portal.upload_files: a tar stream over SSH."""
+    files = [p for p in sorted(local.rglob("*")) if p.is_file()]
+    # COPYFILE_DISABLE: macOS bsdtar otherwise adds AppleDouble ._* entries (154 of them
+    # for a 123-file bench — measured 2026-08-21), which materialize as real files on the
+    # Linux pod and fail the staging integrity count
+    tar = subprocess.Popen(["tar", "czf", "-", "-C", str(local), "."],
+                           stdout=subprocess.PIPE,
+                           env={**os.environ, "COPYFILE_DISABLE": "1"})
+    rc = subprocess.run(
+        ["ssh", "-i", pod.ssh_key, "-p", str(pod.port),
+         "-o", "StrictHostKeyChecking=accept-new", f"root@{pod.ip}",
+         f"mkdir -p {shlex.quote(remote)} && tar xzf - -C {shlex.quote(remote)}"],
+        stdin=tar.stdout, capture_output=True, timeout=1800).returncode
+    tar.wait()
+    if rc != 0 or tar.returncode != 0:
+        raise SystemExit(f"upload of {local} -> {remote} failed")
+    return len(files)
+
+
+def download_tar(pod: Pod, remote_cmd: str, timeout: float = 1800) -> bytes:
+    """SUBSTRATE for portal.download_files: `remote_cmd` must write a tar stream to stdout."""
+    proc = subprocess.run(
+        ["ssh", "-i", pod.ssh_key, "-p", str(pod.port),
+         "-o", "StrictHostKeyChecking=accept-new", f"root@{pod.ip}", remote_cmd],
+        capture_output=True, timeout=timeout)
+    # rc 1 accepted (2026-08-16): GNU tar exits 1 for "file changed as we read it" — routine
+    # while the agent is writing files mid-mirror — and the stream is still valid; rejecting
+    # it silently discarded every periodic mirror of an active run.
+    return proc.stdout if proc.returncode in (0, 1) else b""
+
+
+def create_pod(name: str, ssh_pubkey: str, ssh_key: str, gpu_count: int = 1) -> Pod:
+    """SUBSTRATE for `docker run -d` / create_sandbox: a disposable RTX 4090 pod.
+
+    Capacity errors are retried (not forever: a campaign must hear about a dry datacenter),
+    and the pod is polled until its SSH endpoint answers. `gpu_count=2` is the tools-arm
+    topology: parameter_search.launch() pins detached searches to the freest LOCAL GPU
+    (device 1, away from the agent's interactive Isaac on device 0) — its design assumes a
+    second GPU on the same box, not a second pod.
+    """
+    body = {
+        "name": name,
+        "imageName": POD_IMAGE,
+        "cloudType": "SECURE",
+        "gpuTypeIds": [GPU_TYPE],
+        "gpuCount": gpu_count,
+        "containerDiskInGb": 100,
+        "networkVolumeId": NETWORK_VOLUME_ID,
+        "volumeMountPath": SNAPSHOT_MOUNT,
+        "ports": ["22/tcp"],
+        "env": {"PUBLIC_KEY": ssh_pubkey},
+    }
+    pod_id = ""
+    for attempt in range(30):
+        try:
+            created = rest("POST", "/pods", body)
+            pod_id = created["id"]
+            break
+        except RuntimeError as exc:
+            print(f"  pod create attempt {attempt + 1}/30 failed: {exc}", flush=True)
+            if attempt == 29:
+                raise SystemExit(f"could not create a pod after 30 attempts: {exc}")
+            time.sleep(30)
+    print(f"  pod {pod_id} created; waiting for SSH", flush=True)
+    for attempt in range(120):            # up to ~10 min for allocation + boot
+        time.sleep(5)
+        info = rest("GET", f"/pods/{pod_id}")
+        ip = info.get("publicIp") or ""
+        port = (info.get("portMappings") or {}).get("22")
+        if ip and port:
+            pod = Pod(id=pod_id, ip=ip, port=int(port), ssh_key=ssh_key)
+            rc, _ = sh(pod, "true", quiet=True)
+            if rc == 0:
+                print(f"  pod {pod_id} up at {ip}:{port}", flush=True)
+                return pod
+    rest("DELETE", f"/pods/{pod_id}")
+    raise SystemExit(f"pod {pod_id} never became reachable; deleted it")
+
+
+def terminate_pod(pod: Pod) -> None:
+    """SUBSTRATE for `docker rm -f`."""
+    try:
+        rest("DELETE", f"/pods/{pod.id}")
+        print(f"  pod {pod.id} terminated", flush=True)
+    except RuntimeError as exc:
+        print(f"  POD DELETE FAILED — {pod.id} may still be billing, delete it by hand: {exc}",
+              flush=True)
+
+
+def isaac_ok(pod: Pod) -> bool:
+    eula = {"OMNI_KIT_ACCEPT_EULA": "YES", "ACCEPT_EULA": "Y", "PRIVACY_CONSENT": "Y"}
+    rc, out = sh(pod, f"test -x {VENV}/bin/python && {VENV}/bin/python -c "
+                      f"'import isaacsim, isaaclab, h5py; print(\"isaac ok\")'",
+                 timeout=900, quiet=True, env=eula)
+    return "isaac ok" in out
+
+
+def provision_pod(pod: Pod) -> None:
+    """SUBSTRATE for the image: restore ENV_SNAPSHOT (Isaac venv + repo + node + agent CLIs +
+    relay venv + warmed shader caches) captured from the template pod. Idempotent."""
+    # Dockerfile.l0's apt layer FIRST, unconditionally: without libGLU/libgomp/vulkan the
+    # RunPod pytorch image boots Isaac on CPU-fallback PhysX ("Unable to get IGpuFoundation")
+    # — sims still run, 100-700x slower (pc_ram boot: 40+ min vs 3.3 s, measured 2026-08-15).
+    # Idempotent and ~30 s; the NVIDIA GLX userspace itself is already in RunPod's image.
+    rc, out = sh(pod, "apt-get update -qq >/dev/null 2>&1; "
+                      "apt-get install -y -qq zstd libglvnd0 libgl1 libglx0 libegl1 libgles2 "
+                      "libvulkan1 vulkan-tools libx11-6 libxt6 libxrandr2 libgomp1 libglu1-mesa "
+                      ">/dev/null 2>&1; ldconfig; ldconfig -p | grep -cE 'libGLU|libvulkan|libgomp'",
+                 timeout=900, quiet=True)
+    if int((out.strip() or "0").splitlines()[-1]) < 3:
+        raise SystemExit("the GPU libraries Isaac dlopens did not install; scenes would run "
+                         "on CPU-fallback PhysX (measured 100-700x slower)")
+    if not isaac_ok(pod):
+        print(f"  restoring environment from {ENV_SNAPSHOT}", flush=True)
+        t0 = time.time()
+        rc, out = sh(pod, f"test -f {ENV_SNAPSHOT} && echo SNAP_OK", timeout=900, quiet=True)
+        if "SNAP_OK" not in out:
+            raise SystemExit(f"{ENV_SNAPSHOT} is missing on the network volume; "
+                             "capture it first (see eval/scripts/snapshot_pod_env.sh)")
+        rc, out = sh(pod, f"tar -I 'zstd -T0' -xf {ENV_SNAPSHOT} -C /", timeout=1800)
+        if rc != 0 or not isaac_ok(pod):
+            raise SystemExit("the snapshot restored but Isaac does not import; "
+                             "the task cannot be attempted")
+        print(f"  environment restored in {time.time() - t0:.0f}s", flush=True)
+    # What the L1 image would also have carried: node + the agent CLIs + the relay venv.
+    # Symlinks FIRST, check second — the CLIs live under /opt/npm/bin (snapshot content),
+    # which is not on a fresh pod's PATH until these links exist.
+    sh(pod, f"ln -sfn /opt/node-v22.11.0-linux-x64/bin/node /usr/local/bin/node && "
+            f"ln -sfn /opt/node-v22.11.0-linux-x64/bin/npm /usr/local/bin/npm && "
+            f"ln -sfn /opt/npm/bin/claude /usr/local/bin/claude && "
+            f"test -x /opt/npm/bin/codex && ln -sfn /opt/npm/bin/codex /usr/local/bin/codex; "
+            f"true", quiet=True)
+    rc, out = sh(pod, "for t in node claude codex; do command -v $t >/dev/null || "
+                      "echo MISSING_$t; done; "
+                      "test -x /opt/relay-venv/bin/python || echo MISSING_relayvenv",
+                 quiet=True)
+    if "MISSING" in out:
+        raise SystemExit(f"the snapshot lacks baked tools ({out.strip()}); "
+                         "re-capture it with eval/scripts/snapshot_pod_env.sh")
+    sh(pod, f"id -u {AGENT_USER} >/dev/null 2>&1 || useradd -m -s /bin/bash {AGENT_USER}",
+       quiet=True)
+    # The warmed caches were captured under /root; the agent is a different user, so stage
+    # them where the entry's XDG_CACHE_HOME points (the rb-ovcache volume's role).
+    sh(pod, f"mkdir -p /ovcache && cp -a /root/.cache/. /ovcache/ 2>/dev/null; "
+            f"test -d /root/.nv && mkdir -p /home/{AGENT_USER} && "
+            f"cp -a /root/.nv /home/{AGENT_USER}/.nv 2>/dev/null; "
+            f"chown -R {AGENT_USER}:{AGENT_USER} /ovcache /home/{AGENT_USER}; true",
+       timeout=1800, quiet=True)
+    # The agent (non-root) must be able to run the venv — prove it, fix perms only if needed.
+    rc, out = sh(pod, f"{VENV}/bin/python -c 'import sys; print(\"venv-as-agent ok\")'",
+                 user=AGENT_USER, quiet=True)
+    if "venv-as-agent ok" not in out:
+        sh(pod, "chmod -R a+rX /opt/cosigen", timeout=1800, quiet=True)
+        rc, out = sh(pod, f"{VENV}/bin/python -c 'print(\"venv-as-agent ok\")'",
+                     user=AGENT_USER, quiet=True)
+        if "venv-as-agent ok" not in out:
+            raise SystemExit("the agent user cannot execute the Isaac venv")
+
+
+def mount_like_docker(pod: Pod, stage: Path, task_dir: Path) -> None:
+    """SUBSTRATE for the four `-v` mounts (verbatim from run_agent_sandbox)."""
+    # docker -v REPLACES the mount point; the env snapshot ships its own /bench (env2:
+    # 277 files — measured 2026-08-21) and /bench may not be removable as a directory,
+    # so delete CONTENTS and verify empty before staging, or the integrity count below
+    # sees the union and refuses the pod
+    sh(pod, f"mkdir -p /bench /task /workspace/.agent /submissions /ovcache {RELAY_DIR}; "
+            f"find /bench /task -mindepth 1 -delete; "
+            f"chown -R {AGENT_USER}:{AGENT_USER} /workspace /submissions /ovcache", quiet=True)
+    rc, out = sh(pod, "find /bench /task -mindepth 1 | wc -l", quiet=True)
+    if int(out.strip() or 1) != 0:
+        raise SystemExit(f"/bench,/task not empty after clearing ({out.strip()} entries) — "
+                         f"refusing to stage over snapshot leftovers")
+    n_bench = upload_dir(pod, stage / "bench", "/bench")
+    n_task = upload_dir(pod, task_dir, "/task")
+    sh(pod, "chown -R root:root /bench /task && chmod -R a+rX,go-w /bench /task && "
+            "chmod 755 /bench /task", quiet=True)
+    for remote, expected in (("/bench", n_bench), ("/task", n_task)):
+        rc, out = sh(pod, f"find {remote} -type f | wc -l", quiet=True)
+        if int(out.strip() or 0) != expected:
+            raise SystemExit(f"{remote}: staged {out.strip()} of {expected} files")
+        print(f"  mounted {remote}: {expected} files", flush=True)
+
+
+def start_relay(pod: Pod, port: int, upstream_base: str, api_key: str,
+                force_model: str | None = None,
+                responses_via_chat: str | None = None,
+                spool_dir: str | None = None) -> str:
+    """The in-pod trajectory relay — run_agent_sandbox.start_relay with SSH transport.
+
+    Root-owned 700 with its own interpreter, so the agent (a different user) cannot read the
+    trajectory. The credential goes through the SSH env, never a command line.
+    """
+    src = Path(__file__).resolve().parents[2] / "sim_gen" / "super_relay"
+    tmp = Path("/tmp/_relay_stage")
+    subprocess.run(["rm", "-rf", str(tmp)], check=False)
+    tmp.mkdir(parents=True)
+    for p in sorted(src.glob("*.py")):
+        (tmp / p.name).write_bytes(p.read_bytes())
+    upload_dir(pod, tmp, RELAY_DIR)
+    sh(pod, f"chown -R root:root {RELAY_DIR} && chmod -R go-rwx {RELAY_DIR} && "
+            f"chmod 700 {RELAY_DIR} && mkdir -p {RELAY_DIR}/trajlog", quiet=True)
+    relay_py = f"{RELAY_VENV}/bin/python"
+    rc, out = sh(pod, f"{relay_py} -c 'import fastapi, uvicorn, httpx' 2>&1 || "
+                      f"echo NEED_INSTALL", quiet=True)
+    if "NEED_INSTALL" in out:
+        raise SystemExit("the relay venv is missing from the snapshot; re-capture it")
+    relay_env = {"SUPER_RELAY_API_KEY": api_key}
+    if force_model:
+        relay_env["SUPER_RELAY_FORCE_MODEL"] = force_model
+    if responses_via_chat:
+        # Via the SSH env, never the command line: the URL embeds the gateway access key,
+        # and /proc/<pid>/cmdline is readable by the agent user (same rule as the API key).
+        relay_env["SUPER_RELAY_RESPONSES_VIA_CHAT"] = responses_via_chat
+    spool_flag = ""
+    if spool_dir:
+        # Spool mode: the relay makes NO network calls; a laptop-side daemon (outbound SSH
+        # only, eval/scripts/laptop_aidp_bridge.py) fulfils each request through these files.
+        sh(pod, f"mkdir -p {spool_dir}/req {spool_dir}/resp && chmod -R go-rwx {spool_dir}",
+           quiet=True)
+        spool_flag = f"--spool-dir {spool_dir} "
+    sh(pod, f"cd {RELAY_DIR} && nohup {relay_py} {RELAY_DIR}/server.py "
+            f"--host 127.0.0.1 --port {port} --log-dir {RELAY_DIR}/trajlog "
+            f"{spool_flag}"
+            f"--upstream-base {upstream_base} > {RELAY_DIR}/relay.log 2>&1 & "
+            f"echo $! > {RELAY_DIR}/relay.pid; sleep 8",
+       env=relay_env, quiet=True)
+    rc, out = sh(pod,
+                 f"kill -0 $(cat {RELAY_DIR}/relay.pid) 2>/dev/null && echo RELAY_ALIVE; "
+                 f"grep -q 'address already in use' {RELAY_DIR}/relay.log && echo BIND_FAILED; "
+                 f"curl -s --max-time 10 http://127.0.0.1:{port}/health", quiet=True)
+    if "RELAY_ALIVE" not in out or "BIND_FAILED" in out:
+        sh(pod, f"tail -20 {RELAY_DIR}/relay.log")
+        raise SystemExit("the trajectory relay did not come up; a run we cannot replay is one "
+                         "that did not happen")
+    if f"{RELAY_DIR}/trajlog/raw_requests.jsonl" not in out:
+        raise SystemExit(f"the listener on port {port} is not our relay; refusing to run untraced")
+    rc, _ = sh(pod, f"ls {RELAY_DIR}", user=AGENT_USER, quiet=True)
+    if rc == 0:
+        raise SystemExit(f"{RELAY_DIR} is readable by the agent")
+    return f"http://127.0.0.1:{port}"
+
+
+def wait_for_tunnel(pod: Pod, timeout_s: float = 300.0) -> None:
+    """Block until the pod-local reverse tunnel answers (the laptop forwarder's /_health).
+
+    The laptop's tunnel daemon polls the pod list every ~45 s, so a fresh pod's tunnel
+    appears shortly after it turns RUNNING; failing after `timeout_s` beats letting the
+    agent start and burn its budget against a dead upstream."""
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        rc, out = sh(pod, "curl -s --max-time 5 http://127.0.0.1:8899/_health || true",
+                     quiet=True)
+        if "ok" in out:
+            print(f"  tunnel to laptop verified ({time.time() - t0:.0f}s)", flush=True)
+            return
+        time.sleep(15)
+    raise SystemExit(
+        "the pod-local tunnel (127.0.0.1:8899) never answered — are "
+        "laptop_aidp_forwarder.py and laptop_tunnel_daemon.py running on the laptop?")
+
+
+def write_codex_config(pod: Pod, relay_url: str, model: str) -> None:
+    """Point codex at the relay's OpenAI chat endpoint. The relay implements chat-completions
+    (not the Responses API), so the provider is pinned to wire_api "chat"."""
+    # wire_api "responses", NOT "chat": codex hard-removed chat-completions support in
+    # Feb 2026 (a "chat" config makes every leg die at config load — measured as 7500
+    # zero-second legs, 2026-08-15). The relay implements /v1/responses and logs it.
+    toml = (f'model = "{model}"\n'
+            f'model_provider = "relay"\n\n'
+            f'[model_providers.relay]\n'
+            f'name = "relay"\n'
+            f'base_url = "{relay_url}/v1"\n'
+            f'env_key = "OPENAI_API_KEY"\n'
+            f'wire_api = "responses"\n')
+    sh(pod, f"mkdir -p /home/{AGENT_USER}/.codex && "
+            f"cat > /home/{AGENT_USER}/.codex/config.toml << 'EOF'\n{toml}EOF\n"
+            f"chown -R {AGENT_USER}:{AGENT_USER} /home/{AGENT_USER}/.codex", quiet=True)
+
+
+AGENT_STATE = "agent_home.tgz"   # the CLI's own session state, kept beside the run's artifacts
+
+
+def mirror_agent_state(pod: Pod, run_dir: Path) -> bool:
+    """Copy the agent CLI's session state out so the run can be RESUMED (verbatim intent from
+    run_agent_sandbox.mirror_agent_state; taken once, at teardown)."""
+    data = download_tar(pod, f"test -d /home/{AGENT_USER} && tar czf - -C /home {AGENT_USER}",
+                        timeout=900)
+    if not data:
+        print("  no agent session state to preserve (the CLI never started?)", flush=True)
+        return False
+    (run_dir / AGENT_STATE).write_bytes(data)
+    print(f"  agent session state preserved: {len(data) / 1e6:.1f} MB "
+          f"({run_dir / AGENT_STATE})", flush=True)
+    return True
+
+
+def restore_run_state(pod: Pod, run_dir: Path) -> bool:
+    """Put a previous run's workspace, submissions and session state back into a fresh pod."""
+    ws, subs = run_dir / "workspace", run_dir / "submissions"
+    if not ws.is_dir():
+        raise SystemExit(f"{ws} does not exist — nothing to resume from")
+    tgz = run_dir / ".restore.tgz"
+    parts = ["workspace"] + (["submissions"] if subs.is_dir() else [])
+    subprocess.run(["tar", "czf", str(tgz), "-C", str(run_dir), *parts], check=True,
+                   env={**os.environ, "COPYFILE_DISABLE": "1"})
+    rc = subprocess.run(
+        ["ssh", "-i", pod.ssh_key, "-p", str(pod.port),
+         "-o", "StrictHostKeyChecking=accept-new", f"root@{pod.ip}",
+         # mkdir -p AFTER the tar: a fork source carries no submissions/ on purpose (fresh
+         # submissions for the new task), and without this the pod would lose /submissions.
+         "rm -rf /workspace /submissions && tar xzf - -C / && mkdir -p /workspace /submissions && "
+         f"chown -R {AGENT_USER}:{AGENT_USER} /workspace /submissions 2>/dev/null; true"],
+        stdin=tgz.open("rb"), capture_output=True, timeout=1800).returncode
+    tgz.unlink(missing_ok=True)
+    if rc != 0:
+        raise SystemExit("restoring the previous run's workspace failed")
+    state = run_dir / AGENT_STATE
+    if not state.exists():
+        print(f"  no {AGENT_STATE} beside this run: its files are restored but the conversation "
+              f"is not — the agent will start fresh against its own previous work", flush=True)
+        return False
+    rc = subprocess.run(
+        ["ssh", "-i", pod.ssh_key, "-p", str(pod.port),
+         "-o", "StrictHostKeyChecking=accept-new", f"root@{pod.ip}",
+         f"rm -rf /home/{AGENT_USER} && tar xzf - -C /home && "
+         f"chown -R {AGENT_USER}:{AGENT_USER} /home/{AGENT_USER} && echo STATE_RESTORED"],
+        stdin=state.open("rb"), capture_output=True, timeout=1800)
+    if b"STATE_RESTORED" not in rc.stdout:
+        raise SystemExit("the agent session state did not restore; refusing to resume as if it "
+                         "had (the run would silently start a new conversation)")
+    print("  agent session state restored — the CLI resumes its own conversation", flush=True)
+    return True
+
+
+def start_entry(pod: Pod, env: dict) -> None:
+    """SUBSTRATE for the container's ENTRYPOINT: the same agent-entry.sh, run as root."""
+    entry = Path(__file__).resolve().parents[1] / "docker" / "entrypoints"
+    tmp = Path("/tmp/_entry_stage")
+    subprocess.run(["rm", "-rf", str(tmp)], check=False)
+    tmp.mkdir(parents=True)
+    (tmp / "agent-entry.sh").write_bytes((entry / "agent-entry.sh").read_bytes())
+    (tmp / "submit").write_bytes((entry / "submit").read_bytes())
+    (tmp / "verify_solution.py").write_bytes(
+        (Path(__file__).resolve().parent / "verify_solution.py").read_bytes())
+    upload_dir(pod, tmp, "/opt/entrypoints")
+    rc, out = sh(pod,
+                 "chown root:root /opt/entrypoints/* && "
+                 "chmod 755 /opt/entrypoints/agent-entry.sh && "
+                 "install -m 755 /opt/entrypoints/submit /usr/local/bin/submit && "
+                 "mkdir -p /opt/harness/eval/scripts && "
+                 "mv /opt/entrypoints/verify_solution.py "
+                 "/opt/harness/eval/scripts/verify_solution.py && "
+                 "chmod 700 /opt/harness/eval/scripts/verify_solution.py && "
+                 "chmod -R go-rwx /opt/harness && "
+                 "ln -sfn /opt/harness/eval/scripts/verify_solution.py "
+                 "/opt/verify_solution.py && echo ENTRY_OK", quiet=True)
+    if "ENTRY_OK" not in out:
+        raise SystemExit("could not install the entry script / success check")
+    rc, out = sh(pod, f"{VENV}/bin/python /opt/verify_solution.py --help > /dev/null 2>&1; "
+                      f"echo rc=$?", quiet=True)
+    if "rc=0" not in out:
+        sh(pod, f"{VENV}/bin/python /opt/verify_solution.py --help 2>&1 | tail -5")
+        raise SystemExit("the success check cannot even start; the agent could never be told "
+                         "the task is solved")
+    # `cd /` FIRST: docker runs this entry at `/` (no WORKDIR anywhere in the images), but
+    # an SSH exec starts at /root — mode 700, unreadable to the agent user, so every process
+    # the agent CLI spawned died at chdir and the agents wrote solutions BLIND without ever
+    # running a sim (measured 2026-08-15: 39 claude runs, zero GPU use, "exec is fully
+    # dead" in the transcripts). `/` is what a docker container's entry sees; mimic that.
+    sh(pod, f"cd / && nohup /opt/entrypoints/agent-entry.sh > {RELAY_DIR}/container.log 2>&1 & "
+            f"sleep 5; pgrep -f '[a]gent-entry' | wc -l", env=env, timeout=120)
+
+
+def running(pod: Pod) -> bool:
+    """SUBSTRATE for `docker inspect .State.Running`: the entry script IS the container."""
+    rc, out = sh(pod, "pgrep -f '[a]gent-entry' | wc -l", quiet=True)
+    return (out.strip() or "0") != "0"
+
+
+def stop_entry(pod: Pod) -> None:
+    """SUBSTRATE for `docker stop -t 30`."""
+    sh(pod, "pkill -TERM -f '[a]gent-entry'; pkill -TERM -f '[c]laude'; "
+            "pkill -TERM -f '[c]odex'; sleep 30; "
+            "pkill -KILL -f '[a]gent-entry'; pkill -KILL -f '[c]laude'; "
+            "pkill -KILL -f '[c]odex'; true", timeout=120, quiet=True)
+
+
+def mirror_back(pod: Pod, run_dir: Path) -> None:
+    """SUBSTRATE for the bind mounts being two-way (60 s poll, same as the sandbox path)."""
+    data = download_tar(pod, "tar czf - -C / workspace submissions 2>/dev/null", timeout=900)
+    if not data:
+        print("  mirror: workspace tarball came back empty", flush=True)
+        return
+    tgz = run_dir / ".back.tgz"
+    tgz.write_bytes(data)
+    subprocess.run(["tar", "xzf", str(tgz), "-C", str(run_dir)], check=False)
+    tgz.unlink(missing_ok=True)
+
+
+def mirror_trajectory(pod: Pod, run_dir: Path) -> int:
+    """Append only the new bytes of the relay's log (verbatim intent from the sandbox path)."""
+    remote = f"{RELAY_DIR}/trajlog/raw_requests.jsonl"
+    local = run_dir / "opt" / "relay" / "trajlog" / "raw_requests.jsonl"
+    local.parent.mkdir(parents=True, exist_ok=True)
+    rc, out = sh(pod, f"stat -c %s {remote} 2>/dev/null || echo 0", quiet=True)
+    try:
+        remote_size = int(out.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        remote_size = 0
+    have = local.stat().st_size if local.exists() else 0
+    if remote_size <= have:
+        return remote_size
+    proc = subprocess.run(
+        ["ssh", "-i", pod.ssh_key, "-p", str(pod.port),
+         "-o", "StrictHostKeyChecking=accept-new", f"root@{pod.ip}",
+         f"tail -c +{have + 1} {remote}"],
+        capture_output=True, timeout=900)
+    if proc.returncode != 0 or not proc.stdout:
+        print(f"  mirror: trajectory tail came back empty; pod has {remote_size} bytes, "
+              f"we have {have}", flush=True)
+        return remote_size
+    with local.open("ab") as fh:
+        fh.write(proc.stdout)
+    return remote_size
+
+
+def relay_pulse(pod: Pod) -> tuple[bool, int, int, int]:
+    """(relay alive, requests completed 200, bytes recorded, relay log bytes) — the sandbox
+    path's evidence rules, unchanged."""
+    rc, out = sh(pod,
+                 f"echo ALIVE=$(if test -s {RELAY_DIR}/relay.pid; then "
+                 f"kill -0 $(cat {RELAY_DIR}/relay.pid) 2>/dev/null && echo 1 || echo 0; "
+                 f"else pgrep -c -f '[s]erver.py --host' 2>/dev/null || echo 0; fi); "
+                 f"echo SERVED=$(grep -c '200 OK' {RELAY_DIR}/relay.log 2>/dev/null || echo 0); "
+                 f"echo RECORDED=$(stat -c %s {RELAY_DIR}/trajlog/raw_requests.jsonl "
+                 f"2>/dev/null || echo 0); "
+                 f"echo LOGB=$(stat -c %s {RELAY_DIR}/relay.log 2>/dev/null || echo 0)",
+                 quiet=True)
+    vals = {}
+    for line in out.splitlines():
+        if "=" in line:
+            key, _, val = line.partition("=")
+            vals[key.strip()] = val.strip()
+
+    def num(key: str) -> int:
+        raw = vals.get(key, "0").split()
+        return int(raw[0]) if raw and raw[0].isdigit() else 0
+    return num("ALIVE") > 0, num("SERVED"), num("RECORDED"), num("LOGB")
+
+
+# ---------------------------------------------------------------------------------------
+# main(): run_agent_sandbox.main() with the substrate calls swapped; the run logic —
+# condition, task folder, budget loop, stamping, trajectory guard, run.json — is its code.
+# ---------------------------------------------------------------------------------------
+
+def single_stage(exp: Path) -> Path:
+    stages = sorted((exp / "stages").iterdir())
+    if not stages:
+        sys.exit(f"no stages under {exp}")
+    if len(stages) > 1:
+        sys.exit(f"run_agent runs one scene + one task; this experiment has "
+                 f"{len(stages)} stages {[s.name for s in stages]}")
+    return stages[0]
+
+
+def stage_record(exp: Path, stage: Path) -> dict:
+    receipt = json.loads((exp / "resolved.json").read_text())
+    hits = [r for r in receipt["stages"] if r["dir"] == stage.name]
+    if not hits:
+        sys.exit(f"stage {stage.name} not in {exp / 'resolved.json'} — rebuild the experiment")
+    record = dict(hits[0])
+    record["set_states"] = receipt.get("set_states", True)
+    record.setdefault("control_mode_frozen", False)
+    return record
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("exp", nargs="?", help="built experiment dir (from build_env.py)")
+    ap.add_argument("--config", default="no_tools",
+                    help="experimental CONDITION: a name in eval/configs/ or a path "
+                         "(default: %(default)s)")
+    ap.add_argument("--agent", default=None, choices=["claude", "codex"])
+    ap.add_argument("--model", default=None, help="model id (MODEL env for the agent CLI)")
+    ap.add_argument("--force-model", default=None,
+                    help="pin EVERY upstream request to this id at the relay (subagent traffic "
+                         "included); default: forward what the CLI asks for")
+    ap.add_argument("--max-output-tokens", type=int, default=None,
+                    help="cap on the response length the agent CLI asks for "
+                         "(CLAUDE_CODE_MAX_OUTPUT_TOKENS); default: the CLI's own")
+    ap.add_argument("--budget-min", type=float, default=None,
+                    help="wall-clock kill budget (minutes, default 240)")
+    ap.add_argument("--auto-submit-min", type=float, default=None,
+                    help="snapshot solution/ as a submission every N minutes")
+    ap.add_argument("--relay-port", type=int, default=8118)
+    ap.add_argument("--keep-going", action="store_true",
+                    help="when the agent stops before the budget, continue the same "
+                         "conversation instead of ending the run")
+    ap.add_argument("--resume-from", default="",
+                    help="continue a previous run from its mirrored run dir (<exp>/runs/<name>)")
+    ap.add_argument("--pod", default="",
+                    help="SUBSTRATE: run on this existing pod id (skips create+terminate); "
+                         "the pod must be freshly provisioned — no reset path exists here "
+                         "because pods are disposable")
+    ap.add_argument("--keep-pod", action="store_true",
+                    help="SUBSTRATE: leave the pod running at teardown (debugging); the "
+                         "default terminates it — a pod provisions in ~2 min, so unlike the "
+                         "sandbox pool there is nothing worth keeping warm")
+    ap.add_argument("--gpu-count", type=int, default=1,
+                    help="GPUs on the pod (2 for tool-arm runs: agent's interactive Isaac on "
+                         "device 0, parameter_search.launch's detached searches on device 1)")
+    ap.add_argument("--resume-new-task", action="store_true",
+                    help="with --resume-from: the restored conversation continues onto THIS "
+                         "experiment's task — the first leg sends the new task's instructions "
+                         "(carryover variant) into the resumed session instead of the nudge")
+    ap.add_argument("--gpt-via-tunnel", action="store_true",
+                    help="codex only: route GPT traffic to the AIDP gateway through the "
+                         "pod-local reverse tunnel (127.0.0.1:8899 -> laptop -> AIDP). "
+                         "Requires laptop_aidp_forwarder.py + laptop_tunnel_daemon.py "
+                         "running on the laptop; the runner verifies the tunnel before "
+                         "starting the agent. BANNED (inbound tunnel) — use --gpt-via-bridge.")
+    ap.add_argument("--gpt-via-bridge", action="store_true",
+                    help="codex only: the relay makes NO network calls — it spools each "
+                         "request to /opt/relay/spool and a laptop-side daemon "
+                         "(eval/scripts/laptop_aidp_bridge.py, outbound SSH only) fulfils it "
+                         "against AIDP from inside the corp network. No inbound path, no "
+                         "credentials on the pod. The bridge daemon must be running.")
+    ap.add_argument("--hint-file", action="append", default=None,
+                    help="generalization arms: copy this local file into the run's "
+                         "/task/hints/ and announce it in instructions.md (repeatable, "
+                         "e.g. another task's solve.py, or the same task's solution for a "
+                         "different embodiment)")
+    ap.add_argument("--hint-note", default=None,
+                    help="the sentence in instructions.md that explains what the hint "
+                         "files are (what task/robot they solve, and that they are a "
+                         "REFERENCE, not this run's solution)")
+    ap.add_argument("--ssh-key", default=str(Path.home() / ".ssh" / "id_ed25519"))
+    ap.add_argument("--ssh-pub", default="",
+                    help="public key text for the pod (default: <ssh-key>.pub's contents)")
+    ap.add_argument("--run", default=None, help="run name (default: <agent>_<timestamp>)")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+
+    condition = load_condition(args.config)
+    if not args.exp:
+        ap.error("an experiment dir is required")
+    agent = args.agent or "claude"
+    budget_min = float(args.budget_min or 240)
+    auto_submit_min = args.auto_submit_min
+    model = args.model
+    if agent == "codex" and not model:
+        sys.exit("--agent codex needs --model (the codex config pins the provider+model)")
+
+    exp = Path(args.exp).resolve()
+    stage = single_stage(exp)
+    record = stage_record(exp, stage)
+    facts = {"set_states": record["set_states"],
+             "control_mode_frozen": record["control_mode_frozen"]}
+    built = (record.get("condition") or {}).get("config")
+    if built and Path(built).name != condition.path.name:
+        print(f"note: this world was built under '{Path(built).name}' and this run declares "
+              f"'{condition.path.name}' — check the features still match")
+
+    describe_file = stage / "describe.md"
+    if not describe_file.exists():
+        sys.exit(f"missing {describe_file} — rebuild the experiment")
+
+    run_name = args.run or f"{agent}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    run_dir = exp / "runs" / run_name
+    if run_dir.exists() and not args.resume_from:
+        sys.exit(f"refusing to overwrite existing {run_dir}")
+
+    task_dir = prompts.render_task_dir(
+        run_dir / "task",
+        scene=record["preset"].split(".")[1],
+        preset=record["preset"],
+        describe_text=describe_file.read_text(),
+        facts=facts,
+        condition=condition,
+        budget_min=budget_min,
+        carryover=bool(args.resume_new_task),
+    )
+    if args.hint_file:
+        # Generalization arms: reference material (e.g. another task's solve.py) shipped
+        # under /task/hints/, announced at the END of instructions.md (the CLI's first
+        # message). The hash map below is computed AFTER this block, so the hint files and
+        # the modified instructions are part of the run's citable task_files record.
+        import shutil as _shutil
+        hints_dir = task_dir / "hints"
+        hints_dir.mkdir(exist_ok=True)
+        names = []
+        for hf in args.hint_file:
+            src_f = Path(hf).expanduser().resolve()
+            if not src_f.is_file():
+                sys.exit(f"--hint-file {hf}: no such file")
+            _shutil.copyfile(src_f, hints_dir / src_f.name)
+            names.append(f"/task/hints/{src_f.name}")
+        note = args.hint_note or "Reference material is provided for this run."
+        with (task_dir / "instructions.md").open("a") as fh:
+            fh.write("\n\n== Provided reference ==\n" + note + "\n"
+                     + "".join(f"  * {n}\n" for n in names))
+    task_files = {
+        str(p.relative_to(task_dir)): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in sorted(task_dir.rglob("*")) if p.is_file()
+    }
+    workspace = run_dir / "workspace"
+    submissions = run_dir / "submissions"
+
+    ssh_pub = args.ssh_pub or Path(args.ssh_key + ".pub").read_text().strip()
+
+    node_bin = "/opt/node-v22.11.0-linux-x64/bin"
+    container_env = {
+        "AGENT": agent,
+        "PYTHONPATH": "/bench:/task/tools",
+        "XDG_CACHE_HOME": "/ovcache",
+        "PATH": f"{VENV}/bin:/opt/npm/bin:{node_bin}:/usr/local/sbin:/usr/local/bin:"
+                f"/usr/sbin:/usr/bin:/sbin:/bin",
+        "TMPDIR": "/workspace/tmp",
+        "OMNI_KIT_ACCEPT_EULA": "YES", "ACCEPT_EULA": "Y", "PRIVACY_CONSENT": "Y",
+        "NVIDIA_DRIVER_CAPABILITIES": "all",
+        # 3900 = the verify watchdog's 3600 plus teardown headroom (raised with the watchdog,
+        # 2026-08-15); the inner watchdog is what fires first.
+        "SUCCESS_CHECK": f"timeout -k 30 3900 {VENV}/bin/python /opt/verify_solution.py "
+                         f"--preset {record['preset']} --solution /workspace/solution",
+    }
+    if model:
+        container_env["MODEL"] = model
+        # reached-state grading source of record: every robobench env the agent boots
+        # snapshots its states periodically + on score improvements (robobench/core/env.py
+        # _statelog_tick); mirrored back with the workspace like everything else
+        container_env["COSIGEN_STATELOG"] = "/workspace/.statelog"
+    if args.max_output_tokens:
+        container_env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(args.max_output_tokens)
+    if args.keep_going:
+        container_env["KEEP_GOING"] = "1"
+
+    if args.dry_run:
+        print(f"task folder assembled: {task_dir}")
+        print(f"pod: image={POD_IMAGE} gpu={GPU_TYPE} dc={DATACENTER} volume={NETWORK_VOLUME_ID}")
+        print(f"env: {json.dumps(container_env, indent=2)}")
+        return
+
+    workspace.mkdir(parents=True, exist_ok=True)
+    submissions.mkdir(parents=True, exist_ok=True)
+    started = datetime.now(timezone.utc)
+
+    if args.pod:
+        info = rest("GET", f"/pods/{args.pod}")
+        ssh_port = (info.get("portMappings") or {}).get("22")
+        if not info.get("publicIp") or not ssh_port:
+            sys.exit(f"pod {args.pod} has no reachable SSH endpoint yet")
+        pod = Pod(id=args.pod, ip=info["publicIp"], port=int(ssh_port), ssh_key=args.ssh_key)
+        print(f"pod {pod.id} attached", flush=True)
+    else:
+        pod = create_pod(f"rb-{exp.name}-{run_name}"[:60], ssh_pub, args.ssh_key,
+                         gpu_count=args.gpu_count)
+    # A setup failure must not leak a billing pod: everything between creation and the entry
+    # starting is fatal-and-terminate (unless the pod is the caller's own or --keep-pod).
+    try:
+        provision_pod(pod)
+        mount_like_docker(pod, stage, task_dir)
+        if args.resume_from:
+            resumed = restore_run_state(pod, Path(args.resume_from).resolve())
+            if resumed:
+                container_env["RESUME"] = "1"
+                if args.resume_new_task:
+                    container_env["RESUME_NEW_TASK"] = "1"
+            elif args.resume_new_task:
+                raise SystemExit("--resume-new-task without a restored conversation would run "
+                                 "the new task cold while claiming a fork; refusing")
+
+        spool = None
+        if agent == "codex" and args.gpt_via_bridge:
+            # AIDP via the outbound-only laptop bridge: the relay spools requests to files;
+            # laptop_aidp_bridge.py pulls them over outbound SSH, calls AIDP from the corp
+            # network, and writes responses back. No network path to AIDP exists on the pod,
+            # so upstream_base is only a label the relay records; via_chat marks the request
+            # kind for the log (Responses -> chat bridge shape, same as the tunnel path).
+            upstream_base, api_key = OPENAI_BASE, "unused-bridge"
+            via_chat = AIDP_CHAT_URL
+            spool = "/opt/relay/spool"
+        elif agent == "codex" and args.gpt_via_tunnel:
+            # AIDP via the laptop bridge: /v1/responses traffic is chat-bridged to the
+            # pod-local tunnel; the tunnel must answer before the agent starts burning budget.
+            upstream_base, api_key = OPENAI_BASE, "unused-tunnel"
+            via_chat = TUNNEL_AIDP_URL
+            wait_for_tunnel(pod)
+        elif agent == "codex":
+            upstream_base, api_key = OPENAI_BASE, OPENAI_KEY
+            via_chat = None       # OpenAI direct (AIDP needs the bridge: 10.x-internal host)
+        else:
+            upstream_base, api_key = ANTHROPIC_BASE, ANTHROPIC_KEY
+            via_chat = None
+        relay_url = start_relay(pod, args.relay_port, upstream_base, api_key,
+                                force_model=args.force_model,
+                                responses_via_chat=via_chat, spool_dir=spool)
+        container_env["ANTHROPIC_BASE_URL"] = relay_url
+        container_env["ANTHROPIC_API_KEY"] = "relay"    # substituted upstream by the relay
+        if agent == "codex":
+            container_env["OPENAI_API_KEY"] = "relay"   # ditto — codex env_key placeholder
+            write_codex_config(pod, relay_url, model)
+
+        start_entry(pod, container_env)
+    except BaseException:
+        if not (args.keep_pod or args.pod):
+            print("setup failed — terminating the pod so it does not bill idle", flush=True)
+            terminate_pod(pod)
+        raise
+    print(f"running: pod {pod.id}\n  watch:  {workspace}/.agent/\n  budget: {budget_min} min",
+          flush=True)
+
+    import shutil
+
+    t0 = time.time()
+
+    def transcript_lines() -> int:
+        n = 0
+        for name in ("transcript.jsonl", "transcript.txt"):
+            transcript = workspace / ".agent" / name
+            if transcript.exists():
+                n += sum(1 for _ in transcript.open(errors="replace"))
+        return n
+
+    auto_state = {"last": t0, "hash": None}
+
+    def auto_submit() -> None:
+        sol = workspace / "solution"
+        if not (sol / "solve.py").exists():
+            return
+        h = hashlib.sha256()
+        for p in sorted(sol.rglob("*")):
+            if p.is_file():
+                h.update(str(p.relative_to(sol)).encode())
+                h.update(p.read_bytes())
+        digest = h.hexdigest()
+        if digest == auto_state["hash"]:
+            return
+        nums = [int(d.name) for d in submissions.iterdir() if d.is_dir() and d.name.isdigit()]
+        name = f"{max(nums, default=0) + 1:02d}"
+        tmp = submissions / f".tmp_{name}"
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.copytree(sol, tmp)
+        (tmp / "note.txt").write_text("auto snapshot\n")
+        (tmp / "submitted.json").write_text(json.dumps({
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "wall_s": round(time.time() - t0, 1),
+            "transcript_lines": transcript_lines(),
+            "auto": True,
+        }, indent=2) + "\n")
+        tmp.rename(submissions / name)
+        auto_state["hash"] = digest
+        print(f"auto-submission: {name}  (wall {round(time.time() - t0)}s)", flush=True)
+
+    def scan_submissions() -> None:
+        if not submissions.is_dir():
+            return
+        for d in sorted(submissions.iterdir()):
+            if not d.is_dir() or d.name.startswith(".") or (d / "submitted.json").exists():
+                continue
+            lines = transcript_lines()
+            (d / "submitted.json").write_text(json.dumps({
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "wall_s": round(time.time() - t0, 1),
+                "transcript_lines": lines,
+            }, indent=2) + "\n")
+            print(f"submission: {d.name}  (wall {round(time.time() - t0)}s, "
+                  f"{lines} transcript lines)", flush=True)
+
+    traj_state = {"bytes": 0, "served": 0, "logb": 0, "stalled_polls": 0}
+
+    def require_trajectory() -> None:
+        """Stop a run whose relay is dead or has stopped recording what it serves — the
+        sandbox path's four-times-refined evidence rules, verbatim."""
+        alive, served, recorded, logb = relay_pulse(pod)
+        if not alive:
+            print("the trajectory relay is no longer running — stopping the run rather than "
+                  "spending a budget on something nobody can replay", flush=True)
+            sh(pod, f"tail -20 {RELAY_DIR}/relay.log; ls -la {RELAY_DIR}/trajlog")
+            stop_entry(pod)
+            raise SystemExit("run stopped: the relay died")
+        if (recorded > traj_state["bytes"] or served <= traj_state["served"]
+                or logb > traj_state["logb"]):
+            traj_state.update(bytes=max(recorded, traj_state["bytes"]),
+                              served=max(served, traj_state["served"]),
+                              logb=max(logb, traj_state["logb"]), stalled_polls=0)
+            return
+        traj_state["stalled_polls"] += 1
+        if traj_state["stalled_polls"] < 10:
+            return
+        print("the relay serves 200s but records nothing and its log is flat — stopping "
+              "the run rather than spending a budget on something nobody can replay", flush=True)
+        sh(pod, f"tail -20 {RELAY_DIR}/relay.log; ls -la {RELAY_DIR}/trajlog")
+        stop_entry(pod)
+        raise SystemExit("run stopped: the relay is not recording what it serves")
+
+    status, exit_code = "completed", None
+    cycle_failures = 0
+    while True:
+        try:
+            mirror_back(pod, run_dir)
+            mirror_trajectory(pod, run_dir)
+            require_trajectory()
+            scan_submissions()
+            still_running = running(pod)
+            cycle_failures = 0
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            cycle_failures += 1
+            print(f"poll cycle failed ({cycle_failures}/10, retrying in 60s): {exc!r}",
+                  flush=True)
+            if cycle_failures >= 10:
+                status = "unreachable"
+                print("the pod has been unreachable for 10 consecutive cycles — ending the run",
+                      flush=True)
+                break
+            time.sleep(60)
+            continue
+        if not still_running:
+            exit_code = 0
+            break
+        if auto_submit_min and time.time() - auto_state["last"] >= float(auto_submit_min) * 60:
+            auto_state["last"] = time.time()
+            auto_submit()
+        if time.time() - t0 > budget_min * 60:
+            status = "timeout"
+            print(f"budget reached — stopping pod entry {pod.id}", flush=True)
+            stop_entry(pod)
+            break
+        time.sleep(60)
+
+    try:
+        scan_submissions()
+        if auto_submit_min:
+            auto_submit()
+    except Exception as exc:  # noqa: BLE001
+        print(f"final submission scan failed: {exc!r}", flush=True)
+
+    try:
+        mirror_back(pod, run_dir)
+        mirror_trajectory(pod, run_dir)
+        mirror_agent_state(pod, run_dir)   # last thing off the box: resumability
+        rc, logs = sh(pod, f"cat {RELAY_DIR}/container.log 2>/dev/null", quiet=True)
+        (run_dir / "container.log").write_text(logs)
+    except Exception as exc:  # noqa: BLE001
+        print(f"final mirror failed (artifacts are as of the last good cycle): {exc!r}",
+              flush=True)
+
+    if args.keep_pod or args.pod:
+        print(f"pod {pod.id} left running (--keep-pod/--pod)", flush=True)
+    else:
+        terminate_pod(pod)
+
+    record_out = {
+        "exp": str(exp), "stage": stage.name, "preset": record["preset"],
+        "set_states": record["set_states"],
+        "control_mode_frozen": record["control_mode_frozen"],
+        "condition": condition.as_record(),
+        "task_files": task_files,
+        "config": args.config, "agent": agent, "model": model,
+        "image": POD_IMAGE, "gpu": GPU_TYPE, "budget_min": budget_min,
+        "started": started.isoformat(timespec="seconds"),
+        "ended": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "status": status, "container_exit_code": exit_code, "argv": sys.argv,
+        "harness": "run_agent_runpod (runpod pod over ssh, no docker)",
+        "pod_id": pod.id, "datacenter": DATACENTER,
+        "upstream": ("aidp via laptop bridge (spool)" if (agent == "codex" and args.gpt_via_bridge)
+                     else "aidp via laptop tunnel" if (agent == "codex" and args.gpt_via_tunnel)
+                     else OPENAI_BASE if agent == "codex" else ANTHROPIC_BASE),
+        "force_model": args.force_model,
+        "max_output_tokens": args.max_output_tokens,
+    }
+    (run_dir / "run.json").write_text(json.dumps(record_out, indent=2) + "\n")
+    print(f"{status}: raw artifacts in {run_dir}  (workspace/, task/, container.log, run.json)")
+
+
+if __name__ == "__main__":
+    main()

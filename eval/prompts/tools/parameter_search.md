@@ -58,7 +58,13 @@ pre-search state afterwards.
     The tool-built env (pass the preset name) already does this.
   * NEVER run a search in the foreground — searches run long, and a foreground command
     that outlives its timeout dies with nothing to show. Put your search in its own script
-    file and let the tool own the process:
+    file and let the tool own the process. The script runs as a FRESH process, so it must
+    boot the app itself before any Isaac/robobench import:
+
+        # top of /workspace/search_press.py
+        from isaaclab.app import AppLauncher
+        app = AppLauncher(headless=True)
+        # ... then the imports and the search() call
 
         from parameter_search import launch, status
         launch("/workspace/search_press.py")   # detached, pinned to the freest GPU

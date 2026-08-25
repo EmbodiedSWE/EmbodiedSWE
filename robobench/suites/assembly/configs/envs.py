@@ -895,7 +895,9 @@ for _mode in ("osc", "impedance", "joint"):
 # CAUTION: the small pairs' base poses / reachability are NOT fully verified yet — starting guesses.
 # -> "assembly.ikea_table.aloha.{joint,osc,impedance}"           (bimanual WXAI, as ALOHA)
 # -> "assembly.ikea_table.bimanual_piper.{joint,osc,impedance}"  (bimanual AgileX PiPER)
-# -> "assembly.ikea_table.bimanual_franka.{joint,osc,impedance}" (bimanual Franka)
+# -> "assembly.ikea_table.bimanual_franka.{joint,osc,impedance,diff_ik,pink_ik}" (bimanual Franka;
+#    IK modes added 2026-08-25 for the IK campaign — the composite forwards the mode to its
+#    Franka children, which support them natively)
 for _mode in ("joint", "osc", "impedance"):
     register_env(
         SUITE,
@@ -927,6 +929,8 @@ for _mode in ("joint", "osc", "impedance"):
             )
         ),
     )
+
+for _mode in ("joint", "osc", "impedance", "diff_ik", "pink_ik"):
     register_env(
         SUITE,
         (
