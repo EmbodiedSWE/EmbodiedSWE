@@ -60,11 +60,20 @@ OPENAI_KEY = ("sk-proj-xV_ukdY524Uxtrz0RPANBXfZIX9Azw2J5Nj5XJlgwqu8_KgEjTz3AxF_s
 
 REST = "https://rest.runpod.io/v1"
 POD_IMAGE = "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
-GPU_TYPE = "NVIDIA GeForce RTX 4090"
-DATACENTER = "EU-RO-1"                    # where the cosigen-forge network volumes live
-NETWORK_VOLUME_ID = "sv0rdbpy30"          # cosigen-forge-1 (200 GB), holds ENV_SNAPSHOT
+# RB_GPU_TYPE override added 2026-08-25: EU-RO-1 ran dry of 4090s mid-IK-campaign; 2x5090
+# (same DC, same snapshot volume) was the only capacity. Default unchanged.
+GPU_TYPE = os.environ.get("RB_GPU_TYPE", "NVIDIA GeForce RTX 4090")
+DATACENTER = os.environ.get("RB_DATACENTER", "EU-RO-1")
+# Empty RB_NETWORK_VOLUME_ID means a datacenter without network volumes. In that case the
+# exact same snapshot is copied from an explicit source pod before provisioning.
+NETWORK_VOLUME_ID = os.environ.get("RB_NETWORK_VOLUME_ID", "sv0rdbpy30")
 SNAPSHOT_MOUNT = "/snapshot"              # SUBSTRATE: NOT /workspace — the harness owns that
 ENV_SNAPSHOT = f"{SNAPSHOT_MOUNT}/cosigen_env2.tar.zst"
+SNAPSHOT_SOURCE_HOST = os.environ.get("RB_SNAPSHOT_SOURCE_HOST", "")
+SNAPSHOT_SOURCE_PORT = int(os.environ.get("RB_SNAPSHOT_SOURCE_PORT", "22"))
+SNAPSHOT_SOURCE_PATH = os.environ.get("RB_SNAPSHOT_SOURCE_PATH", ENV_SNAPSHOT)
+SNAPSHOT_TRANSFER_KEY = os.environ.get("RB_SNAPSHOT_TRANSFER_KEY", "")
+SNAPSHOT_SHA256 = os.environ.get("RB_SNAPSHOT_SHA256", "")
 
 ANTHROPIC_BASE = "https://api.anthropic.com/v1"
 OPENAI_BASE = "https://api.openai.com/v1"
@@ -194,11 +203,15 @@ def create_pod(name: str, ssh_pubkey: str, ssh_key: str, gpu_count: int = 1) -> 
         "gpuTypeIds": [GPU_TYPE],
         "gpuCount": gpu_count,
         "containerDiskInGb": 100,
-        "networkVolumeId": NETWORK_VOLUME_ID,
-        "volumeMountPath": SNAPSHOT_MOUNT,
+        "dataCenterIds": [DATACENTER],
         "ports": ["22/tcp"],
         "env": {"PUBLIC_KEY": ssh_pubkey},
     }
+    if NETWORK_VOLUME_ID:
+        body.update({
+            "networkVolumeId": NETWORK_VOLUME_ID,
+            "volumeMountPath": SNAPSHOT_MOUNT,
+        })
     pod_id = ""
     for attempt in range(30):
         try:
@@ -259,6 +272,38 @@ def provision_pod(pod: Pod) -> None:
     if int((out.strip() or "0").splitlines()[-1]) < 3:
         raise SystemExit("the GPU libraries Isaac dlopens did not install; scenes would run "
                          "on CPU-fallback PhysX (measured 100-700x slower)")
+    rc, out = sh(pod, f"test -f {ENV_SNAPSHOT} && echo SNAP_OK", timeout=900, quiet=True)
+    if "SNAP_OK" not in out and SNAPSHOT_SOURCE_HOST:
+        if not SNAPSHOT_TRANSFER_KEY:
+            raise SystemExit("RB_SNAPSHOT_SOURCE_HOST requires RB_SNAPSHOT_TRANSFER_KEY")
+        print(f"  copying environment snapshot from {SNAPSHOT_SOURCE_HOST}:"
+              f"{SNAPSHOT_SOURCE_PORT}", flush=True)
+        remote_key = "/root/.ssh/cosigen_snapshot_transfer"
+        copy = subprocess.run(
+            ["scp", "-i", pod.ssh_key, "-P", str(pod.port),
+             "-o", "StrictHostKeyChecking=accept-new", SNAPSHOT_TRANSFER_KEY,
+             f"root@{pod.ip}:{remote_key}"],
+            capture_output=True, text=True, timeout=300)
+        if copy.returncode != 0:
+            raise SystemExit(f"snapshot transfer key upload failed: {copy.stderr[-500:]}")
+        sh(pod, f"chmod 600 {remote_key}; mkdir -p {SNAPSHOT_MOUNT}", quiet=True)
+        rc, out = sh(
+            pod,
+            f"scp -i {remote_key} -P {SNAPSHOT_SOURCE_PORT} "
+            f"-o StrictHostKeyChecking=accept-new "
+            f"root@{SNAPSHOT_SOURCE_HOST}:{SNAPSHOT_SOURCE_PATH} {ENV_SNAPSHOT}",
+            timeout=7200)
+        sh(pod, f"rm -f {remote_key}", quiet=True)
+        if rc != 0:
+            raise SystemExit(f"snapshot copy failed from {SNAPSHOT_SOURCE_HOST}:"
+                             f"{SNAPSHOT_SOURCE_PORT}")
+        if SNAPSHOT_SHA256:
+            rc, out = sh(pod, f"sha256sum {ENV_SNAPSHOT}", timeout=1800, quiet=True)
+            got = out.strip().split()[0] if out.strip() else ""
+            if got != SNAPSHOT_SHA256:
+                raise SystemExit(f"snapshot hash mismatch: got {got}, "
+                                 f"expected {SNAPSHOT_SHA256}")
+        print("  environment snapshot copied and verified", flush=True)
     if not isaac_ok(pod):
         print(f"  restoring environment from {ENV_SNAPSHOT}", flush=True)
         t0 = time.time()
@@ -652,6 +697,9 @@ def main() -> None:
                     help="SUBSTRATE: run on this existing pod id (skips create+terminate); "
                          "the pod must be freshly provisioned — no reset path exists here "
                          "because pods are disposable")
+    ap.add_argument("--terminate-attached", action="store_true",
+                    help="with --pod, treat that pre-reserved pod as launcher-owned and "
+                         "terminate it after the run or any setup failure")
     ap.add_argument("--keep-pod", action="store_true",
                     help="SUBSTRATE: leave the pod running at teardown (debugging); the "
                          "default terminates it — a pod provisions in ~2 min, so unlike the "
@@ -806,6 +854,7 @@ def main() -> None:
                          gpu_count=args.gpu_count)
     # A setup failure must not leak a billing pod: everything between creation and the entry
     # starting is fatal-and-terminate (unless the pod is the caller's own or --keep-pod).
+    owns_pod = not args.pod or args.terminate_attached
     try:
         provision_pod(pod)
         mount_like_docker(pod, stage, task_dir)
@@ -852,7 +901,7 @@ def main() -> None:
 
         start_entry(pod, container_env)
     except BaseException:
-        if not (args.keep_pod or args.pod):
+        if not args.keep_pod and owns_pod:
             print("setup failed — terminating the pod so it does not bill idle", flush=True)
             terminate_pod(pod)
         raise
@@ -996,7 +1045,7 @@ def main() -> None:
         print(f"final mirror failed (artifacts are as of the last good cycle): {exc!r}",
               flush=True)
 
-    if args.keep_pod or args.pod:
+    if args.keep_pod or not owns_pod:
         print(f"pod {pod.id} left running (--keep-pod/--pod)", flush=True)
     else:
         terminate_pod(pod)
