@@ -76,11 +76,13 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spa
 # table edge (the smoke stages bolts kinematically in their holes, so the row is scenery).
 # Deterministic spawn; sim dt 1/240 (no SDF threads here — the smoke drives the scene's
 # kinematic screw joints, cf. pc_motherboard_smoke).
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.pc_motherboard.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_motherboard.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_motherboard.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.pc_motherboard.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.pc_motherboard.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -187,11 +189,13 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_gpu_ram", robot="null", env_spacing
 # holders (their lying defaults are ungraspable — see the single-task envs); deterministic
 # spawn (no jitter): the holders are static geometry authored at the spawn points. sim dt
 # 1/240 — the depth both force-driven smokes validated.
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.pc_gpu_ram.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_gpu_ram.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_gpu_ram.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.pc_gpu_ram.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.pc_gpu_ram.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -288,11 +292,13 @@ for _robot, _cfg_cls, _kw in _PC_GPU_RAM_ARMS:
 # gripper env stages them UPRIGHT in the scene's foam holders, already in the seated
 # orientation. Deterministic spawn (no jitter): the holders are static geometry authored at the
 # spawn points. sim dt 1/240, the depth the force-driven pc_ram smoke runs at.
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.pc_ram.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_ram.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_ram.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.pc_ram.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.pc_ram.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -451,11 +457,13 @@ for _name, _cfg_cls, _kw in _PC_RAM_PCGPU_ARMS:
 # the ratcheting key lifts out of the socket between strokes (the force-driven smoke never
 # disengages, so only the robot env needs it). sim dt 1/240 — the depth the force-driven smoke
 # validated for a pressed M16 on the SDF threads (the scene's 1/120 is for parts at rest).
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.allen_bolt.franka.osc"       — operational-space control (default)
 #   - "assembly.allen_bolt.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.allen_bolt.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.allen_bolt.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.allen_bolt.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -534,13 +542,15 @@ register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
 #   - nut_friction 0.4 — at the 0.01 default the jaws cannot transmit wrench torque to the nut;
 #   - sim dt 1/480 — a pressed M16 TUNNELS through the SDF threads at the scene's 1/120, so nothing
 #     can genuinely thread there (1/240 narrows the window, 1/480 clean).
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
 #                                              smooth on this arm)
 #   - "assembly.nut_thread.franka.impedance" — arm by Jacobian-transpose task-space impedance (Isaac's form)
+#   - "assembly.nut_thread.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.nut_thread.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.nut_thread.franka.joint"     — arm by direct joint position targets
 # (all carry a 2-finger gripper by direct position target.)
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -602,11 +612,13 @@ for _mode in ("osc", "impedance", "joint"):
 # 0.63 m (out of reach -> REORIENT_STUCK) on the centreline (parks wrist q7 near its stop). Baked in:
 # socket 9 cm closer, bulb at the ~0.43 m pick radius on the +y side (q7 margin).
 # (Per-shape bulb friction is already the scene default — no override needed.)
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.bulb.franka.osc"       — operational-space control (default)
 #   - "assembly.bulb.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.bulb.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.bulb.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.bulb.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -714,11 +726,13 @@ for _robot in ("rizon4_panda", "gen3n7_panda", "festo_panda", "sawyer_panda"):
 # jitter): the holder is static geometry authored at the spawn point, so a jittered card would
 # spawn inside a rail.
 # sim dt 1/240 — the depth the force-driven pc_gpu smoke validated for the 0.15 mm/side channel.
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.pc_gpu.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_gpu.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_gpu.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.pc_gpu.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.pc_gpu.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -1112,7 +1126,7 @@ for _mode in ("joint", "pink_ik"):
     )
 
 # -> "assembly.chair.franka.{osc,joint}"
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (

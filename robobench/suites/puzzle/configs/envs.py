@@ -79,7 +79,7 @@ for _mode in ("joint", "pink_ik"):
     )
 
 # -> "puzzle.syringe.franka.{osc,joint}" — ground-level layout in front of the base.
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (
@@ -236,7 +236,7 @@ for _mode in ("joint", "pink_ik"):
 # side-reach where the OSC parked 11-21 mm off target). Gripper effort 25 N: a 120 N
 # pinch punts the tool when the close lands imperfectly; nullspace () — the default
 # posture winds the arm (the pen_holder lesson).
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (
@@ -404,7 +404,7 @@ for _mode in ("joint", "pink_ik"):
     )
 
 # -> "puzzle.coffee.franka.{osc,joint}"
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (

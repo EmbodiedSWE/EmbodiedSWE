@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from robobench.core import SCENES, BaseCfg, BaseScene, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene
 from robobench.suites.folding.newton_sim import NewtonSimCfg
 
 if TYPE_CHECKING:
@@ -40,58 +40,57 @@ class TshirtFoldingSceneCfg(BaseCfg):
     soft-fabric look that drapes flat and holds folds (see the [TUNE] notes)."""
 
     # --- cloth material (meter scale) ---
-    cloth_density: float = tunable(15.0)  # [TUNE] surface density; 5 springs back after folds, 50 too heavy to lift
-    particle_radius: float = tunable(0.008)  # [TUNE] cloth-body contact radius; at 0.005 the
+    cloth_density: float = 15.0  # [TUNE] surface density; 5 springs back after folds, 50 too heavy to lift
+    particle_radius: float = 0.008  # [TUNE] cloth-body contact radius; at 0.005 the
     # resting layer is too thin for a fingertip pinch to gather flat fabric (hem grasp fails)
-    tri_ke: float = tunable(5e2)  # [TUNE] triangle stretch stiffness
-    tri_ka: float = tunable(5e2)  # [TUNE] triangle area stiffness
-    tri_kd: float = tunable(1e-1)  # [TUNE] triangle stretch damping; high value damps out cloth wobble
-    edge_ke: float = tunable(0.3)  # [TUNE] bending stiffness; low = soft drape that lies flat and holds folds
-    edge_kd: float = tunable(1e-1)  # [TUNE] bending damping
+    tri_ke: float = 5e2  # [TUNE] triangle stretch stiffness
+    tri_ka: float = 5e2  # [TUNE] triangle area stiffness
+    tri_kd: float = 1e-1  # [TUNE] triangle stretch damping; high value damps out cloth wobble
+    edge_ke: float = 0.3  # [TUNE] bending stiffness; low = soft drape that lies flat and holds folds
+    edge_kd: float = 1e-1  # [TUNE] bending damping
     # --- contacts (Newton model-level) ---
-    soft_contact_ke: float = tunable(1e3)  # [TUNE] particle-body contact stiffness
-    soft_contact_kd: float = tunable(1e-2)  # [TUNE] particle-body contact damping; absolute
+    soft_contact_ke: float = 1e3  # [TUNE] particle-body contact stiffness
+    soft_contact_kd: float = 1e-2  # [TUNE] particle-body contact damping; absolute
     # coefficient since newton 1.5 (before that kd was a ratio of ke — same effective value)
-    soft_contact_mu: float = tunable(0.5)  # [TUNE] particle-side friction
-    shape_ke: float = tunable(1e3)  # [TUNE] per-shape contact stiffness override
-    shape_kd: float = tunable(1e-5)  # [TUNE] per-shape contact damping override
-    shape_mu: float = tunable(1.5)  # [TUNE] per-shape friction (table + robot)
-    robot_friction_boost: float | None = tunable(6.0)  # [TUNE] extra mu on ROBOT shapes only —
+    soft_contact_mu: float = 0.5  # [TUNE] particle-side friction
+    shape_ke: float = 1e3  # [TUNE] per-shape contact stiffness override
+    shape_kd: float = 1e-5  # [TUNE] per-shape contact damping override
+    shape_mu: float = 1.5  # [TUNE] per-shape friction (table + robot)
+    robot_friction_boost: float | None = 6.0  # [TUNE] extra mu on ROBOT shapes only —
     # gives the fingertips mixed friction sqrt(0.5*6)=1.73 for the pinch grasp (newton >= 1.6
     # needs this to hold the lift) while the table keeps its tuned 0.87
-    cloth_contact_margin: float = tunable(0.012)  # [TUNE] cloth-body collision margin (>= particle_radius)
+    cloth_contact_margin: float = 0.012  # [TUNE] cloth-body collision margin (>= particle_radius)
     # --- VBD solver ---
-    vbd_iterations: int = tunable(20)  # [TUNE] VBD iterations/substep; more = crisper (less rubbery) cloth
-    self_contact: bool = tunable(True)  # folding lays cloth on cloth — keep self-contact ON
-    self_contact_radius: float = tunable(0.002)
-    self_contact_margin: float = tunable(0.002)
-    fold_footprint_max: float = tunable(0.30)  # footprint [m²] at or below which the shirt counts
+    vbd_iterations: int = 20  # [TUNE] VBD iterations/substep; more = crisper (less rubbery) cloth
+    self_contact: bool = True  # folding lays cloth on cloth — keep self-contact ON
+    self_contact_radius: float = 0.002
+    self_contact_margin: float = 0.002
+    fold_footprint_max: float = 0.30  # footprint [m²] at or below which the shirt counts
     # as folded (settled unfolded ~0.50; a completed 3-fold lands ~0.17-0.25; every observed
     # failure mode stays >= 0.41)
-    num_substeps: int = tunable(10)  # solver substeps per 1/60 s physics tick
-    use_cuda_graph: bool = tunable(True)  # False -> slow but debuggable stepping
-    collision_detection_interval: int = tunable(-1)  # [TUNE] self-contact pair refresh cadence, in
+    num_substeps: int = 10  # solver substeps per 1/60 s physics tick
+    use_cuda_graph: bool = True  # False -> slow but debuggable stepping
+    collision_detection_interval: int = -1  # [TUNE] self-contact pair refresh cadence, in
     # VBD iterations: -1 = once before init (the fast default — but the pair list then goes STALE
     # the moment cloth folds onto itself, and stale pairs folded into near-parallel overlap hit
     # degenerate contact math and NaN the solver); 20 (= vbd_iterations) refreshes every substep,
     # which cloth-on-cloth folding needs to stay finite
     # --- layout (meters; the shirt pose is baked into the USD) ---
-    light_intensity: float = tunable(3000.0)
-    table_size: tuple[float, float, float] = info((0.8, 0.8, 0.2), doc="box table full extents [m]; top at z=0.2")
-    table_pos: tuple[float, float, float] = info((0.0, -0.5, 0.1), doc="box table center [m]")
-    shirt_z_offset: float = tunable(0.0)  # [TUNE] extra spawn height over the baked pose (avoid table overlap)
-    shirt_usd: str = info("", doc="'' -> the vendored assets/tshirt/tshirt.usd (baked pose, meters)")
+    light_intensity: float = 3000.0
+    table_size: tuple[float, float, float] = (0.8, 0.8, 0.2)  # box table full extents [m]; top at z=0.2
+    table_pos: tuple[float, float, float] = (0.0, -0.5, 0.1)  # box table center [m]
+    shirt_z_offset: float = 0.0  # [TUNE] extra spawn height over the baked pose (avoid table overlap)
+    shirt_usd: str = ""  # '' -> the vendored assets/tshirt/tshirt.usd (baked pose, meters)
     # Optional pair of KINEMATIC finger-pad boxes for a robot-free pose-driven driver: driven by pose
     # writes (the pouring suite's kinematic-vessel pattern), they pinch the cloth through REAL
     # soft contact + friction — the same physical pathway as the Franka's fingertips, so flat
     # fabric gathers into the closing gap instead of a pinned particle slice being dragged.
-    pinch_pads: bool = info(False, doc="spawn two kinematic finger-pad boxes (scene-smoke gripper)")
-    pad_size: tuple[float, float, float] = info((0.005, 0.016, 0.02), doc="pad box extents [m]: a thin "
-                                                "finger-like plate (x = the CLOSING direction — the "
-                                                "smoke yaws the pair per fold), long along the crease, "
-                                                "tall enough to wall in the cloth's contact-halo band "
-                                                "(particle centers ride ~a particle radius up)")
-    pad_friction: float = tunable(1.5)  # pad face friction (the table's shape_mu class)
+    pinch_pads: bool = False  # spawn two kinematic finger-pad boxes (scene-smoke gripper)
+    # pad box extents [m]: a thin finger-like plate (x = the CLOSING direction — the smoke yaws the pair per
+    # fold), long along the crease, tall enough to wall in the cloth's contact-halo band (particle centers
+    # ride ~a particle radius up)
+    pad_size: tuple[float, float, float] = (0.005, 0.016, 0.02)
+    pad_friction: float = 1.5  # pad face friction (the table's shape_mu class)
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parents[1] / "assets" / "tshirt"
