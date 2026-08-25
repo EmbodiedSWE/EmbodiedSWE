@@ -75,6 +75,39 @@ matching executor (`raw_cmd` → the same OSC env.step; `joint_pos`/`joint_vel` 
 joint-PD tracking wrapper at the stamped rate), so train/eval convention drift is
 structurally impossible.
 
+## Video encoding
+
+Dataset videos are written by lerobot's encoder; the bake exposes its knobs and picks
+defaults for *training data that many frameworks will read*, which differ from lerobot's
+own storage default (`libsvtav1`, `crf 30`, `g=2`):
+
+| flag | default | why |
+|---|---|---|
+| `--vcodec` | `h264` | decodes everywhere (torchcodec, pyav, decord, every NVDEC generation); AV1 needs dav1d / Ampere+ |
+| `--crf` | `23` | x264's standard quality point (18 ≈ visually lossless, ~35 % more bytes) |
+| `--gop-seconds` | `0.25` | keyframe interval in **seconds** (`g = round(fps·s)`, min 1): worst-case seek cost is constant across control rates — g=15 at 60 Hz, g=4 at 15 Hz |
+| `--pix-fmt` | `yuv420p` | the universally decodable layout |
+
+Measured (torchcodec, 1 thread, 640×480 @ 60 fps, one 175 s episode, front camera):
+
+| encode | size | random-access decode | sequential decode |
+|---|---|---|---|
+| lerobot default `libsvtav1 crf30 g=2` | ~90 MB | 330 fps | 850 fps |
+| `h264 crf23 g=2` | 75 MB | 355 fps | 1020 fps |
+| **`h264 crf23 g=15` (this default)** | **17 MB** | 264 fps | 2200 fps |
+| `h264 crf18` long GOP (render masters) | 11 MB | 47 fps | 1790 fps |
+
+Random access is governed by the GOP, not the codec: the render masters' long GOP is what
+makes them slow to sample, and lerobot's g=2 buys the last 20 % of seek speed with 4–5× the
+bytes. Policies read short clips (a few observation frames + an action chunk), where the
+GOP-15 h264 is the fastest of all. The chosen encoder is stamped into `meta/bake.json`
+(`video_encoder`) and lerobot's own `meta/info.json`. Pass `--vcodec libsvtav1 --gop-seconds 0.034`
+to reproduce lerobot's default exactly.
+
+Decoder note: in a conda env torchcodec needs the env's FFmpeg on the loader path
+(`export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH`) or lerobot silently falls back
+to pyav — same frames, lower throughput.
+
 ## The control law travels with the data
 
 `raw_cmd` numbers only mean anything under the controller that interpreted them
