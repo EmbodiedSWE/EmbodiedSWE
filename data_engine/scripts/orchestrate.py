@@ -534,7 +534,6 @@ class AgentRunner:
             "--env", f"DGEN_ROOT={self.camp.gen}", "--env", f"DGEN_LEVEL={tag}",
             "--env", "DGEN_SCENE=scene_0", "--env", "DGEN_STRATEGY=strategy_0",
             "--env", f"DGEN_NUM_ENVS={self.cfg.num_envs}",
-            "--env", f"DGEN_WIDE_YIELD={self.cfg.wide_yield}",
             "--env", f"ISAAC_PY={self.cfg.isaac_py}"],
            log=log_path,
            timeout=cap * 60 + self.cfg.session_grace_s, check=False)
@@ -856,7 +855,7 @@ class Orchestrator:
                   "multiply draw passes will vary camera pose only", flush=True)
 
     def farm(self) -> bool:
-        """Coverage-balanced batches across cells until target_eps successes.
+        """Coverage-balanced batches until every live cell holds per_cell_target.
 
         Quarantine keeps a never-succeeding cell from capturing the
         min-successes scheduler; least-recently-farmed breaks ties.
