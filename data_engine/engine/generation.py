@@ -69,7 +69,8 @@ def _load(name: str, path: Path):
 
 
 def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
-              env_draw: int = 0, nominal: bool = False,
+              env_draw: int = 0, nominal: bool = False, solo_draw: bool = False,
+              phys_nominal: bool = False,
               env_spacing: float | None = None,
               scene_overrides: dict | None = None):
     """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene.
@@ -99,9 +100,15 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
                            (scene_dir / "scene" / "scene.py").read_text()).group(1)
     gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
     scene_cls = SCENES.get(scene_name)
-    bands = {} if nominal else scene_bands(scene_cls, scene_cls().cfg)
-    # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1
-    slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)] if bands else []
+    bands = {} if (nominal or phys_nominal) else scene_bands(scene_cls, scene_cls().cfg)
+    # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1. solo_draw ON (single-env
+    # diversified batches that sidestep the lockstep phase coupling): EVERY slot draws.
+    if not bands:
+        slot_drawn = []
+    elif solo_draw:
+        slot_drawn = [sample(bands, env_draw + e) for e in range(num_envs)]
+    else:
+        slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)]
     cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
     # env_spacing: None keeps the preset's grid; replay overrides it (recorded states
     # shift onto whatever grid the replay builds, so spacing is free there)
@@ -271,7 +278,9 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
               strategy: str = "strategy_0", phase: str | None = None,
               num_envs: int = 4, seed: int = 0,
               noise: dict | None = None, device: str = "cuda:0",
-              env_draw: int = 0, solve_draw: int = 0, nominal: bool = False) -> Path:
+              env_draw: int = 0, solve_draw: int = 0, nominal: bool = False,
+              solo_draw: bool = False, phys_nominal: bool = False,
+              solve_nominal: bool = False) -> Path:
     import numpy as np
     import torch
 
@@ -293,9 +302,11 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         raise SystemExit(f"{out} already exists — batches are append-only")
 
     env, gen, bands, slot_drawn = build_env(scene_dir, num_envs, device, seed,
-                                            env_draw, nominal)
+                                            env_draw, nominal, solo_draw=solo_draw,
+                                            phys_nominal=phys_nominal)
     if slot_drawn:
-        print(f"[batch {batch}] physical params per-env (slot 0 nominal): {slot_drawn}", flush=True)
+        _c = "every slot drawn" if solo_draw else "slot 0 nominal"
+        print(f"[batch {batch}] physical params per-env ({_c}): {slot_drawn}", flush=True)
     grader_cls = load_grader_cls(scene_dir)
     if phase is None:
         solve_mod = _load("datagen_solve", strategy_dir / "solve.py")
@@ -317,7 +328,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     # ONE set of solve hyperparameters per batch (see sampler.solve_bands): drawn at
     # --solve_draw and WRITTEN ONTO THE MODULE's constants before solve(env) runs —
     # the solve signature never changes. --nominal (or no SOLVE_PARAMS) -> file values.
-    s_bands = {} if nominal else solve_bands(solve_mod)
+    s_bands = {} if (nominal or solve_nominal) else solve_bands(solve_mod)
     solve_drawn = sample(s_bands, solve_draw) if s_bands else {}
     for n, v in solve_drawn.items():
         setattr(solve_mod, n, v)

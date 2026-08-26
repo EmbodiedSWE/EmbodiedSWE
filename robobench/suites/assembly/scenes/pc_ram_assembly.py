@@ -145,6 +145,37 @@ class PcRamAssemblyScene(BaseScene):
     # faces — the same pair a parallel-jaw grasp pinches.
     STICK_BODY_X: ClassVar[tuple[float, float]] = (-0.0037, 0.0036)
 
+    #: L5 external view (see BaseScene.CAMERAS): over the case's south-west corner, high enough
+    #: to see over the 195 mm walls into the DIMM cluster while the stick holders sit in the
+    #: foreground — probed on the nominal_0 render (2026-08-24); the wrist view carries the
+    #: fine insertion detail. Bands wiggle the eye a couple of cm per episode.
+    CAMERAS: ClassVar[dict[str, dict]] = {
+        "front": {"eye": (0.12, -0.62, 0.62), "target": (0.42, -0.22, 0.06), "focal": 16.0,
+                  "bands": {
+                      "eye_x": {"dist": "uniform", "lo": 0.10, "hi": 0.14},
+                      "eye_y": {"dist": "uniform", "lo": -0.64, "hi": -0.60},
+                      "eye_z": {"dist": "uniform", "lo": 0.60, "hi": 0.64},
+                  }},
+    }
+
+    #: L4 per-env physics bands (data_engine sampler grammar; nominal = the cfg default, slot 0
+    #: of every batch keeps it). The friction pair brackets the designed slick-stick / grippy-case
+    #: ratio the second stick's gravity-seat rides on (stock 0.3 / 0.75 — the pc_ram IK campaign's
+    #: robustness probe); mass ±20% around the 0.25 kg the PD/solver stability class was tuned at.
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "ram_friction": {"dist": "uniform", "lo": 0.25, "hi": 0.40,
+                         "reason": "around the 0.3 nominal; slick stick slides the channel"},
+        "case_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90,
+                          "reason": "around the 0.75 nominal; grippy case holds the seat"},
+        "ram_mass": {"dist": "uniform", "lo": 0.20, "hi": 0.30,
+                     "reason": "±20% of the 0.25 kg stability-class mass"},
+    }
+    #: L5 visual bands (replay/render, stage-wide per pass): the dome light is build-consumed.
+    VISUAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "light_intensity": {"dist": "uniform", "lo": 2000.0, "hi": 3000.0,
+                            "reason": "around the 2500 nominal"},
+    }
+
     def __init__(self, cfg: PcRamAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or PcRamAssemblySceneCfg())
 
@@ -315,6 +346,26 @@ class PcRamAssemblyScene(BaseScene):
         mats = asset.root_physx_view.get_material_properties()
         mats[..., 0:2] = value  # [static, dynamic, restitution]
         asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
+
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write a PHYSICAL_PARAMS draw PER ENV through the PhysX views: `values[name]` is one
+        value per env slot. Frictions go onto every shape of the part (static = dynamic, as at
+        bind); the stick mass onto each stick's body."""
+        ids = torch.arange(env.num_envs, device="cpu")
+        for name, per_env in values.items():
+            col = torch.tensor([float(v) for v in per_env], dtype=torch.float32)  # (n,)
+            if name in ("ram_friction", "case_friction"):
+                for asset in (self.rams if name == "ram_friction" else [self.case]):
+                    mats = asset.root_physx_view.get_material_properties()  # (n, shapes, 3), cpu
+                    mats[..., 0:2] = col.view(-1, 1, 1).expand(mats.shape[0], mats.shape[1], 2)
+                    asset.root_physx_view.set_material_properties(mats, ids)
+            elif name == "ram_mass":
+                for ram in self.rams:
+                    masses = ram.root_physx_view.get_masses()  # (n, bodies), cpu
+                    masses[:] = col.view(-1, 1).expand_as(masses)
+                    ram.root_physx_view.set_masses(masses, ids)
+            else:
+                raise KeyError(f"{type(self).__name__}.apply_physical_params: unknown knob {name!r}")
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the case pinned at spawn, both sticks lying flat on the table

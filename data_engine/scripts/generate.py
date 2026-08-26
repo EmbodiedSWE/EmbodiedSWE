@@ -39,8 +39,18 @@ parser.add_argument("--env_draw", type=int, default=0,
 parser.add_argument("--solve_draw", type=int, default=0,
                     help="solve-hyperparameter draw index: ONE set from the solve's "
                          "SOLVE_PARAMS bands for the whole batch")
+parser.add_argument("--solo-draw", dest="solo_draw", action="store_true",
+                    help="every env slot (incl. slot 0) takes a PHYSICAL_PARAMS draw — for "
+                         "single-env diversified batches that avoid the lockstep phase coupling "
+                         "(num_envs=1, one draw per boot). Default off keeps slot 0 the nominal canary.")
 parser.add_argument("--nominal", action="store_true",
                     help="no sampling at all (baseline batch: plain world, bare solve)")
+parser.add_argument("--phys-nominal", dest="phys_nominal", action="store_true",
+                    help="skip PHYSICAL_PARAMS sampling only (file-value world) — isolates the "
+                         "solve/noise axes, and keeps num_envs>1 batches lockstep-identical")
+parser.add_argument("--solve-nominal", dest="solve_nominal", action="store_true",
+                    help="skip SOLVE_PARAMS sampling only (file-value solve constants) — "
+                         "isolates the physics/noise axes")
 parser.add_argument("--render", action="store_true",
                     help="after the batch is graded, replay it to RGB frames + previews "
                          "(chains scripts/render.py in its own process — generation itself "
@@ -69,7 +79,9 @@ noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
 out = run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
                 phase=args.phase, num_envs=args.num_envs, seed=args.seed,
                 noise=noise, device="cuda:0" if torch.cuda.is_available() else "cpu",
-                env_draw=args.env_draw, solve_draw=args.solve_draw, nominal=args.nominal)
+                env_draw=args.env_draw, solve_draw=args.solve_draw, nominal=args.nominal,
+                solo_draw=args.solo_draw, phys_nominal=args.phys_nominal,
+                solve_nominal=args.solve_nominal)
 
 if args.render:
     # A separate process on purpose: rendering needs --enable_cameras (a different,
