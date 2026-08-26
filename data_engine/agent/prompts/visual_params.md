@@ -29,9 +29,16 @@ Hard constraints:
    friction, or anything physics reads — physics provenance of already-verified
    episodes must stay exactly true. If a knob could plausibly alter contact or
    dynamics, it does not belong here.
-2. Do not change anything else in the scene files: no new objects, no camera
+2. THE SCENE MUST STILL BUILD. If your edit makes any code path read a cfg
+   attribute (e.g. `c.light_intensity` in `assets()`), DECLARE that attribute
+   on the scene's cfg dataclass with today's value as its default. The
+   orchestrator verifies your edit by actually building and running each edited
+   scene — an AttributeError at build time rejects the whole session. If a
+   scene listed above already declares `VISUAL_PARAMS`, that is why: a previous
+   edit broke its build — read the scene, find the breakage, fix it.
+3. Do not change anything else in the scene files: no new objects, no camera
    edits, no refactors. This session adds the missing declaration, nothing more.
-3. Task-critical appearance stays recognizable: never randomize a color the
+4. Task-critical appearance stays recognizable: never randomize a color the
    grader or the task semantics depend on (e.g. a color-matched target).
 
 The scene's `apply_visual_params(env, values)` hook applies live knobs at

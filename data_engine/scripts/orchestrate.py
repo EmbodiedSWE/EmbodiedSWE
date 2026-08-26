@@ -827,32 +827,62 @@ class Orchestrator:
         if not self.agent.available:
             return
         marker = self.camp.gen / ".session_visual.json"
-        if read_json(marker).get("ok") or not self.budget_left():
+        prev = read_json(marker)
+        if prev.get("ok") or not self.budget_left():
             return
         scenes = sorted({c.scene for c in self.camp.cells()})
+        # targets: scenes without the declaration, PLUS scenes a previous attempt
+        # edited but broke (declaration present, build dead) — a rejected attempt
+        # must re-enter the session, never silently pass the presence check
         missing = [s for s in scenes
                    if "VISUAL_PARAMS" not in self.camp.scene_py(s).read_text()]
-        if not missing:
+        targets = sorted(set(missing) | set(prev.get("broken_scenes", [])))
+        if not targets:
             write_json_atomic(marker, {"ok": True, "missing_before": []})
             return
-        self.camp.write_status(Stage.SESSION_VISUAL, scenes_missing=missing)
-        print(f"[orchestrate] VISUAL_PARAMS missing in {missing} — targeted session",
-              flush=True)
+        self.camp.write_status(Stage.SESSION_VISUAL, scenes_missing=targets)
+        print(f"[orchestrate] VISUAL_PARAMS session needed for {targets} — targeted "
+              "session", flush=True)
         result = self.agent.run("visual_params", self.agent.brief(
             "visual_params", gen=self.camp.gen,
-            scenes=", ".join(missing),
-            scene_paths="\n".join(str(self.camp.scene_py(s)) for s in missing),
+            scenes=", ".join(targets),
+            scene_paths="\n".join(str(self.camp.scene_py(s)) for s in targets),
             num_envs=self.farm_envs))
         still = [s for s in scenes
                  if "VISUAL_PARAMS" not in self.camp.scene_py(s).read_text()]
-        outcome = {**result.as_dict(), "ok": result.ok and not still,
-                   "missing_before": missing, "missing_after": still}
+        # BEHAVIORAL verification, not text presence: an edited scene must still
+        # BUILD AND RUN. The pen_holder v21 visual session declared the band but
+        # referenced an undeclared cfg attribute in assets() — text check passed,
+        # every scene_0 batch after it crashed at build. A 1-env probe per edited
+        # scene must produce a batch meta (task success NOT required: nominal-
+        # failing tasks still build); no meta = the edit broke the scene.
+        broken = []
+        for s in targets:
+            if s in still:
+                continue
+            cell = next((c for c in self.camp.cells() if c.scene == s), None)
+            if cell is None:
+                continue
+            h = hashlib.sha256(self.camp.scene_py(s).read_bytes()).hexdigest()[:12]
+            _, meta = self._run_or_read_batch(
+                cell, f"batch_visual_check_{s}_{h}",
+                ["--nominal", "--num_envs", "1", "--seed", "0"])
+            if not meta:
+                broken.append(s)
+                print(f"[orchestrate] visual edit BROKE {s}: the post-edit build "
+                      "probe produced no meta — session rejected", flush=True)
+        outcome = {**result.as_dict(),
+                   "ok": result.ok and not still and not broken,
+                   "missing_before": targets, "missing_after": still,
+                   "broken_scenes": broken}
+        write_json_atomic(marker, outcome)
         if outcome["ok"]:
-            write_json_atomic(marker, outcome)
-            print("[orchestrate] VISUAL_PARAMS present in every scene", flush=True)
+            print("[orchestrate] VISUAL_PARAMS present and verified in every scene",
+                  flush=True)
         else:
-            print(f"[orchestrate] VISUAL_PARAMS still missing in {still} — their "
-                  "multiply draw passes will vary camera pose only", flush=True)
+            print(f"[orchestrate] visual session rejected (missing: {still}, "
+                  f"broken: {broken}) — will retry on resume; their multiply draw "
+                  "passes vary camera pose only until fixed", flush=True)
 
     def farm(self) -> bool:
         """Coverage-balanced batches until every live cell holds per_cell_target.
@@ -975,7 +1005,8 @@ class Orchestrator:
             got = meta.get("successes") or 0
             cov = float((meta.get("noise") or {}).get("perturbed_row_frac") or 0.0)
             ok = bool(meta) and got >= need and cov >= self.cfg.noise_min_coverage
-            print(f"[orchestrate] noise probe {name}: yield {got}/{self.farm_envs} "
+            print(f"[orchestrate] noise probe {name}: "
+                  f"{'CRASHED (no meta)' if not meta else f'yield {got}/{self.farm_envs}'} "
                   f"(need >= {need}), measured coverage {cov:.3f} (need >= "
                   f"{self.cfg.noise_min_coverage}) -> "
                   f"{'ACCEPTED' if ok else 'rejected'}", flush=True)
