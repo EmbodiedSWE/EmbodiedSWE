@@ -177,10 +177,22 @@ def _controller_info(robot) -> dict:
                    "control_dt": robot.env.dt * c._control_period}
         cfg = getattr(c, "cfg", None)
         if cfg is not None:
-            d["cfg"] = {k: (v.tolist() if isinstance(v, torch.Tensor) else
-                            list(v) if isinstance(v, tuple) else v)
+            import dataclasses as _dc
+
+            def _safe(v):  # JSON-safe, recursively: nested cfg dataclasses (e.g. pink's
+                # FrameTaskCfg frames) flatten to dicts instead of crashing json.dumps
+                if isinstance(v, torch.Tensor):
+                    return v.tolist()
+                if _dc.is_dataclass(v) and not isinstance(v, type):
+                    return {k2: _safe(v2) for k2, v2 in vars(v).items()}
+                if isinstance(v, (tuple, list)):
+                    return [_safe(x) for x in v]
+                return v
+
+            d["cfg"] = {k: _safe(v)
                         for k, v in vars(cfg).items()
-                        if isinstance(v, (int, float, bool, str, tuple, list, torch.Tensor))}
+                        if isinstance(v, (int, float, bool, str, tuple, list, torch.Tensor))
+                        or (_dc.is_dataclass(v) and not isinstance(v, type))}
         for name in ("_kp", "_kd"):  # task-space gains live on the instance, not the cfg
             v = getattr(c, name, None)
             if isinstance(v, torch.Tensor):
