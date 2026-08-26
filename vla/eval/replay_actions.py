@@ -84,6 +84,12 @@ parser.add_argument("--no-cameras", dest="no_cameras", action="store_true",
 parser.add_argument("--grip-margin", type=float, default=None, dest="grip_margin",
                     help="metres of finger closure commanded beyond the closedness label "
                          "(squeeze-force restoration for joint conventions)")
+parser.add_argument("--record-states", dest="record_states", action="store_true",
+                    help="dump the REPLAYED states per latch as episodes under --out/<tag>/replays/"
+                         "<source batch>/ep_NNNN/{traj.npz, meta.json} (+ a batch meta.json), the "
+                         "generation layout — render them afterwards at the control rate with "
+                         "data_engine/scripts/render.py <gen_root> --episodes …, exactly like the "
+                         "dataset videos (pairs with --no-cameras: physics now, pixels later)")
 parser.add_argument("--out", default=str(Path(__file__).parent / "_out"))
 parser.add_argument("--tag", default="", help="output dir name (default: derived)")
 
@@ -123,6 +129,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sim import load_sim  # noqa: E402  (importing sim also puts vla/convert on sys.path)
 
 import episode as _convert  # noqa: E402  (vla/convert's convention math)
+
+if args.record_states:
+    from engine.generation import _flat as _flat_states  # noqa: E402  (the recorder's flatten)
 
 # ----- episodes + start points --------------------------------------------------------------------
 eps = [Path(e) for e in args.episodes]
@@ -249,6 +258,7 @@ for lo in range(0, len(eps), E):
           f"@ {rec_rate:.0f} Hz ({cs}{'/' + args.integrate if cs == 'joint_vel' else ''})", flush=True)
 
     obs = sim.init_from_episode(chunk, t0=S[:n])
+    rec_states = [_flat_states(sim.env.get_states())] if args.record_states else None  # row 0 = start
     writers = {}
     if lo == 0 and args.video_slots > 0:
         for s in range(min(args.video_slots, n)):
@@ -288,6 +298,8 @@ for lo in range(0, len(eps), E):
                 rows[fr] = hold_rows(np.stack([raw_act[s][max(T[s] - 2, 0)]
                                                for s in range(E)]))[fr]
             obs = sim.step(rows)
+        if rec_states is not None:
+            rec_states.append(_flat_states(sim.env.get_states()))
         prog = obs["progress"]  # computed once per obs inside EvalSim
         prog_peak = np.maximum(prog_peak, prog)
         tgt = np.stack([q_rec[s][idx(s, k + 1)] for s in range(E)])
@@ -315,6 +327,24 @@ for lo in range(0, len(eps), E):
     for w in writers.values():
         w.close()
 
+    if rec_states is not None:  # replayed states -> generation-layout episodes (render later)
+        keys = [k for k in rec_states[0] if not k.startswith("robot/controller")]
+        stacked = {k: np.stack([r[k].numpy() for r in rec_states]) for k in keys}  # (K+1, E, …)
+        for s, e in enumerate(chunk):
+            rows = min(T[s] - S[s], len(rec_states))  # this episode's own length from its start
+            bdir = out / "replays" / e.parent.name
+            edir = bdir / e.name
+            edir.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(edir / "traj.npz", **{k: v[:rows, s] for k, v in stacked.items()})
+            m = dict(metas[e])
+            m.update(steps=int(rows), success=bool(obs["success"][s]),
+                     recorded_success=metas[e].get("success"), replay_of=str(e), replay_t0=int(S[s]),
+                     replay_control_space=cs, replay_source=args.source)
+            (edir / "meta.json").write_text(json.dumps(m, indent=2) + "\n")
+            if not (bdir / "meta.json").is_file():
+                (bdir / "meta.json").write_text(json.dumps(
+                    {"cell": metas[e].get("cell"), "replay_of_batch": str(e.parent),
+                     "replay_tag": tag}, indent=2) + "\n")
     for s, e in enumerate(chunk):
         if first_success[s] is None and bool(obs["success"][s]):
             first_success[s] = T[s] - 1
