@@ -68,6 +68,12 @@ parser.add_argument("--gop-seconds", type=float, default=0.25, dest="gop_seconds
 parser.add_argument("--pix-fmt", default="yuv420p", dest="pix_fmt", help="video pixel format")
 parser.add_argument("--preset", default=None,
                     help="encoder speed/quality preset (codec-specific; default: codec's own)")
+parser.add_argument("--max-video-file-seconds", type=float, default=800.0, dest="max_video_file_seconds",
+                    help="cap on the DURATION of each packed video file (default 800 s: 25 % margin under the 1024 s cliff, must exceed one episode). LeRobot only "
+                         "caps by MB and stores timestamps as float32: past 1024 s into a file their "
+                         "step (1.2e-4 s) exceeds its default tolerance_s=1e-4 and training dies with "
+                         "FrameTimestampError. Bitrate is measured on the first episode and the MB cap "
+                         "derived from it; a final ffprobe pass fails the bake if any file exceeds 1000 s")
 parser.add_argument("--filter-idle", action="store_true", dest="filter_idle",
                     help="drop dead ticks (robot AND objects static AND no command intent); "
                          "presses and active settling are kept — see filters.py")
@@ -163,7 +169,43 @@ def frame_stream(video: Path, wanted: list[int]):
         reader.close()
 
 
+VIDEO_FILE_HARD_LIMIT_S = 1000.0  # float32 timestamp step exceeds lerobot's 1e-4 tolerance past 1024 s
+
+
+def video_durations_s(root: Path) -> dict[Path, float]:
+    """Container duration of every packed video file (ffprobe); {} if ffprobe is unavailable."""
+    import shutil
+    import subprocess
+
+    if shutil.which("ffprobe") is None:
+        print("[convert] WARNING: ffprobe not found — video file durations not verified", flush=True)
+        return {}
+    out = {}
+    for f in sorted(root.glob("videos/**/*.mp4")):
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                            "-of", "csv=p=0", str(f)], capture_output=True, text=True)
+        out[f] = float(r.stdout.strip() or "nan")
+    return out
+
+
+def fit_video_file_size_mb(ds: LeRobotDataset, first_ep_seconds: float, max_seconds: float) -> int | None:
+    """Derive the MB cap that keeps every video file under max_seconds, from the first
+    episode's measured bitrate (per view; the fattest view decides). lerobot re-reads the
+    cap at every save, so setting it after episode 0 governs the packing from episode 1 on."""
+    rates = []
+    for key in ds.meta.video_keys:
+        f = ds.root / ds.meta.video_path.format(video_key=key, chunk_index=0, file_index=0)
+        if f.is_file() and first_ep_seconds > 0:
+            rates.append(f.stat().st_size / 1e6 / first_ep_seconds)
+    if not rates:
+        return None
+    mb = int(max(1, min(ds.meta.video_files_size_in_mb, max_seconds * max(rates))))
+    ds.meta.info.video_files_size_in_mb = mb
+    return mb
+
+
 n_ticks, n_dropped = 0, 0
+video_file_size_mb = None
 for e in eps:
     proj = project(e, rate)
     if args.filter_idle:
@@ -185,11 +227,30 @@ for e in eps:
             frame["raw_command"] = proj.raw_command[i]
         ds.add_frame(frame)
     ds.save_episode()
+    if video_file_size_mb is None:
+        video_file_size_mb = fit_video_file_size_mb(ds, len(proj.video_ticks) / rate,
+                                                    args.max_video_file_seconds)
+        if video_file_size_mb is not None:
+            print(f"[convert] video files capped at {video_file_size_mb} MB "
+                  f"(~{args.max_video_file_seconds:g} s at the measured bitrate)", flush=True)
     n_ticks += len(proj.video_ticks)
     print(f"[convert] {e.ep_dir.parent.name}/{e.ep_dir.name}: {len(proj.video_ticks)} ticks "
           f"x {len(views)} views", flush=True)
 
 ds.finalize()
+
+durations = video_durations_s(root)
+if durations:
+    longest = max(durations.values())
+    print(f"[convert] {len(durations)} video files, longest {longest:.0f} s "
+          f"(cap {args.max_video_file_seconds:g} s)", flush=True)
+    too_long = {f: d for f, d in durations.items() if d > VIDEO_FILE_HARD_LIMIT_S}
+    if too_long:
+        for f, d in too_long.items():
+            print(f"[convert] ERROR video file {f.relative_to(root)} is {d:.0f} s > {VIDEO_FILE_HARD_LIMIT_S:g} s",
+                  flush=True)
+        raise SystemExit("video files too long for lerobot's float32 timestamps + default tolerance_s; "
+                         "re-run with a smaller --max-video-file-seconds (bitrate rose after the first episode)")
 
 meta_dir = root / "meta"
 (meta_dir / "modality.json").write_text(json.dumps({
@@ -207,6 +268,9 @@ meta_dir = root / "meta"
     "idle_filter": {"enabled": args.filter_idle, "dropped_ticks": n_dropped},
     "video_encoder": {"vcodec": encoder.vcodec, "pix_fmt": encoder.pix_fmt, "crf": encoder.crf,
                       "g": encoder.g, "gop_seconds": args.gop_seconds, "preset": encoder.preset},
+    "video_files": {"max_seconds": args.max_video_file_seconds,
+                    "size_mb": ds.meta.video_files_size_in_mb,
+                    "longest_s": max(durations.values()) if durations else None},
     "raw_command": proj0.raw_command is not None,
     "controller": e0.controller,
     "mid_solve_controller_changes": mid_solve_changed,

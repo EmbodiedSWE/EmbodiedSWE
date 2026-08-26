@@ -154,3 +154,14 @@ drive stiffness 8000 came from setup writes too).
    describe v2. Verify (or down-convert) before the first GR00T run.
 6. **Success-only** by default — survivor bias, correct for BC
    (`--include-failures` exists).
+7. **Video file duration vs LeRobot's timestamp check.** LeRobot stores frame
+   timestamps as float32 and verifies each decoded frame within `tolerance_s=1e-4`.
+   Past 1024 s into a video file the float32 step is 1.2e-4 s > the tolerance, so
+   two roundings of the same instant fail the check and training dies mid-run
+   (`FrameTimestampError`, ~50 min in; a short smoke never draws such a frame).
+   LeRobot only caps files by MB (default 200 MB ≈ 30 min at 15 fps / 640×480 h264),
+   so `--max-video-file-seconds` (default 800) measures the bitrate on the first
+   episode, derives the MB cap from it, and an ffprobe pass fails the bake if any
+   file still exceeds 1000 s. The merge step (`aggregate_datasets`) repacks and
+   must be given the same MB cap (see the hpc merge script). Consumers should still
+   pass `--tolerance_s=0.005` (13× finer than the 66.7 ms frame period) as a belt.
