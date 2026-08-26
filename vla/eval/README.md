@@ -208,15 +208,20 @@ Two processes (lerobot needs py>=3.12, Isaac is 3.11), one contract:
         # --init dataset --init-batch <…/data/<batch>>  = start from recorded
         #   states (episode = seed % n); default = scene randomization
 
-    # terminal 2 (lerobot venv)
+    # terminal 2 (lerobot venv) — declares nothing about the sim
     lerobot-eval --policy.path=<ckpt> --env.type=cosigen \
-        --eval.n_episodes=20 --eval.batch_size=1 --eval.use_async_envs=false
+        --eval.n_episodes=20 --eval.batch_size=1 --eval.use_async_envs=false \
+        [--env.max_episode_seconds=480]   # per-episode cap, SIM seconds (default 8 min)
 
 serve.py is a shim over load_sim/EvalSim (all semantics live in sim.py); the
 plugin's CosigenEnv follows lerobot's classic obs route ({"pixels": {cam:
-HWC u8}, "agent_pos"} -> observation.images.<cam> / observation.state), the
-handshake hard-validates config dims vs the served sim, and the condition is
-pinned server-side — a result can never half-override the sim it ran on.
+HWC u8}, "agent_pos"} -> observation.images.<cam> / observation.state). The
+client's interface (cameras, image size, state/action dims, control rate) is
+bound from the server's handshake at env creation — nothing rate- or
+dataset-specific is declared client-side, so the same command evaluates a
+60 Hz bake and a 15 Hz bake. Any `--env.<field>` given explicitly is an
+assertion checked against the server (hard error on mismatch). The condition
+is pinned server-side — a result can never half-override the sim it ran on.
 
 The reward channel is the suite grader's weighted rubric progress (0..1;
 success-as-float where a suite ships no grader), so eval_info.json carries
