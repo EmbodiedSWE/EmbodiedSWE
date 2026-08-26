@@ -532,11 +532,34 @@ class EvalSim:
         self._setup_grader()
         return self._warmup()
 
-    def init_from_episode(self, ep_dirs: str | Path | list, t0: int | list[int] = 0) -> dict:
+    def apply_episode_physics(self, draws: list[dict]) -> dict[str, list]:
+        """Re-apply each slot's recorded PHYSICAL_PARAMS draw PER ENV (`draws[i]` = episode i's
+        `meta.parameters.physical`; `{}` = the nominal world) — the same post-build
+        `scene.apply_physical_params` path generation used to write them, with the scene cfg as
+        the nominal source for undrawn knobs, so one chunk may mix draws freely. Returns the
+        applied per-env table (for the report)."""
+        E = self.env.num_envs
+        draws = list(draws)[:E]
+        draws += [draws[-1] if draws else {}] * (E - len(draws))
+        names = sorted({k for d in draws for k in d})
+        if not names:
+            return {}
+        c = self.env.scene.cfg
+        for k in names:
+            if not hasattr(c, k):
+                raise SystemExit(f"physical param '{k}' not a {type(c).__name__} field")
+        values = {k: [float(d.get(k, getattr(c, k))) for d in draws] for k in names}
+        self.env.scene.apply_physical_params(self.env, values)
+        return values
+
+    def init_from_episode(self, ep_dirs: str | Path | list, t0: int | list[int] = 0,
+                          physics: bool = True) -> dict:
         """Restore recorded episodes' states at row `t0` (default: the start), one per env
         slot (origin-shifted). A single dir fills every slot; a list assigns episode i ->
         slot i (unused slots repeat the last episode). `t0` may be per-slot. Mid-episode
-        starts are exact: the traj records the full restorable state at every tick."""
+        starts are exact: the traj records the full restorable state at every tick.
+        `physics=True` also re-applies each episode's recorded PHYSICAL_PARAMS draw to its
+        slot (per env, from meta.json), so mixed-draw chunks replay in their own worlds."""
         import torch
 
         from engine.replay import _unflatten
@@ -545,6 +568,12 @@ class EvalSim:
         if len(dirs) > self.env.num_envs:
             raise SystemExit(f"{len(dirs)} episodes but only {self.env.num_envs} envs")
         dirs += [dirs[-1]] * (self.env.num_envs - len(dirs))
+        if physics:
+            draws = []
+            for d in dirs:
+                m = json.loads((d / "meta.json").read_text()) if (d / "meta.json").is_file() else {}
+                draws.append((m.get("parameters") or {}).get("physical") or {})
+            self.apply_episode_physics(draws)
         t0s = list(t0) if isinstance(t0, (list, tuple)) else [t0] * len(dirs)
         t0s += [t0s[-1]] * (len(dirs) - len(t0s))
         if self._base_pos is None:
