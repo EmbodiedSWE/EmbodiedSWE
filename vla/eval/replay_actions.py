@@ -211,11 +211,13 @@ n_arm = len(sim.arm_names)
 
 
 def hold_rows(last_actions: np.ndarray) -> torch.Tensor:
-    """Per-slot freeze action for matched-controller replay: zeros for task-space leaves,
-    the last recorded command for joint leaves (holds the grip without inventing motion)."""
+    """Per-slot freeze action for matched-controller replay: the executor's own identity action
+    (sim.hold_action: zeros for task-space DELTA leaves, the live pose for absolute-pose leaves
+    such as pink_ik), except joint leaves keep the last recorded command (holds the grip without
+    inventing motion)."""
     from robobench.controllers import JointController
 
-    rows = torch.zeros((E, last_actions.shape[1]), device=device)
+    rows = torch.as_tensor(sim.hold_action(), dtype=torch.float32, device=device)
     i = 0
     for leaf in getattr(sim.env.robot.controller, "controllers", [sim.env.robot.controller]):
         if isinstance(leaf, JointController):

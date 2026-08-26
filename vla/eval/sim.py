@@ -397,6 +397,31 @@ def _apply_stamp_controller(env, ctrl_block: dict | None) -> None:
                 getattr(leaf, "_prev_action", "absent") is None:
             raise SystemExit(f"stamp enables EMA on {type(leaf).__name__} but the preset built "
                              f"it without a smoothing buffer — rebuild the mode, don't patch")
+        # pink_ik: the QP integrates over `leaf._dt` (set at bind from the PRESET period) and
+        # the frame-task gains live on the per-env Isaac controllers' LocalFrameTask objects —
+        # both are what a solve retunes live (bulb: _dt = dt*16, gain 0.9 / lm 0.1), so the
+        # stamp must reach them too or the replay runs the stock 0.5/10 crawl at the wrong dt.
+        if hasattr(leaf, "_dt") and hasattr(leaf, "_control_period"):
+            leaf._dt = env.dt * leaf._control_period
+        frames = getattr(cfg, "frames", None) if cfg is not None else None
+        if frames and getattr(leaf, "_controllers", None):
+            fr = [f if isinstance(f, dict) else vars(f) for f in frames]
+            n_set = 0
+            for c in leaf._controllers:
+                tasks = [t for t in c.cfg.variable_input_tasks if hasattr(t, "frame")]
+                for t, f in zip(tasks, fr):
+                    if f.get("gain") is not None:
+                        t.gain = f["gain"]
+                    if f.get("lm_damping") is not None:
+                        t.lm_damping = f["lm_damping"]
+                    if f.get("position_cost") is not None:
+                        t.set_position_cost(f["position_cost"])
+                    if f.get("orientation_cost") is not None:
+                        t.set_orientation_cost(f["orientation_cost"])
+                    n_set += 1
+            if n_set:
+                print(f"[load_sim] stamp {type(leaf).__name__}: frame-task gains/costs written onto "
+                      f"{len(leaf._controllers)} live pink controllers; _dt={leaf._dt:.4f}", flush=True)
     art = env.robot.articulation
     for key, writer in (("joint_stiffness", art.write_joint_stiffness_to_sim),
                         ("joint_damping", art.write_joint_damping_to_sim)):
@@ -507,14 +532,28 @@ class EvalSim:
             return torch.cat([q[:, self.arm_ids], closed], dim=1).cpu().numpy()
         if cs == "joint_vel":
             return torch.cat([torch.zeros_like(q[:, self.arm_ids]), closed], dim=1).cpu().numpy()
-        # preset controller: per leaf, zeros for task-space deltas, current q for joint leaves
+        # preset controller: per leaf, the identity of ITS action semantics — current q for
+        # joint leaves, the LIVE frame pose for absolute-pose leaves (pink_ik: [pos3, quat4] per
+        # frame in the env frame — zeros there would command the origin with a zero quaternion
+        # and NaN the QP), zeros for task-space DELTA leaves (osc/impedance/diff_ik).
         from robobench.controllers import JointController
 
+        try:
+            from robobench.controllers.pink_ik import PinkIKController
+        except Exception:  # noqa: BLE001 — pink stack absent: no absolute-pose leaf can exist
+            PinkIKController = ()  # type: ignore[assignment]
         ctrl = self.env.robot.controller
+        art = self.env.robot.articulation
         parts = []
         for leaf in getattr(ctrl, "controllers", [ctrl]):
             if isinstance(leaf, JointController):
                 parts.append(q[:, leaf.joint_ids])  # identity shaping assumed (scale 1, offset 0)
+            elif PinkIKController and isinstance(leaf, PinkIKController):
+                for f in leaf.cfg.frames:
+                    link = f["link"] if isinstance(f, dict) else f.link
+                    b = art.body_names.index(link)
+                    parts.append(art.data.body_pos_w[:, b] - self.env.iscene.env_origins)
+                    parts.append(art.data.body_quat_w[:, b])
             else:
                 parts.append(torch.zeros((self.env.num_envs, leaf.action_dim),
                                          device=self.env.device))
