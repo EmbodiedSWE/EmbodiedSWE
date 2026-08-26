@@ -69,8 +69,9 @@ All three fill one `SimSpec`:
 What a bake-load matches exactly: world, control space + rate, controller law,
 joint drives (incl. the solve-written gripper stiffness), state/action layout,
 cameras, task sentence. What it can't match: per-episode PHYSICAL_PARAMS draws
-(episode meta, matched by replay_actions by default; a policy eval from a bake
-alone runs nominal), executor knobs the data never had (tracker_gains,
+(episode meta; replay_actions re-applies them per env slot by default, so
+mixed-draw batches replay in one call; a policy eval from a bake alone runs
+nominal), executor knobs the data never had (tracker_gains,
 grip_margin — free but provenance-recorded), and bit-level residuals (env-grid
 origins, warmup prelude, GPU nondeterminism) — matched in distribution only.
 
@@ -132,8 +133,10 @@ Semantics:
   anchor: the exact controller the demos ran under).
 - **Batch sync**: one global tick clock, per-env action rows; episodes chunk
   into num_envs groups (sorted by length); a finished slot freezes on a hold
-  action, its metrics stop. Per-episode PHYSICAL_PARAMS draws matched by
-  default; mixed-draw / mixed-law batches refused.
+  action, its metrics stop. Per-episode PHYSICAL_PARAMS draws re-applied per
+  env slot every chunk (`EvalSim.apply_episode_physics`, the same post-build
+  `scene.apply_physical_params` path generation used) — mixed-draw batches
+  replay in one call; mixed-law batches are still refused.
 - **`--t0` is sim time** ('130', '250.5', clock '4:10.10'), one value or one
   per episode — dataset videos run one frame per tick, so a video timestamp
   is directly a start point. Segmented starts separate compounding divergence
