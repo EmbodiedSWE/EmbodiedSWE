@@ -17,12 +17,23 @@ construction; a new source costs one reader, a new label costs one pure function
     ~/Documents/Research/lerobot/.venv/bin/python vla/convert/convert.py \
         <…/data_gen/<gen_name>> --repo-id cosigen/bulb_franka_osc \
         [--control_space joint_vel] [--control_freq 15]  (default space: joint_target) [--batches …] [--cams front wrist] \
-        [--root <out>] [--task "…"] [--include-failures]
+        [--root <out>] [--task "…"] [--include-failures] \
+        [--workers auto] [--max-video-file-seconds 800]
 
 Views come from each episode's `render_<view>.json` (`--cams` narrows); successful
 episodes only by default; the dataset lands at `<gen_root>/datasets/<repo_id>` —
 datasets stay with the campaign that produced them. Videos are decoded sequentially,
 an episode never sits in RAM.
+
+**Parallelism.** A bake costs ~2 min/episode (decode → PNG staging → h264 encode).
+`--workers N` (or `auto` = `SLURM_CPUS_PER_TASK` / `os.cpu_count()`) splits the episodes
+across N worker processes, each baking a temporary shard (`<root>.shards/wNN`), then
+merges them with lerobot's `aggregate_datasets` into `--root`, applies the video-duration
+cap (caveat 7) to the merged packing, verifies it, and deletes the shards. One command,
+one dataset, whether you have 1 CPU or 48: `sbatch -c 32 … convert.py … --workers auto`.
+Sequential mode (`--workers 1`, the default) uses lerobot's async image writer.
+Multi-node scale-out = run the sharded bake per node and merge the same way
+(`hpc/bulb_ik/merge_shards.py` is the template).
 
 ## The two decisions
 

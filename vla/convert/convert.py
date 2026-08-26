@@ -74,6 +74,11 @@ parser.add_argument("--max-video-file-seconds", type=float, default=800.0, dest=
                          "step (1.2e-4 s) exceeds its default tolerance_s=1e-4 and training dies with "
                          "FrameTimestampError. Bitrate is measured on the first episode and the MB cap "
                          "derived from it; a final ffprobe pass fails the bake if any file exceeds 1000 s")
+parser.add_argument("--workers", default="1",
+                    help="parallel bake: N worker processes each bake a temporary shard, then the shards are "
+                         "merged (lerobot aggregate_datasets) into --root with the video-duration cap applied "
+                         "and verified; temp shards are deleted. 'auto' = SLURM_CPUS_PER_TASK or os.cpu_count(). "
+                         "Default 1 = sequential (no shards, no merge)")
 parser.add_argument("--filter-idle", action="store_true", dest="filter_idle",
                     help="drop dead ticks (robot AND objects static AND no command intent); "
                          "presses and active settling are kept — see filters.py")
@@ -84,6 +89,26 @@ from lerobot.configs.video import RGBEncoderConfig  # noqa: E402
 from lerobot.datasets.lerobot_dataset import LeRobotDataset  # noqa: E402
 
 gen_root = Path(args.gen_root)
+
+VIDEO_FILE_HARD_LIMIT_S = 1000.0  # float32 timestamp step exceeds lerobot's 1e-4 tolerance past 1024 s
+
+
+def video_durations_s(root: Path) -> dict[Path, float]:
+    """Container duration of every packed video file (ffprobe); {} if ffprobe is unavailable."""
+    import shutil
+    import subprocess
+
+    if shutil.which("ffprobe") is None:
+        print("[convert] WARNING: ffprobe not found — video file durations not verified", flush=True)
+        return {}
+    out = {}
+    for f in sorted(root.glob("videos/**/*.mp4")):
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                            "-of", "csv=p=0", str(f)], capture_output=True, text=True)
+        out[f] = float(r.stdout.strip() or "nan")
+    return out
+
+
 
 
 def ep_dirs() -> list[Path]:
@@ -144,13 +169,113 @@ if proj0.raw_command is not None:
 root = Path(args.root) if args.root else gen_root / "datasets" / args.repo_id
 print(f"[convert] {len(eps)} episodes, control_space={args.control_space} @ {rate:g}Hz, "
       f"views: {', '.join(views)}")
+def _n_workers(spec: str) -> int:
+    if spec != "auto":
+        return max(1, int(spec))
+    import os
+    return max(1, int(os.environ.get("SLURM_CPUS_PER_TASK") or os.cpu_count() or 1))
+
+
+def _child_argv(episodes: list[Path], shard_root: Path) -> list[str]:
+    """This invocation's options, re-targeted at one shard: explicit episode list, own --root,
+    --workers 1. Rebuilt from the parsed namespace so new options are forwarded automatically."""
+    argv = [sys.executable, str(Path(__file__).resolve()), args.gen_root]
+    skip = {"gen_root", "episodes", "batches", "root", "workers"}
+    for act in parser._actions:
+        if not act.option_strings or act.dest in skip or act.dest == "help":
+            continue
+        val = getattr(args, act.dest)
+        if val is None or val == act.default and not isinstance(act, argparse._StoreTrueAction):
+            continue
+        if isinstance(act, argparse._StoreTrueAction):
+            if val:
+                argv.append(act.option_strings[0])
+        elif isinstance(val, (list, tuple)):
+            if val:
+                argv += [act.option_strings[0], *map(str, val)]
+        else:
+            argv += [act.option_strings[0], str(val)]
+    argv += ["--root", str(shard_root), "--workers", "1", "--episodes", *(str(e.ep_dir) for e in episodes)]
+    return argv
+
+
+def _merge_bakes(bakes: list[dict], extra: dict) -> dict:
+    merged = dict(bakes[0])
+    merged["episodes"] = [e for b in bakes for e in b.get("episodes", [])]
+    merged["git_shas"] = sorted({g for b in bakes for g in b.get("git_shas", [])})
+    merged["mid_solve_controller_changes"] = [e for b in bakes for e in b.get("mid_solve_controller_changes", [])]
+    merged["idle_filter"] = {**bakes[0]["idle_filter"],
+                             "dropped_ticks": sum(b["idle_filter"]["dropped_ticks"] for b in bakes)}
+    merged.update(extra)
+    return merged
+
+
+n_workers = min(_n_workers(args.workers), len(eps))
+if n_workers > 1:
+    import shutil
+    import subprocess
+
+    from lerobot.datasets.aggregate import aggregate_datasets
+
+    shards_root = root.parent / f"{root.name}.shards"
+    if root.exists() or shards_root.exists():
+        raise SystemExit(f"{root} / {shards_root} already exist — remove them first")
+    # balance by episode length (ticks), largest first
+    order = sorted(eps, key=lambda e: -len(e.frame_indices))
+    buckets: list[list] = [[] for _ in range(n_workers)]
+    for i, e in enumerate(order):
+        buckets[i % n_workers].append(e)
+    shard_roots = [shards_root / f"w{i:02d}" for i in range(n_workers)]
+    print(f"[convert] {n_workers} workers x ~{len(eps) / n_workers:.1f} episodes -> temp shards under "
+          f"{shards_root}", flush=True)
+    procs = [subprocess.Popen(_child_argv(b, r)) for b, r in zip(buckets, shard_roots)]
+    codes = [pr.wait() for pr in procs]
+    if any(codes):
+        raise SystemExit(f"{sum(bool(c) for c in codes)} worker(s) failed (exit codes {codes}); "
+                         f"shards kept under {shards_root} for inspection")
+    # merge: derive lerobot's MB cap from the shards' real bitrate so files stay under the duration cap
+    tot_bytes: dict[str, int] = {}
+    tot_s = 0.0
+    for r in shard_roots:
+        info = json.loads((r / "meta/info.json").read_text())
+        tot_s += info["total_frames"] / info["fps"]
+        for f in (r / "videos").rglob("*.mp4"):
+            tot_bytes[f.parent.parent.name] = tot_bytes.get(f.parent.parent.name, 0) + f.stat().st_size
+    mb_cap = int(max(1, min(200, args.max_video_file_seconds * max(tot_bytes.values()) / 1e6 / tot_s)))
+    print(f"[convert] merging {n_workers} shards -> {root} (video files capped at {mb_cap} MB "
+          f"~ {args.max_video_file_seconds:g} s)", flush=True)
+    aggregate_datasets(repo_ids=[args.repo_id] * n_workers, aggr_repo_id=args.repo_id,
+                       roots=shard_roots, aggr_root=root, video_files_size_in_mb=mb_cap)
+    durations = video_durations_s(root)
+    longest = max(durations.values()) if durations else None
+    if durations:
+        print(f"[convert] {len(durations)} video files, longest {longest:.0f} s "
+              f"(cap {args.max_video_file_seconds:g} s)", flush=True)
+        if longest > VIDEO_FILE_HARD_LIMIT_S:
+            raise SystemExit(f"merged video file {longest:.0f} s > {VIDEO_FILE_HARD_LIMIT_S:g} s — re-run with a "
+                             f"smaller --max-video-file-seconds; shards kept under {shards_root}")
+    meta_dir = root / "meta"
+    shutil.copy(shard_roots[0] / "meta/modality.json", meta_dir / "modality.json")
+    bakes = [json.loads((r / "meta/bake.json").read_text()) for r in shard_roots]
+    (meta_dir / "bake.json").write_text(json.dumps(_merge_bakes(bakes, {
+        "video_files": {"max_seconds": args.max_video_file_seconds, "size_mb": mb_cap, "longest_s": longest},
+        "workers": n_workers,
+        "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }), indent=2) + "\n")
+    shutil.rmtree(shards_root)
+    n_ticks = sum(json.loads((r / "meta/info.json").read_text())["total_frames"] for r in [root])
+    print(f"[convert] DONE: {len(eps)} episodes, {n_ticks} ticks, {len(views)} views, "
+          f"{args.control_space} @ {rate:g}Hz -> {root} ({n_workers} workers)", flush=True)
+    sys.exit(0)
+
 encoder = RGBEncoderConfig(vcodec=args.vcodec, pix_fmt=args.pix_fmt, crf=args.crf,
                            g=max(1, round(rate * args.gop_seconds)), preset=args.preset)
 print(f"[convert] video: {encoder.vcodec} crf={encoder.crf:g} g={encoder.g} "
       f"({args.gop_seconds:g}s keyframe interval) {encoder.pix_fmt}", flush=True)
 ds = LeRobotDataset.create(args.repo_id, fps=int(rate), features=features, root=root,
                            robot_type=args.robot_type or e0.robot_type, use_videos=True,
-                           rgb_encoder=encoder)
+                           rgb_encoder=encoder,
+                           image_writer_threads=4 * len(views))  # async PNG staging (default is synchronous)
 
 
 def frame_stream(video: Path, wanted: list[int]):
@@ -167,25 +292,6 @@ def frame_stream(video: Path, wanted: list[int]):
         raise SystemExit(f"{video}: ends before frame {w} — re-render") from None
     finally:
         reader.close()
-
-
-VIDEO_FILE_HARD_LIMIT_S = 1000.0  # float32 timestamp step exceeds lerobot's 1e-4 tolerance past 1024 s
-
-
-def video_durations_s(root: Path) -> dict[Path, float]:
-    """Container duration of every packed video file (ffprobe); {} if ffprobe is unavailable."""
-    import shutil
-    import subprocess
-
-    if shutil.which("ffprobe") is None:
-        print("[convert] WARNING: ffprobe not found — video file durations not verified", flush=True)
-        return {}
-    out = {}
-    for f in sorted(root.glob("videos/**/*.mp4")):
-        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                            "-of", "csv=p=0", str(f)], capture_output=True, text=True)
-        out[f] = float(r.stdout.strip() or "nan")
-    return out
 
 
 def fit_video_file_size_mb(ds: LeRobotDataset, first_ep_seconds: float, max_seconds: float) -> int | None:
@@ -271,6 +377,7 @@ meta_dir = root / "meta"
     "video_files": {"max_seconds": args.max_video_file_seconds,
                     "size_mb": ds.meta.video_files_size_in_mb,
                     "longest_s": max(durations.values()) if durations else None},
+    "workers": 1,
     "raw_command": proj0.raw_command is not None,
     "controller": e0.controller,
     "mid_solve_controller_changes": mid_solve_changed,
