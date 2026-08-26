@@ -17,12 +17,23 @@ construction; a new source costs one reader, a new label costs one pure function
     ~/Documents/Research/lerobot/.venv/bin/python vla/convert/convert.py \
         <…/data_gen/<gen_name>> --repo-id cosigen/bulb_franka_osc \
         [--control_space joint_vel] [--control_freq 15]  (default space: joint_target) [--batches …] [--cams front wrist] \
-        [--root <out>] [--task "…"] [--include-failures]
+        [--root <out>] [--task "…"] [--include-failures] \
+        [--workers auto] [--max-video-file-seconds 800]
 
 Views come from each episode's `render_<view>.json` (`--cams` narrows); successful
 episodes only by default; the dataset lands at `<gen_root>/datasets/<repo_id>` —
 datasets stay with the campaign that produced them. Videos are decoded sequentially,
 an episode never sits in RAM.
+
+**Parallelism.** A bake costs ~2 min/episode (decode → PNG staging → h264 encode).
+`--workers N` (or `auto` = `SLURM_CPUS_PER_TASK` / `os.cpu_count()`) splits the episodes
+across N worker processes, each baking a temporary shard (`<root>.shards/wNN`), then
+merges them with lerobot's `aggregate_datasets` into `--root`, applies the video-duration
+cap (caveat 7) to the merged packing, verifies it, and deletes the shards. One command,
+one dataset, whether you have 1 CPU or 48: `sbatch -c 32 … convert.py … --workers auto`.
+Sequential mode (`--workers 1`, the default) uses lerobot's async image writer.
+Multi-node scale-out = run the sharded bake per node and merge the same way
+(`hpc/bulb_ik/merge_shards.py` is the template).
 
 ## The two decisions
 
@@ -154,3 +165,14 @@ drive stiffness 8000 came from setup writes too).
    describe v2. Verify (or down-convert) before the first GR00T run.
 6. **Success-only** by default — survivor bias, correct for BC
    (`--include-failures` exists).
+7. **Video file duration vs LeRobot's timestamp check.** LeRobot stores frame
+   timestamps as float32 and verifies each decoded frame within `tolerance_s=1e-4`.
+   Past 1024 s into a video file the float32 step is 1.2e-4 s > the tolerance, so
+   two roundings of the same instant fail the check and training dies mid-run
+   (`FrameTimestampError`, ~50 min in; a short smoke never draws such a frame).
+   LeRobot only caps files by MB (default 200 MB ≈ 30 min at 15 fps / 640×480 h264),
+   so `--max-video-file-seconds` (default 800) measures the bitrate on the first
+   episode, derives the MB cap from it, and an ffprobe pass fails the bake if any
+   file still exceeds 1000 s. The merge step (`aggregate_datasets`) repacks and
+   must be given the same MB cap (see the hpc merge script). Consumers should still
+   pass `--tolerance_s=0.005` (13× finer than the 66.7 ms frame period) as a belt.
