@@ -503,7 +503,10 @@ class AgentRunner:
         shims.mkdir(exist_ok=True)
         for tool in self.TOOLS:
             script = shims / tool
-            script.write_text("#!/bin/bash\nexec "
+            # env -u PYTHONPATH: Isaac must run against ITS OWN site-packages
+            # only. A PYTHONPATH inherited from the agent runtime once shadowed
+            # the venv's pinned numpy with 2.x and crashed every render.
+            script.write_text("#!/bin/bash\nexec env -u PYTHONPATH "
                               f"{shlex.quote(self.cfg.isaac_py)} "
                               f"{shlex.quote(str(ROOT / 'agent' / 'cli' / (tool + '.py')))} "
                               '"$@"\n')
