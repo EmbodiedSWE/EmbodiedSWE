@@ -25,7 +25,8 @@ TOL_Q = 2e-3        # rad, max |dq| between ticks
 TOL_GRIP = 2e-3     # closedness units
 TOL_OBJ_POS = 5e-4  # m, max object position delta
 TOL_OBJ_VEL = 1e-2  # m/s and rad/s, recorded object velocities
-CMD_GUARD = 0.1     # keep any tick whose raw EE-offset intent exceeds this
+CMD_GUARD = 0.1     # keep any tick whose raw EE-offset intent exceeds this (torque-mode arms)
+TOL_SQUEEZE = 0.02  # closedness units, commanded past measured = a squeeze (position-mode arms)
 
 
 def idle_keep_mask(ep: Episode, proj: Projected) -> np.ndarray:
@@ -39,7 +40,15 @@ def idle_keep_mask(ep: Episode, proj: Projected) -> np.ndarray:
             dpos = np.abs(arr[t2, :, 0:3] - arr[ts, :, 0:3]).max(axis=(1, 2))
             vel = np.abs(arr[ts, :, 7:13]).max(axis=(1, 2))
             static &= (dpos < TOL_OBJ_POS) & (vel < TOL_OBJ_VEL)
-    if ep.raw_action is not None:  # intent guard: a static press is NOT idle
+    if ep.joint_target is not None:
+        # Position-mode arms (joint / diff_ik / pink_ik): the raw action is an absolute pose (or a
+        # joint target), so |raw| says nothing about intent, and the achieved-vs-commanded joint
+        # offset is dominated by PD gravity sag (~0.1 rad static). Intent = the COMMAND is still
+        # moving, or the gripper is squeezing (commanded closedness past the measured one).
+        static &= np.abs(ep.joint_target[t2] - ep.joint_target[ts]).max(axis=1) < TOL_Q
+        if ep.gripper_target is not None:
+            static &= np.abs(ep.gripper_target[ts] - ep.gripper[ts]) < TOL_SQUEEZE
+    elif ep.raw_action is not None:  # torque-mode (osc) intent guard: a static press is NOT idle
         static &= np.abs(ep.raw_action[ts, :6]).max(axis=1) < CMD_GUARD
     keep = ~static
     keep[np.flatnonzero(static[1:] & ~static[:-1]) + 1] = True  # first tick of each run
