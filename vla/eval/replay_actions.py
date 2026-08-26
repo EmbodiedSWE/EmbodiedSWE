@@ -21,8 +21,9 @@ faithfully the executor reproduces the demos — per-joint tracking error agains
 the recorded q and the grader's success verdict. Episodes chunk into groups of
 num_envs (sorted by length); a finished episode's slot freezes on a hold action
 while the rest run, and its metrics stop accumulating. Each episode's recorded
-PHYSICAL_PARAMS draw (meta parameters.physical) is re-applied by DEFAULT; a
-batch mixing draws is refused. If the demos' own actions can't re-succeed, no
+PHYSICAL_PARAMS draw (meta parameters.physical) is re-applied to ITS OWN env slot
+per chunk (the per-env path generation wrote it with), so a chunk may mix draws —
+a whole batch replays in one call. If the demos' own actions can't re-succeed, no
 policy trained on them will; --matched-controller is the sanity anchor (the
 exact controller the demos ran under, so it should re-succeed).
 
@@ -152,14 +153,12 @@ for e, m in metas.items():
         raise SystemExit(f"{e}: control rate differs from {eps[0]} — replay batches separately")
     if args.matched_controller and m.get("controller") != m0.get("controller"):
         raise SystemExit(f"{e}: stamped controller law differs from {eps[0]} — mixed laws")
-    if phys[e] != phys[eps[0]]:
-        raise SystemExit(f"{e}: PHYSICAL_PARAMS draw {phys[e]} differs from {eps[0]}'s "
-                         f"{phys[eps[0]]} — replay per-draw groups separately")
 
 # ----- sim ----------------------------------------------------------------------------------------
 overrides: dict = {}
-if phys[eps[0]]:
-    overrides["physical_params"] = phys[eps[0]]  # match the recorded world by default
+# PHYSICAL_PARAMS: each episode's recorded draw is re-applied to ITS slot per chunk by
+# init_from_episode (per env, like generation), so the build stays nominal and one chunk may
+# mix draws — nothing to override here.
 if args.grip_margin is not None:
     overrides["grip_margin"] = args.grip_margin
 if args.control_space:
@@ -311,7 +310,7 @@ for lo in range(0, len(eps), E):
             first_success[s] = T[s] - 1
         results.append({
             "episode": str(e), "ticks": T[s], "t0": S[s], "t0_s": round(S[s] / rec_rate, 3),
-            "recorded_success": metas[e].get("success"),
+            "recorded_success": metas[e].get("success"), "physical_params": phys[e],
             "replay_success": bool(obs["success"][s]), "first_success_tick": first_success[s],
             "err_max": round(float(err_max[s].max()), 5),
             "err_mean": round(float(err_sum[s] / max(err_n[s], 1)), 5),
@@ -330,7 +329,8 @@ n_rec = sum(bool(r["recorded_success"]) for r in results)
 summary = {
     "source": args.source, "control_space": cs, "matched_controller": args.matched_controller,
     "t0_frac": args.t0_frac, "integrate": args.integrate if cs == "joint_vel" else None,
-    "rate_hz": rec_rate, "physical_params": phys[eps[0]], "episodes": len(results),
+    "rate_hz": rec_rate, "physical_params": "per-episode (see per_episode[].physical_params)",
+    "episodes": len(results),
     "replay_success": n_ok, "recorded_success": n_rec,
     "err_max": max(r["err_max"] for r in results),
     "per_episode": results,
