@@ -58,6 +58,13 @@ class NoisyActionEnv:
 
         noise = torch.randn(*a.shape, generator=self._rng) * self._sigma * noisy.unsqueeze(1)
         executed = clean.clone()
-        executed[:, self._dims] = (a + noise).clamp(-1, 1).to(clean.device, clean.dtype)
+        # Bound without ever distorting the CLEAN command: normalized spaces still clamp to
+        # +-1, but a raw command outside [-1, 1] (e.g. joint-position targets in radians —
+        # Franka j4 commands ~-2.15) keeps its own value as the bound. The old hard
+        # .clamp(-1, 1) silently crushed raw joint targets to +-1 rad whenever sigma > 0,
+        # flinging the arm (pc_ram noise pilots 2026-08-25: every sigma failed identically).
+        lo = torch.minimum(a, torch.full_like(a, -1.0))
+        hi = torch.maximum(a, torch.full_like(a, 1.0))
+        executed[:, self._dims] = (a + noise).clamp(lo, hi).to(clean.device, clean.dtype)
         self.last_clean, self.last_executed = clean, executed
         return self._env.step(executed, render)
