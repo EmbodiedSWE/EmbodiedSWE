@@ -39,9 +39,12 @@ Conventions (mirroring vla/convert/conventions.py at stride 1):
              closed-loop by nature: the controller re-anchors on the live EE pose)
 
 Writes report.json (per-episode + aggregate) and, for the first --video-slots
-slots of the first chunk, per-view mp4s under --out/<tag>/. `--no-cameras` runs the
-same certification physics-only (no sensors, no Kit rendering — like generation, which
-records state and renders afterwards): several x faster, no mp4s.
+slots of the first chunk, per-view mp4s under --out/<tag>/. Every replayed episode's
+STATES are saved by default under --out/<tag>/replays/<source batch>/ep_NNNN/ in the
+generation layout (`--no-record-states` to skip), so `render.py <gen_root> --episodes …`
+renders any of them afterwards at the control rate. `--no-cameras` runs the same
+certification physics-only (no sensors, no Kit rendering — like generation, which
+records state and renders afterwards): several x faster, no live mp4s.
 """
 
 from __future__ import annotations
@@ -84,12 +87,13 @@ parser.add_argument("--no-cameras", dest="no_cameras", action="store_true",
 parser.add_argument("--grip-margin", type=float, default=None, dest="grip_margin",
                     help="metres of finger closure commanded beyond the closedness label "
                          "(squeeze-force restoration for joint conventions)")
-parser.add_argument("--record-states", dest="record_states", action="store_true",
-                    help="dump the REPLAYED states per latch as episodes under --out/<tag>/replays/"
-                         "<source batch>/ep_NNNN/{traj.npz, meta.json} (+ a batch meta.json), the "
-                         "generation layout — render them afterwards at the control rate with "
-                         "data_engine/scripts/render.py <gen_root> --episodes …, exactly like the "
-                         "dataset videos (pairs with --no-cameras: physics now, pixels later)")
+parser.add_argument("--no-record-states", dest="record_states", action="store_false",
+                    help="do NOT dump the replayed states. By default every replayed episode is "
+                         "written under --out/<tag>/replays/<source batch>/ep_NNNN/{traj.npz, "
+                         "meta.json} (+ a batch meta.json) in the generation layout, so "
+                         "data_engine/scripts/render.py <gen_root> --episodes … renders it afterwards "
+                         "at the control rate exactly like the dataset videos (with --no-cameras: "
+                         "physics now, pixels later)")
 parser.add_argument("--out", default=str(Path(__file__).parent / "_out"))
 parser.add_argument("--tag", default="", help="output dir name (default: derived)")
 
