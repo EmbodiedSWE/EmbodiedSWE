@@ -41,6 +41,17 @@ parser.add_argument("--init-batch", default="", dest="init_batch",
                     help="ep_* dir for --init dataset (episode = seed %% n)")
 parser.add_argument("--grip-margin", type=float, default=None, dest="grip_margin",
                     help="SimSpec.grip_margin override (echoed into provenance)")
+parser.add_argument("--record-dir", default="", dest="record_dir",
+                    help="where rollouts are recorded (default vla/eval/_out/serve_<source>/rollouts). "
+                         "Every served episode is written on its reset/close as ep_NNNN/{traj.npz, "
+                         "meta.json} in the generation layout (states per latch + the policy's action "
+                         "rows), so data_engine/scripts/render.py <gen_root> --episodes … renders it at "
+                         "the control rate and vla/eval/replay_actions.py can re-drive it")
+parser.add_argument("--no-record-states", dest="record_states", action="store_false",
+                    help="do not record served rollouts")
+parser.add_argument("--record-cell", default="scene_0/eval", dest="record_cell",
+                    help="the `cell` stamped on the rollout batch meta.json — render.py resolves its "
+                         "scene part against <gen_root>/scenes/<scene>/")
 
 from isaaclab.app import AppLauncher  # noqa: E402
 
@@ -82,6 +93,73 @@ HANDSHAKE = {
 }
 
 
+# ----- rollout recorder ---------------------------------------------------------------------------
+import json  # noqa: E402
+import re  # noqa: E402
+
+from engine.generation import _flat as _flat_states  # noqa: E402  (the data recorder's flatten)
+
+
+class RolloutRecorder:
+    """States per latch (+ the policy's action rows) of every served episode, flushed on the next
+    reset / client close as <dir>/ep_NNNN/{traj.npz, meta.json} — the generation layout, so the
+    render and replay tools accept a policy rollout exactly like a demo."""
+
+    def __init__(self, root: Path, cell: str) -> None:
+        self.root, self.cell, self.n = root, cell, 0
+        self.cur: dict | None = None
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "meta.json").write_text(json.dumps({
+            "cell": cell, "origin": "vla/eval/serve.py rollouts", "source": str(args.source),
+            "control_space": sim.spec.control_space, "rate_hz": sim.rate_hz,
+            "init": args.init, "grip_margin": sim.spec.grip_margin}, indent=2) + "\n")
+
+    def start(self, seed, init_ep: Path | None, obs: dict) -> None:
+        self.flush(obs=None)
+        self.cur = {"seed": seed, "init": str(init_ep) if init_ep else None,
+                    "states": [_flat_states(sim.env.get_states())], "actions": [], "last": obs}
+
+    def step(self, action, obs: dict) -> None:
+        if self.cur is None:
+            return
+        self.cur["actions"].append(np.asarray(action, dtype=np.float32).reshape(sim.env.num_envs, -1))
+        self.cur["states"].append(_flat_states(sim.env.get_states()))
+        self.cur["last"] = obs
+
+    def flush(self, obs: dict | None = None) -> None:
+        c, self.cur = self.cur, None
+        if c is None or len(c["states"]) < 2:
+            return
+        last = obs or c["last"]
+        keys = [k for k in c["states"][0] if not k.startswith("robot/controller")]
+        stacked = {k: np.stack([r[k].numpy() for r in c["states"]]) for k in keys}  # (T, E, …)
+        act = np.stack(c["actions"])                                                # (T-1, E, A)
+        act = np.concatenate([act, act[-1:]], axis=0)                              # hold on the last row
+        decim = max(1, round(1.0 / (sim.env.dt * sim.rate_hz)))
+        for e in range(sim.env.num_envs):
+            d = self.root / f"ep_{self.n:04d}"
+            d.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(d / "traj.npz", action=act[:, e], **{k: v[:, e] for k, v in stacked.items()})
+            (d / "meta.json").write_text(json.dumps({
+                "episode": self.n, "env_index": e, "seed": c["seed"], "init_episode": c["init"],
+                "steps": int(len(c["states"])), "success": bool(last["success"][e]),
+                "progress_final": float(last["progress"][e]),
+                "sim_dt": float(sim.env.dt), "decimation": int(decim),
+                "control_space": sim.spec.control_space, "source": str(args.source),
+                "preset": sim.spec.preset, "cell": self.cell, "origin": "policy rollout (serve.py)",
+            }, indent=2) + "\n")
+            self.n += 1
+        print(f"[serve] recorded rollout -> {d}", flush=True)
+
+
+recorder = None
+if args.record_states:
+    rdir = Path(args.record_dir) if args.record_dir else \
+        Path(__file__).parent / "_out" / ("serve_" + re.sub(r"[^\w.-]+", "_", str(args.source)).strip("_")) / "rollouts"
+    recorder = RolloutRecorder(rdir, args.record_cell)
+    print(f"[serve] recording rollouts under {rdir}", flush=True)
+
+
 def reply_obs(conn, obs: dict) -> None:
     arrays = {"state": obs["state"].astype(np.float32),
               "progress": obs["progress"].astype(np.float32)}
@@ -110,12 +188,20 @@ try:
                             ep = episodes[(seed or 0) % len(episodes)]
                             print(f"[serve] reset seed={seed} -> {ep.parent.name}/{ep.name}",
                                   flush=True)
-                            reply_obs(conn, sim.init_from_episode(ep))
+                            obs = sim.init_from_episode(ep)
                         else:
-                            reply_obs(conn, sim.reset(seed=seed))
+                            ep, obs = None, sim.reset(seed=seed)
+                        if recorder:
+                            recorder.start(seed, ep, obs)
+                        reply_obs(conn, obs)
                     elif cmd == "step":
-                        reply_obs(conn, sim.step(arrays["action"]))
+                        obs = sim.step(arrays["action"])
+                        if recorder:
+                            recorder.step(arrays["action"], obs)
+                        reply_obs(conn, obs)
                     elif cmd == "close":
+                        if recorder:
+                            recorder.flush()
                         break
                     else:
                         protocol.send_msg(conn, {"error": f"unknown cmd {cmd!r}"})
@@ -126,6 +212,8 @@ try:
         except (ConnectionError, OSError):
             pass  # client went away; wait for the next one
         finally:
+            if recorder:
+                recorder.flush()
             conn.close()
             print("[serve] client disconnected — sim stays warm", flush=True)
 except KeyboardInterrupt:
