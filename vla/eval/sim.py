@@ -507,14 +507,28 @@ class EvalSim:
             return torch.cat([q[:, self.arm_ids], closed], dim=1).cpu().numpy()
         if cs == "joint_vel":
             return torch.cat([torch.zeros_like(q[:, self.arm_ids]), closed], dim=1).cpu().numpy()
-        # preset controller: per leaf, zeros for task-space deltas, current q for joint leaves
+        # preset controller: per leaf, the identity of ITS action semantics — current q for
+        # joint leaves, the LIVE frame pose for absolute-pose leaves (pink_ik: [pos3, quat4] per
+        # frame in the env frame — zeros there would command the origin with a zero quaternion
+        # and NaN the QP), zeros for task-space DELTA leaves (osc/impedance/diff_ik).
         from robobench.controllers import JointController
 
+        try:
+            from robobench.controllers.pink_ik import PinkIKController
+        except Exception:  # noqa: BLE001 — pink stack absent: no absolute-pose leaf can exist
+            PinkIKController = ()  # type: ignore[assignment]
         ctrl = self.env.robot.controller
+        art = self.env.robot.articulation
         parts = []
         for leaf in getattr(ctrl, "controllers", [ctrl]):
             if isinstance(leaf, JointController):
                 parts.append(q[:, leaf.joint_ids])  # identity shaping assumed (scale 1, offset 0)
+            elif PinkIKController and isinstance(leaf, PinkIKController):
+                for f in leaf.cfg.frames:
+                    link = f["link"] if isinstance(f, dict) else f.link
+                    b = art.body_names.index(link)
+                    parts.append(art.data.body_pos_w[:, b] - self.env.iscene.env_origins)
+                    parts.append(art.data.body_quat_w[:, b])
             else:
                 parts.append(torch.zeros((self.env.num_envs, leaf.action_dim),
                                          device=self.env.device))
