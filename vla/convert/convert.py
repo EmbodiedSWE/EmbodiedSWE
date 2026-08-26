@@ -74,7 +74,11 @@ parser.add_argument("--filter-idle", action="store_true", dest="filter_idle",
 args = parser.parse_args()
 
 import imageio.v2 as imageio  # noqa: E402
-from lerobot.configs.video import RGBEncoderConfig  # noqa: E402
+
+try:  # lerobot with the encoder config object: full control (codec, crf, GOP, pix_fmt, preset)
+    from lerobot.configs.video import RGBEncoderConfig  # noqa: E402
+except ImportError:  # lerobot 0.4.x: LeRobotDataset.create() takes only `vcodec`
+    RGBEncoderConfig = None
 from lerobot.datasets.lerobot_dataset import LeRobotDataset  # noqa: E402
 
 gen_root = Path(args.gen_root)
@@ -138,13 +142,26 @@ if proj0.raw_command is not None:
 root = Path(args.root) if args.root else gen_root / "datasets" / args.repo_id
 print(f"[convert] {len(eps)} episodes, control_space={args.control_space} @ {rate:g}Hz, "
       f"views: {', '.join(views)}")
-encoder = RGBEncoderConfig(vcodec=args.vcodec, pix_fmt=args.pix_fmt, crf=args.crf,
-                           g=max(1, round(rate * args.gop_seconds)), preset=args.preset)
-print(f"[convert] video: {encoder.vcodec} crf={encoder.crf:g} g={encoder.g} "
-      f"({args.gop_seconds:g}s keyframe interval) {encoder.pix_fmt}", flush=True)
+gop = max(1, round(rate * args.gop_seconds))
+if RGBEncoderConfig is not None:
+    encoder = RGBEncoderConfig(vcodec=args.vcodec, pix_fmt=args.pix_fmt, crf=args.crf,
+                               g=gop, preset=args.preset)
+    create_kwargs = {"rgb_encoder": encoder}
+    encoder_meta = {"vcodec": encoder.vcodec, "pix_fmt": encoder.pix_fmt, "crf": encoder.crf,
+                    "g": encoder.g, "gop_seconds": args.gop_seconds, "preset": encoder.preset}
+    print(f"[convert] video: {encoder.vcodec} crf={encoder.crf:g} g={encoder.g} "
+          f"({args.gop_seconds:g}s keyframe interval) {encoder.pix_fmt}", flush=True)
+else:
+    # lerobot 0.4.x applies its own crf/GOP/pix_fmt defaults for the chosen codec
+    create_kwargs = {"vcodec": args.vcodec}
+    encoder_meta = {"vcodec": args.vcodec, "pix_fmt": None, "crf": None, "g": None,
+                    "gop_seconds": None, "preset": None,
+                    "note": "lerobot without configs.video: only the codec was set"}
+    print(f"[convert] video: {args.vcodec} (lerobot {'0.4.x'}: codec only; crf/GOP = lerobot "
+          f"defaults — --crf/--gop-seconds/--pix-fmt/--preset ignored)", flush=True)
 ds = LeRobotDataset.create(args.repo_id, fps=int(rate), features=features, root=root,
                            robot_type=args.robot_type or e0.robot_type, use_videos=True,
-                           rgb_encoder=encoder)
+                           **create_kwargs)
 
 
 def frame_stream(video: Path, wanted: list[int]):
@@ -205,8 +222,7 @@ meta_dir = root / "meta"
     "state_parts": proj0.state_parts, "action_parts": proj0.action_parts,
     "gripper": "closedness in [0,1]: 0 = fully open, 1 = fully closed",
     "idle_filter": {"enabled": args.filter_idle, "dropped_ticks": n_dropped},
-    "video_encoder": {"vcodec": encoder.vcodec, "pix_fmt": encoder.pix_fmt, "crf": encoder.crf,
-                      "g": encoder.g, "gop_seconds": args.gop_seconds, "preset": encoder.preset},
+    "video_encoder": encoder_meta,
     "raw_command": proj0.raw_command is not None,
     "controller": e0.controller,
     "mid_solve_controller_changes": mid_solve_changed,
