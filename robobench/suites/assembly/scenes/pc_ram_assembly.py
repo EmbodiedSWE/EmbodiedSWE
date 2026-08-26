@@ -150,11 +150,17 @@ class PcRamAssemblyScene(BaseScene):
     #: foreground — probed on the nominal_0 render (2026-08-24); the wrist view carries the
     #: fine insertion detail. Bands wiggle the eye a couple of cm per episode.
     CAMERAS: ClassVar[dict[str, dict]] = {
-        "front": {"eye": (0.12, -0.62, 0.62), "target": (0.42, -0.22, 0.06), "focal": 16.0,
+        # front: centred on the slot/stick midpoint from straight ahead, high enough (eye z 1.0)
+        # that the ready-pose upper arm (horizontal at z 0.66) sits inside the frame instead of
+        # crossing its top edge, and steep enough (~58 deg) to see INTO the case: the DIMM area
+        # of the motherboard and both sticks in their holders are in view at once (candidate D
+        # of the 2026-08-26 camera probes; the old (0.12,-0.62,0.62) view saw the slots at a
+        # grazing angle over the near wall).
+        "front": {"eye": (0.40, -0.78, 1.00), "target": (0.40, -0.18, 0.03), "focal": 16.0,
                   "bands": {
-                      "eye_x": {"dist": "uniform", "lo": 0.10, "hi": 0.14},
-                      "eye_y": {"dist": "uniform", "lo": -0.64, "hi": -0.60},
-                      "eye_z": {"dist": "uniform", "lo": 0.60, "hi": 0.64},
+                      "eye_x": {"dist": "uniform", "lo": 0.38, "hi": 0.42},
+                      "eye_y": {"dist": "uniform", "lo": -0.80, "hi": -0.76},
+                      "eye_z": {"dist": "uniform", "lo": 0.98, "hi": 1.02},
                   }},
     }
 
