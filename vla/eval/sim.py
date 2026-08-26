@@ -47,6 +47,9 @@ class SimSpec:
     finger_drives: tuple[float, float] | None = None   # (stiffness, damping) written onto the finger joints
     tracker_gains: tuple[float, float] | None = None   # arm PD override (joint conventions); None = preset's
     cams: tuple[str, ...] | None = None           # subset of declared views; None = all
+    cameras: bool = True                          # False = build NO RGB sensors (physics-only replay /
+                                                  # certification: obs["images"] is {} and the sim runs
+                                                  # at physics speed; a policy eval needs True)
     size: tuple[int, int] = (640, 480)            # (W, H), the render contract's default
     warmup: int = 12                              # hold-steps after any init (settle + denoiser flush)
     physical_params: dict | None = None           # a PHYSICAL_PARAMS draw to re-apply (episode meta's
@@ -225,6 +228,11 @@ def _build_with_cameras(env_cfg, scene_cls, robot_cls, spec: SimSpec, num_envs: 
 
     from engine.replay import _FAR_CLIP, _camera_cfg, resolve_views
 
+    if not spec.cameras:  # physics-only: no sensors, the preset's own grid, nothing injected
+        env = env_cfg.build(num_envs=num_envs, device=device)
+        env._eval_views = {}
+        print("[load_sim] views: none (cameras=False, physics-only)", flush=True)
+        return env
     views = resolve_views(scene_cls, robot_cls, list(spec.cams) if spec.cams else None, None)
     scene_probe = scene_cls(env_cfg.scene_cfg) if env_cfg.scene_cfg is not None else scene_cls()
     surface_z = float(getattr(scene_probe.cfg, "surface_z", 0.0) or 0.0)

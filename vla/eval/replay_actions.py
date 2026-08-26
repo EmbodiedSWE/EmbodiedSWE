@@ -39,7 +39,12 @@ Conventions (mirroring vla/convert/conventions.py at stride 1):
              closed-loop by nature: the controller re-anchors on the live EE pose)
 
 Writes report.json (per-episode + aggregate) and, for the first --video-slots
-slots of the first chunk, per-view mp4s under --out/<tag>/.
+slots of the first chunk, per-view mp4s under --out/<tag>/. Every replayed episode's
+STATES are saved by default under --out/<tag>/replays/<source batch>/ep_NNNN/ in the
+generation layout (`--no-record-states` to skip), so `render.py <gen_root> --episodes …`
+renders any of them afterwards at the control rate. `--no-cameras` runs the same
+certification physics-only (no sensors, no Kit rendering — like generation, which
+records state and renders afterwards): several x faster, no live mp4s.
 """
 
 from __future__ import annotations
@@ -75,9 +80,20 @@ parser.add_argument("--integrate", choices=("live", "dataset"), default="live",
                     help="joint_vel only: integrate targets from live q (honest) or dataset q")
 parser.add_argument("--video-slots", type=int, default=1, dest="video_slots",
                     help="record mp4s for this many slots of the FIRST chunk (0 = none)")
+parser.add_argument("--no-cameras", dest="no_cameras", action="store_true",
+                    help="physics-only certification: build the sim without RGB sensors and boot Kit "
+                         "without rendering (several x faster per tick); implies --video-slots 0. "
+                         "Success / tracking-error / progress metrics are unchanged")
 parser.add_argument("--grip-margin", type=float, default=None, dest="grip_margin",
                     help="metres of finger closure commanded beyond the closedness label "
                          "(squeeze-force restoration for joint conventions)")
+parser.add_argument("--no-record-states", dest="record_states", action="store_false",
+                    help="do NOT dump the replayed states. By default every replayed episode is "
+                         "written under --out/<tag>/replays/<source batch>/ep_NNNN/{traj.npz, "
+                         "meta.json} (+ a batch meta.json) in the generation layout, so "
+                         "data_engine/scripts/render.py <gen_root> --episodes … renders it afterwards "
+                         "at the control rate exactly like the dataset videos (with --no-cameras: "
+                         "physics now, pixels later)")
 parser.add_argument("--out", default=str(Path(__file__).parent / "_out"))
 parser.add_argument("--tag", default="", help="output dir name (default: derived)")
 
@@ -85,7 +101,9 @@ from isaaclab.app import AppLauncher  # noqa: E402
 
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
-args.enable_cameras = True
+args.enable_cameras = not args.no_cameras
+if args.no_cameras:
+    args.video_slots = 0
 
 # joint_target fast-fail: check the channel exists BEFORE the ~2 min Kit boot (npz header
 # read only). Torque-mode (osc/impedance) campaigns never carry it — that absence is the
@@ -115,6 +133,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sim import load_sim  # noqa: E402  (importing sim also puts vla/convert on sys.path)
 
 import episode as _convert  # noqa: E402  (vla/convert's convention math)
+
+if args.record_states:
+    from engine.generation import _flat as _flat_states  # noqa: E402  (the recorder's flatten)
 
 # ----- episodes + start points --------------------------------------------------------------------
 eps = [Path(e) for e in args.episodes]
@@ -156,6 +177,8 @@ for e, m in metas.items():
 
 # ----- sim ----------------------------------------------------------------------------------------
 overrides: dict = {}
+if args.no_cameras:
+    overrides["cameras"] = False
 # PHYSICAL_PARAMS: each episode's recorded draw is re-applied to ITS slot per chunk by
 # init_from_episode (per env, like generation), so the build stays nominal and one chunk may
 # mix draws — nothing to override here.
@@ -239,6 +262,7 @@ for lo in range(0, len(eps), E):
           f"@ {rec_rate:.0f} Hz ({cs}{'/' + args.integrate if cs == 'joint_vel' else ''})", flush=True)
 
     obs = sim.init_from_episode(chunk, t0=S[:n])
+    rec_states = [_flat_states(sim.env.get_states())] if args.record_states else None  # row 0 = start
     writers = {}
     if lo == 0 and args.video_slots > 0:
         for s in range(min(args.video_slots, n)):
@@ -278,6 +302,8 @@ for lo in range(0, len(eps), E):
                 rows[fr] = hold_rows(np.stack([raw_act[s][max(T[s] - 2, 0)]
                                                for s in range(E)]))[fr]
             obs = sim.step(rows)
+        if rec_states is not None:
+            rec_states.append(_flat_states(sim.env.get_states()))
         prog = obs["progress"]  # computed once per obs inside EvalSim
         prog_peak = np.maximum(prog_peak, prog)
         tgt = np.stack([q_rec[s][idx(s, k + 1)] for s in range(E)])
@@ -305,6 +331,24 @@ for lo in range(0, len(eps), E):
     for w in writers.values():
         w.close()
 
+    if rec_states is not None:  # replayed states -> generation-layout episodes (render later)
+        keys = [k for k in rec_states[0] if not k.startswith("robot/controller")]
+        stacked = {k: np.stack([r[k].numpy() for r in rec_states]) for k in keys}  # (K+1, E, …)
+        for s, e in enumerate(chunk):
+            rows = min(T[s] - S[s], len(rec_states))  # this episode's own length from its start
+            bdir = out / "replays" / e.parent.name
+            edir = bdir / e.name
+            edir.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(edir / "traj.npz", **{k: v[:rows, s] for k, v in stacked.items()})
+            m = dict(metas[e])
+            m.update(steps=int(rows), success=bool(obs["success"][s]),
+                     recorded_success=metas[e].get("success"), replay_of=str(e), replay_t0=int(S[s]),
+                     replay_control_space=cs, replay_source=args.source)
+            (edir / "meta.json").write_text(json.dumps(m, indent=2) + "\n")
+            if not (bdir / "meta.json").is_file():
+                (bdir / "meta.json").write_text(json.dumps(
+                    {"cell": metas[e].get("cell"), "replay_of_batch": str(e.parent),
+                     "replay_tag": tag}, indent=2) + "\n")
     for s, e in enumerate(chunk):
         if first_success[s] is None and bool(obs["success"][s]):
             first_success[s] = T[s] - 1
