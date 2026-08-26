@@ -133,6 +133,11 @@ class Config:
     nominal_seeds: tuple[int, ...] = (0, 1, 2)
     repair_rounds: int = 2
     vectorize_rounds: int = 4
+    # A round retries a failed (non-ok) session launch at most this many times,
+    # sleeping between tries. Unbounded instant retries once produced 29k
+    # attempts in hours when a launcher bug made every session exit at import.
+    session_attempts_per_round: int = 5
+    session_retry_sleep_s: float = 60.0
 
     # compound: scripted physics diversification — fresh num_envs rollouts with new
     # draws + the agent-authored solve noise executed at compound_noise_scale.
@@ -662,7 +667,9 @@ class Orchestrator:
                 outcome for _, outcome in self.camp.session_attempts(prefix)
                 if outcome.get("ok")
             ]
-            while not successful and self.budget_left():
+            while (not successful and self.budget_left()
+                   and len(self.camp.session_attempts(prefix))
+                   < self.cfg.session_attempts_per_round):
                 attempt = len(self.camp.session_attempts(prefix)) + 1
                 tag = f"{prefix}{attempt:03d}"
                 self.camp.write_status(Stage.REPAIR, round=rnd, attempt=attempt)
@@ -680,8 +687,9 @@ class Orchestrator:
                     successful = [result.as_dict()]
                 else:
                     print(f"[orchestrate] repair round {rnd} attempt {attempt} "
-                          f"exited {result.returncode}; retrying the same round",
-                          flush=True)
+                          f"exited {result.returncode}; retrying after "
+                          f"{self.cfg.session_retry_sleep_s:.0f}s", flush=True)
+                    time.sleep(self.cfg.session_retry_sleep_s)
             if not successful:
                 break
             session_name = Path(successful[-1]["session_dir"]).name
@@ -748,7 +756,9 @@ class Orchestrator:
                 outcome for _, outcome in self.camp.session_attempts(prefix)
                 if outcome.get("ok")
             ]
-            while not successful and self.budget_left():
+            while (not successful and self.budget_left()
+                   and len(self.camp.session_attempts(prefix))
+                   < self.cfg.session_attempts_per_round):
                 attempt = len(self.camp.session_attempts(prefix)) + 1
                 tag = f"{prefix}{attempt:03d}"
                 self.camp.write_status(Stage.VECTORIZE, round=rnd, attempt=attempt)
@@ -764,8 +774,9 @@ class Orchestrator:
                     successful = [result.as_dict()]
                 else:
                     print(f"[orchestrate] vectorize round {rnd} attempt {attempt} "
-                          f"exited {result.returncode}; retrying the same round",
-                          flush=True)
+                          f"exited {result.returncode}; retrying after "
+                          f"{self.cfg.session_retry_sleep_s:.0f}s", flush=True)
+                    time.sleep(self.cfg.session_retry_sleep_s)
             if not successful:
                 break
             wide, last_failed = wide_ok()
@@ -1043,7 +1054,9 @@ class Orchestrator:
             prefix = f"noise_{rnd:03d}_attempt_"
             successful = [o for _, o in self.camp.session_attempts(prefix)
                           if o.get("ok")]
-            while not successful and self.budget_left():
+            while (not successful and self.budget_left()
+                   and len(self.camp.session_attempts(prefix))
+                   < self.cfg.session_attempts_per_round):
                 attempt = len(self.camp.session_attempts(prefix)) + 1
                 tag = f"{prefix}{attempt:03d}"
                 self.camp.write_status(Stage.NOISE_PLAN, round=rnd, attempt=attempt)
@@ -1067,7 +1080,9 @@ class Orchestrator:
                     successful = [result.as_dict()]
                 else:
                     print(f"[orchestrate] noise round {rnd} attempt {attempt} exited "
-                          f"{result.returncode}; retrying the same round", flush=True)
+                          f"{result.returncode}; retrying after "
+                          f"{self.cfg.session_retry_sleep_s:.0f}s", flush=True)
+                    time.sleep(self.cfg.session_retry_sleep_s)
             if not successful:
                 break
             accepted, batch_name, meta = probe()
