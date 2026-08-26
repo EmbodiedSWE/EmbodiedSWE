@@ -506,12 +506,16 @@ class AgentRunner:
     def _shims(self) -> Path:
         shims = self.camp.gen / ".shims"
         shims.mkdir(exist_ok=True)
+        # Isaac subprocesses run with the ORCHESTRATOR's PYTHONPATH, never the
+        # agent runtime's: an agent-side overlay once shadowed the venv's pinned
+        # numpy with 2.x and crashed every render. The orchestrator's own value
+        # is baked in verbatim (deployments may use it for a venv-safe extra
+        # like a video backend); absent = explicitly unset.
+        base_pp = os.environ.get("PYTHONPATH")
+        pp = (f"PYTHONPATH={shlex.quote(base_pp)}" if base_pp else "-u PYTHONPATH")
         for tool in self.TOOLS:
             script = shims / tool
-            # env -u PYTHONPATH: Isaac must run against ITS OWN site-packages
-            # only. A PYTHONPATH inherited from the agent runtime once shadowed
-            # the venv's pinned numpy with 2.x and crashed every render.
-            script.write_text("#!/bin/bash\nexec env -u PYTHONPATH "
+            script.write_text(f"#!/bin/bash\nexec env {pp} "
                               f"{shlex.quote(self.cfg.isaac_py)} "
                               f"{shlex.quote(str(ROOT / 'agent' / 'cli' / (tool + '.py')))} "
                               '"$@"\n')

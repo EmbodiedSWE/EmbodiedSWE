@@ -159,15 +159,25 @@ import torch  # noqa: E402
 from engine.replay import contact_sheet, replay_scene  # noqa: E402
 
 (scene, group), = groups.items()
-rendered, view_names = replay_scene(
-    gen_root, scene, group,
-    num_envs=args.num_envs, fps=args.fps, size=tuple(args.size),
-    cams=args.cams, adhoc=adhoc,
-    warmup=args.warmup, crf=args.crf, max_frames=args.max_frames,
-    trim_margin=args.trim_margin,
-    visual=args.visual or None, visual_draw=args.visual_draw, env_spacing=args.env_spacing,
-    device="cuda:0" if torch.cuda.is_available() else "cpu",
-)
+try:
+    rendered, view_names = replay_scene(
+        gen_root, scene, group,
+        num_envs=args.num_envs, fps=args.fps, size=tuple(args.size),
+        cams=args.cams, adhoc=adhoc,
+        warmup=args.warmup, crf=args.crf, max_frames=args.max_frames,
+        trim_margin=args.trim_margin,
+        visual=args.visual or None, visual_draw=args.visual_draw, env_spacing=args.env_spacing,
+        device="cuda:0" if torch.cuda.is_available() else "cpu",
+    )
+except BaseException:
+    # A raised replay must EXIT, not hang: with cameras enabled, Kit teardown
+    # after an exception regularly wedges the process — a missing video backend
+    # once turned a seconds-long ImportError into a 3-hour stage timeout, per
+    # render invocation, pipeline-wide.
+    import traceback
+    traceback.print_exc()
+    sys.stdout.flush(), sys.stderr.flush()
+    os._exit(1)
 if not args.no_sheet:
     for batch_dir in sorted({ep.parent for ep in rendered}):
         for view in view_names:
