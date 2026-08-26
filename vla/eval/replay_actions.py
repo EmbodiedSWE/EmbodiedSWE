@@ -39,7 +39,9 @@ Conventions (mirroring vla/convert/conventions.py at stride 1):
              closed-loop by nature: the controller re-anchors on the live EE pose)
 
 Writes report.json (per-episode + aggregate) and, for the first --video-slots
-slots of the first chunk, per-view mp4s under --out/<tag>/.
+slots of the first chunk, per-view mp4s under --out/<tag>/. `--no-cameras` runs the
+same certification physics-only (no sensors, no Kit rendering — like generation, which
+records state and renders afterwards): several x faster, no mp4s.
 """
 
 from __future__ import annotations
@@ -75,6 +77,10 @@ parser.add_argument("--integrate", choices=("live", "dataset"), default="live",
                     help="joint_vel only: integrate targets from live q (honest) or dataset q")
 parser.add_argument("--video-slots", type=int, default=1, dest="video_slots",
                     help="record mp4s for this many slots of the FIRST chunk (0 = none)")
+parser.add_argument("--no-cameras", dest="no_cameras", action="store_true",
+                    help="physics-only certification: build the sim without RGB sensors and boot Kit "
+                         "without rendering (several x faster per tick); implies --video-slots 0. "
+                         "Success / tracking-error / progress metrics are unchanged")
 parser.add_argument("--grip-margin", type=float, default=None, dest="grip_margin",
                     help="metres of finger closure commanded beyond the closedness label "
                          "(squeeze-force restoration for joint conventions)")
@@ -85,7 +91,9 @@ from isaaclab.app import AppLauncher  # noqa: E402
 
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
-args.enable_cameras = True
+args.enable_cameras = not args.no_cameras
+if args.no_cameras:
+    args.video_slots = 0
 
 # joint_target fast-fail: check the channel exists BEFORE the ~2 min Kit boot (npz header
 # read only). Torque-mode (osc/impedance) campaigns never carry it — that absence is the
@@ -156,6 +164,8 @@ for e, m in metas.items():
 
 # ----- sim ----------------------------------------------------------------------------------------
 overrides: dict = {}
+if args.no_cameras:
+    overrides["cameras"] = False
 # PHYSICAL_PARAMS: each episode's recorded draw is re-applied to ITS slot per chunk by
 # init_from_episode (per env, like generation), so the build stays nominal and one chunk may
 # mix draws — nothing to override here.
