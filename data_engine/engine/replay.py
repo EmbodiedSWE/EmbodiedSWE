@@ -201,7 +201,9 @@ def _camera_cfg(name: str, view: dict, size, surface_z: float):
 
 def build_replay_env(scene_dir: Path, num_envs: int, device: str,
                      cams: list[str] | None, adhoc: dict | None, size,
-                     env_spacing: float, visual_draw: int | None = None):
+                     env_spacing: float, visual_draw: int | None = None,
+                     view_suffix: str = "",
+                     pose_jitter: tuple[float, ...] | None = None):
     """generation.build_env on the cell's LOCAL scene (nominal world — physics is
     overwritten every frame anyway), with one tiled camera PER RESOLVED VIEW injected
     into the scene's assets before the build.
@@ -231,6 +233,28 @@ def build_replay_env(scene_dir: Path, num_envs: int, device: str,
     gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
     robot_cls = ROBOTS.get(ENVS.get(gen["preset"])().robot)
     views = resolve_views(scene_cls, robot_cls, cams, adhoc)
+    if pose_jitter and any(pose_jitter):
+        # Per-episode pose jitter for DRAW passes, expressed through the native
+        # band grammar (sampled per episode in place_banded_views): each external
+        # view gets uniform ± bands around its declared pose. Scene-declared
+        # bands win — the scene's own knowledge is never overridden.
+        from .sampler import _check_spec
+
+        ej, tj = pose_jitter[:3], pose_jitter[3:]
+        for n, v in views.items():
+            if v.get("link"):
+                continue  # ego views ride their link; there is no free pose
+            bands = dict(v["bands"])
+            for prefix, base, box in (("eye", v["eye"], ej), ("target", v["target"], tj)):
+                for a, b, w in zip("xyz", base, box):
+                    key = f"{prefix}_{a}"
+                    if w and key not in bands:
+                        bands[key] = _check_spec(
+                            f"pose_jitter['{n}']", key,
+                            {"dist": "uniform", "lo": float(b) - w, "hi": float(b) + w})
+            v["bands"] = bands
+    if view_suffix:
+        views = {n + view_suffix: v for n, v in views.items()}
     # the visual draw is sampled BEFORE the build and written onto the scene cfg, so
     # build-consumed knobs (a table preset, a backdrop usd) take effect with no extra
     # code; live knobs are re-applied through scene.apply_visual_params after the build
@@ -313,6 +337,9 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                  crf: int = 18, max_frames: int = 0, trim_margin: int = -1,
                  visual: str | None = None,
                  visual_draw: int | None = None, env_spacing: float = 50.0,
+                 view_suffix: str = "",
+                 pose_jitter: tuple[float, ...] | None = None,
+                 band_seed: int = 0,
                  device: str = "cuda:0") -> list[Path]:
     """Replay `eps` (all from `scene`) in chunks of `num_envs`, rendering every resolved
     view each frame and streaming one `imgs/<view>.mp4` per (episode, view) into each
@@ -331,7 +358,8 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         print(f"[replay] WARNING: env_spacing {env_spacing} <= far clip {_FAR_CLIP} — "
               f"neighbor envs will appear in frames", flush=True)
     env, gen, visual_values, views, surface_z = build_replay_env(
-        scene_dir, num_envs, device, cams, adhoc, size, env_spacing, visual_draw)
+        scene_dir, num_envs, device, cams, adhoc, size, env_spacing, visual_draw,
+        view_suffix=view_suffix, pose_jitter=pose_jitter)
     sensors = {n: env.iscene.sensors[n] for n in views}
     print(f"[replay {scene}] views: " + ", ".join(
         f"{n} (ego on {v['link']})" if v.get("link") else n for n, v in views.items()), flush=True)
@@ -378,7 +406,9 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                 continue
             poses, quats, actual = [], [], []
             for i in range(num_envs):
-                g = lo + min(i, n_eps - 1)  # padded slots reuse the last episode's draw
+                # padded slots reuse the last episode's draw; band_seed keeps
+                # different passes' draws distinct AND deterministic
+                g = lo + min(i, n_eps - 1) + band_seed
                 draw = sample(v["bands"], g)
                 e = [draw.get(f"eye_{a}", x) for a, x in zip("xyz", v["eye"])]
                 t = [draw.get(f"target_{a}", x) for a, x in zip("xyz", v["target"])]

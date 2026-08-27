@@ -111,11 +111,11 @@ untouched. Conditions that must hold:
 
 ## Verification
 
-    generate --headless /workspace --scene {base} --strategy strategy_N \
+    generate --headless . --scene {base} --strategy strategy_N \
         --num_envs <N> --seed 0
 
 This generates one batch of data using your strategy, under
-`/workspace/data/<batch>/`: one `ep_NNNN/` folder per episode, success/fail
+`data/<batch>/`: one `ep_NNNN/` folder per episode, success/fail
 in each episode's `meta.json`, and the batch summary (yield) in
 `data/<batch>/meta.json`. Physical parameters are sampled automatically
 (env 0 always keeps the plain, unsampled world); add `--nominal` to turn

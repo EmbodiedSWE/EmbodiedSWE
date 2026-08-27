@@ -10,22 +10,19 @@ and where to start.
 
 ## Your environment
 
-- `/workspace` — the campaign; your cwd; the ONLY writable place. Everything
-  you make lives here.
-- `/reference` — the eval run this campaign multiplies, read-only: its task,
-  and the agent workspace of how the solve was built. Usually the read that
-  pays off most, together with other campaigns' diversification histories
-  (their cells' `SUMMARY.md`).
-- `/repo` — the whole CoSiGen repo, read-only. Optional background: the
-  benchmark suite sources (`robobench/suites/…`), the data_engine, past
-  experiments.
-- Your **start point** inside the campaign is also read-only — copy it with
-  `create_cell`, never edit it in place.
+- **Your cwd is the campaign root** — the only place you write; everything
+  you make lives here. (Container sessions mount it at `/workspace` and add
+  read-only `/reference` — the eval run this campaign multiplies, usually the
+  read that pays off most — and `/repo`, the CoSiGen sources. Host sessions
+  have neither mount; the campaign's `gen.yaml` records the solve's
+  provenance instead.)
+- Your **start point** inside the campaign is read-only by contract — copy it
+  with `create_cell`, never edit it in place.
 - A GPU is available; `python` has Isaac Sim + Isaac Lab.
 
 ## The campaign
 
-    /workspace/
+    .                               (the campaign root, your cwd)
     ├─ gen.yaml                     the env preset + provenance of the solve
     ├─ scenes/<scene>/              one world + its judge
     │   ├─ scene/scene.py           full standalone scene — edits take effect
@@ -42,7 +39,7 @@ and where to start.
 - `create_cell [--count N]` — new cell(s) of this session's level, from this
   session's start point. One cell per distinct idea; run it as often as you
   have ideas.
-- `generate --headless /workspace --scene <s> [--strategy <t>] [--phase <p>]
+- `generate --headless . --scene <s> [--strategy <t>] [--phase <p>]
   --num_envs <N> --seed 0` — test-launch a cell: batched rollouts, every episode
   graded, yield written to the batch meta under `data/`.
 
@@ -63,10 +60,9 @@ whenever judging motion from a rendered episode beats reading logs.
 ## How you work
 
 1. **Study first**: the start point's code (the working scene, grader and
-   solve you build on); `/reference` — the experience of solving this task:
-   what worked and what failed on the way to the delivered solve, and
-   potentially other diversification attempts; the pool's batch metas
-   (existing yields are your baselines).
+   solve you build on); the pool's batch metas (existing yields are your
+   baselines); and, where mounted, `/reference` — the experience of solving
+   this task: what worked and what failed on the way to the delivered solve.
 2. **Propose many**: each distinct variant gets its own cell via `create_cell`.
 3. **Author** inside your cells only.
 4. **Prove**: use `generate` to prove your ideas, and iterate on it as many

@@ -94,6 +94,17 @@ parser.add_argument("--visual_draw", type=int, default=None,
                          "look stage-wide for the whole pass (omit = the nominal look); K looks of "
                          "the same episodes = K runs, kept apart with distinct --cam names")
 parser.add_argument("--visual", default="", help="visual-diversify hook: py file with setup(env) / per_frame(env, t)")
+parser.add_argument("--view-suffix", default="", dest="view_suffix",
+                    help="append to every resolved view name (a DRAW pass re-renders the "
+                         "declared cameras under e.g. _draw1 without touching the nominal "
+                         "videos; the bake selects it with --cams <view>_draw1)")
+parser.add_argument("--pose-jitter", type=float, nargs=6, default=None, dest="pose_jitter",
+                    metavar=("EX", "EY", "EZ", "TX", "TY", "TZ"),
+                    help="± uniform box (m) added as per-episode bands around every "
+                         "external view's declared eye/target (scene-declared bands win)")
+parser.add_argument("--pose-jitter-seed", type=int, default=0, dest="pose_jitter_seed",
+                    help="offset into the band-draw index space: different passes get "
+                         "different (deterministic) pose draws")
 parser.add_argument("--_scene", default="", help=argparse.SUPPRESS)  # internal: single-scene worker
 
 from isaaclab.app import AppLauncher  # noqa: E402
@@ -130,7 +141,12 @@ if len(groups) > 1:
                 "--env-spacing", str(args.env_spacing),
                 "--warmup", str(args.warmup),
                 "--crf", str(args.crf), "--max-frames", str(args.max_frames),
-                "--trim-margin", str(args.trim_margin)]
+                "--trim-margin", str(args.trim_margin),
+                "--pose-jitter-seed", str(args.pose_jitter_seed)]
+        if args.view_suffix:
+            cmd += ["--view-suffix", args.view_suffix]
+        if args.pose_jitter:
+            cmd += ["--pose-jitter", *map(str, args.pose_jitter)]
         if args.fps is not None:
             cmd += ["--fps", str(args.fps)]
         if args.cams is not None:
@@ -167,6 +183,9 @@ try:
         warmup=args.warmup, crf=args.crf, max_frames=args.max_frames,
         trim_margin=args.trim_margin,
         visual=args.visual or None, visual_draw=args.visual_draw, env_spacing=args.env_spacing,
+        view_suffix=args.view_suffix,
+        pose_jitter=tuple(args.pose_jitter) if args.pose_jitter else None,
+        band_seed=args.pose_jitter_seed,
         device="cuda:0" if torch.cuda.is_available() else "cpu",
     )
 except BaseException:

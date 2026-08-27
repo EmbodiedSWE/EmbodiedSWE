@@ -96,21 +96,23 @@ to the scene's reset). To stop a dial from being sampled, set its entry to
 `None`; don't delete the line — the nominal values are applied through the
 same list, so deleting changes the normal world too.
 
-`VISUAL_PARAMS` is a REQUIRED deliverable on every scene you ship — including
-`scene_0` if it lacks one. It is the entire look axis of the downstream visual
-multiplication: without it, every extra render pass varies nothing but camera
-pose. Band the render-only knobs the scene actually has (materials, colors,
-lighting; nominal = today's look; never a color the task's semantics or grader
-depend on, never anything physics reads). `PHYSICAL_PARAMS` and camera pose
-bands remain judgment calls: declare them when the task has meaningful knobs,
-with ranges derived from the scene's nominal values and measured yield — do
-not invent ranges merely to populate the interfaces.
+`VISUAL_PARAMS` and `CAMERAS` are REQUIRED deliverables on every scene you
+ship — including `scene_0` if it lacks them. `VISUAL_PARAMS` is the entire
+look axis of the downstream visual multiplication: band the render-only knobs
+the scene actually has (materials, colors, lighting; nominal = today's look;
+never a color the task's semantics or grader depend on, never anything physics
+reads). `CAMERAS` is the scene's own declared viewpoints (there is no
+pipeline-level default view): frame them so the WHOLE workspace is visible —
+robot base, target objects, and everything manipulated. `PHYSICAL_PARAMS`
+remains a judgment call: declare it when the task has meaningful knobs, with
+ranges derived from the scene's nominal values and measured yield — do not
+invent ranges merely to populate the interfaces.
 
 ## Verification
 
-    generate --headless /workspace --scene scene_N --num_envs <N> --seed 0
+    generate --headless . --scene scene_N --num_envs <N> --seed 0
 
-This generates one batch of data on your scene, under `/workspace/data/<batch>/`:
+This generates one batch of data on your scene, under `data/<batch>/`:
 one `ep_NNNN/` folder per episode, success/fail in each episode's `meta.json`,
 and the batch summary (yield) in `data/<batch>/meta.json`. Physical parameters
 are sampled automatically (env 0 always keeps the plain, unsampled world); add

@@ -54,20 +54,20 @@ state-dependent scaling, per-env randomness. Requirements:
 
 ## The gate (measured, not claimed)
 
-The orchestrator accepts your work only when a fresh probe
+The orchestrator accepts your work when a fresh probe
 
     generate --headless {gen} --scene scene_0 --strategy strategy_0 \
         --num_envs {num_envs} --seed {probe_seed} --noise_scale {noise_scale}
 
-shows BOTH:
-- yield >= {need_successes}/{num_envs} (the solve keeps succeeding under your noise), and
-- measured noise coverage >= {min_coverage} of (step, env) rows (batch meta
-  `noise.perturbed_row_frac` — real noise actually executed).
+shows the noise DEMONSTRABLY EXECUTES: measured coverage
+(batch meta `noise.perturbed_row_frac`) must be greater than zero.
 
-Run that probe yourself and iterate until both hold: too timid fails coverage,
-too violent fails yield. The productive frontier is the strongest noise the
-task provably survives. The previous probe's log ({fail_log_size}) is at
-`{fail_log_path}` if you need it.
+There is no yield bar — but the compound stage keeps ONLY rollouts that pass
+the grader under your noise, within a fixed time budget. Noise that kills every
+rollout produces an empty compound: your yield under noise IS your data output,
+so find the strongest noise the task genuinely survives, and check the probe's
+yield yourself before finishing. The previous probe's log ({fail_log_size}) is
+at `{fail_log_path}` if you need it.
 
 You are running autonomously: no one answers questions; your final message ends
 the session. Leave `NOISE_NOTES.md` next to the solve: the phases you saw in

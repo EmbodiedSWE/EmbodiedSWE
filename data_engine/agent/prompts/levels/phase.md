@@ -100,7 +100,7 @@ must satisfy the phase's precondition as documented in `ENTRIES`.
   relation (via IK); at a hand-free phase, object and arm are independent —
   set the arm freely, or just leave it where the scene reset put it.
 
-- **The pool** (`/workspace/data/`), when batches exist there — and your own
+- **The pool** (the campaign's `data/`), when batches exist there — and your own
   test batches add to it: every episode's `traj.npz` stores full restorable
   sim states, `env.set_states(...)` any recorded step. Successes give mid-task
   boundary states (e.g. "part placed, hand free"), perturbed with jitter for
@@ -155,7 +155,7 @@ scene and robot; the placeholders below are deliberately schematic:
 
 ## Verification
 
-    generate --headless /workspace --scene <scene> --strategy {base} \
+    generate --headless . --scene <scene> --strategy {base} \
         --phase phase_N --num_envs <N> --seed 0
 
 The batch sweeps ALL your reset files, one rollout of `--num_envs` episodes
@@ -163,7 +163,7 @@ per file, the envs divided evenly among the file's builders — a single batch
 already exercises every entry and every builder; each episode's meta records
 its (file, builder) lineage.
 This generates one batch of data using your proposed `phase_N` and its initial
-conditions, under `/workspace/data/<batch>/`: one `ep_NNNN/` folder per
+conditions, under `data/<batch>/`: one `ep_NNNN/` folder per
 episode, success/fail in each episode's `meta.json`, and the batch summary
 (yield) in `data/<batch>/meta.json`. Physical parameters are sampled
 automatically (env 0 always keeps the plain, unsampled world); add
