@@ -491,6 +491,18 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             entry = reset_name if has_port else None  # the file IS the phase
         grader = grader_cls(env)
         grader.setup()  # baselines captured at the entry state
+        # VACUOUS-SUCCESS GUARD: an env the grader already judges successful AT
+        # THE ENTRY STATE can never yield a valid episode — there is no
+        # transition to learn. Without this, a scene whose success() holds at
+        # reset plus a solve that exits immediately farms unlimited "successes"
+        # (pc_motherboard shipped 1-step score-1.0 episodes for two days).
+        entry_success = [bool(v["success"]) for v in grader.verdict()]
+        if any(entry_success):
+            print(f"[batch {batch}] WARNING: {sum(entry_success)}/{num_envs} envs "
+                  "satisfy the grader AT ENTRY — their episodes are voided as "
+                  "vacuous. If this is every env, the scene/grader pair is "
+                  "broken for data generation: fix the success predicate.",
+                  flush=True)
         rec = Recorder(
             env, env, num_envs, noise_scale=noise_scale,
             success_probe=lambda: [bool(v["success"]) for v in grader.verdict()],
@@ -503,6 +515,10 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         solve(rec) if entry is None else solve(rec, entry=entry)
 
         verdicts = grader.verdict()
+        for e, v in enumerate(verdicts):
+            if entry_success[e] and v["success"]:
+                v["success"] = False
+                v["vacuous"] = True  # rides into ep + batch metas as provenance
         ctrl_info = _controller_info(env.robot)  # after the solve = overrides included
         T = len(rec.actions)
         rec.watch_controller(step=T)  # catch a change in the last <CTRL_CHECK latches
