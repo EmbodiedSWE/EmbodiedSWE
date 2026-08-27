@@ -73,6 +73,9 @@ from .generation import _load, build_env
 
 WARMUP_DEFAULT = 12  # throwaway renders per chunk start (temporal-denoiser flush)
 _FAR_CLIP = 40.0  # camera far clip (m); env_spacing beyond it isolates envs pixel-exactly
+# Mean RGB (0-255) a warmed-up first frame must reach; a stage lit by the wrong dome light
+# sits at ~15-30 while a correctly lit pc_ram view sits at ~110-130 (2026-08-26 probes).
+MIN_WARMUP_LUMA = 35.0
 
 
 # ----- episode discovery -------------------------------------------------------------------------
@@ -297,7 +300,31 @@ def build_replay_env(scene_dir: Path, num_envs: int, device: str,
     finally:
         scene_cls.assets = assets_with_camera.__defaults__[0]
         robot_cls.assets = assets_with_ego.__defaults__[0]
+    quenched = _quench_asset_dome_lights()
+    if quenched:
+        print(f"[replay] deactivated {len(quenched)} asset-embedded dome light(s) so the scene's "
+              f"own light is the one RTX uses: {quenched[:3]}{' …' if len(quenched) > 3 else ''}",
+              flush=True)
     return env, gen, visual_values, views, surface_z
+
+
+def _quench_asset_dome_lights() -> list[str]:
+    """RTX honors ONE dome light per stage and picks it at process start — not deterministically.
+    Asset USDs can smuggle their own (GAMING_PC.usdc ships a 1.0-intensity DomeLight under the
+    case's visual), so a render process had a coin-flip chance of lighting the whole scene with
+    that instead of the scene's /World light: every episode in the process came out "lights off"
+    (pc_ram stage-1 sweep, 29/29 dark, 2026-08-26). Deactivate every DomeLight that lives inside
+    an env's asset tree; scene-level lights (spawned at /World/<name>) are left alone."""
+    import omni.usd
+
+    stage = omni.usd.get_context().get_stage()
+    quenched: list[str] = []
+    for prim in list(stage.Traverse()):
+        path = str(prim.GetPath())
+        if prim.GetTypeName() == "DomeLight" and path.startswith("/World/envs/"):
+            prim.SetActive(False)
+            quenched.append(path)
+    return quenched
 
 
 def _replay_anchor(robot):
@@ -488,6 +515,17 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         env.set_states(compose(0))
         for _ in range(max(0, warmup)):
             render_once()
+        # Lighting guard: a stage lit by the wrong/no light renders every frame of every
+        # episode in this process dark (the pc_ram stage-1 sweep silently wrote 29 dark
+        # episodes). Fail loudly on the first frame instead of shipping a dark dataset.
+        probe = render_once()
+        for n, r in probe.items():
+            luma = r[:len(chunk), ..., :3].float().mean().item()
+            if luma < MIN_WARMUP_LUMA:
+                raise SystemExit(
+                    f"[replay {scene}] view {n!r} renders dark after warmup (mean rgb {luma:.1f} "
+                    f"< {MIN_WARMUP_LUMA}) — a light is missing or the wrong dome light won; "
+                    f"see _quench_asset_dome_lights. Refusing to render this chunk.")
 
         for fi, t in enumerate(range(0, t_max, stride)):
             if max_frames and fi >= max_frames:

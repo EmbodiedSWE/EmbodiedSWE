@@ -56,6 +56,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .meta import refresh_metas
+from .noise import NoisyActionEnv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -72,7 +73,8 @@ def _load(name: str, path: Path):
 
 
 def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
-              env_draw: int = 0, nominal: bool = False,
+              env_draw: int = 0, nominal: bool = False, solo_draw: bool = False,
+              phys_nominal: bool = False,
               env_spacing: float | None = None,
               scene_overrides: dict | None = None):
     """The campaign preset's binding (robot, control mode, layout) on the LOCAL scene.
@@ -102,9 +104,15 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
                            (scene_dir / "scene" / "scene.py").read_text()).group(1)
     gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
     scene_cls = SCENES.get(scene_name)
-    bands = {} if nominal else scene_bands(scene_cls, scene_cls().cfg)
-    # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1
-    slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)] if bands else []
+    bands = {} if (nominal or phys_nominal) else scene_bands(scene_cls, scene_cls().cfg)
+    # slot 0 = nominal canary; slot e >= 1 draws index env_draw + e - 1. solo_draw ON (single-env
+    # diversified batches that sidestep the lockstep phase coupling): EVERY slot draws.
+    if not bands:
+        slot_drawn = []
+    elif solo_draw:
+        slot_drawn = [sample(bands, env_draw + e) for e in range(num_envs)]
+    else:
+        slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)]
     cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
     # env_spacing: None keeps the preset's grid; replay overrides it (recorded states
     # shift onto whatever grid the replay builds, so spacing is free there)
@@ -385,8 +393,11 @@ class Recorder:
 def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scene_0",
               strategy: str = "strategy_0", phase: str | None = None,
               num_envs: int = 4, seed: int = 0,
-              noise_scale: float = 0.0, device: str = "cuda:0",
-              env_draw: int = 0, solve_draw: int = 0, nominal: bool = False) -> Path:
+              noise_scale: float = 0.0, noise: dict | None = None,
+              device: str = "cuda:0",
+              env_draw: int = 0, solve_draw: int = 0, nominal: bool = False,
+              solo_draw: bool = False, phys_nominal: bool = False,
+              solve_nominal: bool = False) -> Path:
     import numpy as np
     import torch
 
@@ -406,9 +417,11 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         raise SystemExit(f"{out} already exists — batches are append-only")
 
     env, gen, bands, slot_drawn = build_env(scene_dir, num_envs, device, seed,
-                                            env_draw, nominal)
+                                            env_draw, nominal, solo_draw=solo_draw,
+                                            phys_nominal=phys_nominal)
     if slot_drawn:
-        print(f"[batch {batch}] physical params per-env (slot 0 nominal): {slot_drawn}", flush=True)
+        _c = "every slot drawn" if solo_draw else "slot 0 nominal"
+        print(f"[batch {batch}] physical params per-env ({_c}): {slot_drawn}", flush=True)
     grader_cls = load_grader_cls(scene_dir)
     # Delivered solutions are FOLDERS (init copies "solve.py plus its siblings"), and real
     # solves import those siblings bare (`from helpers import ...`) — the eval harness ran
@@ -437,7 +450,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
     # ONE set of solve hyperparameters per batch (see sampler.solve_bands): drawn at
     # --solve_draw and WRITTEN ONTO THE MODULE's constants before solve(env) runs —
     # the solve signature never changes. --nominal (or no SOLVE_PARAMS) -> file values.
-    s_bands = {} if nominal else solve_bands(solve_mod)
+    s_bands = {} if (nominal or solve_nominal) else solve_bands(solve_mod)
     solve_drawn = sample(s_bands, solve_draw) if s_bands else {}
     for n, v in solve_drawn.items():
         setattr(solve_mod, n, v)
@@ -503,8 +516,23 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                   "vacuous. If this is every env, the scene/grader pair is "
                   "broken for data generation: fix the success predicate.",
                   flush=True)
+        # Two independent, label-clean noise mechanisms:
+        # - the solve-authored channel (env.step(action, noise=...)), scaled by
+        #   noise_scale — the pipeline DEFAULT (0 = inert; compound runs it hot);
+        # - the scripted uniform wrapper (NoisyActionEnv), opt-in through the
+        #   --sigma/--prob/--duration/--dims/--gate-z flags. It perturbs BELOW
+        #   the recorder, so recorded actions stay the clean commands either way.
+        target = env
+        if noise and noise.get("sigma", 0.0) > 0.0:
+            dims = noise.get("dims")
+            target = NoisyActionEnv(env, dims=slice(*dims) if dims else slice(0, 0),
+                                    sigma=noise.get("sigma", 0.0),
+                                    prob=noise.get("prob", 1.0),
+                                    duration=noise.get("duration", 0.0),
+                                    seed=seed + rnd,
+                                    gate_z=noise.get("gate_z", 0.0))
         rec = Recorder(
-            env, env, num_envs, noise_scale=noise_scale,
+            target, env, num_envs, noise_scale=noise_scale,
             success_probe=lambda: [bool(v["success"]) for v in grader.verdict()],
         )
         print(f"[batch {batch}] rollout {rnd + 1}/{rollouts}"
@@ -614,6 +642,9 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                    "mean_abs": round(noise_abs_sum / max(1, noise_elems), 6),
                    "max_abs": round(noise_abs_max, 6)}
                   if noise_scale else {}),
+        # the scripted uniform wrapper's config, when enabled (its perturbation
+        # happens below the recorder, so it is provenance, not measured coverage)
+        "uniform_noise": (noise if noise and noise.get("sigma", 0.0) > 0.0 else {}),
         # the scene's band specs + this batch's slice of the index space (provenance)
         "params": {"physical_params": bands, "env_draw": env_draw, "nominal": nominal,
                    "per_env": slot_drawn,

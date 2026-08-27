@@ -45,18 +45,39 @@ parser.add_argument("--env_draw", type=int, default=0,
 parser.add_argument("--solve_draw", type=int, default=0,
                     help="solve-hyperparameter draw index: ONE set from the solve's "
                          "SOLVE_PARAMS bands for the whole batch")
+parser.add_argument("--solo-draw", dest="solo_draw", action="store_true",
+                    help="every env slot (incl. slot 0) takes a PHYSICAL_PARAMS draw — for "
+                         "single-env diversified batches that avoid the lockstep phase coupling "
+                         "(num_envs=1, one draw per boot). Default off keeps slot 0 the nominal canary.")
 parser.add_argument("--nominal", action="store_true",
                     help="no sampling at all (baseline batch: plain world, bare solve)")
+parser.add_argument("--phys-nominal", dest="phys_nominal", action="store_true",
+                    help="skip PHYSICAL_PARAMS sampling only (file-value world) — isolates the "
+                         "solve/noise axes, and keeps num_envs>1 batches lockstep-identical")
+parser.add_argument("--solve-nominal", dest="solve_nominal", action="store_true",
+                    help="skip SOLVE_PARAMS sampling only (file-value solve constants) — "
+                         "isolates the physics/noise axes")
 parser.add_argument("--render", action="store_true",
                     help="after the batch is graded, replay it to RGB frames + previews "
                          "(chains scripts/render.py in its own process — generation itself "
                          "stays camera-free)")
 parser.add_argument("--render_args", default="",
                     help='extra args forwarded to render.py, e.g. "--fps 30 --eye 1.0 -0.7 0.5"')
+# Two noise mechanisms, both label-clean. The solve-authored channel is the
+# pipeline default; the scripted uniform wrapper is opt-in via --sigma.
 parser.add_argument("--noise_scale", type=float, default=0.0,
                     help="master switch for solve-authored noise (env.step(..., noise=…)): "
                          "0 = execute clean (default; probes/farm), 1.0 = execute the "
                          "authored perturbations (compound)")
+parser.add_argument("--sigma", type=float, default=0.0,
+                    help="scripted uniform action-noise sigma (0 = off, the default; "
+                         "the solve-authored noise_scale channel is the standard path)")
+parser.add_argument("--prob", type=float, default=1.0, help="noise-window start prob per step")
+parser.add_argument("--duration", type=float, default=0.0, help="noise-window length (sim-seconds; 0 = a single step)")
+parser.add_argument("--dims", default="", help="noised action dims as a:b (required if sigma > 0)")
+parser.add_argument("--noise-gate-z", type=float, default=0.0, dest="noise_gate_z",
+                    help="height gate (m): noise applies only while the hand is ABOVE this — "
+                         "perturb transport, never the low precision phases (0 = ungated)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -68,11 +89,16 @@ sys.path.insert(0, str(DATA_ENGINE_ROOT.parent))
 sys.path.insert(0, str(DATA_ENGINE_ROOT))
 from engine.generation import run_batch  # noqa: E402
 
+noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
+         "gate_z": args.noise_gate_z,
+         "dims": tuple(int(x) for x in args.dims.split(":")) if args.dims else None}
 out = run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
                 phase=args.phase, num_envs=args.num_envs, seed=args.seed,
-                noise_scale=args.noise_scale,
+                noise_scale=args.noise_scale, noise=noise,
                 device="cuda:0" if torch.cuda.is_available() else "cpu",
-                env_draw=args.env_draw, solve_draw=args.solve_draw, nominal=args.nominal)
+                env_draw=args.env_draw, solve_draw=args.solve_draw, nominal=args.nominal,
+                solo_draw=args.solo_draw, phys_nominal=args.phys_nominal,
+                solve_nominal=args.solve_nominal)
 
 if args.render:
     # A separate process on purpose: rendering needs --enable_cameras (a different,
