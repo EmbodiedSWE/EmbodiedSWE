@@ -276,7 +276,20 @@ def build_replay_env(scene_dir: Path, num_envs: int, device: str,
     return env, gen, visual_values, views, surface_z
 
 
-def _load_shifted(ep_dir: Path, base_pos, device):
+def _replay_anchor(robot):
+    """(live anchor articulation, recorded root key, joint-names stamp) for single
+    robots AND MultiRobot composites. Composites have no robot.articulation; their
+    recorded state trees flatten to robot/<name>/... — the anchor is the first
+    child by name (deterministic), and the stamp maps every child's joints."""
+    children = getattr(robot, "robots", None)
+    if isinstance(children, dict):
+        name = sorted(children)[0]
+        return (children[name].articulation, f"robot/{name}/root",
+                {n: list(c.articulation.joint_names) for n, c in sorted(children.items())})
+    return robot.articulation, "robot/root", list(robot.articulation.joint_names)
+
+
+def _load_shifted(ep_dir: Path, base_pos, root_key: str, device):
     """Episode arrays as device tensors, positions shifted onto the replay slot's
     origin. Every last-dim-13 array is a world-frame root state (the engine's own
     convention: pos 0:3, quat 3:7, vels 7:13) — only those get the shift."""
@@ -284,7 +297,7 @@ def _load_shifted(ep_dir: Path, base_pos, device):
     import torch
 
     data = {k: torch.as_tensor(v, device=device) for k, v in np.load(ep_dir / "traj.npz").items()}
-    shift = base_pos - data["robot/root"][0, 0:3]
+    shift = base_pos - data[root_key][0, 0:3]
     for k, v in data.items():
         if k != "action" and v.shape[-1] == 13:
             v[..., 0:3] += shift
@@ -334,7 +347,8 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
     if hook and hasattr(hook, "setup"):
         hook.setup(env)
     env.reset(seed=0)
-    base_pos = env.robot.articulation.data.root_pos_w.clone()  # (E, 3) — the shift anchor
+    anchor, root_key, joint_names_stamp = _replay_anchor(env.robot)
+    base_pos = anchor.data.root_pos_w.clone()  # (E, 3) — the shift anchor
 
     def render_once():
         """One restored-state frame: post_step BEFORE the render (glow in-frame), then
@@ -383,14 +397,14 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
     done: list[Path] = []
     for lo in range(0, len(eps), num_envs):
         chunk = eps[lo:lo + num_envs]
-        loaded = [_load_shifted(ep, base_pos[e], device) for e, ep in enumerate(chunk)]
+        loaded = [_load_shifted(ep, base_pos[e], root_key, device) for e, ep in enumerate(chunk)]
         # controller state is dropped: stateless leaves flatten to nothing (a composite
         # can't restore a partial tree), and kinematic replay never applies an action
         keys = [k for k in loaded[0][0]
-                if k != "action" and not k.startswith("robot/controller")]
+                if k not in ("action", "action_noise") and "/controller" not in k]
 
         def ep_rows(d: dict, m: dict) -> int:
-            rows = d["robot/joint_pos"].shape[0]
+            rows = d[root_key].shape[0]
             # trim the padded post-success tail: wide batches hold every finished
             # env until the slowest one ends, and meta.success_step (earliest
             # SUSTAINED success, generation-time graded) marks where this env was
@@ -472,7 +486,7 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                     "eye": list(eye), "target": list(target), "focal": v["focal"],
                     "link": v.get("link"), "cam_draw": (lo + i if n in placed else None),
                     "env_spacing": env_spacing,
-                    "joint_names": list(env.robot.articulation.joint_names),
+                    "joint_names": joint_names_stamp,
                     "scene_description": env.scene.describe(),
                     "success": meta.get("success"), "cell": meta.get("cell"),
                     "visual_hook": visual, "visual_draw": visual_draw, "visual_values": visual_values,
