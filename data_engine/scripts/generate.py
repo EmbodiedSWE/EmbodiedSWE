@@ -61,6 +61,9 @@ parser.add_argument("--sigma", type=float, default=0.0, help="action-noise sigma
 parser.add_argument("--prob", type=float, default=1.0, help="noise-window start prob per step")
 parser.add_argument("--duration", type=float, default=0.0, help="noise-window length (sim-seconds; 0 = a single step)")
 parser.add_argument("--dims", default="", help="noised action dims as a:b (required if sigma > 0)")
+parser.add_argument("--noise-gate-z", type=float, default=0.0, dest="noise_gate_z",
+                    help="height gate (m): noise applies only while the hand is ABOVE this — "
+                         "perturb transport, never the low precision phases (0 = ungated)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -75,6 +78,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from engine.generation import run_batch  # noqa: E402
 
 noise = {"sigma": args.sigma, "prob": args.prob, "duration": args.duration,
+         "gate_z": args.noise_gate_z,
          "dims": tuple(int(x) for x in args.dims.split(":")) if args.dims else None}
 out = run_batch(args.gen_root, batch=args.batch, scene=args.scene, strategy=args.strategy,
                 phase=args.phase, num_envs=args.num_envs, seed=args.seed,

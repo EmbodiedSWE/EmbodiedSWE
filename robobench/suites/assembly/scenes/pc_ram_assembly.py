@@ -61,6 +61,12 @@ class PcRamAssemblySceneCfg(BaseCfg):
     align_axis_deg: float = 6.0  # max tilt of a stick's up axis off the slot axis (deg)
     align_yaw_deg: float = 3.0  # max heading error of a stick's length axis (deg)
     reset_pos_jitter: float = 0.01  # uniform +/- xy jitter for the loose sticks at reset (m)
+    # Uniform +/- XY jitter of the WHOLE CASE at reset (m; 0 = pinned at spawn, the historical
+    # behavior). Translation only — solves and the grader read seat positions as case_pos +
+    # seat_pos[k] with the case's IDENTITY orientation, so yaw must stay 0. Nonzero values give
+    # image->press-location covariance (the grounding VLA distillation needs); the demos' solve
+    # tracks the shifted case automatically (its waypoints derive from the live case pose).
+    case_jitter_xy: float = 0.0
     # Part friction (static = dynamic), set on every shape at bind. The moving stick runs
     # moderately slick against a grippier fixed case, so it slides down the channel but holds seat.
     ram_friction: float = 0.3
@@ -381,6 +387,15 @@ class PcRamAssemblyScene(BaseScene):
         m = len(env_ids)
         origin = self.env_origins[env_ids]  # (m, 3)
         wx, wy = c.workbench_pos
+
+        if c.case_jitter_xy > 0.0:
+            # kinematic case: re-pin at spawn + a per-env XY draw (identity orientation — see cfg)
+            pose = torch.zeros(m, 7, device=dev)
+            pose[:, 0:3] = origin + torch.tensor(
+                (wx, wy, c.surface_z + c.case_lift), device=dev)
+            pose[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.case_jitter_xy
+            pose[:, 3] = 1.0
+            self.case.write_root_pose_to_sim(pose, env_ids)
 
         for ram, (ix, iy) in zip(self.rams, c.ram_init_xy):
             st = torch.zeros(m, 13, device=dev)
