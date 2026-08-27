@@ -395,7 +395,8 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         grader.setup()  # baselines captured at the entry state
         stack = NoisyActionEnv(env, dims=slice(*dims) if dims else slice(0, 0),
                                sigma=noise.get("sigma", 0.0), prob=noise.get("prob", 1.0),
-                               duration=noise.get("duration", 0.0), seed=seed + rnd)
+                               duration=noise.get("duration", 0.0), seed=seed + rnd,
+                               gate_z=noise.get("gate_z", 0.0))
         rec = Recorder(stack, env)
         print(f"[batch {batch}] rollout {rnd + 1}/{rollouts}"
               + (f" ({reset_name})" if reset_name else "")
