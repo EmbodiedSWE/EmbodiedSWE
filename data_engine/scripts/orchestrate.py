@@ -9,41 +9,48 @@ per-episode-verified demonstration dataset out, unattended.
 `run_dir` is an eval-run-shaped folder: run.json (names the preset) + workspace/solution/
 (the oracle solve) [+ workspace/candidates/<k>/ alternates].
 
-Stage pipeline (each stage idempotent — a killed run resumes under the same --name):
+FIVE stages, each on its own persistent stage_hours clock, each idempotent
+(a killed run resumes under the same --name):
 
-    INIT       bake the campaign (local scene + suite grader, or a campaign-local
-               success-only grader when the suite has none, + oracle strategy)
-    NOMINAL    1-env oracle probe; failure escalates: alternate candidates -> agent
-               repair sessions -> proceed regardless (never a blocking gate)
-    WIDE       num_envs-wide MECHANICAL probe (the batch must complete env-batched
-               with at least one success); failure loops evidence-fed vectorize
-               sessions — width stays enforced by construction (scripted batches
-               always launch at num_envs), yield is the farming agent's problem
-    SESSIONS   one authoring session per level (scene/strategy/phase): agent-created
-               cells, each proven by graded test batches; every scene must declare
-               VISUAL_PARAMS and CAMERAS (verified by building the edited scene)
+    BOOTSTRAP  bake the campaign (local scene + suite grader, or a campaign-local
+               success-only grader when the suite has none, + oracle strategy),
+               then prove the delivered solve works: a 1-env nominal probe
+               (failure escalates: alternate candidates -> agent repair
+               sessions -> proceed regardless — never a blocking gate) and a
+               num_envs-wide MECHANICAL probe (the batch must complete
+               env-batched with at least one success; failure loops
+               evidence-fed vectorize sessions — width stays enforced by
+               construction, yield is the farming agent's problem)
+    AUTHOR     one authoring session per level (scene/strategy/phase): agent-
+               created cells, each proven by graded test batches; every scene
+               must declare VISUAL_PARAMS and CAMERAS (verified by building
+               the edited scene)
     FARM       AGENT-DIRECTED: the agent delivers base_set.json — exactly base_k
                verified successful trajectories, split across its cells however it
                judges best; acceptance is mechanical (each episode graded
                successful on disk, exactly base_k), rejections re-enter the
                session with the reason as evidence
-    NOISE      one agent session: WATCH a rendered base-set episode (view tool),
-               then author per-phase executed-action noise INTO the solve through
-               the env.step(action, noise=...) channel (labels stay clean by
-               construction); accepted when a probe shows the noise DEMONSTRABLY
-               EXECUTES (coverage > 0) — no yield bar: the grader filters every
-               compound rollout anyway
-    COMPOUND   scripted physics diversification: fresh num_envs rollouts of the
-               base set's cells with new draws + the agent's noise executing,
-               graded per sim pass, until compound_eps verified survivors
-    MULTIPLY   visual diversification of the dataset (base set + compound): pass 0
-               renders each scene's declared cameras; passes 1..multiply_draws-1
-               re-render them under the _draw<j> suffix with per-episode pose
-               jitter + the scene's VISUAL_PARAMS look j — success inherited,
-               post-success tails trimmed at meta.success_step + trim_margin
+    COMPOUND   the noise axis, end to end. First one agent session: WATCH a
+               rendered base-set episode (view tool), then author per-phase
+               executed-action noise INTO the solve through the
+               env.step(action, noise=...) channel (labels stay clean by
+               construction), accepted when a probe shows the noise
+               DEMONSTRABLY EXECUTES (coverage > 0 — no yield bar: the grader
+               filters every rollout anyway). Then scripted physics
+               diversification: fresh num_envs rollouts of the base set's
+               cells with new draws + the noise executing, graded per sim
+               pass, until compound_eps verified survivors
+    MULTIPLY   the look axis, end to end. First a scene-contract session for
+               any scene still missing VISUAL_PARAMS/CAMERAS (verified by
+               building the edited scene). Then visual diversification of the
+               dataset (base set + compound): pass 0 renders each scene's
+               declared cameras; passes 1..multiply_draws-1 re-render them
+               under the _draw<j> suffix with per-episode pose jitter + the
+               scene's VISUAL_PARAMS look j — success inherited, post-success
+               tails trimmed at meta.success_step + trim_margin
 
-Every stage runs on its own persistent stage_hours clock and the pipeline moves
-on when it expires — a stuck stage costs itself, never the stages after it.
+When a stage's clock expires the pipeline moves on — a stuck stage costs
+itself, never the stages after it.
 Failure semantics: generate/render outcomes are recorded as batch/pass results;
 required control-plane commands raise with their complete output. status.json
 tracks the live stage, orchestration.json is the durable resume ledger, and
@@ -109,9 +116,10 @@ class Config:
     agent_cmd: str = ""               # "" = no agent runtime: skip agent stages
     isaac_py: str = sys.executable
 
-    # ONE clock shape: every stage runs on its own persistent budget of
-    # stage_hours and the pipeline MOVES ON when it expires — no stage can
-    # wedge the campaign, and there are no per-stage tuning constants.
+    # ONE clock shape: each of the five stages (bootstrap, author, farm,
+    # compound, multiply) runs on its own persistent budget of stage_hours and
+    # the pipeline MOVES ON when it expires — no stage can wedge the campaign,
+    # and there are no per-stage tuning constants.
     stage_hours: float = 6.0
 
     # THE BASE SET: the agent-directed farm delivers exactly base_k verified
@@ -637,7 +645,7 @@ class Orchestrator:
 
         candidates = sorted((self.cfg.run_dir / "workspace" / "candidates").glob("*/solve.py"))
         tried = active
-        while not nominal_ok and tried < len(candidates) and self.stage_left("nominal"):
+        while not nominal_ok and tried < len(candidates) and self.stage_left("bootstrap"):
             cand = candidates[tried].parent
             tried += 1
             print(f"[orchestrate] nominal failing — rotating to candidate {cand.name} "
@@ -649,14 +657,14 @@ class Orchestrator:
             nominal_ok, last_batch = self._probe_nominal(f"candidate_{tried:03d}")
 
         for rnd in range(1, self.cfg.stage_rounds + 1):
-            if nominal_ok or not self.agent.available or not self.stage_left("nominal"):
+            if nominal_ok or not self.agent.available or not self.stage_left("bootstrap"):
                 break
             prefix = f"repair_{rnd:03d}_attempt_"
             successful = [
                 outcome for _, outcome in self.camp.session_attempts(prefix)
                 if outcome.get("ok")
             ]
-            while (not successful and self.stage_left("nominal")
+            while (not successful and self.stage_left("bootstrap")
                    and len(self.camp.session_attempts(prefix))
                    < self.cfg.session_attempts_per_round):
                 attempt = len(self.camp.session_attempts(prefix)) + 1
@@ -735,7 +743,7 @@ class Orchestrator:
             )
         ):
             rnd -= 1  # retry the incomplete round; transient exits do not consume it
-        while (not wide and self.agent.available and self.stage_left("wide")
+        while (not wide and self.agent.available and self.stage_left("bootstrap")
                and rnd < self.cfg.stage_rounds):
             rnd += 1
             prefix = f"vectorize_{rnd:03d}_attempt_"
@@ -743,7 +751,7 @@ class Orchestrator:
                 outcome for _, outcome in self.camp.session_attempts(prefix)
                 if outcome.get("ok")
             ]
-            while (not successful and self.stage_left("wide")
+            while (not successful and self.stage_left("bootstrap")
                    and len(self.camp.session_attempts(prefix))
                    < self.cfg.session_attempts_per_round):
                 attempt = len(self.camp.session_attempts(prefix)) + 1
@@ -784,7 +792,7 @@ class Orchestrator:
             return
         for level in self.cfg.sessions:
             marker = self.camp.gen / f".session_{level}.json"
-            if read_json(marker).get("ok") or not self.stage_left(f"author_{level}"):
+            if read_json(marker).get("ok") or not self.stage_left("author"):
                 continue
             self.camp.write_status(Stage.SESSION, level=level)
             dry = sh([sys.executable, ROOT / "scripts" / "diversify.py", self.camp.gen,
@@ -828,7 +836,7 @@ class Orchestrator:
             return
         marker = self.camp.gen / ".session_visual.json"
         prev = read_json(marker)
-        if prev.get("ok") or not self.stage_left("visual"):
+        if prev.get("ok") or not self.stage_left("multiply"):
             return
         scenes = sorted({c.scene for c in self.camp.cells()})
 
@@ -1047,13 +1055,13 @@ class Orchestrator:
         accepted, batch_name, meta = probe()
         rnd = max((int(m.group(1)) for tag, _ in self.camp.session_attempts("noise_")
                    if (m := re.match(r"noise_(\d{3})_attempt_", tag))), default=0)
-        while (not accepted and self.stage_left("noise")
+        while (not accepted and self.stage_left("compound")
                and rnd < self.cfg.stage_rounds):
             rnd += 1
             prefix = f"noise_{rnd:03d}_attempt_"
             successful = [o for _, o in self.camp.session_attempts(prefix)
                           if o.get("ok")]
-            while (not successful and self.stage_left("noise")
+            while (not successful and self.stage_left("compound")
                    and len(self.camp.session_attempts(prefix))
                    < self.cfg.session_attempts_per_round):
                 attempt = len(self.camp.session_attempts(prefix)) + 1
@@ -1145,14 +1153,17 @@ class Orchestrator:
         return n >= self.cfg.compound_eps
 
     def multiply(self) -> bool:
-        """Visual diversification of the dataset (base set + compound survivors),
-        replay-rendered render_envs episodes at a time. Pass 0 renders each
-        scene's declared cameras under their own names; pass j >= 1 re-renders
-        them under the _draw<j> suffix with per-episode pose jitter and the
-        scene's VISUAL_PARAMS look j. No re-testing: the replayed states ARE
-        the verified ones, so every video inherits its episode's success."""
+        """The look axis, end to end: first the scene-contract session for any
+        scene still missing VISUAL_PARAMS/CAMERAS, then visual diversification
+        of the dataset (base set + compound survivors), replay-rendered
+        render_envs episodes at a time. Pass 0 renders each scene's declared
+        cameras under their own names; pass j >= 1 re-renders them under the
+        _draw<j> suffix with per-episode pose jitter and the scene's
+        VISUAL_PARAMS look j. No re-testing: the replayed states ARE the
+        verified ones, so every video inherits its episode's success."""
         if self.cfg.multiply_draws <= 0:
             return True
+        self.ensure_visual_params()
         by_scene = self.camp.successful_episode_dirs()
         n_eps = sum(map(len, by_scene.values()))
         done = read_json(self.camp.gen / ".multiply_done")
@@ -1276,7 +1287,6 @@ class Orchestrator:
             self.ensure_nominal()
             self.ensure_wide()
             self.run_sessions()
-            self.ensure_visual_params()
             farm_done = self.farm()
             noise_ok = self.ensure_noise_plan()
             compound_done = self.compound(noise_ok)
