@@ -67,7 +67,9 @@ class ClearOrganicsSceneCfg(BaseCfg):
 
     # --- rubric / judging (bin interior derived from the measured bbox x scale) ------------
     settle_speed: float = 0.06  # max item |lin vel| when judging cleared (m/s)
-    wall_frac: float = 0.80  # interior half-extent = outer half * this (bin wall inset)
+    wall_frac: float = 0.90  # interior half-extent = outer half * this (bin wall inset). The
+    # bin wall is thin (~1-2 cm); 0.90 keeps a fruit resting AGAINST the inner wall counted
+    # (its centre is ~outer_half - radius). The z-gate (centre below the rim) rejects rim-perch.
     floor_local_z: float = 0.012  # min local z above the bin base to count as "in" (m)
     rim_frac: float = 1.0  # rim local z = scaled bin height * this (top opening)
     bin_rim_stack: float = 0.06  # extra local-z above the rim an item may pile to and still
