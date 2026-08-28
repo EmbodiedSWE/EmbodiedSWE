@@ -37,6 +37,12 @@ Conventions (mirroring vla/convert/conventions.py at stride 1):
   raw_cmd    action_t = traj["action"][t] verbatim (--matched-controller;
              closed-loop by nature: the controller re-anchors on the live EE pose)
 
+Stride replay: when the executor's stamped rate is BELOW the recorded rate (e.g. a
+48 Hz campaign certified against a 20 Hz bake), latch k plays the recorded row
+round(k * rec/exec) — the exact nearest-tick map of vla/convert/resample_fps.py, so the
+replayed action sequence IS the resampled dataset's. joint_target/joint_pos only
+(row lookups); joint_vel/raw_cmd still need the native rate. At stride 1 nothing changes.
+
 Writes report.json (per-episode + aggregate) and, for the first --video-slots
 slots of the first chunk, per-view mp4s under --out/<tag>/.
 """
@@ -176,9 +182,24 @@ cs = sim.spec.control_space
 if cs is None:
     raise SystemExit("replay needs a control law (joint_pos/joint_vel/joint_target/raw_cmd) — "
                      "a bare preset has nothing to certify (add --matched-controller?)")
-if abs(sim.rate_hz - rec_rate) > 1e-6:
-    raise SystemExit(f"episode rows at {rec_rate:.1f} Hz but executor latches at "
-                     f"{sim.rate_hz:.1f} Hz — stride replay not implemented (use the native rate)")
+from fractions import Fraction  # noqa: E402
+
+stride = (Fraction(rec_rate).limit_denominator(1_000_000)
+          / Fraction(sim.rate_hz).limit_denominator(1_000_000))
+if stride < 1:
+    raise SystemExit(f"executor latches at {sim.rate_hz:g} Hz, above the recorded "
+                     f"{rec_rate:g} Hz — upsampled replay is not defined")
+if stride != 1 and cs not in ("joint_target", "joint_pos"):
+    raise SystemExit(f"stride replay (rows @ {rec_rate:g} Hz -> executor @ {sim.rate_hz:g} Hz) "
+                     f"is defined for the row-lookup conventions (joint_target/joint_pos); "
+                     f"{cs} needs the native rate")
+
+
+def row_of(k: int) -> int:
+    """Latch k -> recorded row offset: nearest tick round(k * stride), the exact map of
+    vla/convert/resample_fps.py (a half-way tie, only possible for an even denominator,
+    rounds up). stride 1 -> identity."""
+    return (2 * k * stride.numerator + stride.denominator) // (2 * stride.denominator)
 
 tag = args.tag or re.sub(r"[^\w.-]+", "_",
                          f"{args.source}{'_matched' if args.matched_controller else ''}").strip("_")
@@ -233,11 +254,14 @@ for lo in range(0, len(eps), E):
     q_rec += [q_rec[-1]] * pad; closed_rec += [closed_rec[-1]] * pad
     raw_act += [raw_act[-1]] * pad; jt_rec += [jt_rec[-1]] * pad
     gt_rec += [gt_rec[-1]] * pad; T += [T[-1]] * pad; S += [S[-1]] * pad
-    k_end = max(T[s] - 1 - S[s] for s in range(E))
+    K = [sum(1 for k in range(int((T[s] - S[s]) / stride) + 2)
+             if row_of(k) <= T[s] - 1 - S[s]) for s in range(E)]  # this slot's latches
+    k_end = max(K[s] - 1 for s in range(E))
     if args.cap:
         k_end = min(k_end, args.cap)
-    print(f"[replay] chunk {lo // E + 1}: {n} eps, start ticks {S[:n]}, up to {k_end} ticks "
-          f"@ {rec_rate:.0f} Hz ({cs}{'/' + args.integrate if cs == 'joint_vel' else ''})", flush=True)
+    print(f"[replay] chunk {lo // E + 1}: {n} eps, start ticks {S[:n]}, up to {k_end} latches "
+          f"@ {sim.rate_hz:g} Hz (rows @ {rec_rate:g} Hz, stride {stride}) "
+          f"({cs}{'/' + args.integrate if cs == 'joint_vel' else ''})", flush=True)
 
     obs = sim.init_from_episode(chunk, t0=S[:n])
     writers = {}
@@ -245,16 +269,16 @@ for lo in range(0, len(eps), E):
         for s in range(min(args.video_slots, n)):
             for view in sim.sensors:
                 writers[(s, view)] = imageio.get_writer(
-                    str(out / f"{chunk[s].name}_{view}.mp4"), fps=int(round(rec_rate)),
+                    str(out / f"{chunk[s].name}_{view}.mp4"), fps=int(round(sim.rate_hz)),
                     codec="libx264", quality=None, pixelformat="yuv420p",
                     output_params=["-crf", "18", "-preset", "medium"])
 
     err_max = np.zeros((E, n_arm)); err_sum = np.zeros(E); err_n = np.zeros(E)
     grip_max = np.zeros(E); first_success = [None] * E
     prog_peak = np.zeros(E); prog = np.zeros(E)  # grader rubric progress (0..1), if a grader exists
-    idx = lambda s, k: min(S[s] + k, T[s] - 1)  # noqa: E731  this slot's traj row at clock k
+    idx = lambda s, k: min(S[s] + row_of(k), T[s] - 1)  # noqa: E731  slot's traj row at latch k
     for k in range(k_end):
-        active = np.array([S[s] + k + 1 < T[s] for s in range(E)])
+        active = np.array([k + 1 < K[s] for s in range(E)])
         if cs == "joint_target":  # the commanded targets in force at tick k, intent unclamped
             q_t = np.stack([jt_rec[s][idx(s, k)] for s in range(E)])
             c_t = np.array([gt_rec[s][idx(s, k)] for s in range(E)], np.float32)
@@ -290,7 +314,7 @@ for lo in range(0, len(eps), E):
                 err_sum[s] += e_t[s].mean(); err_n[s] += 1
                 grip_max[s] = max(grip_max[s], abs(obs["state"][s, -1] - c_ref[s]))
                 if first_success[s] is None and bool(obs["success"][s]):
-                    first_success[s] = S[s] + k
+                    first_success[s] = idx(s, k)
         for (s, view), w in writers.items():
             w.append_data(obs["images"][view][s])
         if k % 600 == 0:
@@ -330,7 +354,8 @@ n_rec = sum(bool(r["recorded_success"]) for r in results)
 summary = {
     "source": args.source, "control_space": cs, "matched_controller": args.matched_controller,
     "t0_frac": args.t0_frac, "integrate": args.integrate if cs == "joint_vel" else None,
-    "rate_hz": rec_rate, "physical_params": phys[eps[0]], "episodes": len(results),
+    "rate_hz": rec_rate, "executor_hz": sim.rate_hz, "stride": str(stride),
+    "physical_params": phys[eps[0]], "episodes": len(results),
     "replay_success": n_ok, "recorded_success": n_rec,
     "err_max": max(r["err_max"] for r in results),
     "per_episode": results,
