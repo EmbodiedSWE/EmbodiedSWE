@@ -44,11 +44,16 @@ def _clear_organics_franka_cfg() -> ClearOrganicsSceneCfg:
         # bin front-right, clear of the scatter; clutter grid pulled IN close to the base so
         # every top-down grasp sits in the 0.30-0.55 m band (far-low reaches go singular)
         bin_pos=(0.42, -0.05),
-        scatter_center=(-0.08, 0.22),
-        # y-span 0.26 (was 0.14): 3 grid rows 13 cm apart, so the 16 cm serving bowl in the
-        # clutter row cannot overlap the produce rows and catch a rolling fruit
-        scatter_span=(0.44, 0.26),
-        scatter_cols=6,
+        # The grid must leave room for an OPEN PARALLEL JAW to descend between items: the
+        # gripper spans 80 mm plus finger thickness, and a 6-column layout over 0.44 m put
+        # items only 88 mm apart, so the descending fingers hit the NEIGHBOURS and the hand
+        # stopped one fruit-height above the table (measured: fingertips floored at z=0.608
+        # while a free-space reach probe reached the tabletop at 0.551 — so it was contact,
+        # not reach). 4 columns over 0.44 m -> 147 mm pitch in x, and the jaw is aimed along
+        # the roomy x direction by the solve's neighbour-aware azimuth choice.
+        scatter_center=(0.0, 0.33),
+        scatter_span=(0.44, 0.30),
+        scatter_cols=4,
         subset_sample=True,
         min_organics=4,
     )
