@@ -126,18 +126,50 @@ class CosigenEnv(gym.Env):
         self._last_front = pixels[self.cfg.cameras[0]]
         return {"pixels": pixels, "agent_pos": arrays["state"][0].astype(np.float64)}
 
+    # --- opt-in per-step trace: COSIGEN_EVAL_DUMP=<dir> writes <dir>/episode_<k>.npz with the
+    # actions the policy sent, the served state, and the grader progress — the closed-loop
+    # ground truth when a rollout misbehaves (a frozen arm, a re-plan setting that does nothing)
+    _dump_dir = __import__("os").environ.get("COSIGEN_EVAL_DUMP", "")
+    _dump_ep = 0
+
+    def _dump_write(self) -> None:
+        """(Re)write the current episode's trace file — called every 48 steps and at episode
+        boundaries, because lerobot-eval never calls env.close(), so an end-only flush loses
+        the last (or only) episode."""
+        rows = getattr(self, "_trace", None)
+        if self._dump_dir and rows:
+            d = Path(self._dump_dir); d.mkdir(parents=True, exist_ok=True)
+            np.savez(d / f"episode_{type(self)._dump_ep:03d}.npz",
+                     action=np.stack([r[0] for r in rows]), state=np.stack([r[1] for r in rows]),
+                     progress=np.array([r[2] for r in rows], dtype=np.float32))
+
+    def _dump_flush(self) -> None:
+        if getattr(self, "_trace", None):
+            self._dump_write()
+            type(self)._dump_ep += 1
+        self._trace = []
+
     def reset(self, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
+        self._dump_flush()
         header, arrays = self._rpc({"cmd": "reset",
                                     "seed": int(seed) if seed is not None else None})
         return self._obs(arrays), {"is_success": False,
                                    "progress": self._progress(arrays)}
+
+    def close(self):
+        self._dump_flush()
+        super().close()
 
     def step(self, action):
         a = np.asarray(action, dtype=np.float32).reshape(1, -1)
         header, arrays = self._rpc({"cmd": "step"}, {"action": a})
         success = bool(header["is_success"][0])
         progress = self._progress(arrays)
+        if self._dump_dir:
+            self._trace.append((a[0].copy(), arrays["state"][0].astype(np.float32).copy(), progress))
+            if len(self._trace) % 48 == 0 or success:
+                self._dump_write()
         # reward = the grader's rubric progress, so lerobot's per-episode
         # max_reward IS the score (generation's own `score` scale) and
         # sum_reward the area under the progress curve
