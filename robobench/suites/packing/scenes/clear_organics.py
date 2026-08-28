@@ -91,7 +91,10 @@ class ClearOrganicsSceneCfg(BaseCfg):
     # above it and fail the in-bin z-test); enlarged here to a ~52x32 cm, 20 cm-deep produce
     # crate — wide enough to hold the full set in ~one layer, walls low enough for a single
     # arm to clear when dropping in. `bin_rim_stack` still allows a modest pile.
-    bin_scale: tuple = (0.45, 0.4, 0.3)
+    # Sized off the recorded footage (2026-08-26): at (0.45,0.4,0.3) the crate dominated frame
+    # and sat ~60% empty with all 11 organics in. (0.36,0.32,0.26) -> ~42 x 25 cm outer,
+    # 17 cm deep: still ~2x the produce footprint, but a shorter carry for a single arm.
+    bin_scale: tuple = (0.36, 0.32, 0.26)
     bin_yaw_deg: float = 0.0
     bin_mass: float = 10.0  # unused while kinematic; kept for a dynamic-bin variant
     bin_kinematic: bool = True  # fixed receptacle (dynamic-bin is a difficulty variant)
