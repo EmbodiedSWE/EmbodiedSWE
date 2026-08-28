@@ -104,6 +104,26 @@ def _tex_asset_paths(stage: Usd.Stage) -> set[str]:
     return out
 
 
+def _mdl_asset_paths(stage: Usd.Stage) -> set[str]:
+    """Relative MDL module paths each Shader implements (`info:mdl:sourceAsset`).
+
+    These are NOT shader inputs, so they are missed by `_tex_asset_paths` — and without them
+    the RTX renderer cannot resolve the material and every object renders as a flat untextured
+    blob (measured 2026-08-26: `Parameter 'roughness_texture' ... not available in the MDL
+    representation` warnings, pale grey fruit in the recorded video).
+    """
+    out: set[str] = set()
+    for prim in stage.Traverse():
+        if prim.GetTypeName() != "Shader":
+            continue
+        at = prim.GetAttribute("info:mdl:sourceAsset")
+        if at:
+            v = at.Get()
+            if v and v.path:
+                out.add(v.path)
+    return out
+
+
 def _bbox_m(stage: Usd.Stage) -> list[float]:
     default = stage.GetDefaultPrim()
     mpu = UsdGeom.GetStageMetersPerUnit(stage)
@@ -158,18 +178,50 @@ def main() -> None:
 
         stage = Usd.Stage.Open(str(src_usd))
         texs = _tex_asset_paths(stage)
+        mdls = _mdl_asset_paths(stage)
         bbox = _bbox_m(stage)
         extents[key] = {"bbox_m": bbox, "src": rel, "n_tex": len(texs)}
-        print(f"\n[{key}] bbox(m)={bbox}  textures={len(texs)}")
+        print(f"\n[{key}] bbox(m)={bbox}  textures={len(texs)}  mdl={len(mdls)}")
         if args.dry_run:
             for t in sorted(texs):
                 print(f"    tex: {t}")
+            for m in sorted(mdls):
+                print(f"    mdl: {m}")
             continue
 
         dst_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_usd, dst_usd)
         sz = dst_usd.stat().st_size
         total += sz
+        # MDL modules: the ones the shaders name, PLUS every .mdl under the source asset dir
+        # (they `import` each other — SimPBR/OmniPBR helper modules live alongside). Small
+        # text files (~3 MB for the whole set), so copy them wholesale and keep the layout.
+        for m in sorted(mdls):
+            s = (src_dir / m).resolve()
+            if s.is_file():
+                d = (dst_dir / m).resolve()
+                d.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(s, d)
+                total += d.stat().st_size
+            else:
+                print(f"    WARN missing mdl {m} ({s})")
+        # helper modules: the dataset-level `materials/` dir next to the USD, and any .mdl
+        # sitting beside a named module (they import each other by relative module path).
+        n_mdl_extra = 0
+        helper_dirs = {src_dir / "materials"}
+        helper_dirs |= {(src_dir / m).resolve().parent for m in mdls}
+        for hd in helper_dirs:
+            if not hd.is_dir():
+                continue
+            for s in hd.glob("*.mdl"):
+                d = dst_dir / s.resolve().relative_to(src_dir)
+                if d.exists():
+                    continue
+                d.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(s, d)
+                total += d.stat().st_size
+                n_mdl_extra += 1
+        print(f"    mdl: {len(mdls)} named + {n_mdl_extra} helper modules")
         for t in sorted(texs):
             # texture rel paths are relative to the USD's own directory
             s = (src_dir / t).resolve()

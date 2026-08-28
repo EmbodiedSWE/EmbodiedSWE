@@ -82,8 +82,13 @@ def main() -> None:
 
             env.sim.set_render_mode(env.sim.RenderMode.PARTIAL_RENDERING)
             o = env.iscene.env_origins[0].detach().cpu().numpy().astype(float)
-            env.sim.set_camera_view(tuple(np.array((1.2, -1.2, c.surface_z + 1.0)) + o),
-                                    tuple(np.array((0.1, 0.0, c.surface_z + 0.1)) + o),
+            # Framing (audited on stills 2026-08-26): the work area spans roughly
+            # x [-0.25, 0.50], y [-0.40, 0.40] on the tabletop, so the eye sits ~1 m out on the
+            # front-right diagonal, only ~0.45 m above the surface, aimed at the tabletop
+            # centre. The earlier (1.2, -1.2, +1.0 m) eye looked down past the bench and the
+            # footage was mostly floor with the bin off-frame.
+            env.sim.set_camera_view(tuple(np.array((1.05, -0.90, c.surface_z + 1.00)) + o),
+                                    tuple(np.array((0.05, 0.03, c.surface_z + 0.02)) + o),
                                     camera_prim_path="/OmniverseKit_Persp")
             rp = rep.create.render_product("/OmniverseKit_Persp", (960, 600))
             annot = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
