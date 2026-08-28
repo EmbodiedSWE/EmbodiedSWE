@@ -37,3 +37,13 @@ register_sim("pc_ram_jointtarget_48hz", lambda: SimSpec(
     control_freq_hz=48.0,
     finger_drives=(2000.0, 100.0),
 ))
+
+# Native 20 Hz twin of pc_ram_jointtarget_48hz: the `joint_20hz` preset (control_dt 0.05 ->
+# latched every 12 substeps at dt 1/240). Certifies natively-recorded 20 Hz joint_target
+# streams; also the executor spec for evaluating 20 Hz-trained policies.
+register_sim("pc_ram_jointtarget_20hz", lambda: SimSpec(
+    preset="assembly.pc_ram.franka.joint_20hz",
+    control_space="joint_target",
+    control_freq_hz=20.0,
+    finger_drives=(2000.0, 100.0),
+))
