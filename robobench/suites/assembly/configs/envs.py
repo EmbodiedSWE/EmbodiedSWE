@@ -14,6 +14,7 @@ derivations the harness or agent can make — nothing here is locked.
 from __future__ import annotations
 
 from robobench.core import EnvCfg, register_env
+from robobench.core.registries import ENVS
 from robobench.robots import (
     AlohaCfg,
     AttachedArmRobotCfg,
@@ -320,6 +321,33 @@ for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
             sim_overrides={"dt": 1.0 / 240.0},
         ),
     )
+
+# Native 20 Hz variant of the joint binding (user request 2026-08-28): the SAME work cell and
+# stock PD, but the position controllers latch every 12 substeps at sim dt 1/240 = exactly 20 Hz
+# (robot_cfg control_dt 0.05 vs the class default 0.02 -> 48 Hz). For data whose NATIVE rate is
+# 20 Hz — not a resample of a 48 Hz recording. Registered under an explicit name because the
+# canonical suite.scene.robot.mode name is already taken by the 48 Hz binding.
+ENVS.register(
+    "assembly.pc_ram.franka.joint_20hz",
+    lambda: EnvCfg(
+        scene="pc_ram",
+        scene_cfg=PcRamAssemblySceneCfg(
+            ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),
+            ram_init_z=0.030,
+            ram_init_quat=(1.0, 0.0, 0.0, 0.0),
+            reset_pos_jitter=0.0,
+            ram_stand=True,
+        ),
+        robot="franka",
+        robot_cfg=FrankaRobotCfg(
+            base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+            control_dt=0.05,
+        ),
+        control_mode="joint",
+        env_spacing=2,
+        sim_overrides={"dt": 1.0 / 240.0},
+    ),
+)
 
 # The SAME pc-ram work cell for the attached-gripper composites — the scene layout (stick
 # holders at world (0.30, -0.36) and (0.42, -0.36), sticks staged upright, deterministic spawn,
