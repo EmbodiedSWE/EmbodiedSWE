@@ -113,6 +113,17 @@ class BulbAssemblySceneCfg(BaseCfg):
 class BulbAssemblyScene(BaseScene):
     cfg: BulbAssemblySceneCfg
 
+    #: Per-env world variation at generation (engine sampler: slot 0 nominal, slot e >= 1 draws
+    #: index env_draw + e - 1; --nominal skips). Same bands the bulb_data_gen campaign verified:
+    #: glass widened UP only (the 0.3 nominal is the pad self-lock knee — below it the task is
+    #: robot-unsolvable).
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "bulb_friction": {"dist": "uniform", "lo": 0.005, "hi": 0.02},
+        "bulb_glass_friction": {"dist": "uniform", "lo": 0.30, "hi": 0.45,
+                                "reason": "self-lock knee at 0.3 — widen up only"},
+        "socket_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90},
+    }
+
     #: L5 visual dials for replay (data_engine render.py --visual_draw): stage-wide look knobs ->
     #: sampling bands, cfg default = the nominal look. Applied once per render pass, never per env
     #: (the dome light is one shared prim).
@@ -236,26 +247,42 @@ class BulbAssemblyScene(BaseScene):
         if "lit_intensity" in values:
             self.cfg.lit_intensity = float(values["lit_intensity"])  # post_step reads it per frame
 
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write the scene's frictions PER ENV (static = dynamic), `values[name]` one value per env
+        for names from `PHYSICAL_PARAMS`. `bind()` routes the nominal application through here with
+        uniform values, so this is THE friction path — per-env sampling (data_engine `--env_draw`,
+        eval replay of recorded draws) reuses it, never a copy. The bulb is split per shape — slick
+        cap/thread vs grippy glass: bulb.usd binds a distinct physics material to each collider, and
+        the glass shape is identified by that authored read-back (glass authored grippier), not by
+        shape order."""
+        unknown = set(values) - set(self.PHYSICAL_PARAMS)
+        if unknown:
+            raise ValueError(f"{type(self).__name__} cannot apply per-env: {sorted(unknown)}")
+        ids = torch.arange(env.num_envs, device="cpu")
+        if "socket_friction" in values:
+            col = torch.tensor(values["socket_friction"], dtype=torch.float32).view(-1, 1, 1)
+            for s in self.sockets:
+                mats = s.root_physx_view.get_material_properties()
+                mats[..., 0:2] = col
+                s.root_physx_view.set_material_properties(mats, ids)
+        if "bulb_friction" in values or "bulb_glass_friction" in values:
+            for b in self.bulbs:
+                mats = b.root_physx_view.get_material_properties()  # (n, n_shapes, 3)
+                glass = int(mats[0, :, 0].argmax())  # detect BEFORE writing (glass stays grippiest)
+                if "bulb_friction" in values:
+                    mats[..., 0:2] = torch.tensor(values["bulb_friction"], dtype=torch.float32).view(-1, 1, 1)
+                if "bulb_glass_friction" in values:
+                    mats[:, glass, 0:2] = torch.tensor(values["bulb_glass_friction"], dtype=torch.float32).view(-1, 1)
+                b.root_physx_view.set_material_properties(mats, ids)
+
     def bind(self, env: BaseEnv) -> None:
         """Grab handles, cache env origins, and set part friction. Called once after the build (physx ready)."""
         super().bind(env)
         self.sockets: list[Articulation] = [env.iscene[f"socket_{i}"] for i in range(self.cfg.num_pairs)]
         self.bulbs: list[RigidObject] = [env.iscene[f"bulb_{i}"] for i in range(self.cfg.num_pairs)]
         self.env_origins = env.iscene.env_origins
-        # Friction (static = dynamic), all envs. The bulb is split per shape — slick cap/thread vs grippy
-        # glass: bulb.usd binds a distinct physics material to each collider, and the glass shape is
-        # identified by that authored read-back (glass authored grippier), not by shape order.
-        ids = torch.arange(env.num_envs, device="cpu")
-        for s in self.sockets:
-            mats = s.root_physx_view.get_material_properties()
-            mats[..., 0:2] = self.cfg.socket_friction
-            s.root_physx_view.set_material_properties(mats, ids)
-        for b in self.bulbs:
-            mats = b.root_physx_view.get_material_properties()  # (n, n_shapes, 3)
-            glass = int(mats[0, :, 0].argmax())
-            mats[..., 0:2] = self.cfg.bulb_friction
-            mats[:, glass, 0:2] = self.cfg.bulb_glass_friction
-            b.root_physx_view.set_material_properties(mats, ids)
+        c, E = self.cfg, env.num_envs
+        self.apply_physical_params(env, {n: [getattr(c, n)] * E for n in self.PHYSICAL_PARAMS})
         # Lit-bulb mechanic: cache each bulb's glass emissive_intensity attr (per env — the cloner copies
         # the material under every env) and the last written on/off state, so post_step only writes on
         # transitions. Missing attrs (asset without the OmniPBR glass) disable the mechanic for that bulb.
