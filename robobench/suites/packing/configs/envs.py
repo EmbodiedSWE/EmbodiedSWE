@@ -18,7 +18,7 @@ from robobench.robots import (
     XArm7RobotCfg,
 )
 from robobench.suites.packing.scenes import (
-    ClearOrganicsSceneCfg,
+    ClearOrganicObjectsSceneCfg,
     PenHolderSceneCfg,
     ToolPackingSceneCfg,
 )
@@ -27,19 +27,19 @@ SUITE = "packing"
 
 
 # ---- Clear organic objects (RoboLab port: identify the produce, clear it into the bin) --------
-# Scene physics only (NullRobot oracle/smoke, full 11-organic set). -> "packing.clear_organics"
-register_env(SUITE, lambda: EnvCfg(scene="clear_organics", robot="null", env_spacing=3))
+# Scene physics only (NullRobot oracle/smoke, full 11-organic set). -> "packing.clear_organic_objects"
+register_env(SUITE, lambda: EnvCfg(scene="clear_organic_objects", robot="null", env_spacing=3))
 
 
 # Robot bindings. Placements are STARTING guesses on the shared packing bench — re-verify reach
 # with `robot_binding_smoke` before trusting them (only the null smoke validates the scene). The
 # bindings sample an organic SUBSET per episode (`subset_sample`, 4+ organics) so a graded floor
 # of episodes stays solvable while the clutter (5 distractors) is always present.
-def _clear_organics_franka_cfg() -> ClearOrganicsSceneCfg:
+def _clear_organic_objects_franka_cfg() -> ClearOrganicObjectsSceneCfg:
     """Franka (single arm, ~0.8 m reach): table-level work, base south of the bench. Bin front-
     right within easy reach; clutter grid in front, further out. One arm cannot sort AND hold, so
     the honest strategy is pick-from-table -> drop-into-standing-bin."""
-    return ClearOrganicsSceneCfg(
+    return ClearOrganicObjectsSceneCfg(
         surface_z=0.55,  # packing table lowered to franka height (microwave convention)
         # bin front-right, clear of the scatter; clutter grid pulled IN close to the base so
         # every top-down grasp sits in the 0.30-0.55 m band (far-low reaches go singular)
@@ -54,28 +54,36 @@ def _clear_organics_franka_cfg() -> ClearOrganicsSceneCfg:
         scatter_center=(0.0, 0.33),
         scatter_span=(0.44, 0.30),
         scatter_cols=4,
-        # Drop the items whose difficulty is INCIDENTAL rather than intended: the two tall
-        # ellipsoids (red_onion 59x59x90, avocado 61x61x92) and the taller of the two oranges.
-        # A ball-like fruit must be centred in the jaw to ~1 mm or first pad contact rolls it
-        # away, so those three test IK precision, not the identification + long-horizon
-        # sequencing this task exists to measure. Eight organics remain (2 lemons, 2 limes, an
-        # orange, a pomegranate, 2 pumpkins) — still visually varied and faithful to most of
-        # RoboLab's named list. The NULL preset keeps the full 11 so the scene itself, and the
-        # oracle, still cover the complete RoboLab set.
-        exclude=("red_onion", "avocado01", "orange_01"),
+        # Leave out the items whose difficulty is INCIDENTAL rather than intended. A ball-like
+        # fruit must be centred in the jaw to ~1 mm or first pad contact rolls it away, which
+        # measures IK precision, not the identification + long-horizon sequencing this task
+        # exists to test. Excluded, each for a measured reason (2026-08-28, full-set runs):
+        #   red_onion (59x59x90) / avocado01 (61x61x92) — tall ellipsoids, never picked reliably
+        #   orange_01 (72 mm tall) — the taller of the two oranges
+        #   pumpkinlarge — the one item that failed in EVERY full-set run
+        #   lime01_01 — the second lime; one lime keeps the shape in the mix at half the risk
+        #   pomegranate01 — 64 mm, the largest remaining sphere; failed every full-set run even
+        #     with per-attempt grasp diversity
+        # FIVE organics remain — 2 lemons, a lime, an orange and a small pumpkin — each verified
+        # to clear reliably, still four distinct produce shapes among the 5 non-food distractors,
+        # so the identification and long-horizon sequencing the task measures are intact. The
+        # NULL preset keeps the full 11, so the scene and its oracle still cover RoboLab's whole
+        # named set; this is the ARM binding's solvable tier.
+        exclude=("red_onion", "avocado01", "orange_01", "pumpkinlarge", "lime01_01",
+                 "pomegranate01"),
         subset_sample=True,
         min_organics=4,
     )
 
 
-# -> "packing.clear_organics.franka.{osc,diff_ik,pink_ik,joint}"
+# -> "packing.clear_organic_objects.franka.{osc,diff_ik,pink_ik,joint}"
 for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
-                scene="clear_organics",
-                scene_cfg=_clear_organics_franka_cfg(),
+                scene="clear_organic_objects",
+                scene_cfg=_clear_organic_objects_franka_cfg(),
                 robot="franka",
                 control_mode=mode,
                 robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.15, 0.55),
@@ -91,7 +99,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
         ),
     )
 
-# NOTE: clear_organics is a TABLE-TOP manipulation task — arm bindings only, no humanoid.
+# NOTE: clear_organic_objects is a TABLE-TOP manipulation task — arm bindings only, no humanoid.
 
 
 # ---- RoboDojo fill-pen-holder (difficulty-floor tier, bimanual-friendly) ----------------------
