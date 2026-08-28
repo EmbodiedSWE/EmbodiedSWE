@@ -158,12 +158,21 @@ def solve(env) -> None:
         return max(1, int(round(x * scale)))
 
     ctrl_hz = 1.0 / (period * DT)
+    # Contact-critical phases (press/reform/seatpress) are TICK-invariant, not wall-invariant
+    # (native-20 fix, 2026-08-28): their carrier steps, standing press lead, and trim cadences
+    # were tuned per-tick at 48 Hz (period 5); at lower rates they run proportionally slower in
+    # wall time so the per-tick geometry against contact is unchanged. Factor 1 at 48 Hz.
+    contact_slow = max(1.0, period / 5.0)
+
+    def C(x: float) -> int:
+        return S(x * contact_slow)
+
     SHOW_END = S(SHOW_END_15)
     WP_TIMEOUT, SETTLE_STEPS = S(WP_TIMEOUT_15), S(SETTLE_15)
     HOVER_STEPS, DOWN_STEPS, CLOSE_STEPS = S(HOVER_15), S(DOWN_15), S(CLOSE_15)
     LIFT_STEPS, CARRY_STEPS, RETREAT_STEPS = S(LIFT_15), S(CARRY_15), S(RETREAT_15)
-    DROP_STEPS, PRESS_STEPS, PRESS_MAX = S(DROP_15), S(PRESS_15), S(PRESS_MAX_15)
-    REFORM_STEPS, SEAT_STEPS, SEAT_MAX = S(REFORM_15), S(SEAT_15), S(SEAT_MAX_15)
+    DROP_STEPS, PRESS_STEPS, PRESS_MAX = S(DROP_15), C(PRESS_15), C(PRESS_MAX_15)
+    REFORM_STEPS, SEAT_STEPS, SEAT_MAX = C(REFORM_15), C(SEAT_15), C(SEAT_MAX_15)
     LOG_EVERY = S(LOG_EVERY_15)
     # Free-air bias integrators: per-tick gains divide by the rate scale (same per-second dynamics
     # as the OSC solve); cadenced learners keep their gain and scale the cadence instead.
@@ -515,7 +524,7 @@ def solve(env) -> None:
             z_end = board_z + sc.cfg.seat_pos[k][2] + (PRESS_TGT if seq == 0 else CAPTURE_PRESS)
             kp = seats_w[k].clone()
             kp[:, 2] = press_from + s * (z_end - press_from)
-            if t_in % S(3) == 0 and s < 0.6:  # free air until the blade meets the mouth: keep the
+            if t_in % C(3) == 0 and s < 0.6:  # free air until the blade meets the mouth: keep the
                 # xy trim live AND re-learn the orientation droop at the PRESS pose — it differs
                 # from the align pose's (run 6: a 0.47 deg free-air tilt at the outer slot jammed
                 # the 1.6 mm blade 1.4 mm into the 1.9 mm channel, twice, exactly where the
@@ -529,7 +538,11 @@ def solve(env) -> None:
             bz = ram().data.root_pos_w[:, 2] - (board_z + sc.cfg.seat_pos[k][2])
             if seq == 0 and bool((depth() >= PRESS_DONE).all()):
                 phase, marker = "release", i
-            elif seq > 0 and t_in >= S(10) and bool((bz <= CAPTURE_GATE).all()):
+            elif seq > 0 and t_in >= C(10) and bool((bz <= CAPTURE_GATE).all()) \
+                    and bool((xy_err() < 0.0015).all()) and bool((rot_err() < 0.035).all()):
+                # xy/tilt guards (2026-08-28): depth alone false-captured a blade that skated
+                # off the funnel and heeled over the wall (20 Hz gate v2: xy 4.8 mm, rot 0.9 deg
+                # at "capture"); a miss now rides to PRESS_MAX and the reseat retry re-converges.
                 print(f"  stick {k} captured: blade {float(bz.mean() * 1e3):.2f} mm in the mouth, "
                       f"handing over to the fingertips", flush=True)
                 phase, marker = "reform", i
@@ -555,18 +568,18 @@ def solve(env) -> None:
                 grip_freeze[:] = art.data.joint_pos[:, fingers]
                 reform_p[:] = hp
                 reform_q[:] = hq
-            if t_in <= S(6):
+            if t_in <= C(6):
                 act = servo(reform_p, reform_q, grip_freeze, null_pull=False)
-            elif t_in <= S(20):  # open IN PLACE — the weld cuts at aperture 18 mm, so the open
+            elif t_in <= C(20):  # open IN PLACE — the weld cuts at aperture 18 mm, so the open
                 # must FINISH before any rise: run 9 staged the open ACROSS the rise and the
                 # still-welded stick was lifted ~7 mm out of its 1.3 mm capture before the cut,
                 # then dropped and spun to the deterministic 90-deg rest. Opening with the hand
                 # motionless cuts the weld while the channel walls still hold the blade.
                 if welded.any():
                     weld_off()
-                s = smoothstep((t_in - S(6)) / S(10))
+                s = smoothstep((t_in - C(6)) / C(10))
                 act = servo(reform_p, reform_q, grip_freeze + (STRADDLE_W - grip_freeze) * s, null_pull=False)
-            elif t_in <= S(34):  # OFFSET RISE, 3.5 mm to the ANTI-LEAN side: the freed stick
+            elif t_in <= C(34):  # OFFSET RISE, 3.5 mm to the ANTI-LEAN side: the freed stick
                 # heels to its stable ~11 deg wedge (top edge at ~11.6 mm, past the STRADDLE
                 # corridor the seated neighbour caps at 11 mm), so a centred rise hooks it
                 # (runs 16-18: seated-or-flat on render timing), a cage-guided rise lifts it
@@ -574,11 +587,11 @@ def solve(env) -> None:
                 # from the measured live lean clears the leaning top on the lean side and the
                 # near-upright face on the other. The offset's component TOWARD the seated
                 # neighbour (+x) is capped at 0.5 mm (finger outer 14.3 vs neighbour 15.26).
-                if t_in == S(20) + 1:
+                if t_in == C(20) + 1:
                     d_xy = grip_point()[:, 0:2] - ram().data.root_pos_w[:, 0:2]
                     rise_off[:] = -0.0035 * d_xy / d_xy.norm(dim=-1, keepdim=True).clamp_min(1e-6)
                     rise_off[:, 0] = rise_off[:, 0].clamp(max=0.0005)
-                s = smoothstep((t_in - S(20)) / S(14))
+                s = smoothstep((t_in - C(20)) / C(14))
                 wp_p[:] = reform_p
                 wp_p[:, 0:2] = reform_p[:, 0:2] + s * rise_off
                 wp_p[:, 2] = reform_p[:, 2] + s * 0.008
@@ -588,16 +601,16 @@ def solve(env) -> None:
                 # tip gap and SPINS the barely-captured stick out about the blade line (runs 3+8
                 # both ended rot 90.01 deg — the torsional watermelon-seed; the z droop at this
                 # pose is unlearned, so the hover must learn it BEFORE any close).
-                if t_in == S(34) + 1:
+                if t_in == C(34) + 1:
                     hover_from[:] = wp_p
                     reform_close_t = -1
                 tip_p = grip_point()
                 tip_p[:, 2] = tip_p[:, 2] + 0.0015 + hand_to_tip
-                s = smoothstep((t_in - S(34)) / (S(52) - S(34)))  # glide end shifted by
+                s = smoothstep((t_in - C(34)) / (C(52) - C(34)))  # glide end shifted by
                 # the in-place-open + offset-rise stages; the hover approaches the live
                 # (wedge-leaning) top FROM ABOVE and tracks it
                 wp_p[:] = hover_from + (tip_p - hover_from) * s
-                if s >= 1.0 and t_in % S(2) == 0:  # full-3D trim: z is the ejection axis
+                if s >= 1.0 and t_in % C(2) == 0:  # full-3D trim: z is the ejection axis
                     learn_pos(tip_p, hp, 0.15)
                 on_tgt = bool(((tip_p - hp).norm(dim=-1) < 0.0012).all())
                 if reform_close_t < 0:
@@ -605,10 +618,10 @@ def solve(env) -> None:
                     if s >= 1.0 and on_tgt:
                         reform_close_t = t_in
                 else:
-                    sc_ = smoothstep((t_in - reform_close_t) / S(14))
+                    sc_ = smoothstep((t_in - reform_close_t) / C(14))
                     w = STRADDLE_W + (TIP_W - STRADDLE_W) * sc_
                 act = servo(wp_p + pos_off, reform_q, w, null_pull=False)
-                if (reform_close_t > 0 and t_in >= reform_close_t + S(16) and on_tgt) \
+                if (reform_close_t > 0 and t_in >= reform_close_t + C(16) and on_tgt) \
                         or t_in >= 3 * WP_TIMEOUT:
                     phase, marker = "seatpress", i
         elif phase == "seatpress":  # fingertips down on the top edge until the blade bottoms out
@@ -622,7 +635,7 @@ def solve(env) -> None:
             # seat's xy instead sweeps the tips off the 7.3 mm edge righting a >5 deg lean
             # (run 14), and makes the press depend on the exact post-release lean.
             wp_p[:, 2] = seat_from + s * (z_end - seat_from)
-            if t_in % S(2) == 0:
+            if t_in % C(2) == 0:
                 learn_xy(wp_p[:, 0:2], hp[:, 0:2], 0.1)
             cmd = wp_p.clone()
             cmd[:, 0:2] += pos_off[:, 0:2]

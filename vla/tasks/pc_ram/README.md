@@ -26,9 +26,11 @@ grounding data) and presses it to depth. Success = both sticks seated (depth + x
 - `datagen/scenes/*/strategies/strategy_0/solve.py` — manual DLS-IK + nullspace expert
   emitting COMMANDED joint targets through the stock kp-400 PD (the joint_target label
   convention; achieved-q `joint_pos` labels certify only with a stiff kp-2000 executor —
-  do not use them). Includes the rim-safe hover transit (2026-08-28): transit at carry
-  height until the xy leg is within 3 cm — required at 20 Hz, removes a latent fingertip
-  graze at 48 Hz.
+  do not use them). Includes the 2026-08-28 rate-robustness set: rim-safe hover transit
+  (transit at carry height until the xy leg is within 3 cm — required at 20 Hz, removes a
+  latent fingertip graze at 48 Hz), tick-invariant contact phases (press/reform/seatpress
+  keep the 48 Hz per-tick geometry at lower rates; factor 1 at 48 Hz = unchanged), and a
+  hardened capture predicate (depth AND xy < 1.5 mm AND tilt < 2 deg).
 
 ## Recipe
 
