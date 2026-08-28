@@ -130,15 +130,23 @@ class ClearOrganicsSceneCfg(BaseCfg):
         ("lemon_02", "lemon2", True, 1.0, 0.08),
         ("lime01", "lime", True, 1.0, 0.10),
         ("lime01_01", "lime", True, 1.0, 0.10),
-        ("orange_01", "orange1", True, 1.0, 0.15),
-        ("orange_02", "orange2", True, 1.0, 0.14),
-        # the pomegranate (11.5 cm) and pumpkins (8.9 / 7.6 cm) are at/over a parallel
-        # gripper's ~8 cm aperture; shrunk to a graspable ~6.6 cm (a small pomegranate /
-        # decorative pumpkins) so a single-arm pinch can clear the FULL organic set. The
-        # kinematic oracle is unaffected.
-        ("pomegranate01", "pomegranate", True, 0.57, 0.24),
-        ("pumpkinlarge", "pumpkinlarge", True, 0.74, 0.22),
-        ("pumpkinsmall", "pumpkinsmall", True, 0.87, 0.16),
+        ("orange_01", "orange1", True, 0.87, 0.12),
+        ("orange_02", "orange2", True, 0.88, 0.11),
+        # Produce scales obey ONE constraint — minimum horizontal span <= 64 mm — so a parallel
+        # gripper (Panda: 80 mm aperture) keeps ~8 mm of finger travel per side on a curved
+        # surface. Within that ceiling sizes stay REALISTIC and mutually DISTINCT. Two measured
+        # lessons behind those numbers (2026-08-27):
+        #   - an earlier pass shrank everything into a 61-66 mm band, which made pumpkinlarge
+        #     and pumpkinsmall IDENTICAL and left the pomegranate smaller than a lemon — both
+        #     plainly wrong on camera (caught by tabulating the baked extents, not by eye);
+        #   - the correction overshot to a 70 mm ceiling, leaving only ~5 mm per side, and the
+        #     franka reference solve fell from 3/5 organics cleared to 0/5. 64 mm is the
+        #     compromise that keeps both realism and a graspable margin.
+        # Resulting spans: pomegranate 64 > orange 63 > pumpkinlarge 62 > lime 61 ~ avocado 61
+        # > onion 59 > pumpkinsmall 55; the lemons are pinched across their 50/40 mm short axis.
+        ("pomegranate01", "pomegranate", True, 0.56, 0.26),
+        ("pumpkinlarge", "pumpkinlarge", True, 0.70, 0.20),
+        ("pumpkinsmall", "pumpkinsmall", True, 0.72, 0.13),
         ("red_onion", "red_onion", True, 1.0, 0.12),
         ("avocado01", "avocado", True, 1.0, 0.17),
         ("whitepackerbottle_a01", "whitepackerbottle_a01", False, 1.0, 0.20),

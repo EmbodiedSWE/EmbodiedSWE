@@ -89,18 +89,26 @@ SOURCES: dict[str, str] = {
 }
 
 
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".exr", ".hdr", ".tga", ".dds")
+
+
 def _tex_asset_paths(stage: Usd.Stage) -> set[str]:
-    """Relative texture asset paths referenced by any Shader input (UsdPreviewSurface/MDL)."""
+    """Relative image paths referenced by ANY prim's Asset-valued attribute.
+
+    Deliberately not limited to `Shader` prims: MDL materials often carry their texture
+    parameters on the **Material** prim as overrides. container_f24 (RoboLab's blue bin) keeps
+    `inputs:diffuse_texture = ./textures/T_Plastic_Blue_A_Albedo.png` on the Material, so a
+    Shader-only walk missed it and the bin rendered grey instead of blue (kit logged
+    "References an asset that can not be found" at load; found 2026-08-27).
+    """
     out: set[str] = set()
     for prim in stage.Traverse():
-        if prim.GetTypeName() != "Shader":
-            continue
-        shader = UsdShade.Shader(prim)
-        for inp in shader.GetInputs():
-            if inp.GetTypeName() == Sdf.ValueTypeNames.Asset:
-                v = inp.Get()
-                if v and v.path:
-                    out.add(v.path)
+        for attr in prim.GetAttributes():
+            if attr.GetTypeName() != Sdf.ValueTypeNames.Asset:
+                continue
+            v = attr.Get()
+            if v and v.path and v.path.lower().endswith(IMAGE_EXT):
+                out.add(v.path)
     return out
 
 
