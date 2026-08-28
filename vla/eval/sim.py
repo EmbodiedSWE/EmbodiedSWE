@@ -47,6 +47,9 @@ class SimSpec:
     finger_drives: tuple[float, float] | None = None   # (stiffness, damping) written onto the finger joints
     tracker_gains: tuple[float, float] | None = None   # arm PD override (joint conventions); None = preset's
     cams: tuple[str, ...] | None = None           # subset of declared views; None = all
+    cameras: bool = True                          # False = build NO RGB sensors (physics-only replay /
+                                                  # certification: obs["images"] is {} and the sim runs
+                                                  # at physics speed; a policy eval needs True)
     size: tuple[int, int] = (640, 480)            # (W, H), the render contract's default
     warmup: int = 12                              # hold-steps after any init (settle + denoiser flush)
     physical_params: dict | None = None           # a PHYSICAL_PARAMS draw to re-apply (episode meta's
@@ -225,6 +228,11 @@ def _build_with_cameras(env_cfg, scene_cls, robot_cls, spec: SimSpec, num_envs: 
 
     from engine.replay import _FAR_CLIP, _camera_cfg, resolve_views
 
+    if not spec.cameras:  # physics-only: no sensors, the preset's own grid, nothing injected
+        env = env_cfg.build(num_envs=num_envs, device=device)
+        env._eval_views = {}
+        print("[load_sim] views: none (cameras=False, physics-only)", flush=True)
+        return env
     views = resolve_views(scene_cls, robot_cls, list(spec.cams) if spec.cams else None, None)
     scene_probe = scene_cls(env_cfg.scene_cfg) if env_cfg.scene_cfg is not None else scene_cls()
     surface_z = float(getattr(scene_probe.cfg, "surface_z", 0.0) or 0.0)
@@ -389,6 +397,31 @@ def _apply_stamp_controller(env, ctrl_block: dict | None) -> None:
                 getattr(leaf, "_prev_action", "absent") is None:
             raise SystemExit(f"stamp enables EMA on {type(leaf).__name__} but the preset built "
                              f"it without a smoothing buffer — rebuild the mode, don't patch")
+        # pink_ik: the QP integrates over `leaf._dt` (set at bind from the PRESET period) and
+        # the frame-task gains live on the per-env Isaac controllers' LocalFrameTask objects —
+        # both are what a solve retunes live (bulb: _dt = dt*16, gain 0.9 / lm 0.1), so the
+        # stamp must reach them too or the replay runs the stock 0.5/10 crawl at the wrong dt.
+        if hasattr(leaf, "_dt") and hasattr(leaf, "_control_period"):
+            leaf._dt = env.dt * leaf._control_period
+        frames = getattr(cfg, "frames", None) if cfg is not None else None
+        if frames and getattr(leaf, "_controllers", None):
+            fr = [f if isinstance(f, dict) else vars(f) for f in frames]
+            n_set = 0
+            for c in leaf._controllers:
+                tasks = [t for t in c.cfg.variable_input_tasks if hasattr(t, "frame")]
+                for t, f in zip(tasks, fr):
+                    if f.get("gain") is not None:
+                        t.gain = f["gain"]
+                    if f.get("lm_damping") is not None:
+                        t.lm_damping = f["lm_damping"]
+                    if f.get("position_cost") is not None:
+                        t.set_position_cost(f["position_cost"])
+                    if f.get("orientation_cost") is not None:
+                        t.set_orientation_cost(f["orientation_cost"])
+                    n_set += 1
+            if n_set:
+                print(f"[load_sim] stamp {type(leaf).__name__}: frame-task gains/costs written onto "
+                      f"{len(leaf._controllers)} live pink controllers; _dt={leaf._dt:.4f}", flush=True)
     art = env.robot.articulation
     for key, writer in (("joint_stiffness", art.write_joint_stiffness_to_sim),
                         ("joint_damping", art.write_joint_damping_to_sim)):
@@ -499,14 +532,28 @@ class EvalSim:
             return torch.cat([q[:, self.arm_ids], closed], dim=1).cpu().numpy()
         if cs == "joint_vel":
             return torch.cat([torch.zeros_like(q[:, self.arm_ids]), closed], dim=1).cpu().numpy()
-        # preset controller: per leaf, zeros for task-space deltas, current q for joint leaves
+        # preset controller: per leaf, the identity of ITS action semantics — current q for
+        # joint leaves, the LIVE frame pose for absolute-pose leaves (pink_ik: [pos3, quat4] per
+        # frame in the env frame — zeros there would command the origin with a zero quaternion
+        # and NaN the QP), zeros for task-space DELTA leaves (osc/impedance/diff_ik).
         from robobench.controllers import JointController
 
+        try:
+            from robobench.controllers.pink_ik import PinkIKController
+        except Exception:  # noqa: BLE001 — pink stack absent: no absolute-pose leaf can exist
+            PinkIKController = ()  # type: ignore[assignment]
         ctrl = self.env.robot.controller
+        art = self.env.robot.articulation
         parts = []
         for leaf in getattr(ctrl, "controllers", [ctrl]):
             if isinstance(leaf, JointController):
                 parts.append(q[:, leaf.joint_ids])  # identity shaping assumed (scale 1, offset 0)
+            elif PinkIKController and isinstance(leaf, PinkIKController):
+                for f in leaf.cfg.frames:
+                    link = f["link"] if isinstance(f, dict) else f.link
+                    b = art.body_names.index(link)
+                    parts.append(art.data.body_pos_w[:, b] - self.env.iscene.env_origins)
+                    parts.append(art.data.body_quat_w[:, b])
             else:
                 parts.append(torch.zeros((self.env.num_envs, leaf.action_dim),
                                          device=self.env.device))
@@ -532,11 +579,34 @@ class EvalSim:
         self._setup_grader()
         return self._warmup()
 
-    def init_from_episode(self, ep_dirs: str | Path | list, t0: int | list[int] = 0) -> dict:
+    def apply_episode_physics(self, draws: list[dict]) -> dict[str, list]:
+        """Re-apply each slot's recorded PHYSICAL_PARAMS draw PER ENV (`draws[i]` = episode i's
+        `meta.parameters.physical`; `{}` = the nominal world) — the same post-build
+        `scene.apply_physical_params` path generation used to write them, with the scene cfg as
+        the nominal source for undrawn knobs, so one chunk may mix draws freely. Returns the
+        applied per-env table (for the report)."""
+        E = self.env.num_envs
+        draws = list(draws)[:E]
+        draws += [draws[-1] if draws else {}] * (E - len(draws))
+        names = sorted({k for d in draws for k in d})
+        if not names:
+            return {}
+        c = self.env.scene.cfg
+        for k in names:
+            if not hasattr(c, k):
+                raise SystemExit(f"physical param '{k}' not a {type(c).__name__} field")
+        values = {k: [float(d.get(k, getattr(c, k))) for d in draws] for k in names}
+        self.env.scene.apply_physical_params(self.env, values)
+        return values
+
+    def init_from_episode(self, ep_dirs: str | Path | list, t0: int | list[int] = 0,
+                          physics: bool = True) -> dict:
         """Restore recorded episodes' states at row `t0` (default: the start), one per env
         slot (origin-shifted). A single dir fills every slot; a list assigns episode i ->
         slot i (unused slots repeat the last episode). `t0` may be per-slot. Mid-episode
-        starts are exact: the traj records the full restorable state at every tick."""
+        starts are exact: the traj records the full restorable state at every tick.
+        `physics=True` also re-applies each episode's recorded PHYSICAL_PARAMS draw to its
+        slot (per env, from meta.json), so mixed-draw chunks replay in their own worlds."""
         import torch
 
         from engine.replay import _unflatten
@@ -545,6 +615,12 @@ class EvalSim:
         if len(dirs) > self.env.num_envs:
             raise SystemExit(f"{len(dirs)} episodes but only {self.env.num_envs} envs")
         dirs += [dirs[-1]] * (self.env.num_envs - len(dirs))
+        if physics:
+            draws = []
+            for d in dirs:
+                m = json.loads((d / "meta.json").read_text()) if (d / "meta.json").is_file() else {}
+                draws.append((m.get("parameters") or {}).get("physical") or {})
+            self.apply_episode_physics(draws)
         t0s = list(t0) if isinstance(t0, (list, tuple)) else [t0] * len(dirs)
         t0s += [t0s[-1]] * (len(dirs) - len(t0s))
         if self._base_pos is None:

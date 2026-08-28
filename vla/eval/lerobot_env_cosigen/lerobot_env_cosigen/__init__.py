@@ -11,11 +11,17 @@ Then, with `vla/eval/serve.py <sim>` running in the CoSiGen venv:
 
 CosigenEnv is a thin gym client: reset/step travel over a local socket to the
 sim server, which owns every eval semantic (executor, cameras, grader success,
-warmup). Obs follow lerobot's classic route ({"pixels": {cam: HWC uint8},
-"agent_pos": vec} -> observation.images.<cam> / observation.state); the
-handshake validates the config's dims against the served sim and fails loudly
-on mismatch. The eval condition is pinned server-side; this client only
-supplies policy, seeds and episode count.
+warmup, control rate). Obs follow lerobot's classic route ({"pixels": {cam: HWC
+uint8}, "agent_pos": vec} -> observation.images.<cam> / observation.state).
+
+The client declares NOTHING about the sim: cameras, image size, state/action
+dims and the control rate are all taken from the server's handshake when the
+env is created (lerobot builds the policy processors only after make_env, so
+the features are bound in time). Any --env.* field you do set explicitly is an
+assertion, validated against the server and failing loudly on mismatch. The
+only eval knob on this side is --env.max_episode_seconds (the per-episode cap,
+in sim seconds, converted with the served rate). The eval condition is pinned
+server-side; this client supplies policy, seeds, episode count and horizon.
 """
 
 from __future__ import annotations
@@ -44,20 +50,51 @@ _spec.loader.exec_module(protocol)
 @EnvConfig.register_subclass("cosigen")
 @dataclass
 class CosigenEnvConfig(EnvConfig):
-    """Declares the served sim's interface. Set the --env.* fields (dims, cameras,
-    fps) to match whatever serve.py is running — the handshake hard-validates them."""
+    """The served sim's interface. Every field below defaults to None = "whatever
+    serve.py is running" (bound from the handshake in create_envs); set one
+    explicitly only to ASSERT it — a mismatch with the server is a hard error."""
 
     host: str = "127.0.0.1"
     port: int = 5555
-    cameras: tuple[str, ...] = ("front", "wrist")
-    observation_height: int = 480
-    observation_width: int = 640
-    state_dim: int = 8
-    action_dim: int = 8
-    fps: int = 60
-    episode_length: int = 10800  # max ticks per episode (@60 Hz: 180 s, the demo horizon)
+    cameras: tuple[str, ...] | None = None
+    observation_height: int | None = None
+    observation_width: int | None = None
+    state_dim: int | None = None
+    action_dim: int | None = None
+    fps: int | None = None
+    max_episode_seconds: float = 480.0  # per-episode cap in SIM SECONDS; ticks = seconds x served fps
+
+    _INTERFACE = ("cameras", "observation_height", "observation_width", "state_dim", "action_dim", "fps")
 
     def __post_init__(self):
+        pass  # features are bound from the handshake (bind_handshake), not declared here
+
+    @property
+    def gym_kwargs(self) -> dict:
+        return {}
+
+    @staticmethod
+    def _served(hs: dict) -> dict:
+        h, w = next(iter(hs["views"].values()))
+        return {"cameras": tuple(hs["views"]), "observation_height": int(h), "observation_width": int(w),
+                "state_dim": len(hs["state_names"]), "action_dim": int(hs["action_dim"]),
+                "fps": int(hs["fps"])}
+
+    def bind_handshake(self, hs: dict) -> None:
+        """Fill unset interface fields from the served sim; assert the set ones match.
+        Idempotent: a second call (from each CosigenEnv) is pure validation."""
+        served = self._served(hs)
+        mismatch = {}
+        for k, v in served.items():
+            mine = getattr(self, k)
+            if mine is None:
+                setattr(self, k, v)
+            elif (sorted(mine) if k == "cameras" else type(v)(mine)) != (sorted(v) if k == "cameras" else v):
+                mismatch[k] = {"config": mine, "server": v}
+        if mismatch:
+            raise RuntimeError(f"served sim != env config: {mismatch} (server source: {hs.get('source')})")
+        self.features.clear()
+        self.features_map.clear()
         self.features[ACTION] = PolicyFeature(type=FeatureType.ACTION, shape=(self.action_dim,))
         self.features["agent_pos"] = PolicyFeature(type=FeatureType.STATE, shape=(self.state_dim,))
         self.features_map.update({ACTION: ACTION, "agent_pos": OBS_STATE})
@@ -67,14 +104,24 @@ class CosigenEnvConfig(EnvConfig):
                 shape=(self.observation_height, self.observation_width, 3))
             self.features_map[f"pixels/{cam}"] = f"{OBS_IMAGES}.{cam}"
 
-    @property
-    def gym_kwargs(self) -> dict:
-        return {}
+    def handshake(self) -> dict:
+        """One round-trip to the server; the connection is closed again (sim stays warm)."""
+        with _socket.create_connection((self.host, self.port)) as sock:
+            protocol.send_msg(sock, {"cmd": "handshake"})
+            hs, _ = protocol.recv_msg(sock)
+            if "error" in hs:
+                raise RuntimeError(f"sim server error on handshake:\n{hs['error']}")
+            try:
+                protocol.send_msg(sock, {"cmd": "close"})
+            except OSError:
+                pass
+        return hs
 
     def create_envs(self, n_envs: int = 1, use_async_envs: bool = False, **kwargs):
         if n_envs != 1 or use_async_envs:
             raise ValueError("cosigen serves ONE env over one socket (v1): run with "
                              "--eval.batch_size=1 --eval.use_async_envs=false")
+        self.bind_handshake(self.handshake())  # before lerobot reads cfg.features
         from gymnasium.vector import SyncVectorEnv
 
         return {"cosigen": {0: SyncVectorEnv([lambda: CosigenEnv(self)])}}
@@ -83,17 +130,17 @@ class CosigenEnvConfig(EnvConfig):
 class CosigenEnv(gym.Env):
     """Socket client for one served EvalSim episode stream."""
 
-    metadata = {"render_modes": ["rgb_array"], "render_fps": 60}
+    metadata = {"render_modes": ["rgb_array"]}  # render_fps is filled from the handshake
 
     def __init__(self, cfg: CosigenEnvConfig) -> None:
         super().__init__()
         self.cfg = cfg
         self._sock = _socket.create_connection((cfg.host, cfg.port))
         hs = self._rpc({"cmd": "handshake"})[0]
-        self._check(hs)
+        cfg.bind_handshake(hs)  # fills the interface on first contact, validates afterwards
         self.task = self.task_description = hs["task"]
-        self._max_episode_steps = cfg.episode_length
-        self.metadata = {**type(self).metadata, "render_fps": int(hs["fps"])}
+        self._max_episode_steps = int(round(cfg.max_episode_seconds * cfg.fps))
+        self.metadata = {**type(self).metadata, "render_fps": int(cfg.fps)}
         h, w = cfg.observation_height, cfg.observation_width
         self.observation_space = spaces.Dict({
             "pixels": spaces.Dict({cam: spaces.Box(0, 255, (h, w, 3), np.uint8)
@@ -102,17 +149,6 @@ class CosigenEnv(gym.Env):
         })
         self.action_space = spaces.Box(-1e3, 1e3, (cfg.action_dim,), np.float32)
         self._last_front: np.ndarray | None = None
-
-    def _check(self, hs: dict) -> None:
-        want = {"state": self.cfg.state_dim, "action": self.cfg.action_dim,
-                "views": sorted(self.cfg.cameras),
-                "size": [self.cfg.observation_height, self.cfg.observation_width]}
-        got = {"state": len(hs["state_names"]), "action": hs["action_dim"],
-               "views": sorted(hs["views"]),
-               "size": next(iter(hs["views"].values()))}
-        if want != got:
-            raise RuntimeError(f"served sim != env config: server {got} vs config {want} "
-                               f"(server source: {hs.get('source')})")
 
     def _rpc(self, header: dict, arrays: dict | None = None):
         protocol.send_msg(self._sock, header, arrays)

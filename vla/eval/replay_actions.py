@@ -21,8 +21,9 @@ faithfully the executor reproduces the demos — per-joint tracking error agains
 the recorded q and the grader's success verdict. Episodes chunk into groups of
 num_envs (sorted by length); a finished episode's slot freezes on a hold action
 while the rest run, and its metrics stop accumulating. Each episode's recorded
-PHYSICAL_PARAMS draw (meta parameters.physical) is re-applied by DEFAULT; a
-batch mixing draws is refused. If the demos' own actions can't re-succeed, no
+PHYSICAL_PARAMS draw (meta parameters.physical) is re-applied to ITS OWN env slot
+per chunk (the per-env path generation wrote it with), so a chunk may mix draws —
+a whole batch replays in one call. If the demos' own actions can't re-succeed, no
 policy trained on them will; --matched-controller is the sanity anchor (the
 exact controller the demos ran under, so it should re-succeed).
 
@@ -44,7 +45,12 @@ replayed action sequence IS the resampled dataset's. joint_target/joint_pos only
 (row lookups); joint_vel/raw_cmd still need the native rate. At stride 1 nothing changes.
 
 Writes report.json (per-episode + aggregate) and, for the first --video-slots
-slots of the first chunk, per-view mp4s under --out/<tag>/.
+slots of the first chunk, per-view mp4s under --out/<tag>/. Every replayed episode's
+STATES are saved by default under --out/<tag>/replays/<source batch>/ep_NNNN/ in the
+generation layout (`--no-record-states` to skip), so `render.py <gen_root> --episodes …`
+renders any of them afterwards at the control rate. `--no-cameras` runs the same
+certification physics-only (no sensors, no Kit rendering — like generation, which
+records state and renders afterwards): several x faster, no live mp4s.
 """
 
 from __future__ import annotations
@@ -80,9 +86,20 @@ parser.add_argument("--integrate", choices=("live", "dataset"), default="live",
                     help="joint_vel only: integrate targets from live q (honest) or dataset q")
 parser.add_argument("--video-slots", type=int, default=1, dest="video_slots",
                     help="record mp4s for this many slots of the FIRST chunk (0 = none)")
+parser.add_argument("--no-cameras", dest="no_cameras", action="store_true",
+                    help="physics-only certification: build the sim without RGB sensors and boot Kit "
+                         "without rendering (several x faster per tick); implies --video-slots 0. "
+                         "Success / tracking-error / progress metrics are unchanged")
 parser.add_argument("--grip-margin", type=float, default=None, dest="grip_margin",
                     help="metres of finger closure commanded beyond the closedness label "
                          "(squeeze-force restoration for joint conventions)")
+parser.add_argument("--no-record-states", dest="record_states", action="store_false",
+                    help="do NOT dump the replayed states. By default every replayed episode is "
+                         "written under --out/<tag>/replays/<source batch>/ep_NNNN/{traj.npz, "
+                         "meta.json} (+ a batch meta.json) in the generation layout, so "
+                         "data_engine/scripts/render.py <gen_root> --episodes … renders it afterwards "
+                         "at the control rate exactly like the dataset videos (with --no-cameras: "
+                         "physics now, pixels later)")
 parser.add_argument("--out", default=str(Path(__file__).parent / "_out"))
 parser.add_argument("--tag", default="", help="output dir name (default: derived)")
 
@@ -90,7 +107,9 @@ from isaaclab.app import AppLauncher  # noqa: E402
 
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
-args.enable_cameras = True
+args.enable_cameras = not args.no_cameras
+if args.no_cameras:
+    args.video_slots = 0
 
 # joint_target fast-fail: check the channel exists BEFORE the ~2 min Kit boot (npz header
 # read only). Torque-mode (osc/impedance) campaigns never carry it — that absence is the
@@ -120,6 +139,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sim import load_sim  # noqa: E402  (importing sim also puts vla/convert on sys.path)
 
 import episode as _convert  # noqa: E402  (vla/convert's convention math)
+
+if args.record_states:
+    from engine.generation import _flat as _flat_states  # noqa: E402  (the recorder's flatten)
 
 # ----- episodes + start points --------------------------------------------------------------------
 eps = [Path(e) for e in args.episodes]
@@ -158,14 +180,14 @@ for e, m in metas.items():
         raise SystemExit(f"{e}: control rate differs from {eps[0]} — replay batches separately")
     if args.matched_controller and m.get("controller") != m0.get("controller"):
         raise SystemExit(f"{e}: stamped controller law differs from {eps[0]} — mixed laws")
-    if phys[e] != phys[eps[0]]:
-        raise SystemExit(f"{e}: PHYSICAL_PARAMS draw {phys[e]} differs from {eps[0]}'s "
-                         f"{phys[eps[0]]} — replay per-draw groups separately")
 
 # ----- sim ----------------------------------------------------------------------------------------
 overrides: dict = {}
-if phys[eps[0]]:
-    overrides["physical_params"] = phys[eps[0]]  # match the recorded world by default
+if args.no_cameras:
+    overrides["cameras"] = False
+# PHYSICAL_PARAMS: each episode's recorded draw is re-applied to ITS slot per chunk by
+# init_from_episode (per env, like generation), so the build stays nominal and one chunk may
+# mix draws — nothing to override here.
 if args.grip_margin is not None:
     overrides["grip_margin"] = args.grip_margin
 if args.control_space:
@@ -210,11 +232,13 @@ n_arm = len(sim.arm_names)
 
 
 def hold_rows(last_actions: np.ndarray) -> torch.Tensor:
-    """Per-slot freeze action for matched-controller replay: zeros for task-space leaves,
-    the last recorded command for joint leaves (holds the grip without inventing motion)."""
+    """Per-slot freeze action for matched-controller replay: the executor's own identity action
+    (sim.hold_action: zeros for task-space DELTA leaves, the live pose for absolute-pose leaves
+    such as pink_ik), except joint leaves keep the last recorded command (holds the grip without
+    inventing motion)."""
     from robobench.controllers import JointController
 
-    rows = torch.zeros((E, last_actions.shape[1]), device=device)
+    rows = torch.as_tensor(sim.hold_action(), dtype=torch.float32, device=device)
     i = 0
     for leaf in getattr(sim.env.robot.controller, "controllers", [sim.env.robot.controller]):
         if isinstance(leaf, JointController):
@@ -264,6 +288,7 @@ for lo in range(0, len(eps), E):
           f"({cs}{'/' + args.integrate if cs == 'joint_vel' else ''})", flush=True)
 
     obs = sim.init_from_episode(chunk, t0=S[:n])
+    rec_states = [_flat_states(sim.env.get_states())] if args.record_states else None  # row 0 = start
     writers = {}
     if lo == 0 and args.video_slots > 0:
         for s in range(min(args.video_slots, n)):
@@ -303,6 +328,8 @@ for lo in range(0, len(eps), E):
                 rows[fr] = hold_rows(np.stack([raw_act[s][max(T[s] - 2, 0)]
                                                for s in range(E)]))[fr]
             obs = sim.step(rows)
+        if rec_states is not None:
+            rec_states.append(_flat_states(sim.env.get_states()))
         prog = obs["progress"]  # computed once per obs inside EvalSim
         prog_peak = np.maximum(prog_peak, prog)
         tgt = np.stack([q_rec[s][idx(s, k + 1)] for s in range(E)])
@@ -330,12 +357,30 @@ for lo in range(0, len(eps), E):
     for w in writers.values():
         w.close()
 
+    if rec_states is not None:  # replayed states -> generation-layout episodes (render later)
+        keys = [k for k in rec_states[0] if not k.startswith("robot/controller")]
+        stacked = {k: np.stack([r[k].numpy() for r in rec_states]) for k in keys}  # (K+1, E, …)
+        for s, e in enumerate(chunk):
+            rows = min(T[s] - S[s], len(rec_states))  # this episode's own length from its start
+            bdir = out / "replays" / e.parent.name
+            edir = bdir / e.name
+            edir.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(edir / "traj.npz", **{k: v[:rows, s] for k, v in stacked.items()})
+            m = dict(metas[e])
+            m.update(steps=int(rows), success=bool(obs["success"][s]),
+                     recorded_success=metas[e].get("success"), replay_of=str(e), replay_t0=int(S[s]),
+                     replay_control_space=cs, replay_source=args.source)
+            (edir / "meta.json").write_text(json.dumps(m, indent=2) + "\n")
+            if not (bdir / "meta.json").is_file():
+                (bdir / "meta.json").write_text(json.dumps(
+                    {"cell": metas[e].get("cell"), "replay_of_batch": str(e.parent),
+                     "replay_tag": tag}, indent=2) + "\n")
     for s, e in enumerate(chunk):
         if first_success[s] is None and bool(obs["success"][s]):
             first_success[s] = T[s] - 1
         results.append({
             "episode": str(e), "ticks": T[s], "t0": S[s], "t0_s": round(S[s] / rec_rate, 3),
-            "recorded_success": metas[e].get("success"),
+            "recorded_success": metas[e].get("success"), "physical_params": phys[e],
             "replay_success": bool(obs["success"][s]), "first_success_tick": first_success[s],
             "err_max": round(float(err_max[s].max()), 5),
             "err_mean": round(float(err_sum[s] / max(err_n[s], 1)), 5),
@@ -355,7 +400,8 @@ summary = {
     "source": args.source, "control_space": cs, "matched_controller": args.matched_controller,
     "t0_frac": args.t0_frac, "integrate": args.integrate if cs == "joint_vel" else None,
     "rate_hz": rec_rate, "executor_hz": sim.rate_hz, "stride": str(stride),
-    "physical_params": phys[eps[0]], "episodes": len(results),
+    "physical_params": "per-episode (see per_episode[].physical_params)",
+    "episodes": len(results),
     "replay_success": n_ok, "recorded_success": n_rec,
     "err_max": max(r["err_max"] for r in results),
     "per_episode": results,
