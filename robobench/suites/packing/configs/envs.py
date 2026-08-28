@@ -54,6 +54,15 @@ def _clear_organics_franka_cfg() -> ClearOrganicsSceneCfg:
         scatter_center=(0.0, 0.33),
         scatter_span=(0.44, 0.30),
         scatter_cols=4,
+        # Drop the items whose difficulty is INCIDENTAL rather than intended: the two tall
+        # ellipsoids (red_onion 59x59x90, avocado 61x61x92) and the taller of the two oranges.
+        # A ball-like fruit must be centred in the jaw to ~1 mm or first pad contact rolls it
+        # away, so those three test IK precision, not the identification + long-horizon
+        # sequencing this task exists to measure. Eight organics remain (2 lemons, 2 limes, an
+        # orange, a pomegranate, 2 pumpkins) — still visually varied and faithful to most of
+        # RoboLab's named list. The NULL preset keeps the full 11 so the scene itself, and the
+        # oracle, still cover the complete RoboLab set.
+        exclude=("red_onion", "avocado01", "orange_01"),
         subset_sample=True,
         min_organics=4,
     )
