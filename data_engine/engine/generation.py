@@ -110,6 +110,26 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
     else:
         slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)]
     cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
+    # The preset may bake a SUITE scene-cfg INSTANCE (e.g. ram_init_xy for the .joint bindings) —
+    # passed through as-is it would silently override every cfg default the campaign's LOCAL
+    # scene.py declares (a local `case_jitter_xy = 0.02` edit would never apply). Rebuild the cfg
+    # as the LOCAL class: local defaults win, except fields the preset EXPLICITLY set (detected as
+    # differing from the suite cfg class's own defaults — the preset's intent travels).
+    if cfg.scene_cfg is not None:
+        suite_defaults = type(cfg.scene_cfg)()
+        explicit = {f.name: getattr(cfg.scene_cfg, f.name)
+                    for f in dataclasses.fields(cfg.scene_cfg)
+                    if getattr(cfg.scene_cfg, f.name) != getattr(suite_defaults, f.name)}
+        local_cfg = type(scene_cls().cfg)(**explicit)
+        if type(local_cfg) is not type(cfg.scene_cfg):
+            changed = {f.name: getattr(local_cfg, f.name)
+                       for f in dataclasses.fields(local_cfg)
+                       if hasattr(cfg.scene_cfg, f.name)
+                       and getattr(local_cfg, f.name) != getattr(cfg.scene_cfg, f.name)}
+            if changed:
+                print(f"[build_env] local scene cfg overrides the preset's: "
+                      f"{ {k: str(v)[:60] for k, v in changed.items()} }", flush=True)
+        cfg = dataclasses.replace(cfg, scene_cfg=local_cfg)
     # env_spacing: None keeps the preset's grid; replay overrides it (recorded states
     # shift onto whatever grid the replay builds, so spacing is free there)
     extra = {} if env_spacing is None else {"env_spacing": env_spacing}
