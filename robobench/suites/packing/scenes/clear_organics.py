@@ -350,7 +350,16 @@ class ClearOrganicsScene(BaseScene):
         # --- items: grid slot (optionally permuted) + jitter + free yaw; absent -> depot ---
         n = len(c.MANIFEST)
         if c.shuffle_slots:
-            perm = torch.rand(m, n, device=dev).argsort(dim=1)
+            # Shuffle WITHIN groups (organics among the organic slots, clutter among the
+            # clutter slots), not across all slots. A free permutation let produce spawn in a
+            # clutter slot adjacent to the open serving bowl and roll INSIDE it — a fruit
+            # nested in the bowl cannot be reached by a top-down pinch at all (watched on
+            # video 2026-08-26), which is a degenerate case rather than task difficulty.
+            # Grouped shuffling keeps per-episode variety without creating it.
+            perm = torch.arange(n, device=dev).expand(m, n).clone()
+            for group in (self._org_idx, self._dis_idx):
+                order = torch.rand(m, len(group), device=dev).argsort(dim=1)
+                perm[:, group] = group[order]
         else:
             perm = torch.arange(n, device=dev).expand(m, n)
         slots = torch.tensor([self._slot_xy(i) for i in range(n)], device=dev)  # (n, 2)
