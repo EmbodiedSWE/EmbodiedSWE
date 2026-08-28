@@ -44,8 +44,10 @@ def _clear_organics_franka_cfg() -> ClearOrganicsSceneCfg:
         # bin front-right, clear of the scatter; clutter grid pulled IN close to the base so
         # every top-down grasp sits in the 0.30-0.55 m band (far-low reaches go singular)
         bin_pos=(0.42, -0.05),
-        scatter_center=(-0.08, 0.20),
-        scatter_span=(0.42, 0.14),
+        scatter_center=(-0.08, 0.22),
+        # y-span 0.26 (was 0.14): 3 grid rows 13 cm apart, so the 16 cm serving bowl in the
+        # clutter row cannot overlap the produce rows and catch a rolling fruit
+        scatter_span=(0.44, 0.26),
         scatter_cols=6,
         subset_sample=True,
         min_organics=4,
