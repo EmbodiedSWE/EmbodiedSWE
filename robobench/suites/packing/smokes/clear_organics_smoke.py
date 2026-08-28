@@ -87,8 +87,12 @@ def main() -> None:
             # front-right diagonal, only ~0.45 m above the surface, aimed at the tabletop
             # centre. The earlier (1.2, -1.2, +1.0 m) eye looked down past the bench and the
             # footage was mostly floor with the bin off-frame.
-            env.sim.set_camera_view(tuple(np.array((1.05, -0.90, c.surface_z + 1.00)) + o),
-                                    tuple(np.array((0.05, 0.03, c.surface_z + 0.02)) + o),
+            # STEEP three-quarter view. Reviewed 2026-08-28: a shallower angle let the bin (in
+            # the foreground) hide much of the produce behind it. Occlusion falls off with
+            # elevation, so the eye sits ~1.3 m above the surface and only ~0.8 m out, aimed at
+            # the middle of the produce grid — every organic and the bin interior stay visible.
+            env.sim.set_camera_view(tuple(np.array((0.42, -0.92, c.surface_z + 1.40)) + o),
+                                    tuple(np.array((0.10, 0.14, c.surface_z + 0.00)) + o),
                                     camera_prim_path="/OmniverseKit_Persp")
             rp = rep.create.render_product("/OmniverseKit_Persp", (960, 600))
             annot = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
