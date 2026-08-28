@@ -156,12 +156,20 @@ class ClearOrganicsSceneCfg(BaseCfg):
         ("utilityjug_a03", "utilityjug_a03", False, 0.4, 0.25),
     )
 
+    # Instances to leave OUT of this variant, by manifest name. The full 16-object RoboLab set
+    # is the default (and what the NullRobot oracle exercises); an ARM binding may drop items
+    # whose difficulty is incidental rather than intended. The two tall ellipsoids (red_onion
+    # 59x59x90, avocado 61x61x92) and the taller orange are near-unpickable by a parallel jaw:
+    # a sphere/ellipsoid needs the pads centred to ~1 mm or first contact rolls it away, which
+    # tests IK precision, not the identification + long-horizon sequencing this task is for.
+    exclude: tuple = ()
     contact_offset: float = 0.004  # item speculative contact margin (m)
     item_static_friction: float = 1.1  # produce skin vs rubber gripper pads (see assets())
     item_dynamic_friction: float = 0.95
     asset_dir: str = ""
 
     # derived (filled in __post_init__)
+    manifest: tuple = field(default=None, init=False)  # MANIFEST minus `exclude`
     bin_usd: str = field(default="", init=False)
     item_usds: dict = field(default=None, init=False)
 
@@ -169,7 +177,10 @@ class ClearOrganicsSceneCfg(BaseCfg):
         assets = Path(__file__).resolve().parents[1] / "assets"
         self.asset_dir = self.asset_dir or str(assets / "clear_organics")
         self.bin_usd = str(Path(self.asset_dir) / self.bin_key / f"{self.bin_key}.usd")
-        keys = {k for _n, k, _o, _s, _m in self.MANIFEST}
+        self.manifest = tuple(m for m in self.MANIFEST if m[0] not in self.exclude)
+        if not any(m[2] for m in self.manifest):
+            raise ValueError(f"exclude={self.exclude} leaves no organics to clear")
+        keys = {k for _n, k, _o, _s, _m in self.manifest}
         self.item_usds = {k: str(Path(self.asset_dir) / k / f"{k}.usd") for k in keys}
         preset = self.TABLES[self.table]
         if self.surface_z is None:
@@ -249,7 +260,7 @@ class ClearOrganicsScene(BaseScene):
                     rot=(math.cos(bin_half), 0.0, 0.0, math.sin(bin_half))),
             ),
         }
-        for i, (name, key, _org, scale, mass) in enumerate(c.MANIFEST):
+        for i, (name, key, _org, scale, mass) in enumerate(c.manifest):
             sx, sy = self._slot_xy(i)
             out[name] = RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Item_" + name,
@@ -275,7 +286,7 @@ class ClearOrganicsScene(BaseScene):
     def _slot_xy(self, i: int) -> tuple[float, float]:
         """Table-relative xy of scatter slot `i` on a grid centred at `scatter_center`."""
         c = self.cfg
-        n = len(c.MANIFEST)
+        n = len(c.manifest)
         cols = c.scatter_cols
         rows = math.ceil(n / cols)
         r, col = divmod(i, cols)
@@ -310,10 +321,10 @@ class ClearOrganicsScene(BaseScene):
         dev = env.device
         self.bin: RigidObject = env.iscene["bin"]
         self.items: dict[str, RigidObject] = {
-            name: env.iscene[name] for name, _k, _o, _s, _m in c.MANIFEST}
-        self.names = [name for name, _k, _o, _s, _m in c.MANIFEST]
+            name: env.iscene[name] for name, _k, _o, _s, _m in c.manifest}
+        self.names = [name for name, _k, _o, _s, _m in c.manifest]
         self.env_origins = env.iscene.env_origins
-        self._organic = torch.tensor([o for _n, _k, o, _s, _m in c.MANIFEST],
+        self._organic = torch.tensor([o for _n, _k, o, _s, _m in c.manifest],
                                      dtype=torch.bool, device=dev)
         self._org_idx = torch.nonzero(self._organic, as_tuple=False).flatten()
         self._dis_idx = torch.nonzero(~self._organic, as_tuple=False).flatten()
@@ -324,7 +335,7 @@ class ClearOrganicsScene(BaseScene):
         self._bin_floor = c.floor_local_z
         self._bin_rim = c.bin_bbox[2] * c.bin_scale[2] * c.rim_frac + c.bin_rim_stack
         # present[e, i]: item i participates (distractors always present; organics maybe sampled)
-        self.present = torch.ones(env.num_envs, len(c.MANIFEST), dtype=torch.bool, device=dev)
+        self.present = torch.ones(env.num_envs, len(c.manifest), dtype=torch.bool, device=dev)
         self._friction_written = False
 
     def reset(self, env_ids: torch.Tensor) -> None:
@@ -376,7 +387,7 @@ class ClearOrganicsScene(BaseScene):
         self.bin.write_root_state_to_sim(broot, env_ids)
 
         # --- items: grid slot (optionally permuted) + jitter + free yaw; absent -> depot ---
-        n = len(c.MANIFEST)
+        n = len(c.manifest)
         if c.shuffle_slots:
             # Shuffle WITHIN groups (organics among the organic slots, clutter among the
             # clutter slots), not across all slots. A free permutation let produce spawn in a
@@ -392,7 +403,7 @@ class ClearOrganicsScene(BaseScene):
             perm = torch.arange(n, device=dev).expand(m, n)
         slots = torch.tensor([self._slot_xy(i) for i in range(n)], device=dev)  # (n, 2)
         yaw_amp = math.radians(c.reset_yaw_deg)
-        for i, (name, _k, _org, _s, _mass) in enumerate(c.MANIFEST):
+        for i, (name, _k, _org, _s, _mass) in enumerate(c.manifest):
             st = torch.zeros(m, 13, device=dev)
             st[:, 0] = wx + slots[perm[:, i], 0]
             st[:, 1] = wy + slots[perm[:, i], 1]
@@ -425,13 +436,30 @@ class ClearOrganicsScene(BaseScene):
         self.present[env_ids] = state["present"]
 
     # ----- description ---------------------------------------------------------------------------
+    #: manifest instance name -> the words used in `describe()` (the agent reads this text).
+    PROSE: ClassVar[dict[str, str]] = {
+        "lemon_01": "a lemon", "lemon_02": "a small lemon", "lime01": "a lime",
+        "lime01_01": "a second lime", "orange_01": "an orange", "orange_02": "an orange",
+        "pomegranate01": "a pomegranate", "pumpkinlarge": "a pumpkin",
+        "pumpkinsmall": "a small pumpkin", "red_onion": "a red onion", "avocado01": "an avocado",
+        "whitepackerbottle_a01": "a white plastic bottle", "crabbypenholder": "a crab-shaped pen holder",
+        "milkjug_a01": "a milk jug", "serving_bowl": "a serving bowl",
+        "utilityjug_a03": "a tall utility jug",
+    }
+
     def describe(self) -> str:
+        # Built from the LIVE manifest, so a variant that excludes items describes itself
+        # honestly instead of promising produce that is not on the table.
+        org = [self.PROSE[n] for n, _k, o, _s, _m in self.cfg.manifest if o]
+        dis = [self.PROSE[n] for n, _k, o, _s, _m in self.cfg.manifest if not o]
+        join = lambda xs: ", ".join(xs[:-1]) + (", and " + xs[-1] if len(xs) > 1 else xs[0])  # noqa: E731
+        bx = self.cfg.bin_bbox[0] * self.cfg.bin_scale[0] * 100
+        by = self.cfg.bin_bbox[1] * self.cfg.bin_scale[1] * 100
+        bz = self.cfg.bin_bbox[2] * self.cfg.bin_scale[2] * 100
         return (
-            "A cluttered work table holds a mix of items: organic fruits and vegetables — two "
-            "lemons, two limes, two oranges, a pomegranate, a large and a small pumpkin, a red "
-            "onion, and an avocado — scattered among non-food clutter: a white plastic bottle, a "
-            "crab-shaped pen holder, a milk jug, a serving bowl, and a tall utility jug. An open "
-            "plastic bin (about 35 x 24 cm, 13 cm deep) sits to one side of the table.\n"
+            f"A cluttered work table holds a mix of items: organic fruits and vegetables — "
+            f"{join(org)} — scattered among non-food clutter: {join(dis)}. An open blue plastic "
+            f"bin (about {bx:.0f} x {by:.0f} cm, {bz:.0f} cm deep) sits to one side of the table.\n"
             "Goal: identify every ORGANIC item — the fruits and vegetables — and place each one "
             "into the bin, leaving all the non-food clutter where it is. An item counts only when "
             "it is resting inside the bin; the job is done when every fruit and vegetable is in "
