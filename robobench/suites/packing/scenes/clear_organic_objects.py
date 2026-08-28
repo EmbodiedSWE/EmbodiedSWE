@@ -1,7 +1,10 @@
 """ClearOrganicObjectsScene — RoboLab's **ClearOrganicObjectsTask**, ported.
 
 Registered as `clear_organic_objects`; runnable presets are `packing.clear_organic_objects`
-(NullRobot oracle) and `packing.clear_organic_objects.franka.{osc,diff_ik,pink_ik,joint}`.
+(NullRobot oracle), `packing.clear_organic_objects.franka.{osc,diff_ik,pink_ik,joint}` and
+`packing.clear_organic_objects.g1.{joint,pink_ik}` (the G1 humanoid works a resized cell — a
+smaller bin and the four smallest organics — because its pinch hand and fixed pelvis are not an
+80 mm jaw on a 0.8 m arm; see `_clear_organic_objects_g1_cfg`).
 
 A port of NVlabs/RoboLab's `ClearOrganicObjectsTask`
 (github.com/NVlabs/RoboLab/blob/main/robolab/tasks/benchmark/clutter_organic_objects_task.py):
