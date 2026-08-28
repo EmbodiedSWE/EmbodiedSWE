@@ -1,4 +1,4 @@
-"""How low can the franka put its FINGERTIPS in the clear_organics cell, in FREE SPACE?
+"""How low can the franka put its FINGERTIPS in the clear_organic_objects cell, in FREE SPACE?
 
 Every grasp probe floored at tip_z ~= 0.60 (about 5 cm above the 0.55 m table) regardless of
 base height, wrist tilt or xy gain — while the produce centres sit at 0.57-0.58, so the jaw
@@ -48,7 +48,7 @@ OPEN, FINGER_LEN = 0.04, 0.112
 def main() -> None:
     robobench.discover()
     dev = "cuda:0" if torch.cuda.is_available() else "cpu"
-    cfgf = ENVS.get("packing.clear_organics.franka.osc")()
+    cfgf = ENVS.get("packing.clear_organic_objects.franka.osc")()
     sc = cfgf.scene_cfg
     # park every object far away: this measures the ARM, not contact
     sc.subset_sample = False

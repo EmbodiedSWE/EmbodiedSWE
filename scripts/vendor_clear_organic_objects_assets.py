@@ -3,7 +3,7 @@
 Ports the assets behind NVlabs/RoboLab's `ClearOrganicObjectsTask`
 (https://github.com/NVlabs/RoboLab/blob/main/robolab/tasks/benchmark/clutter_organic_objects_task.py)
 into CoSiGen's `packing` suite as task-ready per-object USDs under
-`robobench/suites/packing/assets/clear_organics/<key>/<key>.usd`.
+`robobench/suites/packing/assets/clear_organic_objects/<key>/<key>.usd`.
 
 The source objects (RoboLab `assets/objects/{fruits_veggies,vomp}/`) are already authored
 USD crates: Z-up, metersPerUnit=1, with RigidBodyAPI + CollisionAPI on the mesh and textures
@@ -19,7 +19,7 @@ script re-execs itself with the extscache lib/PYTHONPATH so it runs headless WIT
 kit (no EULA, no RTX — which is broken on this box anyway).
 
 Run:
-    python scripts/vendor_clear_organics_assets.py \
+    python scripts/vendor_clear_organic_objects_assets.py \
         [--src ~/robolab_src] [--max-tex 2048] [--dry-run]
 """
 
@@ -169,7 +169,7 @@ def main() -> None:
 
     src_objects = Path(args.src).expanduser() / "assets" / "objects"
     dest_root = Path(__file__).resolve().parents[1] / "robobench" / "suites" / "packing" \
-        / "assets" / "clear_organics"
+        / "assets" / "clear_organic_objects"
     if not src_objects.is_dir():
         raise SystemExit(f"source objects dir not found: {src_objects}")
     print(f"[vendor] src={src_objects}\n[vendor] dest={dest_root}\n[vendor] max_tex={args.max_tex}")
