@@ -233,3 +233,8 @@ robobench/suites/*/videos/
 # of git). Committed specs + machinery live elsewhere (robobench/, and later agent/ + configs/).
 /experiments/*
 !/experiments/README.md
+
+# eval/replay run artifacts (videos + reports)
+vla/eval/_out/
+# accidental in-place campaign runs from task templates
+vla/tasks/*/datagen/data/
