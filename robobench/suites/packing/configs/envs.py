@@ -18,11 +18,90 @@ from robobench.robots import (
     XArm7RobotCfg,
 )
 from robobench.suites.packing.scenes import (
+    ClearOrganicsSceneCfg,
     PenHolderSceneCfg,
     ToolPackingSceneCfg,
 )
 
 SUITE = "packing"
+
+
+# ---- Clear organic objects (RoboLab port: identify the produce, clear it into the bin) --------
+# Scene physics only (NullRobot oracle/smoke, full 11-organic set). -> "packing.clear_organics"
+register_env(SUITE, lambda: EnvCfg(scene="clear_organics", robot="null", env_spacing=3))
+
+
+# Robot bindings. Placements are STARTING guesses on the shared packing bench — re-verify reach
+# with `robot_binding_smoke` before trusting them (only the null smoke validates the scene). The
+# bindings sample an organic SUBSET per episode (`subset_sample`, 4+ organics) so a graded floor
+# of episodes stays solvable while the clutter (5 distractors) is always present.
+def _clear_organics_franka_cfg() -> ClearOrganicsSceneCfg:
+    """Franka (single arm, ~0.8 m reach): table-level work, base south of the bench. Bin front-
+    right within easy reach; clutter grid in front, further out. One arm cannot sort AND hold, so
+    the honest strategy is pick-from-table -> drop-into-standing-bin."""
+    return ClearOrganicsSceneCfg(
+        surface_z=0.55,  # packing table lowered to franka height (microwave convention)
+        bin_pos=(0.34, 0.06),
+        scatter_center=(-0.02, 0.34),
+        scatter_span=(0.42, 0.20),
+        scatter_cols=6,
+        subset_sample=True,
+        min_organics=4,
+    )
+
+
+def _clear_organics_g1_cfg() -> ClearOrganicsSceneCfg:
+    """G1 (short ~0.55 m arms): work on a 0.7 m bench, layout pulled toward the bench front. Bin
+    to the robot's right, clutter on a shallow front strip within reach."""
+    return ClearOrganicsSceneCfg(
+        surface_z=0.7,
+        bin_pos=(0.22, -0.18),
+        scatter_center=(0.0, 0.16),
+        scatter_span=(0.34, 0.16),
+        scatter_cols=6,
+        subset_sample=True,
+        min_organics=3,
+    )
+
+
+# -> "packing.clear_organics.franka.{osc,diff_ik,pink_ik,joint}"
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="clear_organics",
+                scene_cfg=_clear_organics_franka_cfg(),
+                robot="franka",
+                control_mode=mode,
+                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.30, 0.55),
+                                         base_rot=(0.7071068, 0.0, 0.0, 0.7071068),
+                                         # the known-good single-arm pick-place config
+                                         # (pen_holder lesson: the default nullspace posture
+                                         # winds the arm on long lateral servos)
+                                         nullspace_dof_pos=(),
+                                         gripper_effort_limit=120.0,
+                                         gripper_stiffness=4000.0),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# -> "packing.clear_organics.g1.{joint,pink_ik}"
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="clear_organics",
+                scene_cfg=_clear_organics_g1_cfg(),
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
 
 
 # ---- RoboDojo fill-pen-holder (difficulty-floor tier, bimanual-friendly) ----------------------
