@@ -68,6 +68,10 @@ class FrankaRobotCfg(BaseRobotCfg):
     # Arm position-PD gains — used in the position modes ("joint" / "diff_ik"; the torque modes zero
     # them). 400/80 = Isaac's FRANKA_PANDA_HIGH_PD_CFG, "specifically used for IK tracking" — the
     # stock 80/4 preset lags task-space targets badly.
+    # Controller latch dt override (s); None -> the class constants (TORQUE_CONTROL_DT for
+    # torque modes, JOINT_CONTROL_DT for position modes). E.g. 0.05 at sim dt 1/240 -> a
+    # 12-substep period = a native 20 Hz latch.
+    control_dt: float | None = None
     arm_stiffness: float = 400.0
     arm_damping: float = 80.0
     # Arm actuator effort cap [N*m]; None -> keep the preset's real-Panda limits (87/12). Raise for
@@ -195,7 +199,7 @@ class FrankaRobot(BaseRobot):
         position JointController (2 fingers); the arm controller is OSC (torque) or JointController
         (position)."""
         torque_mode = self.control_mode in ("impedance", "osc")
-        ctrl_dt = self.TORQUE_CONTROL_DT if torque_mode else self.JOINT_CONTROL_DT
+        ctrl_dt = self.cfg.control_dt or (self.TORQUE_CONTROL_DT if torque_mode else self.JOINT_CONTROL_DT)
         gripper = JointController(JointControllerCfg(self.GRIPPER_JOINTS, dt=ctrl_dt), command_type="position")
         if torque_mode:
             ts_cfg = TaskSpaceControllerCfg(
