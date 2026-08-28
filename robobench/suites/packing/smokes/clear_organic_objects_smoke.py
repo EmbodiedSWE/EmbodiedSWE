@@ -1,4 +1,4 @@
-"""Smoke / oracle test for ClearOrganicsScene — NullRobot, kinematic carry, RECORDED.
+"""Smoke / oracle test for ClearOrganicObjectsScene — NullRobot, kinematic carry, RECORDED.
 
 Proves the scene's physics and predicates before any robot touches it. Phases:
   1. show      — settle the reset clutter (16 items scattered, bin empty); assert score 0 /
@@ -19,9 +19,9 @@ segfaults on --enable_cameras; use it to validate the assertions headless — th
 WITHOUT the flag to capture the mp4).
 
 Run (headless assertion check on this box):
-    python -m robobench.suites.packing.smokes.clear_organics_smoke --headless --no_video
+    python -m robobench.suites.packing.smokes.clear_organic_objects_smoke --headless --no_video
 Run (render box, deliverable video):
-    python -m robobench.suites.packing.smokes.clear_organics_smoke --headless --demo
+    python -m robobench.suites.packing.smokes.clear_organic_objects_smoke --headless --demo
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ parser.add_argument("--demo", action="store_true", default=False,
 parser.add_argument("--no_video", action="store_true", default=False,
                     help="skip camera/annotator entirely (this box's RTX renderer segfaults on cameras)")
 parser.add_argument("--record_every", type=int, default=8)
-parser.add_argument("--out", type=str, default="clear_organics_frames.npz")
+parser.add_argument("--out", type=str, default="clear_organic_objects_frames.npz")
 parser.add_argument("--hdfs_dir", type=str, default="")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
@@ -63,7 +63,7 @@ def main() -> None:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     robobench.discover()
     # NULL preset: full 16-item set, subset sampling OFF (deterministic full task).
-    env = ENVS.get("packing.clear_organics")().build(num_envs=args.num_envs, device=device)
+    env = ENVS.get("packing.clear_organic_objects")().build(num_envs=args.num_envs, device=device)
     scene = env.scene
     c = scene.cfg
     n = env.num_envs
@@ -263,7 +263,7 @@ def _save(frames: list, args) -> None:
     if not frames:
         return
     arr = np.stack(frames, axis=0)
-    np.savez_compressed(args.out, frames=arr, env="packing.clear_organics")
+    np.savez_compressed(args.out, frames=arr, env="packing.clear_organic_objects")
     print(f"[smoke] saved {arr.shape} -> {args.out}", flush=True)
     if shutil.which("hdfs") and args.hdfs_dir:
         os.system(f"hdfs dfs -mkdir -p {args.hdfs_dir} 2>/dev/null; "

@@ -1,4 +1,7 @@
-"""ClearOrganicsScene — sort the organic produce out of a cluttered table into the bin.
+"""ClearOrganicObjectsScene — RoboLab's **ClearOrganicObjectsTask**, ported.
+
+Registered as `clear_organic_objects`; runnable presets are `packing.clear_organic_objects`
+(NullRobot oracle) and `packing.clear_organic_objects.franka.{osc,diff_ik,pink_ik,joint}`.
 
 A port of NVlabs/RoboLab's `ClearOrganicObjectsTask`
 (github.com/NVlabs/RoboLab/blob/main/robolab/tasks/benchmark/clutter_organic_objects_task.py):
@@ -8,7 +11,7 @@ no task layer): identify every organic item — the fruits and vegetables — an
 the bin, leaving the non-food clutter on the table.**
 
 The objects are the RoboLab assets themselves, vendored by
-`scripts/vendor_clear_organics_assets.py` into `suites/packing/assets/clear_organics/` (real
+`scripts/vendor_clear_organic_objects_assets.py` into `suites/packing/assets/clear_organic_objects/` (real
 scanned USDs — Z-up, metres, authored RigidBody + mesh colliders; textures downsampled to 2K).
 The organics are the 11 RoboLab targets — two lemons, two limes, two oranges, a pomegranate, a
 large and a small pumpkin, a red onion, an avocado; the clutter is the 5 RoboLab distractors —
@@ -61,8 +64,8 @@ if TYPE_CHECKING:
 
 # ----- scene cfg -------------------------------------------------------------------------------
 @dataclass
-class ClearOrganicsSceneCfg(BaseCfg):
-    """Config for `ClearOrganicsScene`. Plain fields (the suite convention); a variant is a copy
+class ClearOrganicObjectsSceneCfg(BaseCfg):
+    """Config for `ClearOrganicObjectsScene`. Plain fields (the suite convention); a variant is a copy
     with a few changed. Placement is table-relative xy unless noted."""
 
     # --- rubric / judging (bin interior derived from the measured bbox x scale) ------------
@@ -119,7 +122,7 @@ class ClearOrganicsSceneCfg(BaseCfg):
                     "kinematic": True},
     }
 
-    # --- structure (bin bbox measured at vendor time; see assets/clear_organics/extents.json) --
+    # --- structure (bin bbox measured at vendor time; see assets/clear_organic_objects/extents.json) --
     bin_key: ClassVar[str] = "container_f24"
     bin_bbox: ClassVar[tuple] = (1.15838, 0.7958, 0.66998)  # UNSCALED outer bbox (m)
     # manifest: (instance, asset_key, is_organic, spawn_scale, mass_kg). The 11 organics are the
@@ -175,7 +178,7 @@ class ClearOrganicsSceneCfg(BaseCfg):
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parents[1] / "assets"
-        self.asset_dir = self.asset_dir or str(assets / "clear_organics")
+        self.asset_dir = self.asset_dir or str(assets / "clear_organic_objects")
         self.bin_usd = str(Path(self.asset_dir) / self.bin_key / f"{self.bin_key}.usd")
         self.manifest = tuple(m for m in self.MANIFEST if m[0] not in self.exclude)
         if not any(m[2] for m in self.manifest):
@@ -192,12 +195,12 @@ class ClearOrganicsSceneCfg(BaseCfg):
 
 
 # ----- scene -----------------------------------------------------------------------------------
-@SCENES.register("clear_organics")
-class ClearOrganicsScene(BaseScene):
-    cfg: ClearOrganicsSceneCfg
+@SCENES.register("clear_organic_objects")
+class ClearOrganicObjectsScene(BaseScene):
+    cfg: ClearOrganicObjectsSceneCfg
 
-    def __init__(self, cfg: ClearOrganicsSceneCfg | None = None) -> None:
-        super().__init__(cfg or ClearOrganicsSceneCfg())
+    def __init__(self, cfg: ClearOrganicObjectsSceneCfg | None = None) -> None:
+        super().__init__(cfg or ClearOrganicObjectsSceneCfg())
 
     # ----- assets -----------------------------------------------------------------------------
     def assets(self) -> dict[str, Any]:
@@ -213,7 +216,7 @@ class ClearOrganicsScene(BaseScene):
             if not Path(usd).is_file():
                 raise FileNotFoundError(
                     f"{usd} not found — vendor the clear_organics assets first "
-                    f"(python scripts/vendor_clear_organics_assets.py)")
+                    f"(python scripts/vendor_clear_organic_objects_assets.py)")
         preset = c.TABLES[c.table]
         wx, wy = c.workbench_pos
         z0 = c.surface_z
@@ -358,6 +361,9 @@ class ClearOrganicsScene(BaseScene):
         # every large round fruit (orange, pomegranate, pumpkin, onion, lime) slipped on the
         # lift or mid-carry. Real fruit skin against rubber pads is mu ~0.8-1.2.
         if not self._friction_written:
+            # NOTE: authoring friction on the BIN as well was tried and REVERTED — it did not
+            # stop round produce rolling after landing, and the run measuring it scored worse
+            # (45 vs 68). Items only.
             for body in self.items.values():
                 view = body.root_physx_view
                 mp = view.get_material_properties().clone()  # (N, shapes, 3)

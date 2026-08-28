@@ -1,4 +1,4 @@
-"""Probe ONE grasp on clear_organics, step by step, to find why lifts fail.
+"""Probe ONE grasp on clear_organic_objects, step by step, to find why lifts fail.
 
 The reference solve reports `lift failed` with the jaw measurably closed ON the fruit
 (w=61 mm on a 59 mm onion), which rules out both an empty jaw and slip-at-contact. This
@@ -63,7 +63,7 @@ OPEN, FINGER_LEN = 0.04, 0.112
 def main() -> None:
     robobench.discover()
     dev = "cuda:0" if torch.cuda.is_available() else "cpu"
-    cfgf = ENVS.get("packing.clear_organics.franka.osc")()
+    cfgf = ENVS.get("packing.clear_organic_objects.franka.osc")()
     # freeze the layout so the probe is repeatable
     sc = cfgf.scene_cfg
     sc.shuffle_slots = False
