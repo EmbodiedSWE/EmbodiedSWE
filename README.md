@@ -56,7 +56,8 @@ uv pip install pip==25.2 setuptools==81.0.0
 python -m pip install --no-cache-dir --no-build-isolation flatdict==4.0.1
 python -m pip install --no-cache-dir --no-deps warp-lang==1.11.0
 CMAKE_POLICY_VERSION_MINIMUM=3.5 python -m pip install --no-cache-dir \
-  flatdict==4.0.1 warp-lang==1.11.0 "isaaclab[all]==2.3.2" \
+  flatdict==4.0.1 warp-lang==1.11.0 click==8.1.7 typing-extensions==4.12.2 \
+  "isaaclab[all]==2.3.2" \
   --extra-index-url https://pypi.nvidia.com
 ```
 
