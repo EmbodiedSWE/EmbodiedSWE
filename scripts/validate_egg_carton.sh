@@ -103,6 +103,9 @@ CURRENT_LOG="$ARTIFACTS_DIR/environment.txt"
     echo "cosigen_rev=$(git rev-parse HEAD)"
     echo "cosigen_branch=$(git branch --show-current)"
     echo "python=$($PYTHON_BIN --version 2>&1)"
+    uname -a
+    cat /etc/os-release
+    ldd --version
     nvidia-smi
     "$PYTHON_BIN" - <<'PY'
 import importlib.metadata as md
@@ -125,6 +128,12 @@ for preset in \
     packing.egg_carton.g1.pink_ik; do
     require_line "$preset" "$ARTIFACTS_DIR/registry.log"
 done
+
+run_logged isaac-app \
+    timeout --signal=TERM --kill-after=10s 5m \
+    "$PYTHON_BIN" -c \
+    'from isaaclab.app import AppLauncher; app = AppLauncher(headless=True).app; print("ISAAC_APP_SMOKE_OK", flush=True); import os; os._exit(0)'
+require_line "ISAAC_APP_SMOKE_OK" "$ARTIFACTS_DIR/isaac-app.log"
 
 run_logged oracle-full \
     timeout --signal=TERM --kill-after=30s 30m \

@@ -21,10 +21,32 @@ Smoke a named env, or an ad-hoc combo:
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 
 
+def _print_registries() -> None:
+    """Discover and print registries without importing Isaac Lab's native app stack."""
+    import robobench
+
+    robobench.discover()
+    from robobench.core import CONTROLLERS, ENVS, ROBOTS, SCENES
+
+    print("envs       :", ENVS.list())
+    print("scenes     :", SCENES.list())
+    print("robots     :", ROBOTS.list())
+    print("controllers:", CONTROLLERS.list())
+
+
 def main() -> None:
+    # Keep the documented registry-only path genuinely app-free. Importing
+    # isaaclab.app loads native Kit libraries even before AppLauncher() is called;
+    # that made `--list` crash on a broken driver/runtime and hid useful registry
+    # evidence behind a grep pipe.
+    if sys.argv[1:] == ["--list"]:
+        _print_registries()
+        return
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--env", type=str, default="", help="registered env-config name (see --list)")
     parser.add_argument("--scene", type=str, default="", help="ad-hoc: registered scene name")
@@ -46,13 +68,10 @@ def main() -> None:
     import robobench
 
     robobench.discover()
-    from robobench.core import CONTROLLERS, ENVS, ROBOTS, SCENES
+    from robobench.core import ENVS
 
     if args.list or not (args.env or args.scene):
-        print("envs       :", ENVS.list())
-        print("scenes     :", SCENES.list())
-        print("robots     :", ROBOTS.list())
-        print("controllers:", CONTROLLERS.list())
+        _print_registries()
         if not args.list:
             print("\nGive --env NAME (or --scene NAME [--robot/--mode]) to build + smoke it.")
         return

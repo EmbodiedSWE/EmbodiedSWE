@@ -149,6 +149,8 @@ uv pip install --python "$PYTHON_BIN" -e "$REPO_ROOT"
 
 stage "Checking the resolved environment"
 "$PYTHON_BIN" -m pip check
+nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader \
+    | sed 's/^/[bootstrap] gpu_driver=/'
 "$PYTHON_BIN" - <<'PY'
 import importlib.metadata as md
 import torch
