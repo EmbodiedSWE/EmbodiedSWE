@@ -52,20 +52,6 @@ def _clear_organics_franka_cfg() -> ClearOrganicsSceneCfg:
     )
 
 
-def _clear_organics_g1_cfg() -> ClearOrganicsSceneCfg:
-    """G1 (short ~0.55 m arms): work on a 0.7 m bench, layout pulled toward the bench front. Bin
-    to the robot's right, clutter on a shallow front strip within reach."""
-    return ClearOrganicsSceneCfg(
-        surface_z=0.7,
-        bin_pos=(0.22, -0.18),
-        scatter_center=(0.0, 0.16),
-        scatter_span=(0.34, 0.16),
-        scatter_cols=6,
-        subset_sample=True,
-        min_organics=3,
-    )
-
-
 # -> "packing.clear_organics.franka.{osc,diff_ik,pink_ik,joint}"
 for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
@@ -89,21 +75,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
         ),
     )
 
-# -> "packing.clear_organics.g1.{joint,pink_ik}"
-for _mode in ("joint", "pink_ik"):
-    register_env(
-        SUITE,
-        (
-            lambda mode=_mode: EnvCfg(
-                scene="clear_organics",
-                scene_cfg=_clear_organics_g1_cfg(),
-                robot="g1",
-                control_mode=mode,
-                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)),
-                env_spacing=3,
-            )
-        ),
-    )
+# NOTE: clear_organics is a TABLE-TOP manipulation task — arm bindings only, no humanoid.
 
 
 # ---- RoboDojo fill-pen-holder (difficulty-floor tier, bimanual-friendly) ----------------------
