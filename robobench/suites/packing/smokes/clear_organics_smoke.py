@@ -168,12 +168,32 @@ def main() -> None:
     def settle(steps: int = 90) -> None:
         step(steps)
 
-    def carry_all(organics: list[str]) -> None:
+    def cleared(nm: str) -> bool:
+        """This item is in the bin AND settled (the scene's own per-item predicate)."""
+        return bool(scene.cleared()[0, names.index(nm)].item())
+
+    def carry_all(organics: list[str], top_ups: int = 3) -> None:
+        """Stage each organic into the bin, then TOP UP any that did not settle inside.
+
+        A placed fruit can be nudged out by the next one landing beside it, or perch on the rim
+        — with the full 11-item set the interior is ~60% packed, so this is ordinary physics, not
+        a predicate bug (measured: one organic short, 10/11, after the produce sizes grew).
+        The pen_holder smoke solves the same problem with `recover_knockouts`; same idea here."""
         slots = bin_slots(len(organics))
-        for name, slot in zip(organics, slots):
-            place_in_bin(name, slot)
+        slot_of = dict(zip(organics, slots))
+        for name in organics:
+            place_in_bin(name, slot_of[name])
             step(12)  # brief settle between placements so the pile builds cleanly
         settle(150)
+        for _round in range(top_ups):
+            out = [nm for nm in organics if not cleared(nm)]
+            if not out:
+                return
+            print(f"[smoke]   top-up: re-placing {out}", flush=True)
+            for nm in out:
+                place_in_bin(nm, slot_of[nm])
+                step(12)
+            settle(150)
 
     # =========================== 1. show =====================================================
     env.reset()
@@ -185,9 +205,9 @@ def main() -> None:
     # =========================== 2. oracle: carry every organic in ============================
     carry_all(org_names)
     report("oracle")
-    cleared = int((scene.organics_cleared()[0] & scene.organics_present()[0]).sum())
+    n_cleared = int((scene.organics_cleared()[0] & scene.organics_present()[0]).sum())
     n_org = int(scene.organics_present()[0].sum())
-    check(f"all {n_org} organics cleared into the bin", cleared == n_org)
+    check(f"all {n_org} organics cleared into the bin", n_cleared == n_org)
     check("no distractor in the bin", int(scene.distractors_in_bin()[0].sum()) == 0)
     check("oracle reaches score 100", int(scene.score()[0]) == 100)
     ok_success = bool(scene.success()[0])
