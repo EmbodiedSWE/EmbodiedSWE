@@ -41,9 +41,11 @@ def _clear_organics_franka_cfg() -> ClearOrganicsSceneCfg:
     the honest strategy is pick-from-table -> drop-into-standing-bin."""
     return ClearOrganicsSceneCfg(
         surface_z=0.55,  # packing table lowered to franka height (microwave convention)
-        bin_pos=(0.34, 0.06),
-        scatter_center=(-0.02, 0.34),
-        scatter_span=(0.42, 0.20),
+        # bin front-right, clear of the scatter; clutter grid pulled IN close to the base so
+        # every top-down grasp sits in the 0.30-0.55 m band (far-low reaches go singular)
+        bin_pos=(0.42, -0.05),
+        scatter_center=(-0.08, 0.20),
+        scatter_span=(0.42, 0.14),
         scatter_cols=6,
         subset_sample=True,
         min_organics=4,
@@ -74,7 +76,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
                 scene_cfg=_clear_organics_franka_cfg(),
                 robot="franka",
                 control_mode=mode,
-                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.30, 0.55),
+                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.15, 0.55),
                                          base_rot=(0.7071068, 0.0, 0.0, 0.7071068),
                                          # the known-good single-arm pick-place config
                                          # (pen_holder lesson: the default nullspace posture
