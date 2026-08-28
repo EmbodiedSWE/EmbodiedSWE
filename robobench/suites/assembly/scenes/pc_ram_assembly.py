@@ -67,6 +67,11 @@ class PcRamAssemblySceneCfg(BaseCfg):
     # image->press-location covariance (the grounding VLA distillation needs); the demos' solve
     # tracks the shifted case automatically (its waypoints derive from the live case pose).
     case_jitter_xy: float = 0.0
+    # Optional asymmetric ranges ((x_lo, x_hi), (y_lo, y_hi)) in m overriding the symmetric
+    # case_jitter_xy — the pc_ram solve's stick-0 pick is brittle when the case moves toward -x
+    # (Stage-1 "A"; re-measured in the Stage-4 pilot: dx <= -9 mm fails, +x/±y passes), so
+    # grounding data draws from the passing half-plane.
+    case_jitter_range: tuple[tuple[float, float], tuple[float, float]] | None = None
     # Part friction (static = dynamic), set on every shape at bind. The moving stick runs
     # moderately slick against a grippier fixed case, so it slides down the channel but holds seat.
     ram_friction: float = 0.3
@@ -388,12 +393,18 @@ class PcRamAssemblyScene(BaseScene):
         origin = self.env_origins[env_ids]  # (m, 3)
         wx, wy = c.workbench_pos
 
-        if c.case_jitter_xy > 0.0:
+        if c.case_jitter_xy > 0.0 or c.case_jitter_range is not None:
             # kinematic case: re-pin at spawn + a per-env XY draw (identity orientation — see cfg)
             pose = torch.zeros(m, 7, device=dev)
             pose[:, 0:3] = origin + torch.tensor(
                 (wx, wy, c.surface_z + c.case_lift), device=dev)
-            pose[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.case_jitter_xy
+            if c.case_jitter_range is not None:
+                (xlo, xhi), (ylo, yhi) = c.case_jitter_range
+                lo = torch.tensor((xlo, ylo), device=dev)
+                hi = torch.tensor((xhi, yhi), device=dev)
+                pose[:, 0:2] += lo + torch.rand(m, 2, device=dev) * (hi - lo)
+            else:
+                pose[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.case_jitter_xy
             pose[:, 3] = 1.0
             self.case.write_root_pose_to_sim(pose, env_ids)
 
