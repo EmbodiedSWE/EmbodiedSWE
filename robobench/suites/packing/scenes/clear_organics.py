@@ -149,6 +149,8 @@ class ClearOrganicsSceneCfg(BaseCfg):
     )
 
     contact_offset: float = 0.004  # item speculative contact margin (m)
+    item_static_friction: float = 1.1  # produce skin vs rubber gripper pads (see assets())
+    item_dynamic_friction: float = 0.95
     asset_dir: str = ""
 
     # derived (filled in __post_init__)
@@ -315,6 +317,7 @@ class ClearOrganicsScene(BaseScene):
         self._bin_rim = c.bin_bbox[2] * c.bin_scale[2] * c.rim_frac + c.bin_rim_stack
         # present[e, i]: item i participates (distractors always present; organics maybe sampled)
         self.present = torch.ones(env.num_envs, len(c.MANIFEST), dtype=torch.bool, device=dev)
+        self._friction_written = False
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh episode: bin at its (kinematic) pose; optionally sample the present organic
@@ -327,6 +330,23 @@ class ClearOrganicsScene(BaseScene):
         origin = self.env_origins[env_ids]
         wx, wy = c.workbench_pos
         z0 = c.surface_z
+
+        # --- produce friction (once): PhysX shape materials, CPU tensors are the view's -----
+        # contract. `UsdFileCfg` has no `physics_material` field, so the only way to author
+        # this for USD-spawned items is the raw view. Without it the items keep PhysX's
+        # default mu (~0.5) and a 60-75 mm smooth sphere in an ~80 mm parallel jaw has too
+        # little friction to hold: measured, lemons and squat fruit were picked reliably while
+        # every large round fruit (orange, pomegranate, pumpkin, onion, lime) slipped on the
+        # lift or mid-carry. Real fruit skin against rubber pads is mu ~0.8-1.2.
+        if not self._friction_written:
+            for body in self.items.values():
+                view = body.root_physx_view
+                mp = view.get_material_properties().clone()  # (N, shapes, 3)
+                mp[..., 0] = c.item_static_friction
+                mp[..., 1] = c.item_dynamic_friction
+                mp[..., 2] = 0.0
+                view.set_material_properties(mp, torch.arange(view.count, device="cpu"))
+            self._friction_written = True
 
         # --- present mask: distractors always in; organics optionally subset-sampled ---
         self.present[env_ids] = True
