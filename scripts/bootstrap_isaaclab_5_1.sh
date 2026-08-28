@@ -20,6 +20,8 @@ ISAACSIM_VERSION="5.1.0"
 ISAACLAB_VERSION="2.3.2"
 FLATDICT_VERSION="4.0.1"
 WARP_VERSION="1.11.0"
+CLICK_VERSION="8.1.7"
+TYPING_EXTENSIONS_VERSION="4.12.2"
 
 fail() {
     echo "[bootstrap] ERROR: $*" >&2
@@ -141,6 +143,8 @@ CMAKE_POLICY_VERSION_MINIMUM=3.5 "$PYTHON_BIN" -m pip install \
     "torch==$TORCH_VERSION" \
     "torchvision==$TORCHVISION_VERSION" \
     "torchaudio==$TORCHAUDIO_VERSION" \
+    "click==$CLICK_VERSION" \
+    "typing-extensions==$TYPING_EXTENSIONS_VERSION" \
     "isaaclab[all]==$ISAACLAB_VERSION" \
     --extra-index-url https://pypi.nvidia.com
 
@@ -155,7 +159,10 @@ nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader \
 import importlib.metadata as md
 import torch
 
-for package in ("torch", "torchvision", "torchaudio", "isaacsim", "isaaclab", "flatdict", "warp-lang"):
+for package in (
+    "torch", "torchvision", "torchaudio", "isaacsim", "isaaclab",
+    "flatdict", "warp-lang", "click", "typing-extensions",
+):
     print(f"[bootstrap] {package}={md.version(package)}")
 print(f"[bootstrap] cuda_available={torch.cuda.is_available()}")
 if torch.cuda.is_available():
