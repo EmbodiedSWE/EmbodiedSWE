@@ -207,6 +207,9 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Local task-validation evidence bundles
+validation_artifacts/
+
 # PyPI configuration file
 .pypirc
 
