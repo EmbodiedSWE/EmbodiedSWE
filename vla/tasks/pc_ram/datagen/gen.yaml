@@ -1,0 +1,11 @@
+# pc_ram data-generation campaign config (template).
+# Usage: copy the datagen/ folder to a campaign root OUTSIDE the repo, e.g.
+#   cp -r vla/tasks/pc_ram/datagen ~/research/cosigen_runs/<campaign_root>
+# then run batches against it:
+#   OMNI_KIT_ACCEPT_EULA=YES .venv/bin/python data_engine/scripts/generate.py \
+#     --headless <campaign_root> --num_envs 4 --nominal --seed 0 --batch gate_nominal
+# The engine reads only `preset` at runtime; the rest is provenance.
+preset: assembly.pc_ram.franka.joint        # 48 Hz. Native 20 Hz: assembly.pc_ram.franka.joint_20hz
+scene_source: robobench/suites/assembly/scenes/pc_ram_assembly.py
+grader_source: robobench/suites/assembly/grader/pc_ram_assembly.py
+solution: vla/tasks/pc_ram/datagen/scenes/scene_0/strategies/strategy_0/solve.py
