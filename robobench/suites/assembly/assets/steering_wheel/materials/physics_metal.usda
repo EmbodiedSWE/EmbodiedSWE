@@ -1,0 +1,17 @@
+#usda 1.0
+(
+    defaultPrim = "Metal"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Material "Metal" (
+    prepend apiSchemas = ["PhysicsMaterialAPI"]
+)
+{
+    float physics:density = 2700
+    float physics:dynamicFriction = 0.1
+    float physics:restitution = 0.1
+    float physics:staticFriction = 0.1
+}
+
