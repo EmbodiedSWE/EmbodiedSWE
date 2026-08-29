@@ -47,3 +47,12 @@ register_sim("pc_ram_jointtarget_20hz", lambda: SimSpec(
     control_freq_hz=20.0,
     finger_drives=(2000.0, 100.0),
 ))
+
+# Wide-funnel twin of pc_ram_jointtarget_48hz: the Stage-4 grounding data's own case variant
+# (2.5 mm/side mouth), for evaluating policies trained on it in their training funnel condition.
+register_sim("pc_ram_wide_jointtarget_48hz", lambda: SimSpec(
+    preset="assembly.pc_ram_wide.franka.joint",
+    control_space="joint_target",
+    control_freq_hz=48.0,
+    finger_drives=(2000.0, 100.0),
+))

@@ -13,6 +13,8 @@ derivations the harness or agent can make — nothing here is locked.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from robobench.core import EnvCfg, register_env
 from robobench.core.registries import ENVS
 from robobench.robots import (
@@ -343,6 +345,35 @@ ENVS.register(
             base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
             control_dt=0.05,
         ),
+        control_mode="joint",
+        env_spacing=2,
+        sim_overrides={"dt": 1.0 / 240.0},
+    ),
+)
+
+# Eval-side twin of the canonical 48 Hz binding with the WIDE-funnel case variant (2.5 mm/side
+# mouth; channel/seat geometry identical, so the grader is unchanged): evaluates a policy trained
+# on the Stage-4 grounding data in its own funnel condition. Case pose still comes from the
+# scene's reset (or serve.py --init dataset).
+def _pc_ram_wide_scene_cfg() -> PcRamAssemblySceneCfg:
+    cfg = PcRamAssemblySceneCfg(
+        ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),
+        ram_init_z=0.030,
+        ram_init_quat=(1.0, 0.0, 0.0, 0.0),
+        reset_pos_jitter=0.0,
+        ram_stand=True,
+    )
+    cfg.case_usd = str(Path(cfg.asset_dir) / "pc" / "pc_case_ram_assembly_mb_wide.usd")
+    return cfg
+
+
+ENVS.register(
+    "assembly.pc_ram_wide.franka.joint",
+    lambda: EnvCfg(
+        scene="pc_ram",
+        scene_cfg=_pc_ram_wide_scene_cfg(),
+        robot="franka",
+        robot_cfg=FrankaRobotCfg(base_pos=(0.72, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0)),
         control_mode="joint",
         env_spacing=2,
         sim_overrides={"dt": 1.0 / 240.0},
