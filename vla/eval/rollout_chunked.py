@@ -91,7 +91,7 @@ print(f"[chunked] policy {ckpt.parents[2].name}/{ckpt.parent.name}: chunk={chunk
 
 # ---- env (the plugin's gym env, unbatched; we add the batch dim ourselves) ----------------------
 env_cfg = CosigenEnvConfig(host=args.host, port=args.port, cameras=tuple(args.cameras),
-                           fps=args.fps, episode_length=args.episode_length)
+                           fps=args.fps, max_episode_seconds=args.episode_length / args.fps)
 env = CosigenEnv(env_cfg)
 task = env.task
 print(f"[chunked] sim ready: task '{task[:60]}…' cams={args.cameras} fps={args.fps} cap={args.episode_length}", flush=True)
