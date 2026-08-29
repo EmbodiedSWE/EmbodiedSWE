@@ -365,7 +365,11 @@ def main() -> None:  # noqa: C901, PLR0915
             if nm not in scene.items:
                 continue
             item = scene.items[nm]
-            for az_deg, tilt_deg in ((90, 45), (80, 45), (90, 35)):
+            # NATURAL palm-facing-left orientations (az ~180; local +y is the palm normal, and the
+            # right hand's palm should face the robot's left). The first calibration pass used
+            # az 80-90 with a positive lean, which is a backhand — the numbers it produced are not
+            # valid for a natural grasp, so they are re-measured here.
+            for az_deg, tilt_deg in ((180, -45), (165, -45), (195, -35), (180, -55)):
                 scene.reset(torch.tensor([0], device=dev, dtype=torch.long))
                 rehome()
                 settle(1.5)

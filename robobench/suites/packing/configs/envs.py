@@ -121,15 +121,22 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
       in one layer inside the ~21 x 16 cm counted interior). The shallow walls also matter: the
       rim lands 0.15 m under the shoulder, so releasing over it does not ask the arm to reach up
       and out at once.
-    * a REDUCED item set (6 of 16). The G1 hand is a three-finger pinch — two fingers with
-      45.8 mm phalanges opposing a thumb — not an 80 mm parallel jaw, so the organics keep the
-      four smallest of the eleven (lemon_02 40 mm, lemon_01 50 mm, pumpkinsmall 55 mm,
-      lime01 60 mm across the short axis) and drop the 62-65 mm spheres and the two tall
-      ellipsoids the franka binding also drops. The clutter keeps the bottle and the pen holder
-      and drops the three space hogs — the 160 mm serving bowl, the 171 mm utility jug and the
-      milk jug. The jug goes for a second reason: at 172 mm it is the one item taller than the
-      height a loaded hand traverses at, so it is the only thing on the table a carry could
-      catch. Identification still means telling food from non-food, on a smaller board.
+    * a REDUCED item set (5 of 16). The G1 hand is a three-finger pinch — two fingers with
+      45.8 mm phalanges opposing a thumb — not an 80 mm parallel jaw, so it has BOTH an upper and
+      a LOWER size bound, and the organics have to sit between them:
+        - upper: usable opposition width is ~86 mm (thumb parked), so the 62-65 mm spheres and the
+          two tall ellipsoids the franka binding also drops are out;
+        - lower: the pad-to-pad gap never closes below ~70 mm (measured), so anything much under
+          ~50 mm cannot be pinched at all — it simply does not fill the hand. lemon_02, at 40 mm
+          across its short axis, failed to lift in EVERY grasp configuration tried, in two
+          different hand orientations. It is excluded as unpickable by construction rather than
+          left in as false difficulty.
+      That leaves three: lemon_01 (50 mm), pumpkinsmall (55 mm) and lime01 (60 mm) — all verified
+      liftable. The clutter keeps the bottle and the pen holder and drops the three space hogs —
+      the 160 mm serving bowl, the 171 mm utility jug and the milk jug. The jug goes for a second
+      reason: at 172 mm it is the one item taller than the height a loaded hand traverses at, so it
+      is the only thing on the table a carry could catch. Identification still means telling food
+      from non-food, on a smaller board.
 
     Layout (table-relative; MEASURED — the right shoulder lands at world (0.100, -0.500, 1.042)
     with the pelvis at (0, -0.50, 0.75) facing +y, i.e. 0.262 m above this surface): scatter grid
@@ -166,10 +173,11 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
         scatter_center=(-0.02, -0.27),
         scatter_span=(0.24, 0.10),
         scatter_cols=3,
-        exclude=("lime01_01", "orange_01", "orange_02", "pomegranate01", "pumpkinlarge",
-                 "red_onion", "avocado01", "serving_bowl", "utilityjug_a03", "milkjug_a01"),
+        exclude=("lemon_02", "lime01_01", "orange_01", "orange_02", "pomegranate01",
+                 "pumpkinlarge", "red_onion", "avocado01", "serving_bowl", "utilityjug_a03",
+                 "milkjug_a01"),
         subset_sample=True,
-        min_organics=3,
+        min_organics=2,   # 2 or 3 of the 3, so a memorised pick list still fails
     )
 
 
