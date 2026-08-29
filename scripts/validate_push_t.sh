@@ -116,7 +116,11 @@ print(f"cuda_available={torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"gpu={torch.cuda.get_device_name(0)}")
 PY
-    "$PYTHON_BIN" -m pip check
+    if "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
+        "$PYTHON_BIN" -m pip check
+    else
+        echo "pip_check=skipped (pip is not installed in this restored runtime)"
+    fi
 } 2>&1 | tee "$CURRENT_LOG"
 require_line "cuda_available=True" "$CURRENT_LOG"
 
