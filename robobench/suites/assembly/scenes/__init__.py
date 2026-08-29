@@ -14,6 +14,7 @@ from .pc_gpu_ram_assembly import PcGpuRamAssemblyScene, PcGpuRamAssemblySceneCfg
 from .pc_motherboard_assembly import PcMotherboardAssemblyScene, PcMotherboardAssemblySceneCfg
 from .pc_ram_assembly import PcRamAssemblyScene, PcRamAssemblySceneCfg
 from .so101_assembly import SO101AssemblyScene, SO101SceneCfg
+from .wheel_pick_place import WheelPickPlaceScene, WheelPickPlaceSceneCfg
 
 __all__ = [
     "IkeaTableAssemblyScene",
@@ -36,4 +37,6 @@ __all__ = [
     "SO101SceneCfg",
     "ChairAssemblyScene",
     "ChairAssemblySceneCfg",
+    "WheelPickPlaceScene",
+    "WheelPickPlaceSceneCfg",
 ]
