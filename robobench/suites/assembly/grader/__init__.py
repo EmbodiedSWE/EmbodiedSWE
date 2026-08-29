@@ -12,7 +12,8 @@ construction. Register it in GRADERS.
 """
 
 from .bulb_assembly import BulbAssemblyGrader
+from .wheel_pick_place import WheelPickPlaceGrader
 
-GRADERS = {"bulb": BulbAssemblyGrader}
+GRADERS = {"bulb": BulbAssemblyGrader, "wheel_pick_place": WheelPickPlaceGrader}
 
-__all__ = ["BulbAssemblyGrader", "GRADERS"]
+__all__ = ["BulbAssemblyGrader", "WheelPickPlaceGrader", "GRADERS"]

@@ -53,6 +53,25 @@ Back in the CoSiGen repo root, with the venv still active:
 uv pip install -e .
 ```
 
+### 5. Whole-body IK (`pink_ik` control mode)
+
+The humanoid embodiments' `pink_ik` mode wraps Isaac Lab's Pink IK, whose solver stack is **not**
+pulled in by `isaaclab[all]`. Without it every IK solve throws and the controller silently returns
+the joints unchanged — the arms then just sag under gravity instead of tracking, with no error unless
+`show_ik_warnings` is on. Install the three pieces:
+
+```bash
+uv pip install "pin==4.0.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"
+```
+
+`daqp` is the QP solver Pink asks for **by name**, so it is required, not optional. Re-pin `numpy`
+afterwards: `pin`'s resolve pulls numpy 2, which breaks Isaac Sim 5.1's synthetic-data path — every
+`Camera` then dies at annotator attach with `TypeError: Unable to write from unknown dtype, kind=f,
+size=0`, i.e. no rendering and no video. pinocchio/pink/daqp all work fine against numpy 1.26.
+
+Any script that builds a `pink_ik` env must also `import pinocchio` **before** `AppLauncher` and set
+`enable_pinocchio=True` on the launcher args (see `robobench/controllers/pink_ik.py`).
+
 
 ## Run
 

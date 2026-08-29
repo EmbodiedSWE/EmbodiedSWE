@@ -1221,3 +1221,29 @@ for _mode in ("osc", "joint"):
         ),
     )
 
+
+
+# ---- Steering-wheel pick-and-place (a wheel off the table into the basket beside it) -------------
+# Scene physics only (NullRobot: the wheel on the table, the basket beside it). -> "assembly.wheel_pick_place"
+register_env(SUITE, lambda: EnvCfg(scene="wheel_pick_place", robot="null", env_spacing=2.5))
+
+# Fixed-base G1 at the packing table, both control modes. No placement override: `G1RobotCfg`'s own
+# default pelvis pose (0, 0, 0.75) facing +y already suits this table, whose 0.694 m top was authored
+# around a robot of that height (unlike the ikea_table bindings, which have to lower the bench and
+# stand the robot back from it). `env_spacing` = 2.5 just clears the 2.47 m table.
+#   - "assembly.wheel_pick_place.g1.pink_ik" — arm+waist by whole-body Pink IK (action = two wrist
+#     poses + 14 hand joints = 28)
+#   - "assembly.wheel_pick_place.g1.joint"   — the same hardware by direct joint targets (31)
+for _mode in ("pink_ik", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="wheel_pick_place",
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(),
+                env_spacing=2.5,
+            )
+        ),
+    )
