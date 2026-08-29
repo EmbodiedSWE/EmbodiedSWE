@@ -1,0 +1,23 @@
+#usda 1.0
+(
+    defaultPrim = "PushT"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+# Keep the original RoboDojo visual and replace its disabled dynamic-SDF setting with
+# a GPU-friendly convex decomposition. The source mesh is already the exact T silhouette.
+def Xform "PushT" (
+    prepend references = @./source.usdc@</World>
+)
+{
+    over "collision"
+    {
+        over "model"
+        {
+            uniform token physics:approximation = "convexDecomposition"
+            bool physics:collisionEnabled = 1
+            float physxConvexDecompositionCollision:minThickness = 0.001
+        }
+    }
+}

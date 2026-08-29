@@ -1,6 +1,7 @@
 """Canonical runnable env configs for the puzzle suite — registered in `ENVS` by name.
 
-Three scenes, scene-physics-only first (NullRobot smoke/oracle), embodiments after:
+Four scenes, scene-physics-only first (NullRobot smoke/oracle), embodiments after:
+  - push_t:     simple G1-native planar pushing alignment task (port).
   - coffee:     capsule coffee machine state machine (brew one capsule coffee and
                 serve the filled mug on the tray).
   - syringe:    draw / triple-dose / re-park. Defining embodiment GR1-T2 (bimanual:
@@ -22,6 +23,7 @@ from robobench.robots import (
 )
 from robobench.suites.puzzle.scenes import (
     CoffeeServiceSceneCfg,
+    PushTSceneCfg,
     SpatulaFlipServeSceneCfg,
     SyringeDosingSceneCfg,
 )
@@ -29,6 +31,28 @@ from robobench.suites.puzzle.scenes import (
 SUITE = "puzzle"
 
 _FRANKA_ROT = (0.7071068, 0.0, 0.0, 0.7071068)
+
+
+# ================================ push_t =========================================
+# Simple G1-native planar push: source visual assets and strict 7 mm / 7 degree
+# alignment rubric. NullRobot exists for the recorded oracle; the two G1 modes are
+# the only embodiment bindings because this contribution fills the humanoid lane.
+register_env(SUITE, lambda: EnvCfg(scene="push_t", robot="null", env_spacing=3))
+
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="push_t",
+                scene_cfg=PushTSceneCfg(),
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.48, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
 
 
 # ================================ syringe ========================================

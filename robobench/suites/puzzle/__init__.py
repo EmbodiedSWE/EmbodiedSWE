@@ -7,6 +7,7 @@ PUZZLE-like task graph — preconditions, ordering, and metered outcomes — rat
 than free-object relocation.
 
 Tasks:
+  - `push_t` (PushTScene) — push a T-shaped block onto its matching target pad.
   - `coffee` (CoffeeServiceScene, the microwave port's Franka-native successor) —
     operate a capsule coffee machine's state machine (closed-cover + pod + cup
     preconditions, start/stop toggle, abort-on-early-open, spill abort, brew
