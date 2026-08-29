@@ -445,8 +445,8 @@ for _name, _cfg_cls, _kw in _PC_RAM_PCGPU_ARMS:
             ),
         )
 
-# Franka arm at the allen-bolt scene (base at the origin). Placement follows the solve-verified
-# reach lessons of the sibling franka envs: the platform is pulled from the table preset's 0.50 m
+# Franka arm at the allen-bolt scene (base at the origin). Placement follows the reach limits the
+# sibling franka envs are laid out around: the platform is pulled from the table preset's 0.50 m
 # to 0.42 m (`platform_slots`) — the screwing happens under a TOP-DOWN hand, and beyond ~0.45 m
 # the gravity-uncompensated arm saturates several mm short (pc_gpu note), more than the socket's
 # 0.75 mm/side clearance; the loose key leaves the stock "+x row" (0.76 m, out of reach) for the

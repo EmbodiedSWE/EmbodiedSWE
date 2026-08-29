@@ -140,8 +140,8 @@ Notes:
 The `folding` suite (`robobench/suites/folding/`) folds a T-shirt (VBD cloth) on the coupled
 MJWarp+VBD substrate. The in-tree smoke is a simulation CAPABILITY CHECK, not a solution: on
 the benchmark env the Franka pinches the shirt with its real fingers and lifts it clear of the
-table (cloth-rise verdict). The Franka folding solution is kept out of the benchmark tree
-(gitignored `experiments/2026-07-16_tshirt_franka_joint/`).
+table (cloth-rise verdict). Any solution for it stays out of the benchmark tree, in the
+gitignored `experiments/` workspace.
 
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.folding.smokes.tshirt_fold_smoke --headless
@@ -159,8 +159,8 @@ coffee. ONE registered env on ONE registered scene: `pouring.latte.bimanual_fran
 benchmark: dynamic arms + dynamic vessels + auto-weld grasp contract + 1.5-way liquid
 feedback). The in-tree smoke is a simulation CAPABILITY CHECK, not a solution: both Frankas
 grasp the vessels through the scene's auto-weld contract and lift them (rise/upright/spill
-verdicts). The bimanual-Franka solution is kept out of the benchmark tree (gitignored
-`experiments/2026-07-20_latte_bimanual_franka_joint/`).
+verdicts). Any solution for it stays out of the benchmark tree, in the gitignored
+`experiments/` workspace.
 
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
