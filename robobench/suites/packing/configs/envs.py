@@ -7,6 +7,8 @@ the physics is proven.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
     BimanualFrankaCfg,
@@ -22,6 +24,9 @@ from robobench.suites.packing.scenes import (
 )
 
 SUITE = "packing"
+_EGG_CARTON_G1_USD = str(
+    Path(__file__).resolve().parents[1] / "assets" / "egg_carton" / "g1_rubber_fingers.usda"
+)
 
 
 # ---- RoboDojo fill-pen-holder (difficulty-floor tier, bimanual-friendly) ----------------------
@@ -37,9 +42,9 @@ register_env(SUITE, lambda: EnvCfg(scene="egg_carton", robot="null", env_spacing
 def _egg_carton_g1_cfg() -> EggCartonSceneCfg:
     """G1 bimanual layout: basket left, four-cell carton right, both in its measured band."""
     return EggCartonSceneCfg(
-        surface_z=0.7,
-        basket_pos=(-0.14, 0.12),
-        carton_pos=(0.14, 0.12),
+        surface_z=0.70,
+        basket_pos=(-0.14, -0.05),
+        carton_pos=(0.14, -0.05),
     )
 
 
@@ -54,7 +59,23 @@ for _mode in ("joint", "pink_ik"):
                 scene_cfg=_egg_carton_g1_cfg(),
                 robot="g1",
                 control_mode=mode,
-                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)),
+                # Keep the humanoid outside the front of the packing table and
+                # bring the movable work toward it instead.  RunPod calibration
+                # showed that a 0.62 m base-to-work offset left 114--193 mm of
+                # IK residual, while the 0.40 m band admits the 15-degree
+                # pre-grasp.  Moving the fixtures, rather than the pelvis, also
+                # avoids a visually implausible robot/table overlap.  Keep the
+                # stock G1 base height: lowering it made the elevated pre-grasp
+                # enter a shoulder singularity during RunPod calibration.
+                # This task uses a thin rubber pad material on the existing finger colliders.
+                # The source G1 hand is bare rigid plastic with its default physics material;
+                # RunPod contact traces showed geometrically valid three-point grasps sliding
+                # off a 41 g egg even during a 1 mm/substep lift.  The overlay changes friction
+                # only on the hand collision shapes, leaving egg/basket/carton contacts honest.
+                robot_cfg=G1RobotCfg(
+                    base_pos=(0.0, -0.45, 0.75),
+                    g1_usd=_EGG_CARTON_G1_USD,
+                ),
                 env_spacing=3,
             )
         ),
