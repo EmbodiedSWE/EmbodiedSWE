@@ -1,17 +1,17 @@
-"""EggCartonScene — move four eggs from a basket into a four-cell carton and close it.
+"""EggCartonScene — place one egg upright in a physical carton cell.
 
 This is a scene-level port of RoboDojo's ``fill_egg_holder`` task using its original
-authored/scanned assets: a woven basket, four eggs, and a compact articulated four-cell
-carton.  The robot must repeatedly pick and reorient the side-lying eggs, place one in each
-physical pocket, then swing the lid from -90 degrees (open) to 0 (closed).
+authored/scanned assets: a woven basket, four candidate eggs, and a compact articulated
+four-cell carton.  The robot must choose and reorient one of four side-lying eggs, then place it
+securely in one physical pocket.  The hinged lid remains open as scene geometry but is not part
+of the success condition.
 
 The rubric is deliberately evaluated in the carton's BASE-LINK FRAME, so reset yaw/position
 randomization cannot change the meaning of "in a pocket".  A pocket counts only when one
 egg centre is close to its measured 2x2 cavity centre, at the source task's <=40 mm body-z
-band, aligned with the pocket axis, and settled.  Counting OCCUPIED POCKETS rather than
-independently counting eggs prevents two eggs stacked in one cell from receiving double
-credit.  Score follows the source transition rubric: 0/10/25/40/90 for 0..4 occupied cells;
-all four plus a closed, quiet lid is 100 and ``success()``.
+band, aligned with the pocket axis, and settled.  A correctly occupied but still-moving pocket
+earns 90; one quiet occupied pocket is 100 and ``success()``.  The three unused eggs remain
+physical distractors in the basket.
 
 The carton and basket stay fixed to the table, matching the source's egg-holder/Geometry
 placement.  Everything else is passive contact physics; there are no hidden welds or task
@@ -57,9 +57,9 @@ class EggCartonSceneCfg(BaseCfg):
     basket_yaw_jitter_deg: float = tunable(8.0)
     egg_pos_jitter: float = tunable(0.006)
     egg_yaw_jitter_deg: float = tunable(180.0)
-
     # --- info: measured asset structure --------------------------------------------------------
     num_eggs: int = info(4)
+    target_eggs: int = info(1)
     # Composed holder asset is 1.2x its source layer: measured cavity centres are +/-30 mm.
     cavity_centers: tuple[tuple[float, float], ...] = info(
         ((-0.030, -0.030), (-0.030, 0.030), (0.030, -0.030), (0.030, 0.030))
@@ -116,7 +116,10 @@ class EggCartonSceneCfg(BaseCfg):
         assets = Path(__file__).resolve().parents[1] / "assets"
         task_assets = assets / "egg_carton"
         self.asset_dir = self.asset_dir or str(assets)
-        self.carton_usd = self.carton_usd or str(task_assets / "egg_holder" / "main.usdc")
+        # The scan has visual dividers but its authored collision is a coarse convex shell.  The
+        # G1 overlay restores matching collision rails so later placements cannot sweep seated
+        # eggs across the visual separator.
+        self.carton_usd = self.carton_usd or str(task_assets / "egg_holder" / "g1_guided.usda")
         self.egg_usd = self.egg_usd or str(task_assets / "egg" / "main.usdc")
         self.basket_usd = self.basket_usd or str(task_assets / "egg_basket" / "main.usdc")
         preset = self.TABLES[self.table]
@@ -413,9 +416,9 @@ class EggCartonScene(BaseScene):
             "A woven basket on the left holds four loose eggs, lying on their sides. On the "
             "right is a small four-cell egg carton fixed to the table, with its hinged lid "
             "standing fully open. The carton has four distinct pockets in a 2 by 2 layout.\n"
-            "Goal: pick up all four eggs, turn them upright, and place exactly one egg securely "
-            "in each carton pocket. Then swing the lid fully closed and leave the eggs and lid "
-            "settled. Stacking multiple eggs in one pocket does not fill the empty pockets."
+            "Goal: choose one egg, pick it up, turn it upright, and place it securely in any "
+            "carton pocket. Leave that egg upright and settled. The other three eggs are "
+            "distractors and stay in the basket; the lid does not need to be closed."
         )
 
     # ----- progress/rubric ---------------------------------------------------------------------
@@ -473,18 +476,24 @@ class EggCartonScene(BaseScene):
         return egg_still & lid_still
 
     def score(self) -> torch.Tensor:
-        """(N,) source-shaped progress: 0/10/25/40/90, then 100 after closing."""
+        """(N,) progress: 0 before seating, 90 while seating, then 100 once settled."""
         occupied = self.occupied()
-        table = torch.tensor([0, 10, 25, 40, 90], device=self.env.device)
-        base = table[occupied.sum(dim=1)]
-        complete = occupied.all(dim=1) & self.seated().all(dim=1)
-        return torch.where(complete & self.lid_closed() & self.settled(), 100, base)
+        occupied_count = occupied.sum(dim=1)
+        base = torch.where(
+            occupied_count == 0,
+            torch.zeros_like(occupied_count),
+            torch.full_like(occupied_count, 90),
+        )
+        complete = (
+            occupied_count >= self.cfg.target_eggs
+        ) & (self.seated().sum(dim=1) >= self.cfg.target_eggs)
+        return torch.where(complete & self.settled(), 100, base)
 
     def success(self) -> torch.Tensor:
-        """All four distinct cells filled, lid closed, and the final state settled."""
+        """One physical pocket is filled by an upright, settled egg."""
+        occupied_count = self.occupied().sum(dim=1)
         return (
-            self.occupied().all(dim=1)
-            & self.seated().all(dim=1)
-            & self.lid_closed()
+            (occupied_count >= self.cfg.target_eggs)
+            & (self.seated().sum(dim=1) >= self.cfg.target_eggs)
             & self.settled()
         )

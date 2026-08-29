@@ -1,0 +1,47 @@
+#usda 1.0
+(
+    defaultPrim = "root"
+    subLayers = [
+        @./main.usdc@
+    ]
+    upAxis = "Z"
+)
+
+# The scanned carton visually contains a four-way pulp separator, but the source
+# physics layer approximates the complete base with one coarse convex shell.  These
+# slim rails restore the visible separator as collision geometry.  A local upper-row guard is
+# taller because an upright egg protrudes above the scanned base and otherwise lets a withdrawing
+# fingertip tip its occupied neighbour over the visual separator.  Keeping the high section away
+# from the lower-row-to-upper-row chute preserves the first placement's gravity settling path.
+# They are children
+# of the fixed carton body, so they move with reset randomization and constrain eggs
+# only through ordinary rigid contact.
+over "root"
+{
+    over "E_body_5"
+    {
+        def Cube "G1DividerAcrossX" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double size = 1
+            bool physics:collisionEnabled = 1
+            color3f[] primvars:displayColor = [(0.42, 0.27, 0.13)]
+            double3 xformOp:translate = (0, 0, 0.025)
+            double3 xformOp:scale = (0.096, 0.006, 0.050)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }
+
+        def Cube "G1UpperRowGuard" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double size = 1
+            bool physics:collisionEnabled = 1
+            color3f[] primvars:displayColor = [(0.42, 0.27, 0.13)]
+            double3 xformOp:translate = (0, 0.040, 0.0325)
+            double3 xformOp:scale = (0.004, 0.040, 0.065)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }
+    }
+}

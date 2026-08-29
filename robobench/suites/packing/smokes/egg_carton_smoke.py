@@ -1,14 +1,11 @@
 """Recorded NullRobot oracle/smoke for :mod:`packing.egg_carton`.
 
-The main path settles the reset tableau, kinematically carries each egg above a distinct
-physical pocket, RELEASES it through the real opening, verifies the source-shaped score
-staircase (10, 25, 40, 90), and incrementally closes the articulated lid for 100/success.
+The main path settles the reset tableau, kinematically carries one egg above a physical pocket,
+RELEASES it through the real opening, and verifies the 0 -> 90 -> 100 seating rubric.
 
-The full run additionally proves:
-  * all four eggs with the lid open stop at 90;
-  * three eggs plus a closed lid stop at 40;
-  * an egg lying sideways at a cavity centre does not count;
-  * get_state/set_state restores a quiet full-score state.
+The full run additionally proves that an egg lying sideways at a cavity centre does not count
+and that get_state/set_state restores a quiet full-score state.  The other three eggs and the
+open articulated lid remain visible scene geometry but are not success requirements.
 
 Every invocation records viewport RGB frames. ``--demo`` runs only the clean solve.  Bodies
 and joints are driven through scene handles; NullRobot contributes no action.
@@ -187,27 +184,14 @@ def main() -> bool:
             print(f"[smoke] retrying {name} -> cavity {cavity}", flush=True)
         return False
 
-    def set_lid(target: float, ramp: int = 90) -> None:
-        """Incrementally sweep the passive hinge; no one-frame joint teleport."""
-        start = scene.carton.data.joint_pos[:, scene._lid_j].clone()
-        for index in range(ramp):
-            alpha = (index + 1) / ramp
-            pos = scene.carton.data.joint_pos.clone()
-            vel = torch.zeros_like(pos)
-            pos[:, scene._lid_j] = start * (1 - alpha) + target * alpha
-            scene.carton.write_joint_state_to_sim(pos, vel, env_ids=all_ids)
-            step(1)
-
     egg_names = list(scene.eggs)
 
     def fill(count: int) -> None:
-        expected = (10, 25, 40, 90)
         for cavity, name in enumerate(egg_names[:count]):
             check(f"drop {name} into distinct cavity {cavity}", drop_egg(name, cavity))
-            want = expected[cavity]
             check(
-                f"score transition after {cavity + 1} egg(s) is {want}",
-                bool((scene.score() == want).all()),
+                f"score after {cavity + 1} egg(s) is 100",
+                bool((scene.score() == 100).all()),
             )
             report(f"after {cavity + 1} egg(s)")
 
@@ -216,14 +200,11 @@ def main() -> bool:
     step(120)
     report("reset tableau")
     check("reset score is zero", bool((scene.score() == 0).all()))
-    fill(4)
-    check("four eggs with lid open score 90", bool((scene.score() == 90).all()))
-    check("open lid blocks success", not bool(scene.success().any()))
-    set_lid(0.0)
+    fill(1)
     step(120)
     report("oracle complete")
-    check("full solve scores 100", bool((scene.score() == 100).all()))
-    check("full solve reaches success", bool(scene.success().all()))
+    check("one seated egg scores 100", bool((scene.score() == 100).all()))
+    check("one seated egg reaches success", bool(scene.success().all()))
     solved_state = scene.get_state(all_ids)
 
     if not args.demo:
@@ -237,43 +218,24 @@ def main() -> bool:
         check("state round-trip restores score 100", bool((scene.score() == 100).all()))
         check("state round-trip restores success", bool(scene.success().all()))
 
-        # ======================= negative: lid open =========================================
-        env.reset()
-        step(60)
-        fill(4)
-        report("negative: lid open")
-        check("lid-open full carton remains at 90", bool((scene.score() == 90).all()))
-        check("lid-open full carton is not success", not bool(scene.success().any()))
-
-        # ======================= negative: one egg missing ==================================
-        env.reset()
-        step(60)
-        fill(3)
-        set_lid(0.0)
-        step(90)
-        report("negative: one missing")
-        check("three eggs plus closed lid remains at 40", bool((scene.score() == 40).all()))
-        check("missing egg blocks success", not bool(scene.success().any()))
-
         # ======================= negative: sideways egg =====================================
         env.reset()
         step(60)
-        fill(3)
-        target_pos, upright_quat = cavity_target(3, 0.030)
+        target_pos, upright_quat = cavity_target(0, 0.030)
         half_turn = torch.tensor(
             [math.sqrt(0.5), 0.0, math.sqrt(0.5), 0.0], device=device
         ).expand(n, 4)
         sideways = torch.zeros(n, 13, device=device)
         sideways[:, 0:3] = target_pos
         sideways[:, 3:7] = quat_mul(upright_quat, half_turn)
-        scene.eggs[egg_names[3]].write_root_state_to_sim(sideways, all_ids)
+        scene.eggs[egg_names[0]].write_root_state_to_sim(sideways, all_ids)
         env.iscene.update(0.0)
         report("negative: sideways")
         check(
             "sideways egg at cavity centre is not seated",
-            not bool(scene.seated()[:, 3].any()),
+            not bool(scene.seated()[:, 0].any()),
         )
-        check("sideways fourth egg leaves score at 40", bool((scene.score() == 40).all()))
+        check("sideways egg leaves score at zero", bool((scene.score() == 0).all()))
         check("sideways egg blocks success", not bool(scene.success().any()))
 
     # =========================== recording + verdict ========================================

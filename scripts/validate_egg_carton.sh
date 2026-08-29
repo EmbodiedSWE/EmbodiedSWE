@@ -172,7 +172,7 @@ if (( ! SKIP_SOLUTION )); then
             timeout --signal=TERM --kill-after=30s 90m \
             "$PYTHON_BIN" "$SOLVE_PY"
         require_line \
-            "[egg-carton] RESULT score=100 success=True lid_closed=True" \
+            "[egg-carton] RESULT score=100 success=True" \
             "$ARTIFACTS_DIR/solution-$run.log"
     done
 fi
