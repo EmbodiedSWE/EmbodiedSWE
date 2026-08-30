@@ -40,7 +40,7 @@ class PushTSceneCfg(BaseCfg):
     # Settling and graded progress.
     settle_linear_speed: float = tunable(0.03)
     settle_angular_speed: float = tunable(0.20)
-    near_xy_tolerance: float = tunable(0.040)
+    near_xy_tolerance: float = tunable(0.025)
     close_xy_tolerance: float = tunable(0.015)
 
     # Simple G1-native 3 cm push. Both poses are rotated/translated together on reset.
