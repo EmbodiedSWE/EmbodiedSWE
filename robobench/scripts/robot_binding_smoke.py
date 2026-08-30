@@ -288,7 +288,9 @@ def main() -> None:
                        f"hdfs dfs -put -f {args.out} {args.hdfs_dir}/{os.path.basename(args.out)}")
         print(f"[binding-smoke] hdfs upload rc={rc}", flush=True)
     print("ROBOT_BINDING_SMOKE_DONE", flush=True)
-    env.close()
+    # Do not call env.close() before the teardown watchdog exists.  Kit can hang inside
+    # this close path on headless rendering hosts, preventing `_hard_exit_teardown()` from
+    # ever arming its timer.  App shutdown below owns teardown and is hard-exit guarded.
 
 
 def _hard_exit_teardown() -> None:
