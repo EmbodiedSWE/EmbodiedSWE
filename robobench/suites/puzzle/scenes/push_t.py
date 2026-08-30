@@ -43,9 +43,11 @@ class PushTSceneCfg(BaseCfg):
     near_xy_tolerance: float = tunable(0.040)
     close_xy_tolerance: float = tunable(0.015)
 
-    # Simple G1-native layout. Both poses are rotated/translated together on reset.
-    block_pos: tuple[float, float] = tunable((0.0, -0.04))
-    target_pos: tuple[float, float] = tunable((0.0, 0.10))
+    # Simple G1-native 3 cm push. Both poses are rotated/translated together on reset.
+    # The short stroke keeps the full interaction inside G1's stable table-contact
+    # workspace; task difficulty comes from the strict final alignment, not arm reach.
+    block_pos: tuple[float, float] = tunable((0.0, -0.08))
+    target_pos: tuple[float, float] = tunable((0.0, -0.05))
     reset_pos_jitter: float = tunable(0.006)
     base_yaw_deg: float = tunable(90.0)  # broad T bar faces the robot for a stable +y push
     reset_yaw_jitter_deg: float = tunable(5.0)
@@ -158,7 +160,11 @@ class PushTScene(BaseScene):
                         solver_velocity_iteration_count=2,
                         max_depenetration_velocity=0.25,
                         linear_damping=0.15,
-                        angular_damping=0.25,
+                        # A low-profile wood block on a workbench should not spin freely from
+                        # a fingertip impulse.  Bound and damp yaw so this introductory task
+                        # rewards straight pushing instead of requiring a recovery maneuver.
+                        angular_damping=1.5,
+                        max_angular_velocity=0.035,
                     ),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
@@ -247,8 +253,8 @@ class PushTScene(BaseScene):
 
     def describe(self) -> str:
         return (
-            "A small red T-shaped block rests flat near the front of a work table. Farther "
-            "away is a slightly larger, very thin dark-gray T-shaped target pad with the same "
+            "A small red T-shaped block rests flat near the front of a work table. Just ahead "
+            "is a slightly larger, very thin dark-gray T-shaped target pad with the same "
             "orientation.\nGoal: push the red T-shaped block along the table until its shape "
             "aligns precisely with the gray T-shaped pad. Keep the block flat on the table; "
             "lifting it does not solve the task."
