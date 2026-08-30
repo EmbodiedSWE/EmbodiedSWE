@@ -84,8 +84,9 @@ def main() -> bool:
 
         env.sim.set_render_mode(env.sim.RenderMode.PARTIAL_RENDERING)
         origin = env.iscene.env_origins[0].detach().cpu().numpy().astype(float)
-        eye = np.array((0.58, -0.68, c.surface_z + 0.55)) + origin
-        look = np.array((0.0, 0.03, c.surface_z + 0.01)) + origin
+        task_y = (c.block_pos[1] + c.target_pos[1]) / 2
+        eye = np.array((0.58, task_y - 0.70, c.surface_z + 0.60)) + origin
+        look = np.array((0.0, task_y, c.surface_z + 0.01)) + origin
         env.sim.set_camera_view(tuple(eye), tuple(look), camera_prim_path="/OmniverseKit_Persp")
         render_product = rep.create.render_product("/OmniverseKit_Persp", (960, 600))
         annot = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")

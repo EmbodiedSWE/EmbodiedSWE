@@ -48,7 +48,9 @@ for _mode in ("joint", "pink_ik"):
                 scene_cfg=PushTSceneCfg(),
                 robot="g1",
                 control_mode=mode,
-                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.48, 0.75)),
+                # The packing-bench front face is near y=-0.45. Keep 15 cm of
+                # clearance so G1's shins never initialize inside the chassis.
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.60, 0.75)),
                 env_spacing=3,
             )
         ),

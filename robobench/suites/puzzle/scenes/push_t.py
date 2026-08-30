@@ -45,9 +45,10 @@ class PushTSceneCfg(BaseCfg):
 
     # Simple G1-native 3 cm push. Both poses are rotated/translated together on reset.
     # The short stroke keeps the full interaction inside G1's stable table-contact
-    # workspace; task difficulty comes from the strict final alignment, not arm reach.
-    block_pos: tuple[float, float] = tunable((0.0, -0.08))
-    target_pos: tuple[float, float] = tunable((0.0, -0.05))
+    # workspace; the pair sits toward the front edge so the G1 can remain clear of
+    # the table chassis. Task difficulty comes from strict alignment, not arm reach.
+    block_pos: tuple[float, float] = tunable((0.0, -0.20))
+    target_pos: tuple[float, float] = tunable((0.0, -0.17))
     reset_pos_jitter: float = tunable(0.006)
     base_yaw_deg: float = tunable(90.0)  # broad T bar faces the robot for a stable +y push
     reset_yaw_jitter_deg: float = tunable(5.0)
