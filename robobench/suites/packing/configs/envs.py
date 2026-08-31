@@ -195,18 +195,70 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
         # slots), so the near row is what has to land in the band: these dials put it at
         # (-0.02, -0.26) and (0.06, -0.26) — 134-214 mm clear of the crate, 0.24-0.27 m out. The far
         # row holds only distractors, which are never grasped, so its reach costs nothing.
-        # y -0.19 so the ORGANIC row lands at y -0.240 exactly. That is not a round number, it
-        # is the spot where the single-item study completed the whole pick-and-place at five
-        # consecutive azimuths; the row 20 mm further out (y -0.260) missed its staging pose by
-        # 98-246 mm at the same azimuth and tilt. At a near-horizontal palm approach the
-        # reachable set is that tight, so the grid is pinned to the verified spot.
-        scatter_center=(-0.02, -0.19),
-        scatter_span=(0.08, 0.10),
-        scatter_cols=2,
+        # ONE COLUMN, and the organic pinned to the VERIFIED spot.
+        #
+        # cols=1 puts the three items in a line receding from the robot: the single organic nearest
+        # at (0.000, -0.240) and the two distractors 80 mm and 160 mm beyond it. That spot is not a
+        # round number — it is where the single-item study completed the entire pick-and-place at
+        # five consecutive azimuths. The same item 20 mm further out (y -0.260) missed its staging
+        # pose by 98-246 mm at the identical azimuth and tilt, because a near-horizontal palm
+        # approach has a reachable pocket only a few centimetres across.
+        #
+        # A line also keeps the distractors out of the way in the RIGHT direction. At this tilt the
+        # hand's swept volume is only ~+/-30 mm across the finger straddle, so clutter 80 mm away in
+        # y cannot be caught, whereas the previous 2-column grid put a bottle 80 mm away in x —
+        # directly in the palm's path — or inside the crate footprint.
+        # BOTH organic slots straddle the verified spot, 15 mm either side of (0.000, -0.240).
+        # That is safe precisely because only ONE organic is present per episode — the other is
+        # parked in the depot — so the two slots never hold items at once and can sit as close
+        # together as reachability wants. Whichever type is drawn therefore lands inside the
+        # verified pocket, which a wider grid could not guarantee: the unused second slot of the
+        # previous layout sat 0.354 m from the shoulder, outside it.
+        # Row 1 holds the single distractor, 140 mm further out, well clear of the hand's swept
+        # volume (~+/-30 mm across the finger straddle at this tilt).
+        # cols=1 with two items -> two ROWS, which is what puts the organic exactly on the verified
+        # spot (0.000, -0.240) and the distractor 140 mm beyond it at (0.000, -0.100).
+        # This is worth stating because getting it wrong is silent: `_slot_xy` derives rows from the
+        # item count, so cols=2 with two items collapses to a single row and the organic lands at
+        # y = scatter_center instead — 0.349 m from the shoulder, outside the reachable pocket, and
+        # every attempt then misses its staging pose by 132-176 mm. Change the item count and this
+        # geometry has to be re-derived.
+        scatter_center=(0.0, -0.17),
+        scatter_span=(0.10, 0.14),
+        scatter_cols=1,
+        # ONE organic, ONE distractor, and NO per-episode randomization. This tier is deliberately
+        # DETERMINISTIC, which is a real deviation from the suite convention and is stated as such:
+        # every other binding randomizes pose, slot and organic subset so a memorised pick list
+        # fails. Here that budget is spent on being deliverable instead.
+        #
+        # The reason is geometric, and it was measured rather than assumed. The G1's palm grasp is
+        # holdable only at approach azimuths 115-245 deg, and its reachable pocket on the bench is a
+        # few centimetres across. A lemon's graspable narrow axis lies 90 deg from its long axis, so
+        # yaw decides whether that axis is presentable inside the band at all:
+        #     free yaw (+/-180) ..... about half the draws are favourable; ~50% of episodes cleared
+        #     yaw pinned near 0 ..... WORSE — pins the narrow axis near azimuth 90, just outside
+        #     yaw fixed at 90 ....... narrow axis at azimuth 180, dead centre of the band
+        # And of the produce, only lemon_01 clears reliably: lime01 managed 1 of 2 seeds (it settles
+        # tipped, so its span runs 77-114 mm along every reachable azimuth), pumpkinsmall clears at
+        # exactly one azimuth of twelve, and lemon_02 (40 mm) is below the hand's minimum.
+        #
+        # So: lemon_01 at the verified spot, yaw fixed at the one favourable angle, no jitter, no
+        # shuffle, no subset sampling. Restoring randomization needs a wider reachable pocket — a
+        # taller bench, a mobile pelvis, or a two-handed strategy — not solver tuning.
         exclude=("lemon_02", "lime01", "lime01_01", "orange_01", "orange_02", "pomegranate01",
-                 "pumpkinlarge", "red_onion", "avocado01", "serving_bowl", "utilityjug_a03",
-                 "milkjug_a01"),
-        subset_sample=False,   # only two organics remain; sampling a subset of two is not variety
+                 "pumpkinlarge", "pumpkinsmall", "red_onion", "avocado01", "serving_bowl",
+                 "utilityjug_a03", "milkjug_a01", "crabbypenholder"),
+        subset_sample=False,
+        reset_pos_jitter=0.0,
+        reset_yaw_center_deg=90.0,   # long axis along +y, so the narrow axis faces azimuth 180
+        reset_yaw_deg=0.0,
+        shuffle_slots=False,
+        # Spawn essentially AT REST. The scene default drops items 30 mm and lets them settle, which
+        # TUMBLES them: with yaw commanded to 90 deg the lemon still measured 65-84 mm along the
+        # reachable azimuths rather than its 50 mm short axis, because a tipped box's oriented bbox
+        # contributes its z extent to horizontal spans. 2 mm preserves the commanded orientation,
+        # which is the entire point of a deterministic tier.
+        drop_lift=0.002,
     )
 
 
