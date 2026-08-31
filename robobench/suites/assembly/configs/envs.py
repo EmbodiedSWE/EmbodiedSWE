@@ -874,9 +874,15 @@ for _mode in ("osc", "impedance", "joint"):
                 control_mode=mode,
                 robot_cfg=BimanualFrankaCfg(robots={
                     "left": ("franka", FrankaRobotCfg(  # yaw 0, faces the work zone from the origin
-                        base_pos=(0.0, 0.0, 0.994), base_rot=(1.0, 0.0, 0.0, 0.0))),
+                        base_pos=(0.0, 0.0, 0.994), base_rot=(1.0, 0.0, 0.0, 0.0),
+                        nullspace_dof_pos=())),  # nullspace pulls toward the home pose
                     "right": ("franka", FrankaRobotCfg(  # yaw +135 deg, faces the drag/fixture zone
-                        base_pos=(0.75, -0.28, 0.994), base_rot=(0.38268, 0.0, 0.0, 0.92388))),
+                        base_pos=(0.75, -0.28, 0.994), base_rot=(0.38268, 0.0, 0.0, 0.92388),
+                        # home = the stock pose with q1 swung -1.0 rad: the hand spawns parked
+                        # south of the bench center instead of looming over the shared work zone
+                        default_dof_pos=(-1.0, -0.197, -0.0014, -1.976, -0.00028, 1.78, 0.786),
+                        nullspace_dof_pos=(0.0015, -0.197, -0.0014, -1.976, -0.00028, 1.78,
+                                           0.786))),
                 }),
                 env_spacing=3,
             )
