@@ -50,6 +50,11 @@ parser.add_argument("--item", type=str, default="lime01")
 parser.add_argument("--az_fixed", type=float, default=180.0,
                     help="azimuth (deg) used by the pos phase")
 parser.add_argument("--tilt", type=float, default=45.0, help="lean magnitude (deg)")
+parser.add_argument("--aim_x", type=float, default=-1.0,
+                    help="wrist-frame aim depth for the az phase; <0 = the solve default. Aim "
+                         "depth and tilt INTERACT: at a near-horizontal tilt a shallow "
+                         "(fingertip) aim throws the wrist far out and nothing is reachable, "
+                         "while a deep (palm) aim keeps it close.")
 parser.add_argument("--solve_py", type=str, default=SOLVE_PY)
 AppLauncher.add_app_launcher_args(parser)
 args, _unknown = parser.parse_known_args()
@@ -175,22 +180,24 @@ def main() -> None:  # noqa: C901, PLR0915
         y_l = torch.cross(z_l, x_l, dim=0)
         return mu.quat_from_matrix(torch.stack([x_l, y_l, z_l], dim=1).unsqueeze(0))[0]
 
-    def pinch_now():
+    def pinch_now(ref=None):
+        ref = S.SEAT_REF if ref is None else ref
         wp, wq = wrist_env()
-        return wp + mu.matrix_from_quat(wq.unsqueeze(0))[0] @ V3(*S.GRASP_CENTRE)
+        return wp + mu.matrix_from_quat(wq.unsqueeze(0))[0] @ V3(*ref)
 
     def item_in_wrist():
         wp, wq = wrist_env()
         return mu.matrix_from_quat(wq.unsqueeze(0))[0].T @ (item_p() - wp)
 
-    def servo(point, gq, hand, secs, tol=None):
+    def servo(point, gq, hand, secs, tol=None, ref=None):
+        ref = S.SEAT_REF if ref is None else ref
         R = mu.matrix_from_quat(gq.unsqueeze(0))[0]
-        goal = point - R @ V3(*S.GRASP_CENTRE)
+        goal = point - R @ V3(*ref)
         for _ in range(max(1, round(secs * hz))):
             one_step(goal, gq, hand)
-            if tol is not None and float((pinch_now() - point).norm()) < tol:
+            if tol is not None and float((pinch_now(ref) - point).norm()) < tol:
                 break
-        return float((pinch_now() - point).norm())
+        return float((pinch_now(ref) - point).norm())
 
     def hold(secs, hand):
         wp, wq = wrist_env()
@@ -201,7 +208,7 @@ def main() -> None:  # noqa: C901, PLR0915
         best, best_d = 1.0, None
         for s in (1.0, -1.0):
             R = mu.matrix_from_quat(jaw_quat(az, s * tilt).unsqueeze(0))[0]
-            w = aim_xy - (R @ V3(*S.GRASP_CENTRE))[:2]
+            w = aim_xy - (R @ V3(*S.PALM_REF))[:2]
             d = float((w - shoulder_xy()).norm())
             if best_d is None or d < best_d:
                 best, best_d = s, d
@@ -262,8 +269,19 @@ def main() -> None:  # noqa: C901, PLR0915
         item.write_root_state_to_sim(st, torch.tensor([0], device=dev, dtype=torch.long))
         hold(1.5, OPEN)
 
-    def trial(px, py, az_deg, tilt_deg):
-        """One full pick-and-place attempt. Returns a metrics dict."""
+    def trial(px, py, az_deg, tilt_deg, aim=None, grip=None):
+        """One full pick-and-place attempt. Returns a metrics dict.
+
+        `aim` overrides the wrist-frame point that gets driven onto the fruit, and `grip` the final
+        close fraction. Both exist for the PALM-GRASP study: the calibrated references are
+        fingertip positions (SEAT_REF x = 0.167 is out at the pads), and a grasp that holds the
+        fruit against the PALM instead needs it much deeper in the hand — around x 0.09, where the
+        finger roots are. A fingertip pinch that over-closes also self-penetrates: with the fruit
+        out at the pads the fingers keep travelling into the palm, jam, and then cannot reopen,
+        which is why lifts succeeded but the fruit was never released.
+        """
+        aim = S.SEAT_REF if aim is None else aim
+        grip = S.GRIP if grip is None else grip
         place_item(px, py)
         goto_ready()      # repeatable conditioning, so trial N is comparable to trial 0
         ready()
@@ -272,21 +290,26 @@ def main() -> None:  # noqa: C901, PLR0915
         tmag = math.radians(tilt_deg)
         tilt = lean_sign(az, tmag, p0[:2]) * tmag
         gq = jaw_quat(az, tilt)
-        servo(V3(float(p0[0]), float(p0[1]), c.surface_z + S.TRAVERSE), gq, OPEN, 3.5, tol=0.03)
-        r_hov = servo(p0 + V3(0, 0, S.HOVER), gq, OPEN, 4.0, tol=0.02)
+        servo(V3(float(p0[0]), float(p0[1]), c.surface_z + S.TRAVERSE), gq, OPEN, 3.5,
+              tol=0.03, ref=aim)
+        r_hov = servo(p0 + V3(0, 0, S.HOVER), gq, OPEN, 4.0, tol=0.02, ref=aim)
         p1 = item_p().clone()
         # Same fingertip-clearance clamp the solve uses: the open fingertips ride 66 mm beyond the
         # pinch zone, so without it the descent is commanded through the tabletop and stalls.
+        # Clamp measured from the ACTUAL aim depth, not a hardcoded one. The fingertips sit
+        # (FINGER_OUT - aim_x) beyond whatever point is being driven onto the fruit, so a deep
+        # palm aim (x 0.09) puts them 131 mm out rather than 66 mm — and the old constant
+        # under-clamped by 65 mm, driving the fingers into the table and stalling the descent.
         floor_z = (c.surface_z + 0.004
-                   + (S.FINGER_OUT - S.GRASP_CENTRE[0]) * math.cos(tilt))
+                   + (S.FINGER_OUT - aim[0]) * math.cos(tilt))
         grip_pt = V3(float(p1[0]), float(p1[1]), max(float(p1[2]) + 0.012, floor_z))
-        r_des = servo(grip_pt, gq, OPEN, 4.5, tol=0.015)
-        servo(grip_pt, gq, (S.CAGE, 0.0), 0.6)
+        r_des = servo(grip_pt, gq, OPEN, 4.5, tol=0.015, ref=aim)
+        servo(grip_pt, gq, (S.CAGE, 0.0), 0.6, ref=aim)
         iw = item_in_wrist()
-        seat = min(float((iw - V3(*S.SEAT_REF)).norm()), float((iw - V3(*S.HELD_REF)).norm()))
-        for close in (0.55, 0.75, 0.95, S.GRIP):
-            servo(grip_pt, gq, (close, 0.0), 0.5)
-        servo(grip_pt + V3(0, 0, 0.20), gq, SHUT, 3.0)
+        seat = float((iw - V3(*aim)).norm())
+        for close in [x for x in (0.55, 0.75, 0.95, grip) if x <= grip]:
+            servo(grip_pt, gq, (close, 0.0), 0.5, ref=aim)
+        servo(grip_pt + V3(0, 0, 0.20), gq, (grip, 0.0), 3.0, ref=aim)
         lift = float(item_p()[2] - p1[2])
         cleared = False
         place = {}
@@ -297,19 +320,19 @@ def main() -> None:  # noqa: C901, PLR0915
                                       V3(float(bx), float(by), 0.0)[:2]) * tmag)
             held_at = pinch_now()
             for s in (0.5, 1.0):
-                servo(held_at, gq_c, SHUT, 0.8)
+                servo(held_at, gq_c, (grip, 0.0), 0.8)
             pin, pit = pinch_now(), item_p()
             dest = (V3(float(bx), float(by), rim_world() + S.CARRY_OVER_RIM)
                     + (pin - pit) * V3(1, 1, 0))
             start = pin.clone()
             r_carry = 0.0
             for leg in (0.34, 0.67, 1.0):
-                r_carry = servo(start + (dest - start) * leg, gq_c, SHUT, 2.0, tol=0.02)
+                r_carry = servo(start + (dest - start) * leg, gq_c, (grip, 0.0), 2.0, tol=0.02)
             pin, pit = pinch_now(), item_p()
             held_after_carry = float((item_p() - pinch_now()).norm())
             low = (V3(float(bx), float(by), rim_world() + S.PLACE_OVER_RIM)
                    + (pin - pit) * V3(1, 1, 0))
-            r_low = servo(low, gq_c, SHUT, 3.0, tol=0.02)
+            r_low = servo(low, gq_c, (grip, 0.0), 3.0, tol=0.02)
             place = {"r_carry": r_carry, "r_low": r_low, "held": held_after_carry}
             gq_t = jaw_quat(math.radians(180.0),
                             lean_sign(math.radians(180.0), math.radians(S.TIP_DEG),
@@ -357,9 +380,31 @@ def main() -> None:  # noqa: C901, PLR0915
         print("[res] === PHASE A: palm azimuth over the full circle, one lime, fixed spot ===",
               flush=True)
         print(HDR, flush=True)
+        _aim = None if args.aim_x < 0 else (args.aim_x, 0.035, -0.010)
         for az_deg in range(0, 360, 30):
-            m = trial(REF[0], REF[1], float(az_deg), args.tilt)
+            m = trial(REF[0], REF[1], float(az_deg), args.tilt, aim=_aim)
             report(REF[0], REF[1], float(az_deg), m)
+
+    if args.phase == "palm":
+        # PALM GRASP vs FINGERTIP PINCH. The failure being chased: lifts succeed but the fruit is
+        # never released, because a fingertip pinch that over-closes drives the fingers into the
+        # palm, self-penetrates, jams, and cannot reopen. The fix under test is to hold the fruit
+        # against the PALM instead — i.e. aim a point much deeper in the hand than the calibrated
+        # fingertip references (SEAT_REF x = 0.167) — and to stop over-driving the close.
+        # `held_end` is the metric that matters: distance from the hand at the end of the trial.
+        # A big number means it genuinely let go; a small one means it is still stuck in the hand.
+        print("[res] === PHASE PALM: aim depth x grip, one item, fixed spot ===", flush=True)
+        print(f"[res] {'aim_x':>6s} {'tilt':>6s} {'grip':>5s} {'seat':>5s} {'lift':>6s} "
+              f"{'held_end':>8s} {'cleared':>7s}", flush=True)
+        for tilt_deg in (70.0, 85.0):
+          for aim_x in (0.090, 0.110):
+            for grip in (0.85, 1.05):
+                aim = (aim_x, 0.035, -0.010)
+                m = trial(REF[0], REF[1], 180.0, tilt_deg, aim=aim, grip=grip)
+                he = float((item_p() - pinch_now(aim)).norm())
+                print(f"[res] {aim_x:6.3f} {tilt_deg:6.0f} {grip:5.2f} {m['seat'] * 1000:4.0f}m "
+                      f"{m['lift'] * 1000:5.0f}m {he * 1000:7.0f}m {str(m['cleared']):>7s}",
+                      flush=True)
 
     if args.phase == "one":
         # Repeat the single best-measured cell a few times. Exists to be WATCHED: it is the
