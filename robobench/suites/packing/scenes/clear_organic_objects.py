@@ -431,10 +431,17 @@ class ClearOrganicObjectsScene(BaseScene):
             st[:, 1] = wy + slots[perm[:, i], 1]
             st[:, :2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 2] = z0 + c.drop_lift + 0.03 * (i % 2)
-            h = (math.radians(c.reset_yaw_center_deg)
-                 + (torch.rand(m, device=dev) * 2 - 1) * yaw_amp / 2)
-            st[:, 3] = torch.cos(h)
-            st[:, 6] = torch.sin(h)
+            yaw = (math.radians(c.reset_yaw_center_deg)
+                   + (torch.rand(m, device=dev) * 2 - 1) * yaw_amp / 2)
+            # HALF the angle — a z-yaw quaternion is (cos(yaw/2), 0, 0, sin(yaw/2)). This wrote
+            # (cos yaw, 0, 0, sin yaw), which silently DOUBLED every commanded orientation. Free
+            # +/-180 hid it (a doubled uniform circle is still a uniform circle) and it only bit
+            # once a binding pinned the yaw: `reset_yaw_center_deg=90` presented items at 180 deg,
+            # putting a lemon's 50 mm narrow axis at azimuth 90 rather than the 180 the G1 binding
+            # was steering for. Found while porting the same reset into the fruits_on_plate scene,
+            # by tabulating the settled OBB spans instead of trusting the commanded pose.
+            st[:, 3] = torch.cos(yaw / 2)
+            st[:, 6] = torch.sin(yaw / 2)
             # absent organics -> off-camera ground depot (below the surface, on the floor)
             absent = ~self.present[env_ids, i]
             if absent.any():
