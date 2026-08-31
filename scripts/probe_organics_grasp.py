@@ -1,6 +1,6 @@
 """Probe ONE grasp on clear_organic_objects, step by step, to find why lifts fail.
 
-The reference solve reports `lift failed` with the jaw measurably closed ON the fruit
+A scripted pick reports `lift failed` with the jaw measurably closed ON the fruit
 (w=61 mm on a 59 mm onion), which rules out both an empty jaw and slip-at-contact. This
 prints, every few control ticks through a single hover -> descend -> close -> lift, the
 quantities that discriminate the remaining hypotheses:
@@ -121,7 +121,7 @@ def main() -> None:
         zh = V3(0.0, 0.0, -1.0)
         return quat_from_matrix(torch.stack([torch.cross(yh, zh, dim=0), yh, zh], 1).unsqueeze(0))[0]
 
-    # narrowest horizontal span of the live OBB (same rule as the solve)
+    # narrowest horizontal span of the live OBB
     q0 = scene.items[name].data.root_quat_w[0]
     axes = [quat_apply(q0.unsqueeze(0), V3(*e).unsqueeze(0))[0] * (b / 2)
             for e, b in zip(((1., 0., 0.), (0., 1., 0.), (0., 0., 1.)), bb)]

@@ -132,12 +132,12 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
           different hand orientations. It is excluded as unpickable by construction rather than
           left in as false difficulty.
         - SHAPE, not just span: lime01 (76 x 61 x 60 mm) is also excluded, and its span is inside
-          the bounds. The single-item study swept the full azimuth circle on it and it never
-          lifted once, while lemon_01 (76 x 50 x 51 mm) lifted 262 mm at the same spot. The
-          difference is that the lemon has a genuinely flat-ish 50 mm short axis for the pinch to
-          seat on, and the near-spherical lime does not — it rolls out of a three-finger pinch the
-          way it would out of a human's fingertips.
-      That leaves two: lemon_01 (50 mm) and pumpkinsmall (55 mm), both verified liftable. Two
+          the bounds. Swept across the full circle of approach azimuths it is never liftable,
+          while lemon_01 (76 x 50 x 51 mm) is, at the same spot. The difference is that the lemon has
+          a genuinely flat-ish 50 mm short axis for a grasp to seat on and the near-spherical lime
+          does not — it rolls out of a three-finger hand the way it would out of a human's
+          fingertips.
+      That leaves two: lemon_01 (50 mm) and pumpkinsmall (55 mm), both liftable. Two
       organics is a thin board and a deliberate call — a G1 tier that reliably does two is worth
       more than one that unreliably attempts four.
       The clutter keeps the bottle and the pen holder and drops the three space hogs —
@@ -199,24 +199,24 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
         #
         # cols=1 puts the three items in a line receding from the robot: the single organic nearest
         # at (0.000, -0.240) and the two distractors 80 mm and 160 mm beyond it. That spot is not a
-        # round number — it is where the single-item study completed the entire pick-and-place at
-        # five consecutive azimuths. The same item 20 mm further out (y -0.260) missed its staging
-        # pose by 98-246 mm at the identical azimuth and tilt, because a near-horizontal palm
-        # approach has a reachable pocket only a few centimetres across.
+        # round number — it is the middle of the pocket where a near-horizontal palm approach is
+        # actually holdable at a range of azimuths. The same point 20 mm further out (y -0.260) is
+        # 98-246 mm out of reach at the identical azimuth and tilt: that pocket is only a few
+        # centimetres across.
         #
         # A line also keeps the distractors out of the way in the RIGHT direction. At this tilt the
         # hand's swept volume is only ~+/-30 mm across the finger straddle, so clutter 80 mm away in
         # y cannot be caught, whereas the previous 2-column grid put a bottle 80 mm away in x —
         # directly in the palm's path — or inside the crate footprint.
-        # BOTH organic slots straddle the verified spot, 15 mm either side of (0.000, -0.240).
+        # BOTH organic slots straddle that spot, 15 mm either side of (0.000, -0.240).
         # That is safe precisely because only ONE organic is present per episode — the other is
         # parked in the depot — so the two slots never hold items at once and can sit as close
         # together as reachability wants. Whichever type is drawn therefore lands inside the
-        # verified pocket, which a wider grid could not guarantee: the unused second slot of the
-        # previous layout sat 0.354 m from the shoulder, outside it.
+        # pocket, which a wider grid could not guarantee: the unused second slot of the previous
+        # layout sat 0.354 m from the shoulder, outside it.
         # Row 1 holds the single distractor, 140 mm further out, well clear of the hand's swept
         # volume (~+/-30 mm across the finger straddle at this tilt).
-        # cols=1 with two items -> two ROWS, which is what puts the organic exactly on the verified
+        # cols=1 with two items -> two ROWS, which is what puts the organic exactly on the reachable
         # spot (0.000, -0.240) and the distractor 140 mm beyond it at (0.000, -0.100).
         # This is worth stating because getting it wrong is silent: `_slot_xy` derives rows from the
         # item count, so cols=2 with two items collapses to a single row and the organic lands at
@@ -235,16 +235,16 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
         # holdable only at approach azimuths 115-245 deg, and its reachable pocket on the bench is a
         # few centimetres across. A lemon's graspable narrow axis lies 90 deg from its long axis, so
         # yaw decides whether that axis is presentable inside the band at all:
-        #     free yaw (+/-180) ..... about half the draws are favourable; ~50% of episodes cleared
+        #     free yaw (+/-180) ..... only about half the draws are favourable
         #     yaw pinned near 0 ..... WORSE — pins the narrow axis near azimuth 90, just outside
         #     yaw fixed at 90 ....... narrow axis at azimuth 180, dead centre of the band
-        # And of the produce, only lemon_01 clears reliably: lime01 managed 1 of 2 seeds (it settles
-        # tipped, so its span runs 77-114 mm along every reachable azimuth), pumpkinsmall clears at
-        # exactly one azimuth of twelve, and lemon_02 (40 mm) is below the hand's minimum.
+        # And of the produce only lemon_01 is dependably graspable here: lime01 settles tipped, so
+        # its span runs 77-114 mm along every reachable azimuth; pumpkinsmall is graspable at only
+        # one azimuth of twelve; lemon_02 (40 mm) is below the hand's minimum.
         #
-        # So: lemon_01 at the verified spot, yaw fixed at the one favourable angle, no jitter, no
-        # shuffle, no subset sampling. Restoring randomization needs a wider reachable pocket — a
-        # taller bench, a mobile pelvis, or a two-handed strategy — not solver tuning.
+        # So: lemon_01 at that spot, yaw fixed at the one favourable angle, no jitter, no shuffle,
+        # no subset sampling. Restoring randomization needs a wider reachable pocket — a taller
+        # bench, a mobile pelvis, or a two-handed strategy — not a cleverer controller.
         exclude=("lemon_02", "lime01", "lime01_01", "orange_01", "orange_02", "pomegranate01",
                  "pumpkinlarge", "pumpkinsmall", "red_onion", "avocado01", "serving_bowl",
                  "utilityjug_a03", "milkjug_a01", "crabbypenholder"),

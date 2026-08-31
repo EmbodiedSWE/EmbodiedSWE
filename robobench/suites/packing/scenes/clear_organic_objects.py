@@ -157,7 +157,7 @@ class ClearOrganicObjectsSceneCfg(BaseCfg):
         #     and pumpkinsmall IDENTICAL and left the pomegranate smaller than a lemon — both
         #     plainly wrong on camera (caught by tabulating the baked extents, not by eye);
         #   - the correction overshot to a 70 mm ceiling, leaving only ~5 mm per side, and the
-        #     franka reference solve fell from 3/5 organics cleared to 0/5. 64 mm is the
+        #     a parallel jaw stopped clearing the produce at all. 64 mm is the
         #     compromise that keeps both realism and a graspable margin.
         # Resulting spans: pomegranate 64 > orange 63 > pumpkinlarge 62 > lime 61 ~ avocado 61
         # > onion 59 > pumpkinsmall 55; the lemons are pinched across their 50/40 mm short axis.
