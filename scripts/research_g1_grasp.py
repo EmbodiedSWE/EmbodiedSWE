@@ -361,6 +361,17 @@ def main() -> None:  # noqa: C901, PLR0915
             m = trial(REF[0], REF[1], float(az_deg), args.tilt)
             report(REF[0], REF[1], float(az_deg), m)
 
+    if args.phase == "one":
+        # Repeat the single best-measured cell a few times. Exists to be WATCHED: it is the
+        # shortest recording that shows the grasp close up, and repetition shows how consistent it
+        # is rather than whether it can happen once.
+        print(f"[res] === PHASE ONE: az={args.az_fixed:.0f} tilt={args.tilt:.0f}, x3 ===",
+              flush=True)
+        print(HDR, flush=True)
+        for _rep in range(3):
+            m = trial(REF[0], REF[1], args.az_fixed, args.tilt)
+            report(REF[0], REF[1], args.az_fixed, m)
+
     if args.phase in ("grid", "both"):
         # TILT x AZIMUTH. Tilt is the axis that decides whether the pinch envelops the fruit or
         # grazes its top, because it sets how far the open fingertips hang below the pinch zone
