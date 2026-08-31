@@ -181,7 +181,10 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
         # ~0.14 m toward +x of whatever it grasps — landed over the crate for the grid's east
         # column, and a fruit near the wall left no room for the fingers descending on that side.
         # Dropping to four items is what buys the room: a 2 x 2 grid instead of 3 x 2.
-        bin_pos=(0.31, -0.31),
+        # 0.24, pulled in again for the PALM grasp: the fruit is now held only ~0.098 m from
+        # the wrist instead of ~0.144 m, which puts the wrist correspondingly FURTHER out at
+        # the drop pose. Measured carry residual with the deep aim at bin x 0.27 was 243 mm.
+        bin_pos=(0.24, -0.31),
         bin_scale=(0.20, 0.22, 0.17),
         # The grid is placed on a MEASURED sweet band, not a guess. A 20-placement single-item
         # sweep (scripts/research_g1_grasp.py --phase pos) lifted from only two of them, and both
@@ -192,7 +195,12 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
         # slots), so the near row is what has to land in the band: these dials put it at
         # (-0.02, -0.26) and (0.06, -0.26) — 134-214 mm clear of the crate, 0.24-0.27 m out. The far
         # row holds only distractors, which are never grasped, so its reach costs nothing.
-        scatter_center=(0.02, -0.21),
+        # y -0.19 so the ORGANIC row lands at y -0.240 exactly. That is not a round number, it
+        # is the spot where the single-item study completed the whole pick-and-place at five
+        # consecutive azimuths; the row 20 mm further out (y -0.260) missed its staging pose by
+        # 98-246 mm at the same azimuth and tilt. At a near-horizontal palm approach the
+        # reachable set is that tight, so the grid is pinned to the verified spot.
+        scatter_center=(-0.02, -0.19),
         scatter_span=(0.08, 0.10),
         scatter_cols=2,
         exclude=("lemon_02", "lime01", "lime01_01", "orange_01", "orange_02", "pomegranate01",
