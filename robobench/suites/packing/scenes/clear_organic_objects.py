@@ -84,9 +84,20 @@ class ClearOrganicObjectsSceneCfg(BaseCfg):
     # --- randomization (the task-family knobs) --------------------------------------------
     reset_pos_jitter: float = 0.025  # uniform +/- xy jitter per item at reset (m)
     reset_yaw_deg: float = 180.0  # uniform +/- yaw per item at reset (items lie at rest)
+    reset_yaw_center_deg: float = 0.0  # centre of that yaw range. Non-zero lets a binding keep
+    # a WIDE orientation range while steering it away from orientations its embodiment cannot
+    # grasp: a hand with a limited approach-azimuth band has a matching band of item yaws it
+    # can handle, and centring the range on that band preserves randomization instead of
+    # shrinking it. Yaw is applied about z, so the item's local +x axis ends up along this
+    # angle.
     shuffle_slots: bool = True  # per-episode random item->scatter-slot permutation
     subset_sample: bool = False  # sample a subset of organics present (demo/oracle: False)
     min_organics: int = 4  # per-episode lower bound of sampled organic count
+    max_organics: int | None = None  # per-episode upper bound; None -> all present organics.
+    # Set both bounds equal to present EXACTLY k organics drawn from a larger pool, which is
+    # how a binding randomizes WHICH produce appears without changing HOW MANY. A tier whose
+    # embodiment can only handle one item at a time still wants type variety, or a solver can
+    # memorise the single answer.
     drop_lift: float = 0.03  # spawn clearance above the table before settling (m)
 
     # --- placement (table-relative xy; the table itself sits at TABLES pos) ---------------
@@ -380,7 +391,9 @@ class ClearOrganicObjectsScene(BaseScene):
         self.present[env_ids] = True
         if c.subset_sample:
             n_org = int(self._organic.sum())
-            k = torch.randint(c.min_organics, n_org + 1, (m,), device=dev)
+            hi = n_org if c.max_organics is None else min(c.max_organics, n_org)
+            lo = min(c.min_organics, hi)
+            k = torch.randint(lo, hi + 1, (m,), device=dev)
             rank = torch.rand(m, n_org, device=dev).argsort(dim=1).argsort(dim=1)
             self.present[env_ids.unsqueeze(1), self._org_idx.unsqueeze(0)] = rank < k.unsqueeze(1)
 
@@ -418,7 +431,8 @@ class ClearOrganicObjectsScene(BaseScene):
             st[:, 1] = wy + slots[perm[:, i], 1]
             st[:, :2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 2] = z0 + c.drop_lift + 0.03 * (i % 2)
-            h = (torch.rand(m, device=dev) * 2 - 1) * yaw_amp / 2
+            h = (math.radians(c.reset_yaw_center_deg)
+                 + (torch.rand(m, device=dev) * 2 - 1) * yaw_amp / 2)
             st[:, 3] = torch.cos(h)
             st[:, 6] = torch.sin(h)
             # absent organics -> off-camera ground depot (below the surface, on the floor)
