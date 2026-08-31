@@ -131,8 +131,16 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
           across its short axis, failed to lift in EVERY grasp configuration tried, in two
           different hand orientations. It is excluded as unpickable by construction rather than
           left in as false difficulty.
-      That leaves three: lemon_01 (50 mm), pumpkinsmall (55 mm) and lime01 (60 mm) — all verified
-      liftable. The clutter keeps the bottle and the pen holder and drops the three space hogs —
+        - SHAPE, not just span: lime01 (76 x 61 x 60 mm) is also excluded, and its span is inside
+          the bounds. The single-item study swept the full azimuth circle on it and it never
+          lifted once, while lemon_01 (76 x 50 x 51 mm) lifted 262 mm at the same spot. The
+          difference is that the lemon has a genuinely flat-ish 50 mm short axis for the pinch to
+          seat on, and the near-spherical lime does not — it rolls out of a three-finger pinch the
+          way it would out of a human's fingertips.
+      That leaves two: lemon_01 (50 mm) and pumpkinsmall (55 mm), both verified liftable. Two
+      organics is a thin board and a deliberate call — a G1 tier that reliably does two is worth
+      more than one that unreliably attempts four.
+      The clutter keeps the bottle and the pen holder and drops the three space hogs —
       the 160 mm serving bowl, the 171 mm utility jug and the milk jug. The jug goes for a second
       reason: at 172 mm it is the one item taller than the height a loaded hand traverses at, so it
       is the only thing on the table a carry could catch. Identification still means telling food
@@ -168,16 +176,29 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
     """
     return ClearOrganicObjectsSceneCfg(
         surface_z=0.78,
-        bin_pos=(0.29, -0.31),
+        # Bin pushed OUT and the grid pulled IN, roughly doubling the clear space between the
+        # produce and the crate wall (74 mm -> 154 mm). At the old spacing the wrist — which rides
+        # ~0.14 m toward +x of whatever it grasps — landed over the crate for the grid's east
+        # column, and a fruit near the wall left no room for the fingers descending on that side.
+        # Dropping to four items is what buys the room: a 2 x 2 grid instead of 3 x 2.
+        bin_pos=(0.31, -0.31),
         bin_scale=(0.20, 0.22, 0.17),
-        scatter_center=(-0.02, -0.27),
-        scatter_span=(0.24, 0.10),
-        scatter_cols=3,
-        exclude=("lemon_02", "lime01_01", "orange_01", "orange_02", "pomegranate01",
+        # The grid is placed on a MEASURED sweet band, not a guess. A 20-placement single-item
+        # sweep (scripts/research_g1_grasp.py --phase pos) lifted from only two of them, and both
+        # sat 120-140 mm clear of the crate wall and 0.27-0.34 m from the shoulder. Closer to the
+        # crate than ~50 mm the descent residual jumps to 59-163 mm and nothing grasps; ~270 mm out
+        # the arm reaches fine but the lift dies at 20-48 mm.
+        # The two ORGANICS occupy the near row (grouped slot shuffling keeps produce in produce
+        # slots), so the near row is what has to land in the band: these dials put it at
+        # (-0.02, -0.26) and (0.06, -0.26) — 134-214 mm clear of the crate, 0.24-0.27 m out. The far
+        # row holds only distractors, which are never grasped, so its reach costs nothing.
+        scatter_center=(0.02, -0.21),
+        scatter_span=(0.08, 0.10),
+        scatter_cols=2,
+        exclude=("lemon_02", "lime01", "lime01_01", "orange_01", "orange_02", "pomegranate01",
                  "pumpkinlarge", "red_onion", "avocado01", "serving_bowl", "utilityjug_a03",
                  "milkjug_a01"),
-        subset_sample=True,
-        min_organics=2,   # 2 or 3 of the 3, so a memorised pick list still fails
+        subset_sample=False,   # only two organics remain; sampling a subset of two is not variety
     )
 
 
@@ -207,8 +228,15 @@ for _mode in ("joint", "pink_ik"):
                 robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75),
                                      arm_stiffness=1500.0,
                                      arm_damping=90.0,
-                                     hand_stiffness=200.0,
-                                     hand_damping=10.0),
+                                     # 400, not Isaac's 20: a three-finger pinch on a 100 g fruit
+                                     # has to HOLD against contact, and at 200 the hand reached the
+                                     # fruit accurately (descent residual 14-15 mm, seating
+                                     # 33-48 mm) and still failed to lift it — closing without
+                                     # gripping. Grip force in a position-controlled hand is
+                                     # stiffness x (target - contact) error, so this and the
+                                     # solve's over-driven close target are the same lever.
+                                     hand_stiffness=400.0,
+                                     hand_damping=16.0),
                 env_spacing=3,
             )
         ),
