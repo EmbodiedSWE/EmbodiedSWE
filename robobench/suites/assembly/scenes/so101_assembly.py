@@ -39,6 +39,9 @@ DRIVEN ELBOW JOINT (a revolute about the horn axis with the servo's drive — th
 articulates; command it via set_elbow_target). THE MAGNETIC BIT (same section): a free screw whose head
 touches the bit tip attaches and rides it, coaxial and spinning, until driven home — real M2
 driving carries the screw on a magnetized bit, and any embodiment holding the drill can use it.
+THE AUTO-DRIVER: the trigger is torque-activated — the scene squeezes it while a carried screw
+is seated in a free hole with everything aligned, so seating the screw is the task, not
+squeezing the trigger.
 Everything else is real collision against the parts' actual holes and walls.
 
 Heavy imports (isaaclab, pxr) are deferred so importing this module stays app-free.
@@ -66,9 +69,11 @@ class SO101SceneCfg(BaseCfg):
     """Config for `SO101AssemblyScene`. Nothing is locked — a variant is just a copy with a few fields changed."""
 
     # --- the fastening gate + drive dials (see _fasten_rule for THE RULE) -----------------
-    drive_rate: float = 0.020  # screw advance speed while driving (m/s)
+    drive_rate: float = 0.006  # screw advance speed while driving (m/s): slow enough
+    # that the kinematic follow does not drag the freely-resting workpiece
     min_drive_s: float = 0.25  # minimum accumulated drive time before the weld engages (s)
-    gate_axis_deg: float = 15.0  # max screw-vs-hole axis misalignment (deg)
+    gate_axis_deg: float = 25.0  # max screw-vs-hole axis misalignment (deg): the free
+    # workpiece rests leaning (up to ~32 deg), so a bit tilted into the lean must gate
     gate_radial: float = 0.0025  # max head-center offset from the hole axis (m)
     gate_window: float = 0.014  # engagement window above the seat, along the axis (m)
     gate_window_below: float = 0.008  # engagement window BELOW the seat (m): a screw
@@ -81,11 +86,43 @@ class SO101SceneCfg(BaseCfg):
     bit_axis_deg: float = 30.0  # max bit-vs-screw axis misalignment (deg)
     spin_min: float = 3.0  # bit speed that counts as "spinning" (rad/s)
     weld_snap: float = 0.005  # fastened part farther than this off its weld frame snaps back (m)
+    # --- the seat DETENT: models the SNAP-FIT between the servo and the printed pocket.
+    # A seated but unscrewed servo clicks in (the motor weld enables, breakable by rule)
+    # and rides carries and knocks; a firm sustained pull along the pocket corridor pops
+    # it back out. Screwing any tab screw makes the hold permanent. The companion
+    # friction of the fit is a physics material on the motor + pocket collision meshes
+    # (in the assets, static 1.0 / dynamic 0.8).
+    seat_detent: bool = True
+    detent_pos: float = 0.0035  # click-in capture distance from the seat (m)
+    detent_deg: float = 5.0  # click-in capture tolerance (deg)
+    detent_release: float = 0.025  # instantly release a motor this far from the seat (m)
+    detent_break_strain: float = 0.0065  # pull-out threshold: displacement along the
+    # pocket's out-axis (m); the walls only permit escape along the corridor
+    detent_break_steps: int = 90  # the pull must sustain this many steps (~0.4 s)
+    # --- the fork SNAP: models the PRINT-FLEX snap of the forearm clevis onto the output
+    # horn. The printed fork flexes over the horn's locating features and clicks in; rigid
+    # bodies cannot flex, so a fork pressed onto the horn within the capture tolerance
+    # CLOSES THE ELBOW JOINT (the same pre-authored revolute the horn screws enable —
+    # the fork rides the horn, the joint DOF free). Driving an M3 makes it permanent.
+    fork_snap: bool = True
+    fork_snap_pos: float = 0.006  # click-in capture: lateral/axial tolerance (m)
+    fork_snap_slide: float = 0.028  # capture reach BACK ALONG the clevis slide-in
+    # direction (seat -X): the swept locating features the flex rides over span the
+    # last stretch of the slide (the kit's clevis slide travel is ~28 mm), so a fork
+    # pushed to there clicks home
+    fork_snap_deg: float = 8.0  # click-in capture tolerance, off-axis (deg)
 
     # --- the drill (powered screwdriver) -----------------------------------------------------
     bit_speed: float = 15.0  # bit spin speed while the trigger is squeezed (rad/s)
     trigger_swing: float = math.radians(14.0)  # trigger travel, rest -> full squeeze (rad)
     bit_tip: tuple[float, float, float] = (0.0, 0.055, 0.0)  # bit tip point, in the bit's own link frame
+    # the driver is TORQUE-ACTIVATED: the scene squeezes the trigger whenever a free,
+    # compatible screw sits in a hole's engagement window with the parts aligned and the
+    # bit on its head, and releases it when the screw finishes or leaves the window —
+    # actuating the trigger is not part of the manipulation; seating the bit-carried
+    # screw is (see _fasten_rule)
+    auto_trigger: bool = True
+    trigger_press: float = 0.30  # trigger squeeze effort while activated (N*m)
 
     # --- fastening welds — where each screw seats in the upper_arm (LINK frame) --------------
     # Per-joint convention: each joint's screw(s) carry its <joint>_ prefix; adding wrist_*/shoulder_*
@@ -106,9 +143,10 @@ class SO101SceneCfg(BaseCfg):
         (1.0, 0.0, 0.0, 0.0),  # far: screw +Z -> link +Z
         (1.0, 0.0, 0.0, 0.0),
     )
-    # free spawn xy of each loose screw (env frame, resting on the workbench top; z from the asset)
+    # free spawn xy of each loose screw (env frame, resting on the workbench top; z from
+    # the asset), clustered on the bench's SW quarter
     screw_spawn_pts: tuple[tuple[float, float], ...] = (
-        (0.25, -0.15), (0.31, -0.15), (0.25, -0.22), (0.31, -0.22))
+        (0.12, -0.30), (0.45, -0.34), (0.10, -0.22), (0.26, -0.31))
 
     # --- the elbow HORN fastening — the lower_arm clips onto the motor's output horn ---
     # Seated lower_arm pose in the MOTOR (upper_arm-link) frame: the elbow_flex joint transform
@@ -142,10 +180,33 @@ class SO101SceneCfg(BaseCfg):
         (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 1.0, 0.0),
         (1.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0),    # far: screw +Z -> link +Z
         (1.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0))
-    # eight loose M3s spawn (one per horn-line hole, near + far)
+    # eight loose M3s spawn (one per horn-line hole): two beside the M2 cluster, the
+    # other six in spare-parts rows on the bench's NW corner
     horn_screw_spawn_pts: tuple[tuple[float, float], ...] = (
-        (0.37, -0.15), (0.43, -0.15), (0.37, -0.22), (0.43, -0.22),
-        (0.49, -0.15), (0.55, -0.15), (0.49, -0.22), (0.55, -0.22))
+        (0.30, -0.32), (0.38, -0.32),
+        (0.08, 0.24), (0.15, 0.24), (0.22, 0.24),
+        (0.08, 0.30), (0.15, 0.30), (0.22, 0.30))
+    # free-part spawn poses (env-frame xy, orientation wxyz, height above the surface)
+    # the servo stands on its insertion face SW of the workpiece
+    motor_spawn: tuple[float, float] = (0.26, -0.41)
+    motor_spawn_quat: tuple[float, float, float, float] = (0.5, -0.5, 0.5, -0.5)
+    motor_spawn_z: float = 0.012
+    # the drill lies on its side, south of the workpiece
+    drill_spawn: tuple[float, float] = (0.30, -0.20)
+    drill_spawn_quat: tuple[float, float, float, float] = (0.46777, -0.53056, 0.47276, 0.52555)
+    drill_spawn_z: float = 0.028
+    # the distal (forearm..gripper) rests on the bench's NE quarter, horn-cup side up
+    distal_spawn: tuple[float, float] = (0.72, 0.14)
+    distal_spawn_quat: tuple[float, float, float, float] = (0.0, 0.36650, -0.93042, 0.0)
+    distal_spawn_z: float = 0.05
+    # the part arrives with its wrist ROLLED: the gripper/jaw structure is offset to
+    # one side of the forearm tube, and rolled over that offset points up instead of
+    # hanging below the tube
+    distal_spawn_joints: tuple[tuple[str, float], ...] = (("wrist_roll", -2.7),)
+    # the unpowered servos' gearbox friction holds the delivery configuration: without a
+    # hold the free chain sags ~13 deg at the wrist whenever the part is carried
+    distal_hold_stiffness: float = 25.0
+    distal_hold_damping: float = 1.5
 
     # --- scene assets ------------------------------------------------------------------------
     light_intensity: float = 2500.0
@@ -282,23 +343,31 @@ class SO101AssemblyScene(BaseScene):
             "motor": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Motor",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.motor_usd, rigid_props=contact),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.25, 0.15, sz + 0.06))),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=(c.motor_spawn[0], c.motor_spawn[1], sz + c.motor_spawn_z),
+                    rot=c.motor_spawn_quat)),
             "drill": ArticulationCfg(
                 prim_path="{ENV_REGEX_NS}/Drill",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.drill_usd, rigid_props=contact),
                 init_state=ArticulationCfg.InitialStateCfg(
-                    pos=(0.5, 0.0, sz + 0.12), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
+                    pos=(c.drill_spawn[0], c.drill_spawn[1], sz + c.drill_spawn_z),
+                    rot=c.drill_spawn_quat,
+                    joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
                 actuators=usd_drives),  # gains None -> the USD drives (the trigger spring!)
-            # the NOT-yet-tested half: present in the world, free-floating. Spawned on the
-            # roomy east side, well inboard of the table edges — its free chain WANDERS when
-            # its joints are driven (e.g. a smoke's wiggle) and the old (0.5, 0.35) spot was
-            # 3 cm from the packing top's +y edge (it crawled off).
+            # the not-yet-attached half: free-floating at its delivery rest (see the cfg
+            # distal_* block), inboard of the table edges. Its joint drives HOLD the
+            # spawn configuration (gearbox-friction stand-in) instead of the USD gains —
+            # the USD drives are near-zero and the free chain sags when carried.
             "distal": ArticulationCfg(
                 prim_path="{ENV_REGEX_NS}/Distal",
                 spawn=sim_utils.UsdFileCfg(usd_path=c.distal_usd, rigid_props=contact),
                 init_state=ArticulationCfg.InitialStateCfg(
-                    pos=(0.75, 0.15, sz + 0.06), joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
-                actuators=usd_drives),
+                    pos=(c.distal_spawn[0], c.distal_spawn[1], sz + c.distal_spawn_z),
+                    rot=c.distal_spawn_quat,
+                    joint_pos={".*": 0.0}, joint_vel={".*": 0.0}),
+                actuators={"all": ImplicitActuatorCfg(
+                    joint_names_expr=[".*"], stiffness=c.distal_hold_stiffness,
+                    damping=c.distal_hold_damping)}),
         }
         for s, (x, y) in enumerate(c.screw_spawn_pts):
             out[f"screw_{s}"] = RigidObjectCfg(
@@ -379,6 +448,9 @@ class SO101AssemblyScene(BaseScene):
         c = self.cfg
         self._weld_paths: list[list[str]] = []  # [env][screw]
         self._motor_weld_paths: list[str] = []
+        self._detent_on: list[bool] = []  # per-env: seat detent currently engaged
+        self._detent_strain_n: list[int] = []  # consecutive over-strain steps (break rule)
+        self._fork_snap_on: list[bool] = []  # per-env: fork print-flex snap engaged
         self._elbow_joint_paths: list[str] = []
         for i in range(self.env.num_envs):
             base = f"/World/envs/env_{i}"
@@ -411,6 +483,9 @@ class SO101AssemblyScene(BaseScene):
             mj.CreateLocalRot1Attr(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
             mj.CreateJointEnabledAttr(False)
             self._motor_weld_paths.append(f"{base}/motor_weld")
+            self._detent_on.append(False)
+            self._detent_strain_n.append(0)
+            self._fork_snap_on.append(False)
             lj = UsdPhysics.RevoluteJoint.Define(stage, f"{base}/elbow_joint")
             lj.CreateBody0Rel().SetTargets([f"{base}/Motor/upper_arm"])
             lj.CreateBody1Rel().SetTargets([f"{base}/Distal/lower_arm"])
@@ -451,24 +526,43 @@ class SO101AssemblyScene(BaseScene):
         self.proximal.write_joint_state_to_sim(zp, zp, env_ids=env_ids)
         self.proximal.set_joint_position_target(zp, env_ids=env_ids)
 
-        place(self.motor, (0.25, 0.15, 0.06))
+        stm = torch.zeros(m, 13, device=dev)  # the motor keeps its spawn ORIENTATION
+        stm[:, 0:3] = origin + surf + torch.tensor(
+            (*self.cfg.motor_spawn, self.cfg.motor_spawn_z), device=dev)
+        stm[:, 3:7] = torch.tensor(self.cfg.motor_spawn_quat, device=dev)
+        self.motor.write_root_state_to_sim(stm, env_ids)
         for s, (x, y) in enumerate(self.cfg.screw_spawn_pts):
             place(self.screws[s], (x, y, 0.02))
         for s, (x, y) in enumerate(self.cfg.horn_screw_spawn_pts):
             place(self.screws[self.cfg.num_elbow_screws + s], (x, y, 0.02))
 
-        place(self.drill, (0.5, 0.0, 0.12))
+        std_r = torch.zeros(m, 13, device=dev)
+        std_r[:, 0:3] = origin + surf + torch.tensor(
+            (*self.cfg.drill_spawn, self.cfg.drill_spawn_z), device=dev)
+        std_r[:, 3:7] = torch.tensor(self.cfg.drill_spawn_quat, device=dev)
+        self.drill.write_root_state_to_sim(std_r, env_ids)
         zdr = torch.zeros(m, self.drill.num_joints, device=dev)
         self.drill.write_joint_state_to_sim(zdr, zdr, env_ids=env_ids)
 
-        place(self.distal, (0.75, 0.15, 0.06))
-        zdi = torch.zeros(m, self.distal.num_joints, device=dev)
-        self.distal.write_joint_state_to_sim(zdi, zdi, env_ids=env_ids)
-        self.distal.set_joint_position_target(zdi, env_ids=env_ids)
+        std_i = torch.zeros(m, 13, device=dev)  # the distal keeps its spawn ORIENTATION
+        std_i[:, 0:3] = origin + surf + torch.tensor(
+            (*self.cfg.distal_spawn, self.cfg.distal_spawn_z), device=dev)
+        std_i[:, 3:7] = torch.tensor(self.cfg.distal_spawn_quat, device=dev)
+        self.distal.write_root_state_to_sim(std_i, env_ids)
+        jdi = torch.zeros(m, self.distal.num_joints, device=dev)  # ...and its delivery
+        # joint configuration, which the friction-hold drives keep for the whole task
+        for jn_, jv_ in self.cfg.distal_spawn_joints:
+            jdi[:, self.distal.find_joints(jn_)[0][0]] = jv_
+        self.distal.write_joint_state_to_sim(jdi, torch.zeros_like(jdi), env_ids=env_ids)
+        self.distal.set_joint_position_target(jdi, env_ids=env_ids)
 
         for i in env_ids.tolist():  # release every weld (nothing fastened)
+            self._fork_snap_on[int(i)] = False
             for s in range(self.cfg.num_screws):
                 self._set_weld(int(i), s, 0, False)
+            if self._detent_on[int(i)]:
+                self._set_part_weld(self._motor_weld_paths[int(i)], False)
+                self._detent_on[int(i)] = False
         self.attached[env_ids] = False
         self.drive_t[env_ids] = 0.0
         self.driving_prev[env_ids] = False
@@ -573,7 +667,8 @@ class SO101AssemblyScene(BaseScene):
         mp, mq = motor_pose if motor_pose is not None else (
             self.motor.data.root_pos_w[ids], self.motor.data.root_quat_w[ids])
         motor_welded = ((f >= 0) & (f < ne)).any(dim=1)
-        la_welded = (f >= ne).any(dim=1)
+        snap_f = torch.tensor([self._fork_snap_on[int(i)] for i in ids.tolist()], device=dev)
+        la_welded = (f >= ne).any(dim=1) | snap_f
         exp_mp = torch.where(motor_welded.unsqueeze(-1), ap, mp)
         exp_mq = torch.where(motor_welded.unsqueeze(-1), aq, mq)
         fix = motor_welded & ((self.motor.data.root_pos_w[ids] - ap).norm(dim=-1) > c.weld_snap)
@@ -645,7 +740,10 @@ class SO101AssemblyScene(BaseScene):
              horn (at the elbow joint transform);
           3. DRIVER ON THE SCREW — bit tip within `bit_on_head` of that screw's head-top, bit
              axis within `bit_axis_deg` of the screw axis;
-          4. TRIGGER ON          — squeezed past 70% AND the bit actually spinning (> `spin_min`).
+          4. TRIGGER ON          — squeezed past 70% AND the bit actually spinning (>
+             `spin_min`). With `auto_trigger` (default) the scene itself squeezes the
+             trigger while conditions 1-3 hold — the driver is torque-activated, so
+             actuating the trigger is not part of the manipulation.
 
         While driving, the screw moves along its hole's axis TOWARD the seat at `drive_rate` —
         descending if engaged above it, drawn back up if it lies deep in the hole — spinning
@@ -705,6 +803,15 @@ class SO101AssemblyScene(BaseScene):
         on_head = (((tip.unsqueeze(1) - sp).norm(dim=-1) < c.bit_on_head)
                    & ((bit_dir.unsqueeze(1) * s_axis).sum(-1)
                       <= -math.cos(math.radians(c.bit_axis_deg))))
+        # the AUTO-DRIVER: squeeze the trigger while conditions 1-3 hold for any screw —
+        # the squeeze then swings the trigger and spins the bit, satisfying condition 4
+        # a few steps later; the trigger releases (spring return) when the screw
+        # finishes or leaves the window
+        if c.auto_trigger:
+            seated = in_hole & (~taken & on_head).unsqueeze(-1) & aligned_h.unsqueeze(1)
+            press = seated.any(dim=2).any(dim=1)
+            self.drill.set_joint_effort_target(
+                (press.float() * -c.trigger_press).unsqueeze(-1), joint_ids=[self.i_trig])
         # 4. trigger on; plus only a FREE screw can drive
         screw_ok = ~taken & on_head & (squeezed & spinning).unsqueeze(1)
         gate = in_hole & screw_ok.unsqueeze(-1) & aligned_h.unsqueeze(1)  # (n, ns, nh)
@@ -771,6 +878,52 @@ class SO101AssemblyScene(BaseScene):
         self.state[driving.any(dim=1)] = 1
         self.state[(self.fastened >= 0).all(dim=1)] = 2  # 2 = fully fastened
 
+        # --- the seat DETENT (snap-fit; see the cfg block) -------------------------------------------
+        if c.seat_detent:
+            f_now = self.fastened
+            screw_held = ((f_now >= 0) & (f_now < ne)).any(dim=1)
+            dpos = (self.motor.data.root_pos_w - ap).norm(dim=-1)
+            dori = quat_error_magnitude(self.motor.data.root_quat_w, aq)
+            tight = (dpos < c.detent_pos) & (dori < math.radians(c.detent_deg))
+            ins_w = quat_apply(aq, torch.tensor(
+                (0.0, 1.0, 0.0), device=aq.device).expand(aq.shape[0], 3))
+            d_out = -((self.motor.data.root_pos_w - ap) * ins_w).sum(dim=-1)  # + = exiting
+            for i in range(dpos.shape[0]):
+                if screw_held[i]:
+                    self._detent_on[i] = False  # promoted to a real fastening
+                    continue
+                if self._detent_on[i]:
+                    if d_out[i].item() > c.detent_break_strain:
+                        self._detent_strain_n[i] += 1
+                    else:
+                        self._detent_strain_n[i] = 0
+                    if (dpos[i].item() > c.detent_release
+                            or self._detent_strain_n[i] >= c.detent_break_steps):
+                        # a sustained pull (or a lost weld): the snap-fit releases
+                        self._set_part_weld(self._motor_weld_paths[i], False)
+                        self._detent_on[i] = False
+                        self._detent_strain_n[i] = 0
+                elif bool(tight[i]):
+                    self._set_part_weld(self._motor_weld_paths[i], True)
+                    self._detent_on[i] = True
+
+        # --- the fork SNAP (print-flex; see the cfg block) --------------------------------------
+        if c.fork_snap:
+            from isaaclab.utils.math import quat_apply_inverse
+
+            lp, lq = self.lower_arm_pose()
+            la_p, la_q = self.lower_arm_seat_w()
+            _, la_res = self._elbow_angle_split(lq, la_q)
+            rel_f = quat_apply_inverse(la_q, lp - la_p)  # seat frame; -X = slide-in dir
+            near_f = ((rel_f[:, 0] > -c.fork_snap_slide) & (rel_f[:, 0] < c.fork_snap_pos)
+                      & (rel_f[:, 1].abs() < c.fork_snap_pos)
+                      & (rel_f[:, 2].abs() < c.fork_snap_pos)
+                      & (la_res < math.radians(c.fork_snap_deg)))
+            for i in range(lp.shape[0]):
+                if not self._fork_snap_on[i] and bool(near_f[i]):
+                    self._set_part_weld(self._elbow_joint_paths[i], True)
+                    self._fork_snap_on[i] = True
+
     def _set_weld(self, env_i: int, screw: int, hole: int, on: bool) -> None:
         """Toggle screw `screw`'s weld; enabling authors its seat frame from `hole` (any screw
         can lock into any hole of its group; hole indices follow the flat order, elbow tabs then
@@ -795,7 +948,8 @@ class SO101AssemblyScene(BaseScene):
         self.fastened[env_i, screw] = hole if on else -1
         f = self.fastened[env_i]
         self._set_part_weld(self._motor_weld_paths[env_i], bool(((f >= 0) & (f < ne)).any()))
-        self._set_part_weld(self._elbow_joint_paths[env_i], bool((f >= ne).any()))
+        self._set_part_weld(self._elbow_joint_paths[env_i],
+                            bool((f >= ne).any()) or self._fork_snap_on[env_i])
 
     def _set_part_weld(self, path: str, on: bool) -> None:
         from pxr import UsdPhysics
@@ -844,6 +998,7 @@ class SO101AssemblyScene(BaseScene):
             "drill_joint_pos": self.drill.data.joint_pos[env_ids].clone(),
             "drill_joint_vel": self.drill.data.joint_vel[env_ids].clone(),
             "fastened": self.fastened[env_ids].clone(),
+            "fork_snap": torch.tensor([self._fork_snap_on[int(i)] for i in env_ids.tolist()]),
             "attached": self.attached[env_ids].clone(),
             "drive_t": self.drive_t[env_ids].clone(),
             "drive_time": self.drive_time[env_ids].clone(),
@@ -868,7 +1023,9 @@ class SO101AssemblyScene(BaseScene):
         self.drill.write_root_state_to_sim(state["drill_root"], env_ids)
         self.drill.write_joint_state_to_sim(
             state["drill_joint_pos"], state["drill_joint_vel"], env_ids=env_ids)
+        snap_st = state.get("fork_snap")
         for row, i in enumerate(env_ids.tolist()):
+            self._fork_snap_on[int(i)] = bool(snap_st[row]) if snap_st is not None else False
             for s in range(self.cfg.num_screws):
                 h = int(state["fastened"][row, s])
                 self._set_weld(int(i), s, max(h, 0), h >= 0)
@@ -885,7 +1042,7 @@ class SO101AssemblyScene(BaseScene):
     def describe(self) -> str:
         return (
             "The lower half of an SO101 robot arm (base + shoulder + upper arm), a bare elbow "
-            "servo, four identical loose M2x6 screws, one loose M3 horn screw, a compact power "
+            "servo, four identical loose M2x6 screws, eight loose M3 horn screws, a compact power "
             "screwdriver with a magnetic bit, and the not-yet-attached distal half "
             "(forearm..gripper) all rest free on a workbench. The upper arm has four M2 screw "
             "holes over the elbow servo's pocket (joint 3): a countersunk pair in the near "
@@ -895,6 +1052,8 @@ class SO101AssemblyScene(BaseScene):
             "reached through the skin's access channels; far: into the servo's case back). "
             "Goal: seat the servo into the pocket and drive the four M2 tab screws (any tab "
             "screw fits any tab hole), then clip the forearm onto the horn and drive the M3s "
-            "home (any M3 fits any horn-line hole). A driven screw locks in place; the servo "
-            "is fastened by the tab screws, the forearm by the horn screws."
+            "home (any M3 fits any horn-line hole). The screwdriver is torque-activated: it "
+            "runs by itself while a screw it carries is seated in a free hole. A driven screw "
+            "locks in place; the servo is fastened by the tab screws, the forearm by the horn "
+            "screws."
         )
