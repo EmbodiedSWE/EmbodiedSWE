@@ -18,7 +18,7 @@ repo. Before writing one, measure the four things a pick-and-place plan needs:
              the produce friction together.
 
 CONTROL MODE: `joint`. The G1 also registers `pink_ik`, but `pinocchio` is not installed in
-this venv, so that mode cannot build here — and no solution in the repo uses it. This probe
+this venv, so that mode cannot build here. This probe
 (like the repo's joint-mode solves) drives the arm with its OWN damped-least-squares IK over
 Isaac's `DifferentialIKController` on the PhysX Jacobian, and holds the waist and left arm at
 home.
@@ -296,7 +296,7 @@ def main() -> None:  # noqa: C901, PLR0915
         # span is the one that works), so resolve azimuth finely and log what the wrist actually
         # ACHIEVED: if the bad azimuths are orientations this arm cannot hold at this position,
         # the hand arrives rotated and the open fingers plough through the fruit — a kinematic
-        # story the solve must handle by choosing feasible azimuths, not narrower ones.
+        # story a controller must handle by choosing feasible azimuths, not narrower ones.
         # Azimuth resolution (2026-08-28) said it is NOT orientation error — rot_err was 7-11 deg
         # on successes AND failures — but exposed the real defect: pos_res 36-55 mm, i.e. the
         # wrist stalls 5 cm short of the commanded grip pose at EVERY azimuth. Geometry explains
