@@ -39,6 +39,9 @@ DRIVEN ELBOW JOINT (a revolute about the horn axis with the servo's drive — th
 articulates; command it via set_elbow_target). THE MAGNETIC BIT (same section): a free screw whose head
 touches the bit tip attaches and rides it, coaxial and spinning, until driven home — real M2
 driving carries the screw on a magnetized bit, and any embodiment holding the drill can use it.
+THE AUTO-DRIVER: the trigger is torque-activated — the scene squeezes it while a carried screw
+is seated in a free hole with everything aligned, so seating the screw is the task, not
+squeezing the trigger.
 Everything else is real collision against the parts' actual holes and walls.
 
 Heavy imports (isaaclab, pxr) are deferred so importing this module stays app-free.
@@ -113,6 +116,13 @@ class SO101SceneCfg(BaseCfg):
     bit_speed: float = 15.0  # bit spin speed while the trigger is squeezed (rad/s)
     trigger_swing: float = math.radians(14.0)  # trigger travel, rest -> full squeeze (rad)
     bit_tip: tuple[float, float, float] = (0.0, 0.055, 0.0)  # bit tip point, in the bit's own link frame
+    # the driver is TORQUE-ACTIVATED: the scene squeezes the trigger whenever a free,
+    # compatible screw sits in a hole's engagement window with the parts aligned and the
+    # bit on its head, and releases it when the screw finishes or leaves the window —
+    # actuating the trigger is not part of the manipulation; seating the bit-carried
+    # screw is (see _fasten_rule)
+    auto_trigger: bool = True
+    trigger_press: float = 0.30  # trigger squeeze effort while activated (N*m)
 
     # --- fastening welds — where each screw seats in the upper_arm (LINK frame) --------------
     # Per-joint convention: each joint's screw(s) carry its <joint>_ prefix; adding wrist_*/shoulder_*
@@ -730,7 +740,10 @@ class SO101AssemblyScene(BaseScene):
              horn (at the elbow joint transform);
           3. DRIVER ON THE SCREW — bit tip within `bit_on_head` of that screw's head-top, bit
              axis within `bit_axis_deg` of the screw axis;
-          4. TRIGGER ON          — squeezed past 70% AND the bit actually spinning (> `spin_min`).
+          4. TRIGGER ON          — squeezed past 70% AND the bit actually spinning (>
+             `spin_min`). With `auto_trigger` (default) the scene itself squeezes the
+             trigger while conditions 1-3 hold — the driver is torque-activated, so
+             actuating the trigger is not part of the manipulation.
 
         While driving, the screw moves along its hole's axis TOWARD the seat at `drive_rate` —
         descending if engaged above it, drawn back up if it lies deep in the hole — spinning
@@ -790,6 +803,15 @@ class SO101AssemblyScene(BaseScene):
         on_head = (((tip.unsqueeze(1) - sp).norm(dim=-1) < c.bit_on_head)
                    & ((bit_dir.unsqueeze(1) * s_axis).sum(-1)
                       <= -math.cos(math.radians(c.bit_axis_deg))))
+        # the AUTO-DRIVER: squeeze the trigger while conditions 1-3 hold for any screw —
+        # the squeeze then swings the trigger and spins the bit, satisfying condition 4
+        # a few steps later; the trigger releases (spring return) when the screw
+        # finishes or leaves the window
+        if c.auto_trigger:
+            seated = in_hole & (~taken & on_head).unsqueeze(-1) & aligned_h.unsqueeze(1)
+            press = seated.any(dim=2).any(dim=1)
+            self.drill.set_joint_effort_target(
+                (press.float() * -c.trigger_press).unsqueeze(-1), joint_ids=[self.i_trig])
         # 4. trigger on; plus only a FREE screw can drive
         screw_ok = ~taken & on_head & (squeezed & spinning).unsqueeze(1)
         gate = in_hole & screw_ok.unsqueeze(-1) & aligned_h.unsqueeze(1)  # (n, ns, nh)
@@ -1030,6 +1052,8 @@ class SO101AssemblyScene(BaseScene):
             "reached through the skin's access channels; far: into the servo's case back). "
             "Goal: seat the servo into the pocket and drive the four M2 tab screws (any tab "
             "screw fits any tab hole), then clip the forearm onto the horn and drive the M3s "
-            "home (any M3 fits any horn-line hole). A driven screw locks in place; the servo "
-            "is fastened by the tab screws, the forearm by the horn screws."
+            "home (any M3 fits any horn-line hole). The screwdriver is torque-activated: it "
+            "runs by itself while a screw it carries is seated in a free hole. A driven screw "
+            "locks in place; the servo is fastened by the tab screws, the forearm by the horn "
+            "screws."
         )
