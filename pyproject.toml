@@ -15,6 +15,7 @@ include = ["robobench*"]
 [tool.setuptools.package-data]
 "robobench.suites.folding" = ["assets/**/*.usd"]
 "robobench.suites.pouring" = ["assets/**/*.usd", "assets/**/*.png", "assets/**/*.json"]
+"robobench.suites.puzzle" = ["assets/**/*.usd", "assets/**/*.usda", "assets/**/*.usdc", "assets/**/*.png", "assets/**/*.jpg", "assets/**/*.json", "assets/**/*.md"]
 
 [tool.pyright]
 reportPrivateUsage = "none"

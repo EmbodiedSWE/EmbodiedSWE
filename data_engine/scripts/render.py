@@ -84,11 +84,27 @@ parser.add_argument("--crf", type=int, default=18,
                          "LeRobot's own storage default is more aggressive)")
 parser.add_argument("--max-frames", type=int, default=0, dest="max_frames",
                     help="cap frames per episode (0 = all) — smoke tests")
+parser.add_argument("--trim-margin", type=int, default=-1, dest="trim_margin",
+                    help="rows kept past each episode's meta.success_step (its earliest "
+                         "sustained-success step): trims the padded post-success tail wide "
+                         "batches append to finished envs. -1 (default) = no trimming; "
+                         "episodes without success_step always render in full")
 parser.add_argument("--visual_draw", type=int, default=None,
                     help="sample the scene's own VISUAL_PARAMS bands at this index and apply the "
                          "look stage-wide for the whole pass (omit = the nominal look); K looks of "
                          "the same episodes = K runs, kept apart with distinct --cam names")
 parser.add_argument("--visual", default="", help="visual-diversify hook: py file with setup(env) / per_frame(env, t)")
+parser.add_argument("--view-suffix", default="", dest="view_suffix",
+                    help="append to every resolved view name (a DRAW pass re-renders the "
+                         "declared cameras under e.g. _draw1 without touching the nominal "
+                         "videos; the bake selects it with --cams <view>_draw1)")
+parser.add_argument("--pose-jitter", type=float, nargs=6, default=None, dest="pose_jitter",
+                    metavar=("EX", "EY", "EZ", "TX", "TY", "TZ"),
+                    help="± uniform box (m) added as per-episode bands around every "
+                         "external view's declared eye/target (scene-declared bands win)")
+parser.add_argument("--pose-jitter-seed", type=int, default=0, dest="pose_jitter_seed",
+                    help="offset into the band-draw index space: different passes get "
+                         "different (deterministic) pose draws")
 parser.add_argument("--_scene", default="", help=argparse.SUPPRESS)  # internal: single-scene worker
 
 from isaaclab.app import AppLauncher  # noqa: E402
@@ -101,7 +117,9 @@ if (args.eye is None) != (args.target is None):
 adhoc = ({"name": args.cam, "eye": tuple(args.eye), "target": tuple(args.target),
           "focal": args.focal} if args.eye else None)
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+DATA_ENGINE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(DATA_ENGINE_ROOT.parent))
+sys.path.insert(0, str(DATA_ENGINE_ROOT))
 from engine.replay import batch_scene, collect_episodes, group_by_scene  # noqa: E402
 
 gen_root = Path(args.gen_root)
@@ -122,7 +140,13 @@ if len(groups) > 1:
                 "--size", *map(str, args.size),
                 "--env-spacing", str(args.env_spacing),
                 "--warmup", str(args.warmup),
-                "--crf", str(args.crf), "--max-frames", str(args.max_frames)]
+                "--crf", str(args.crf), "--max-frames", str(args.max_frames),
+                "--trim-margin", str(args.trim_margin),
+                "--pose-jitter-seed", str(args.pose_jitter_seed)]
+        if args.view_suffix:
+            cmd += ["--view-suffix", args.view_suffix]
+        if args.pose_jitter:
+            cmd += ["--pose-jitter", *map(str, args.pose_jitter)]
         if args.fps is not None:
             cmd += ["--fps", str(args.fps)]
         if args.cams is not None:
@@ -151,14 +175,28 @@ import torch  # noqa: E402
 from engine.replay import contact_sheet, replay_scene  # noqa: E402
 
 (scene, group), = groups.items()
-rendered, view_names = replay_scene(
-    gen_root, scene, group,
-    num_envs=args.num_envs, fps=args.fps, size=tuple(args.size),
-    cams=args.cams, adhoc=adhoc,
-    warmup=args.warmup, crf=args.crf, max_frames=args.max_frames,
-    visual=args.visual or None, visual_draw=args.visual_draw, env_spacing=args.env_spacing,
-    device="cuda:0" if torch.cuda.is_available() else "cpu",
-)
+try:
+    rendered, view_names = replay_scene(
+        gen_root, scene, group,
+        num_envs=args.num_envs, fps=args.fps, size=tuple(args.size),
+        cams=args.cams, adhoc=adhoc,
+        warmup=args.warmup, crf=args.crf, max_frames=args.max_frames,
+        trim_margin=args.trim_margin,
+        visual=args.visual or None, visual_draw=args.visual_draw, env_spacing=args.env_spacing,
+        view_suffix=args.view_suffix,
+        pose_jitter=tuple(args.pose_jitter) if args.pose_jitter else None,
+        band_seed=args.pose_jitter_seed,
+        device="cuda:0" if torch.cuda.is_available() else "cpu",
+    )
+except BaseException:
+    # A raised replay must EXIT, not hang: with cameras enabled, Kit teardown
+    # after an exception regularly wedges the process — a missing video backend
+    # once turned a seconds-long ImportError into a 3-hour stage timeout, per
+    # render invocation, pipeline-wide.
+    import traceback
+    traceback.print_exc()
+    sys.stdout.flush(), sys.stderr.flush()
+    os._exit(1)
 if not args.no_sheet:
     for batch_dir in sorted({ep.parent for ep in rendered}):
         for view in view_names:
