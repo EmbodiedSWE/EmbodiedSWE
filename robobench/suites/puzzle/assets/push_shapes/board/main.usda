@@ -1,0 +1,426 @@
+#usda 1.0
+(
+    defaultPrim = "Board"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+# Recessed work board: 6 mm plate the pieces slide on, with piece-shaped cutouts (clearance 4 mm/side) sunk at the three stations; an aligned block DROPS into its recess, which the scene grades. Exact slab decomposition of board-minus-cutouts.
+def Xform "Board" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+)
+{
+    def Scope "Looks"
+    {
+        def Material "BoardMat"
+        {
+            token outputs:surface.connect = </Board/Looks/BoardMat/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.600, 0.610, 0.630)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.70
+                float inputs:specular = 0.5
+                token outputs:surface
+            }
+        }
+    }
+    def Mesh "part_0" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.185000, -0.385000, -0.003000), (-0.104500, -0.385000, -0.003000), (-0.104500, -0.095000, -0.003000), (-0.185000, -0.095000, -0.003000), (-0.185000, -0.385000, 0.003000), (-0.104500, -0.385000, 0.003000), (-0.104500, -0.095000, 0.003000), (-0.185000, -0.095000, 0.003000)]
+        float3[] extent = [(-0.185000, -0.385000, -0.003000), (-0.104500, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_1" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.104500, -0.385000, -0.003000), (-0.081500, -0.385000, -0.003000), (-0.081500, -0.255000, -0.003000), (-0.104500, -0.255000, -0.003000), (-0.104500, -0.385000, 0.003000), (-0.081500, -0.385000, 0.003000), (-0.081500, -0.255000, 0.003000), (-0.104500, -0.255000, 0.003000)]
+        float3[] extent = [(-0.104500, -0.385000, -0.003000), (-0.081500, -0.255000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_2" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.104500, -0.224000, -0.003000), (-0.081500, -0.224000, -0.003000), (-0.081500, -0.095000, -0.003000), (-0.104500, -0.095000, -0.003000), (-0.104500, -0.224000, 0.003000), (-0.081500, -0.224000, 0.003000), (-0.081500, -0.095000, 0.003000), (-0.104500, -0.095000, 0.003000)]
+        float3[] extent = [(-0.104500, -0.224000, -0.003000), (-0.081500, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_3" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.081500, -0.385000, -0.003000), (-0.050500, -0.385000, -0.003000), (-0.050500, -0.255000, -0.003000), (-0.081500, -0.255000, -0.003000), (-0.081500, -0.385000, 0.003000), (-0.050500, -0.385000, 0.003000), (-0.050500, -0.255000, 0.003000), (-0.081500, -0.255000, 0.003000)]
+        float3[] extent = [(-0.081500, -0.385000, -0.003000), (-0.050500, -0.255000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_4" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.081500, -0.155000, -0.003000), (-0.050500, -0.155000, -0.003000), (-0.050500, -0.095000, -0.003000), (-0.081500, -0.095000, -0.003000), (-0.081500, -0.155000, 0.003000), (-0.050500, -0.155000, 0.003000), (-0.050500, -0.095000, 0.003000), (-0.081500, -0.095000, 0.003000)]
+        float3[] extent = [(-0.081500, -0.155000, -0.003000), (-0.050500, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_5" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.050500, -0.385000, -0.003000), (-0.027500, -0.385000, -0.003000), (-0.027500, -0.255000, -0.003000), (-0.050500, -0.255000, -0.003000), (-0.050500, -0.385000, 0.003000), (-0.027500, -0.385000, 0.003000), (-0.027500, -0.255000, 0.003000), (-0.050500, -0.255000, 0.003000)]
+        float3[] extent = [(-0.050500, -0.385000, -0.003000), (-0.027500, -0.255000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_6" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.050500, -0.224000, -0.003000), (-0.027500, -0.224000, -0.003000), (-0.027500, -0.095000, -0.003000), (-0.050500, -0.095000, -0.003000), (-0.050500, -0.224000, 0.003000), (-0.027500, -0.224000, 0.003000), (-0.027500, -0.095000, 0.003000), (-0.050500, -0.095000, 0.003000)]
+        float3[] extent = [(-0.050500, -0.224000, -0.003000), (-0.027500, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_7" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.027500, -0.385000, -0.003000), (-0.027400, -0.385000, -0.003000), (-0.027400, -0.095000, -0.003000), (-0.027500, -0.095000, -0.003000), (-0.027500, -0.385000, 0.003000), (-0.027400, -0.385000, 0.003000), (-0.027400, -0.095000, 0.003000), (-0.027500, -0.095000, 0.003000)]
+        float3[] extent = [(-0.027500, -0.385000, -0.003000), (-0.027400, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_8" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.027400, -0.385000, -0.003000), (-0.000375, -0.385000, -0.003000), (-0.000375, -0.180375, -0.003000), (-0.027400, -0.180375, -0.003000), (-0.027400, -0.385000, 0.003000), (-0.000375, -0.385000, 0.003000), (-0.000375, -0.180375, 0.003000), (-0.027400, -0.180375, 0.003000)]
+        float3[] extent = [(-0.027400, -0.385000, -0.003000), (-0.000375, -0.180375, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_9" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.027400, -0.143625, -0.003000), (-0.000375, -0.143625, -0.003000), (-0.000375, -0.095000, -0.003000), (-0.027400, -0.095000, -0.003000), (-0.027400, -0.143625, 0.003000), (-0.000375, -0.143625, 0.003000), (-0.000375, -0.095000, 0.003000), (-0.027400, -0.095000, 0.003000)]
+        float3[] extent = [(-0.027400, -0.143625, -0.003000), (-0.000375, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_10" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.000375, -0.385000, -0.003000), (0.036375, -0.385000, -0.003000), (0.036375, -0.207400, -0.003000), (-0.000375, -0.207400, -0.003000), (-0.000375, -0.385000, 0.003000), (0.036375, -0.385000, 0.003000), (0.036375, -0.207400, 0.003000), (-0.000375, -0.207400, 0.003000)]
+        float3[] extent = [(-0.000375, -0.385000, -0.003000), (0.036375, -0.207400, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_11" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.000375, -0.116600, -0.003000), (0.036375, -0.116600, -0.003000), (0.036375, -0.095000, -0.003000), (-0.000375, -0.095000, -0.003000), (-0.000375, -0.116600, 0.003000), (0.036375, -0.116600, 0.003000), (0.036375, -0.095000, 0.003000), (-0.000375, -0.095000, 0.003000)]
+        float3[] extent = [(-0.000375, -0.116600, -0.003000), (0.036375, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_12" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.036375, -0.385000, -0.003000), (0.063400, -0.385000, -0.003000), (0.063400, -0.180375, -0.003000), (0.036375, -0.180375, -0.003000), (0.036375, -0.385000, 0.003000), (0.063400, -0.385000, 0.003000), (0.063400, -0.180375, 0.003000), (0.036375, -0.180375, 0.003000)]
+        float3[] extent = [(0.036375, -0.385000, -0.003000), (0.063400, -0.180375, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_13" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.036375, -0.143625, -0.003000), (0.063400, -0.143625, -0.003000), (0.063400, -0.095000, -0.003000), (0.036375, -0.095000, -0.003000), (0.036375, -0.143625, 0.003000), (0.063400, -0.143625, 0.003000), (0.063400, -0.095000, 0.003000), (0.036375, -0.095000, 0.003000)]
+        float3[] extent = [(0.036375, -0.143625, -0.003000), (0.063400, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_14" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.063400, -0.385000, -0.003000), (0.066825, -0.385000, -0.003000), (0.066825, -0.095000, -0.003000), (0.063400, -0.095000, -0.003000), (0.063400, -0.385000, 0.003000), (0.066825, -0.385000, 0.003000), (0.066825, -0.095000, 0.003000), (0.063400, -0.095000, 0.003000)]
+        float3[] extent = [(0.063400, -0.385000, -0.003000), (0.066825, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_15" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.066825, -0.385000, -0.003000), (0.126625, -0.385000, -0.003000), (0.126625, -0.233400, -0.003000), (0.066825, -0.233400, -0.003000), (0.066825, -0.385000, 0.003000), (0.126625, -0.385000, 0.003000), (0.126625, -0.233400, 0.003000), (0.066825, -0.233400, 0.003000)]
+        float3[] extent = [(0.066825, -0.385000, -0.003000), (0.126625, -0.233400, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_16" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.066825, -0.196650, -0.003000), (0.126625, -0.196650, -0.003000), (0.126625, -0.095000, -0.003000), (0.066825, -0.095000, -0.003000), (0.066825, -0.196650, 0.003000), (0.126625, -0.196650, 0.003000), (0.126625, -0.095000, 0.003000), (0.066825, -0.095000, 0.003000)]
+        float3[] extent = [(0.066825, -0.196650, -0.003000), (0.126625, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_17" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.126625, -0.385000, -0.003000), (0.134625, -0.385000, -0.003000), (0.134625, -0.233400, -0.003000), (0.126625, -0.233400, -0.003000), (0.126625, -0.385000, 0.003000), (0.134625, -0.385000, 0.003000), (0.134625, -0.233400, 0.003000), (0.126625, -0.233400, 0.003000)]
+        float3[] extent = [(0.126625, -0.385000, -0.003000), (0.134625, -0.233400, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_18" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.126625, -0.140300, -0.003000), (0.134625, -0.140300, -0.003000), (0.134625, -0.095000, -0.003000), (0.126625, -0.095000, -0.003000), (0.126625, -0.140300, 0.003000), (0.134625, -0.140300, 0.003000), (0.134625, -0.095000, 0.003000), (0.126625, -0.095000, 0.003000)]
+        float3[] extent = [(0.126625, -0.140300, -0.003000), (0.134625, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_19" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.134625, -0.385000, -0.003000), (0.163375, -0.385000, -0.003000), (0.163375, -0.233400, -0.003000), (0.134625, -0.233400, -0.003000), (0.134625, -0.385000, 0.003000), (0.163375, -0.385000, 0.003000), (0.163375, -0.233400, 0.003000), (0.134625, -0.233400, 0.003000)]
+        float3[] extent = [(0.134625, -0.385000, -0.003000), (0.163375, -0.233400, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_20" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.134625, -0.140300, -0.003000), (0.163375, -0.140300, -0.003000), (0.163375, -0.095000, -0.003000), (0.134625, -0.095000, -0.003000), (0.134625, -0.140300, 0.003000), (0.163375, -0.140300, 0.003000), (0.163375, -0.095000, 0.003000), (0.134625, -0.095000, 0.003000)]
+        float3[] extent = [(0.134625, -0.140300, -0.003000), (0.163375, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_21" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(0.163375, -0.385000, -0.003000), (0.235000, -0.385000, -0.003000), (0.235000, -0.095000, -0.003000), (0.163375, -0.095000, -0.003000), (0.163375, -0.385000, 0.003000), (0.235000, -0.385000, 0.003000), (0.235000, -0.095000, 0.003000), (0.163375, -0.095000, 0.003000)]
+        float3[] extent = [(0.163375, -0.385000, -0.003000), (0.235000, -0.095000, 0.003000)]
+        color3f[] primvars:displayColor = [(0.600, 0.610, 0.630)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </Board/Looks/BoardMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+}
