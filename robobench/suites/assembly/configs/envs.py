@@ -445,8 +445,8 @@ for _name, _cfg_cls, _kw in _PC_RAM_PCGPU_ARMS:
             ),
         )
 
-# Franka arm at the allen-bolt scene (base at the origin). Placement follows the solve-verified
-# reach lessons of the sibling franka envs: the platform is pulled from the table preset's 0.50 m
+# Franka arm at the allen-bolt scene (base at the origin). Placement follows the reach limits the
+# sibling franka envs are laid out around: the platform is pulled from the table preset's 0.50 m
 # to 0.42 m (`platform_slots`) — the screwing happens under a TOP-DOWN hand, and beyond ~0.45 m
 # the gravity-uncompensated arm saturates several mm short (pc_gpu note), more than the socket's
 # 0.75 mm/side clearance; the loose key leaves the stock "+x row" (0.76 m, out of reach) for the
@@ -857,13 +857,12 @@ for _robot in ("rizon4_panda", "gen3n7_panda", "festo_panda"):
 
 # Two Frankas at the SO101 workbench as ONE robot (`BimanualFranka`: action = [left | right];
 # address one arm via `env.robot["left"]`). Bases stand on the bench top (z = 0.994, the default
-# packing table), 0.94 m apart — each arm works best 0.3-0.55 m from its own base, so the shared
-# zone sits around (0.4, 0).
-# Reach-verified (reach probes): in-zone tracking
-# <= 0.6 mm, both arms simultaneously at the shared zone OK. Known gotcha: the default home pose
-# parks each hand over the other arm's zone — tuck the idle arm.
-# TO VERIFY: arm-arm collision limits when one arm stretches cross-body (> 0.55 m); per-task base
-# retuning for hold+insert style work.
+# packing table), 0.80 m apart, the layout the full-arm assembly was solved at: the left arm at
+# the bench origin facing +x covers the screw band, the drill zone and the drive rests; the
+# right arm at (0.75, -0.28) yaw 135 covers the workpiece drags, the fixture holds and the
+# distal delivery corner. Each arm works best 0.3-0.55 m from its own base; the shared zone
+# sits around (0.4, -0.1). Known gotcha: the default home pose can park a hand over the other
+# arm's zone — tuck the idle arm.
 # -> "assembly.so101.bimanual_franka.{osc,impedance,joint}" (mode applies to both arms)
 for _mode in ("osc", "impedance", "joint"):
     register_env(
@@ -874,10 +873,16 @@ for _mode in ("osc", "impedance", "joint"):
                 robot="bimanual_franka",
                 control_mode=mode,
                 robot_cfg=BimanualFrankaCfg(robots={
-                    "left": ("franka", FrankaRobotCfg(  # yaw -50 deg, faces the proximal/motor zone
-                        base_pos=(0.0, 0.28, 0.994), base_rot=(0.90631, 0.0, 0.0, -0.42262))),
-                    "right": ("franka", FrankaRobotCfg(  # yaw +135 deg, faces the drill/fixture zone
-                        base_pos=(0.75, -0.28, 0.994), base_rot=(0.38268, 0.0, 0.0, 0.92388))),
+                    "left": ("franka", FrankaRobotCfg(  # yaw 0, faces the work zone from the origin
+                        base_pos=(0.0, 0.0, 0.994), base_rot=(1.0, 0.0, 0.0, 0.0),
+                        nullspace_dof_pos=())),  # nullspace pulls toward the home pose
+                    "right": ("franka", FrankaRobotCfg(  # yaw +135 deg, faces the drag/fixture zone
+                        base_pos=(0.75, -0.28, 0.994), base_rot=(0.38268, 0.0, 0.0, 0.92388),
+                        # home = the stock pose with q1 swung -1.0 rad: the hand spawns parked
+                        # south of the bench center instead of looming over the shared work zone
+                        default_dof_pos=(-1.0, -0.197, -0.0014, -1.976, -0.00028, 1.78, 0.786),
+                        nullspace_dof_pos=(0.0015, -0.197, -0.0014, -1.976, -0.00028, 1.78,
+                                           0.786))),
                 }),
                 env_spacing=3,
             )
@@ -1221,3 +1226,29 @@ for _mode in ("osc", "joint"):
         ),
     )
 
+
+
+# ---- Steering-wheel pick-and-place (a wheel off the table into the basket beside it) -------------
+# Scene physics only (NullRobot: the wheel on the table, the basket beside it). -> "assembly.wheel_pick_place"
+register_env(SUITE, lambda: EnvCfg(scene="wheel_pick_place", robot="null", env_spacing=2.5))
+
+# Fixed-base G1 at the packing table, both control modes. No placement override: `G1RobotCfg`'s own
+# default pelvis pose (0, 0, 0.75) facing +y already suits this table, whose 0.694 m top was authored
+# around a robot of that height (unlike the ikea_table bindings, which have to lower the bench and
+# stand the robot back from it). `env_spacing` = 2.5 just clears the 2.47 m table.
+#   - "assembly.wheel_pick_place.g1.pink_ik" — arm+waist by whole-body Pink IK (action = two wrist
+#     poses + 14 hand joints = 28)
+#   - "assembly.wheel_pick_place.g1.joint"   — the same hardware by direct joint targets (31)
+for _mode in ("pink_ik", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="wheel_pick_place",
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(),
+                env_spacing=2.5,
+            )
+        ),
+    )
