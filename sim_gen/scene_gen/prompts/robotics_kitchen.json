@@ -1,0 +1,5 @@
+{
+  "prompt": "Interior of a large, clean, modern robotics research kitchen with a completely open, unobstructed center floor. Dark navy built-in cabinets, warm wooden countertops, white tiled walls, light gray tiled floor, stainless-steel ovens, refrigerator, range hood and sink, open shelves, red-brick structural columns, large black-framed windows with daylight, recessed ceiling lights, straight walls and vertical lines, physically based materials, realistic soft daylight, high-quality, high-resolution, sharp, photorealistic, 8k",
+  "negative_prompt": "robots, people, tables, kitchen islands, chairs, movable objects, food, dishes, cookware, tools, plants, clutter, text, labels, logos, floating geometry, duplicated fixtures, warped cabinets, blurry textures, dramatic shadows, depth-of-field blur, low-quality, low-resolution, noise",
+  "_description": "A clean, empty robotics-kitchen background containing only static architectural assets, intended as a base scene onto which robots, workstations, and benchmark-task objects can later be placed."
+}
