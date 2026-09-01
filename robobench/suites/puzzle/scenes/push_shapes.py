@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -44,15 +44,15 @@ class PushShapesSceneCfg(BaseCfg):
     """Rubric, layout, and measured asset constants for :class:`PushShapesScene`."""
 
     # Per-piece success gate, inherited verbatim from the push_t port.
-    xy_tolerance: float = tunable(0.007)
-    orientation_tolerance_deg: float = tunable(7.0)
-    lift_tolerance: float = tunable(0.010)
+    xy_tolerance: float = 0.007
+    orientation_tolerance_deg: float = 7.0
+    lift_tolerance: float = 0.010
 
     # Settling and the graded bands used for per-piece partial credit.
-    settle_linear_speed: float = tunable(0.03)
-    settle_angular_speed: float = tunable(0.20)
-    near_xy_tolerance: float = tunable(0.030)
-    yaw_stage_tolerance_deg: float = tunable(10.0)
+    settle_linear_speed: float = 0.03
+    settle_angular_speed: float = 0.20
+    near_xy_tolerance: float = 0.030
+    yaw_stage_tolerance_deg: float = 10.0
 
     # Layout. Blocks sit nearer the robot than their stations so every piece is pushed away
     # from the body (+y), the stroke the G1's bench-contact workspace actually affords.
@@ -60,7 +60,7 @@ class PushShapesSceneCfg(BaseCfg):
     # Display scale for the whole piece set (blocks AND pads, so silhouettes keep matching).
     # 1.15 reads clearly larger on camera while the recompacted X/L footprints still clear
     # their neighbours at reachable spacings.
-    piece_scale: float = tunable(1.15)
+    piece_scale: float = 1.15
     # Station centres (pad poses), one per piece in PIECES order. MUST mirror STATIONS in
     # scripts/author_push_shapes_assets.py: the recessed board is authored with its cutouts
     # at exactly these poses, and that script also VALIDATES the layout (cutout separation,
@@ -69,19 +69,19 @@ class PushShapesSceneCfg(BaseCfg):
     # finished by the two-hand relay -- and depth is bound by RUNWAY: a piece must spawn
     # clear of its own cutout, so each lane needs a push of at least a piece depth plus
     # margins inside a workspace only ~150 mm deep.
-    pad_stations: tuple[tuple[float, float], ...] = tunable(
-        ((-0.066, -0.205), (0.018, -0.162), (0.122, -0.188))
+    pad_stations: tuple[tuple[float, float], ...] = (
+        (-0.066, -0.205), (0.018, -0.162), (0.122, -0.188),
     )
     # Blocks spawn this far behind their station, straight down-lane (+y push). Per piece:
     # the T's and L's runways are trimmed to keep spawns inside the arms' proven contact
     # range (their stations sit in the workspace's deep corners).
-    push_lengths: tuple[float, float, float] = tunable((0.112, 0.118, 0.110))
+    push_lengths: tuple[float, float, float] = (0.112, 0.118, 0.110)
     # The raised plate the pieces slide on. An aligned piece DROPS into its cutout; that
     # drop is what seated() grades. Must match the authored board asset's thickness.
-    board_thickness: float = info(0.006)
+    board_thickness: float = 0.006
     # Yaw the pads share; each BLOCK additionally starts off by yaw_offset_deg so correcting
     # orientation is part of the task rather than a disturbance budget.
-    base_yaw_deg: float = tunable(90.0)
+    base_yaw_deg: float = 90.0
     # The reorientation the task demands. 18 degrees proved to sit past what a single-contact
     # push can correct while also translating ~8 cm: the steering has authority to hold a
     # small error but the push induces yaw faster than it can shed a large one. 10 degrees
@@ -91,26 +91,26 @@ class PushShapesSceneCfg(BaseCfg):
     # (10) or a yaw stage can latch at reset (caught by the smoke as a nonzero reset score
     # when 10 +/- 4 could jitter down to 6.7), and the best case (18) stays inside the range
     # the reference policy demonstrably corrects (it recovered 20-degree starts).
-    yaw_offset_deg: float = tunable(15.0)
+    yaw_offset_deg: float = 15.0
     # 3 mm, matching SPAWN_JITTER in the authoring script's layout validation: spawn
     # footprints are proven clear of every cutout only up to this jitter.
-    reset_pos_jitter: float = tunable(0.003)
-    reset_yaw_jitter_deg: float = tunable(3.0)
+    reset_pos_jitter: float = 0.003
+    reset_yaw_jitter_deg: float = 3.0
 
     # Measured from the authored/vendored USD extents (scripts/author_push_shapes_assets.py,
     # and the RoboDojo T at 80x60x15 mm).
-    block_half_height: float = info(0.0075)
-    block_mass: float = info(0.35)
-    block_reset_clearance: float = info(0.0015)
-    pad_lift: float = info(0.0008)
-    surface_z: float = info(0.7)
-    table_depth_scale: float = info(1.5)
-    workbench_pos: tuple[float, float] = info((0.0, 0.0))
-    asset_dir: str = info("")
+    block_half_height: float = 0.0075
+    block_mass: float = 0.35
+    block_reset_clearance: float = 0.0015
+    pad_lift: float = 0.0008
+    surface_z: float = 0.7
+    table_depth_scale: float = 1.5
+    workbench_pos: tuple[float, float] = (0.0, 0.0)
+    asset_dir: str = ""
     block_usd: dict[str, str] = field(default_factory=dict)
     pad_usd: dict[str, str] = field(default_factory=dict)
-    board_usd: str = info("")
-    workbench_usd: str = info("")
+    board_usd: str = ""
+    workbench_usd: str = ""
 
     def __post_init__(self) -> None:
         suite_assets = Path(__file__).resolve().parents[1] / "assets"

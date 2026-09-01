@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -33,38 +33,38 @@ class PushTSceneCfg(BaseCfg):
     """Rubric, layout, and measured source-asset constants for :class:`PushTScene`."""
 
     # Source rubric, verbatim.
-    xy_tolerance: float = tunable(0.007)
-    orientation_tolerance_deg: float = tunable(7.0)
-    lift_tolerance: float = tunable(0.010)
+    xy_tolerance: float = 0.007
+    orientation_tolerance_deg: float = 7.0
+    lift_tolerance: float = 0.010
 
     # Settling and graded progress.
-    settle_linear_speed: float = tunable(0.03)
-    settle_angular_speed: float = tunable(0.20)
-    near_xy_tolerance: float = tunable(0.025)
-    close_xy_tolerance: float = tunable(0.015)
+    settle_linear_speed: float = 0.03
+    settle_angular_speed: float = 0.20
+    near_xy_tolerance: float = 0.025
+    close_xy_tolerance: float = 0.015
 
     # Simple G1-native 3 cm push. Both poses are rotated/translated together on reset.
     # The short stroke keeps the full interaction inside G1's stable table-contact
     # workspace; the pair sits toward the front edge so the G1 can remain clear of
     # the table chassis. Task difficulty comes from strict alignment, not arm reach.
-    block_pos: tuple[float, float] = tunable((0.0, -0.20))
-    target_pos: tuple[float, float] = tunable((0.0, -0.17))
-    reset_pos_jitter: float = tunable(0.006)
-    base_yaw_deg: float = tunable(90.0)  # broad T bar faces the robot for a stable +y push
-    reset_yaw_jitter_deg: float = tunable(5.0)
+    block_pos: tuple[float, float] = (0.0, -0.20)
+    target_pos: tuple[float, float] = (0.0, -0.17)
+    reset_pos_jitter: float = 0.006
+    base_yaw_deg: float = 90.0  # broad T bar faces the robot for a stable +y push
+    reset_yaw_jitter_deg: float = 5.0
 
     # Measured from the official metadata / USD extents.
-    block_half_height: float = info(0.0075)
-    block_mass: float = info(0.35)
-    block_reset_clearance: float = info(0.0015)
-    target_lift: float = info(0.0008)
-    surface_z: float = info(0.7)
-    table_depth_scale: float = info(1.5)
-    workbench_pos: tuple[float, float] = info((0.0, 0.0))
-    asset_dir: str = info("")
-    block_usd: str = info("")
-    target_usd: str = info("")
-    workbench_usd: str = info("")
+    block_half_height: float = 0.0075
+    block_mass: float = 0.35
+    block_reset_clearance: float = 0.0015
+    target_lift: float = 0.0008
+    surface_z: float = 0.7
+    table_depth_scale: float = 1.5
+    workbench_pos: tuple[float, float] = (0.0, 0.0)
+    asset_dir: str = ""
+    block_usd: str = ""
+    target_usd: str = ""
+    workbench_usd: str = ""
 
     def __post_init__(self) -> None:
         suite_assets = Path(__file__).resolve().parents[1] / "assets"
