@@ -1,0 +1,6 @@
+{
+  "prompt": "large, clean, modern robotics research kitchen, completely open unobstructed center floor, dark navy built-in cabinets, warm wooden countertops, white tiled walls, light gray tiled floor, stainless-steel appliances, red-brick structural columns, large black-framed windows with daylight, straight walls, realistic soft daylight",
+  "negative_prompt": "robots, people, tables, kitchen islands, chairs, movable objects, food, dishes, cookware, tools, plants, clutter, text, labels, logos, floating geometry, duplicated fixtures, warped cabinets, dramatic shadows, depth-of-field blur",
+  "image": "clean_kitchen_background_preview.png",
+  "_description": "Image-reference variant: outpaints the preview render into the full 360 panorama (FLUX.1-Fill-dev + PanoDiT-Image)."
+}
