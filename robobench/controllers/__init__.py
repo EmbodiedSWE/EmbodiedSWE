@@ -10,13 +10,15 @@ Roster (built incrementally — see CLAUDE.md):
   composite (DOF-group split) · policy (frozen checkpoint) · residual (learned correction)  # wrappers
 
 Built so far: `joint` (pass-through), `composite` (DOF-group split), the task-space torque pair
-(`osc` / `task_impedance`), and both IK solvers — `pink_ik` (per-env multi-task QP, humanoids) and
-`diff_ik` (batched single-chain DLS, arms).
+(`osc` / `task_impedance`), both IK solvers — `pink_ik` (per-env multi-task QP, humanoids) and
+`diff_ik` (batched single-chain DLS, arms) — and `loco_policy` (a frozen locomotion checkpoint
+driven by a base-velocity command; the legs leaf of loco-manipulation).
 """
 
 from .composite import CompositeController
 from .diff_ik import DiffIKController, DiffIKControllerCfg
 from .joint import JointController, JointControllerCfg
+from .loco_policy import LocoPolicyController, LocoPolicyControllerCfg
 from .pink_ik import FrameTaskCfg, PinkIKController, PinkIKControllerCfg
 from .task_space import (
     OperationalSpaceController,
@@ -36,4 +38,6 @@ __all__ = [
     "PinkIKController",
     "PinkIKControllerCfg",
     "FrameTaskCfg",
+    "LocoPolicyController",
+    "LocoPolicyControllerCfg",
 ]
