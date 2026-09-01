@@ -91,10 +91,15 @@ class FruitsOnPlateSceneCfg(BaseCfg):
     # resting in the dish, and will roll off. 0.88 -> a 133 mm counted radius on the unscaled
     # 151 mm plate, which still counts a fruit resting against the inside of the rim (its
     # centre is ~rim_radius - fruit_radius).
-    floor_local_z: float = 0.015  # min local z above the plate's base to count as "on" (m). The
-    # dish floor sits 11.5 mm above the base at the centre and rises to the 47 mm rim, so a
-    # fruit resting in the dish clears this comfortably while the radial test does the real
-    # work — as in RoboLab, where the footprint term is the discriminating one.
+    floor_local_z: float = 0.005  # min local z above the plate's base to count as "on" (m).
+    # The produce assets carry their ORIGIN AT THE BASE (every item rests with its origin at
+    # exactly surface_z), and the dish floor sits 11.5 mm above the plate base at the centre,
+    # rising to the 47 mm rim. So a fruit resting dead-centre in the dish has local z 0.011 —
+    # the earlier 0.015 (written as if the origin were at the fruit's centre) judged a lemon
+    # sitting in the middle of the plate as NOT on it (measured: radial 0, |v| 0.003,
+    # on_plate False), and only off-centre placements counted. 5 mm still excludes anything
+    # under or beside the plate (local z <= 0); the radial test does the real work — as in
+    # RoboLab, where the footprint term is the discriminating one.
     stack_local_z: float = 0.10  # extra local z above the rim an item may pile to and still
     # count (a fruit resting ON other fruit inside the dish, its centre over the footprint).
     # The full seven-fruit set does not fit the dish in one layer, so piling is expected.
