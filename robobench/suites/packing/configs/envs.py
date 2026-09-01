@@ -441,9 +441,18 @@ def _fruits_on_plate_g1_cfg() -> FruitsOnPlateSceneCfg:
     azimuth of twelve, lemon_02 at 40 mm is below the hand's ~50 mm minimum, and the oranges and
     pomegranate are near-spherical at 63-64 mm).
     """
+    # CELL SHIFT (robot clear of the bench). The original cell welded the pelvis at y=-0.50,
+    # which is 71 mm INSIDE the bench footprint (measured slab: y +/-0.571): the tabletop
+    # passed through the robot's waist. The pelvis now stands at y=-0.70 -- torso clear of
+    # the bench edge like a person at a counter -- and every workpiece moved by the SAME
+    # shoulder-relative offsets, so all the measured reach constants below still hold:
+    # fruit spot stays 0.28 m from the shoulder, and the dish centre swings slightly
+    # around the shoulder (0.346 m vs 0.326) so the plate stays fully ON the bench
+    # (its rim now stops 11 mm short of the edge) while the fruit keeps 127 mm of clear
+    # table outside the rim (>= the 120 mm descent band the sibling tier measured).
     return FruitsOnPlateSceneCfg(
         surface_z=0.78,
-        plate_pos=(0.32, -0.26),
+        plate_pos=(0.28, -0.405),
         plate_scale=1.0,  # RoboLab's own — a 301 mm dish. Kept at full size deliberately: the
         # plate is the one part of this cell the G1 finds EASY, and a big shallow target is what
         # makes a single release attempt land. Shrinking it would spend margin for nothing.
@@ -451,7 +460,7 @@ def _fruits_on_plate_g1_cfg() -> FruitsOnPlateSceneCfg:
         # distractor gets an explicit slot 180 mm beyond it. `_slot_xy` derives rows from the item
         # count, so with one grid item the slot IS `scatter_center`; changing the item count
         # re-derives this geometry, which is worth stating because it happens silently.
-        scatter_center=(0.0, -0.24),
+        scatter_center=(0.0, -0.44),
         scatter_span=(0.10, 0.03),
         scatter_cols=1,
         # ONE fruit type, and the exclusions are measured rather than assumed. Of the seven
@@ -472,7 +481,7 @@ def _fruits_on_plate_g1_cfg() -> FruitsOnPlateSceneCfg:
         # The distractor sits 180 mm beyond the fruit, well clear of the hand's swept volume
         # (~+/-30 mm across the finger straddle at the near-horizontal grasp tilt) and off the
         # carry route, which goes up to traverse height before translating.
-        slot_override=(("pumpkinsmall", 0.0, -0.06, 0.0),),
+        slot_override=(("pumpkinsmall", 0.0, -0.26, 0.0),),
         # POSE IS RANDOMIZED, and that is where this tier differs from the sibling
         # `clear_organic_objects` G1 tier, which had to ship fully deterministic — same embodiment,
         # same bench, same hand. Two things bought the margin back:
@@ -532,7 +541,11 @@ for _mode in ("joint", "pink_ik"):
                 # Hand (20 / 2 -> 400 / 16). Grip force in a position-controlled hand is
                 # stiffness x (target - contact) error; at Isaac's default the hand reached the
                 # fruit accurately and still closed without gripping it.
-                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75),
+                #
+                # base y -0.70, not -0.50: the bench slab spans y +/-0.571, and the old weld
+                # stood the robot INSIDE it (tabletop through the waist). See the cell-shift
+                # note on _fruits_on_plate_g1_cfg.
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.70, 0.75),
                                      arm_stiffness=1500.0,
                                      arm_damping=90.0,
                                      hand_stiffness=400.0,
