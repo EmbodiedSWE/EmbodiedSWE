@@ -155,6 +155,7 @@ def _spawn_jointed_part(prim_path: str, cfg: Any, translation=None, orientation=
     xform = UsdGeom.Xform.Define(stage, prim_path)
     root = xform.GetPrim()
     xf = UsdGeom.Xformable(xform)
+    xf.ClearXformOpOrder()
     if translation is not None:
         xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
     if orientation is not None:
@@ -179,6 +180,7 @@ def _spawn_jointed_part(prim_path: str, cfg: Any, translation=None, orientation=
         col = UsdGeom.Cube.Define(stage, f"{prim_path}/{name}")
         col.CreateSizeAttr(1.0)
         cxf = UsdGeom.Xformable(col.GetPrim())
+        cxf.ClearXformOpOrder()
         cxf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in center]))
         if rot_z is not None:
             cxf.AddRotateZOp().Set(float(rot_z))
@@ -189,6 +191,7 @@ def _spawn_jointed_part(prim_path: str, cfg: Any, translation=None, orientation=
         rid = UsdGeom.Cube.Define(stage, f"{prim_path}/{name}")
         rid.CreateSizeAttr(1.0)
         rxf = UsdGeom.Xformable(rid.GetPrim())
+        rxf.ClearXformOpOrder()
         rxf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in center]))
         rxf.AddScaleOp().Set(Gf.Vec3f(*[float(v) for v in size]))
         rid.CreateDisplayColorAttr([Gf.Vec3f(*color)])
@@ -268,6 +271,7 @@ def _spawn_vessel(prim_path: str, cfg: Any, translation=None, orientation=None):
     xform = UsdGeom.Xform.Define(stage, prim_path)
     root = xform.GetPrim()
     xf = UsdGeom.Xformable(xform)
+    xf.ClearXformOpOrder()
     if translation is not None:
         xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
     if orientation is not None:
@@ -295,6 +299,7 @@ def _spawn_vessel(prim_path: str, cfg: Any, translation=None, orientation=None):
         bot = UsdGeom.Cube.Define(stage, f"{prim_path}/bottom_{k}")
         bot.CreateSizeAttr(1.0)
         bxf = UsdGeom.Xformable(bot.GetPrim())
+        bxf.ClearXformOpOrder()
         bxf.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, -cfg.height / 2 + cfg.bot_t / 2))
         bxf.AddRotateZOp().Set(ang)
         bxf.AddScaleOp().Set(Gf.Vec3f(side, 2 * outer_r * math.tan(math.pi / 8), cfg.bot_t))
@@ -308,6 +313,7 @@ def _spawn_vessel(prim_path: str, cfg: Any, translation=None, orientation=None):
         seg = UsdGeom.Cube.Define(stage, f"{prim_path}/wall_{k}")
         seg.CreateSizeAttr(1.0)
         sxf = UsdGeom.Xformable(seg.GetPrim())
+        sxf.ClearXformOpOrder()
         sxf.AddTranslateOp().Set(Gf.Vec3d(r_mid * math.cos(ang), r_mid * math.sin(ang), 0.0))
         sxf.AddRotateZOp().Set(math.degrees(ang))
         sxf.AddScaleOp().Set(Gf.Vec3f(cfg.wall_t, seg_len, cfg.height))
@@ -316,7 +322,7 @@ def _spawn_vessel(prim_path: str, cfg: Any, translation=None, orientation=None):
     if cfg.visual_usd:
         vis = UsdGeom.Xform.Define(stage, f"{prim_path}/visual")
         vis.GetPrim().GetReferences().AddReference(cfg.visual_usd)
-        UsdGeom.Xformable(vis).AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, -cfg.height / 2))
+        _fresh_xf(vis).AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, -cfg.height / 2))
 
     _author_grasp_weld_pool(stage, prim_path, cfg.grasp_pool)
 
@@ -325,7 +331,7 @@ def _spawn_vessel(prim_path: str, cfg: Any, translation=None, orientation=None):
     liquid.CreateRadiusAttr(lr)
     liquid.CreateHeightAttr(0.010)
     liquid.CreateExtentAttr([Gf.Vec3f(-lr, -lr, -0.005), Gf.Vec3f(lr, lr, 0.005)])
-    UsdGeom.Xformable(liquid.GetPrim()).AddTranslateOp().Set(
+    _fresh_xf(liquid.GetPrim()).AddTranslateOp().Set(
         Gf.Vec3d(0.0, 0.0, -cfg.height / 2 + cfg.liquid_z))
     liquid.CreateDisplayColorAttr([Gf.Vec3f(*cfg.liquid_empty)])
     return root
@@ -380,6 +386,7 @@ def _spawn_pod(prim_path: str, cfg: Any, translation=None, orientation=None):
     xform = UsdGeom.Xform.Define(stage, prim_path)
     root = xform.GetPrim()
     xf = UsdGeom.Xformable(xform)
+    xf.ClearXformOpOrder()
     if translation is not None:
         xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
     if orientation is not None:
@@ -397,6 +404,7 @@ def _spawn_pod(prim_path: str, cfg: Any, translation=None, orientation=None):
         col = UsdGeom.Cube.Define(stage, f"{prim_path}/core_{k}")
         col.CreateSizeAttr(1.0)
         cxf = UsdGeom.Xformable(col.GetPrim())
+        cxf.ClearXformOpOrder()
         cxf.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, 0.0))
         cxf.AddRotateZOp().Set(ang)
         cxf.AddScaleOp().Set(Gf.Vec3f(core_w, 2 * cfg.body_r * math.tan(math.pi / 8),
@@ -410,7 +418,7 @@ def _spawn_pod(prim_path: str, cfg: Any, translation=None, orientation=None):
     if cfg.visual_usd:
         vis = UsdGeom.Xform.Define(stage, f"{prim_path}/visual")
         vis.GetPrim().GetReferences().AddReference(cfg.visual_usd)
-        UsdGeom.Xformable(vis).AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, -cfg.height / 2))
+        _fresh_xf(vis).AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, -cfg.height / 2))
 
     _author_grasp_weld_pool(stage, prim_path, cfg.grasp_pool)
     return root
@@ -1143,6 +1151,7 @@ class CoffeeServiceScene(BaseScene):
             run = UsdGeom.Sphere.Define(stage, f"/World/envs/env_{i}/CM_visual/run")
             run.CreateRadiusAttr(0.008)
             xf = UsdGeom.Xformable(run)
+            xf.ClearXformOpOrder()
             # on the south rim of the top face, west of the cover
             xf.AddTranslateOp().Set(Gf.Vec3d(-0.070, -0.202, 0.399))
             run.CreateDisplayColorAttr([Gf.Vec3f(0.05, 0.22, 0.07)])
@@ -1153,7 +1162,7 @@ class CoffeeServiceScene(BaseScene):
             stream.CreateHeightAttr(length)
             stream.CreateExtentAttr([Gf.Vec3f(-0.004, -0.004, -length / 2),
                                      Gf.Vec3f(0.004, 0.004, length / 2)])
-            UsdGeom.Xformable(stream).AddTranslateOp().Set(
+            _fresh_xf(stream).AddTranslateOp().Set(
                 Gf.Vec3d(c.spout_off[0], c.spout_off[1], c.spout_bot_z - length / 2))
             stream.CreateDisplayColorAttr([Gf.Vec3f(0.24, 0.13, 0.07)])
             UsdGeom.Imageable(stream.GetPrim()).MakeInvisible()
@@ -1472,3 +1481,11 @@ class CoffeeServiceScene(BaseScene):
         """(N,) bool: the cup filled by a completed brew AND resting upright on the
         tray, settled (live predicates; filled is the machine's latched flag)."""
         return self._filled & self.cup_on_tray() & self.cup_settled()
+
+
+def _fresh_xf(obj):
+    """Xformable with any previously authored ops cleared — replay-safe re-authoring."""
+    from pxr import UsdGeom as _UsdGeom
+    xf = obj if isinstance(obj, _UsdGeom.Xformable) else _UsdGeom.Xformable(obj)
+    xf.ClearXformOpOrder()
+    return xf

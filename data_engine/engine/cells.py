@@ -14,15 +14,42 @@ import shutil
 from pathlib import Path
 
 
-RESET_PY_STUB = '''"""One file per phase, named as the phase: each batch sweeps all the files,
-one rollout per file — a file chooses the entry and builds its state via
-reset_0(env), reset_1(env), … (all applied, envs divided evenly among them)."""
+RESET_PY_STUB = '''"""Natural-start entry builder.
+
+Rename/add files so each filename matches one solve_by_phase.ENTRIES key.
+Each batch sweeps every reset file.
+"""
 
 from __future__ import annotations
 
 
 def reset_0(env) -> None:
+    """The scene reset already satisfies the natural-start precondition."""
     return
+'''
+
+SOLVE_BY_PHASE_STUB = '''"""Runnable natural-start phase port.
+
+Extend ENTRIES and replace this delegation with a real mid-task port.  Keeping
+the scaffold runnable lets the author verify cell wiring before adding entries.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+ENTRIES = {"start": "the scene's normal reset"}
+
+
+def solve(env, entry=None):
+    if entry not in (None, "start"):
+        raise ValueError(f"unknown entry {entry!r}; valid: {sorted(ENTRIES)}")
+    base_path = Path(__file__).resolve().parents[2] / "solve.py"
+    spec = importlib.util.spec_from_file_location("datagen_phase_base_solve", base_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.solve(env)
 '''
 
 META_STUB = {"episodes": 0, "successes": 0, "success_rate": None, "batches": [], "refreshed": None}
@@ -69,7 +96,8 @@ def create_cell(gen_root: Path, level: str, scene: str, strategy: str, name: str
         raise SystemExit(f"{phase_dir} already exists")
     phase_dir.mkdir(parents=True)
     (phase_dir / "reset").mkdir()
-    (phase_dir / "reset" / "scene_default.py").write_text(RESET_PY_STUB)
+    (phase_dir / "reset" / "start.py").write_text(RESET_PY_STUB)
+    (phase_dir / "solve_by_phase.py").write_text(SOLVE_BY_PHASE_STUB)
     (phase_dir / "meta.json").write_text(json.dumps(META_STUB, indent=2) + "\n")
     return phase_dir, strategy, name
 

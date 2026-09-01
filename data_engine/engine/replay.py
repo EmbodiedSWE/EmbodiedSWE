@@ -73,6 +73,9 @@ from .generation import _load, build_env
 
 WARMUP_DEFAULT = 12  # throwaway renders per chunk start (temporal-denoiser flush)
 _FAR_CLIP = 40.0  # camera far clip (m); env_spacing beyond it isolates envs pixel-exactly
+# Mean RGB (0-255) a warmed-up first frame must reach; a stage lit by the wrong dome light
+# sits at ~15-30 while a correctly lit pc_ram view sits at ~110-130 (2026-08-26 probes).
+MIN_WARMUP_LUMA = 35.0
 
 
 # ----- episode discovery -------------------------------------------------------------------------
@@ -201,7 +204,9 @@ def _camera_cfg(name: str, view: dict, size, surface_z: float):
 
 def build_replay_env(scene_dir: Path, num_envs: int, device: str,
                      cams: list[str] | None, adhoc: dict | None, size,
-                     env_spacing: float, visual_draw: int | None = None):
+                     env_spacing: float, visual_draw: int | None = None,
+                     view_suffix: str = "",
+                     pose_jitter: tuple[float, ...] | None = None):
     """generation.build_env on the cell's LOCAL scene (nominal world — physics is
     overwritten every frame anyway), with one tiled camera PER RESOLVED VIEW injected
     into the scene's assets before the build.
@@ -231,6 +236,28 @@ def build_replay_env(scene_dir: Path, num_envs: int, device: str,
     gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
     robot_cls = ROBOTS.get(ENVS.get(gen["preset"])().robot)
     views = resolve_views(scene_cls, robot_cls, cams, adhoc)
+    if pose_jitter and any(pose_jitter):
+        # Per-episode pose jitter for DRAW passes, expressed through the native
+        # band grammar (sampled per episode in place_banded_views): each external
+        # view gets uniform ± bands around its declared pose. Scene-declared
+        # bands win — the scene's own knowledge is never overridden.
+        from .sampler import _check_spec
+
+        ej, tj = pose_jitter[:3], pose_jitter[3:]
+        for n, v in views.items():
+            if v.get("link"):
+                continue  # ego views ride their link; there is no free pose
+            bands = dict(v["bands"])
+            for prefix, base, box in (("eye", v["eye"], ej), ("target", v["target"], tj)):
+                for a, b, w in zip("xyz", base, box):
+                    key = f"{prefix}_{a}"
+                    if w and key not in bands:
+                        bands[key] = _check_spec(
+                            f"pose_jitter['{n}']", key,
+                            {"dist": "uniform", "lo": float(b) - w, "hi": float(b) + w})
+            v["bands"] = bands
+    if view_suffix:
+        views = {n + view_suffix: v for n, v in views.items()}
     # the visual draw is sampled BEFORE the build and written onto the scene cfg, so
     # build-consumed knobs (a table preset, a backdrop usd) take effect with no extra
     # code; live knobs are re-applied through scene.apply_visual_params after the build
@@ -273,10 +300,47 @@ def build_replay_env(scene_dir: Path, num_envs: int, device: str,
     finally:
         scene_cls.assets = assets_with_camera.__defaults__[0]
         robot_cls.assets = assets_with_ego.__defaults__[0]
+    quenched = _quench_asset_dome_lights()
+    if quenched:
+        print(f"[replay] deactivated {len(quenched)} asset-embedded dome light(s) so the scene's "
+              f"own light is the one RTX uses: {quenched[:3]}{' …' if len(quenched) > 3 else ''}",
+              flush=True)
     return env, gen, visual_values, views, surface_z
 
 
-def _load_shifted(ep_dir: Path, base_pos, device):
+def _quench_asset_dome_lights() -> list[str]:
+    """RTX honors ONE dome light per stage and picks it at process start — not deterministically.
+    Asset USDs can smuggle their own (GAMING_PC.usdc ships a 1.0-intensity DomeLight under the
+    case's visual), so a render process had a coin-flip chance of lighting the whole scene with
+    that instead of the scene's /World light: every episode in the process came out "lights off"
+    (pc_ram stage-1 sweep, 29/29 dark, 2026-08-26). Deactivate every DomeLight that lives inside
+    an env's asset tree; scene-level lights (spawned at /World/<name>) are left alone."""
+    import omni.usd
+
+    stage = omni.usd.get_context().get_stage()
+    quenched: list[str] = []
+    for prim in list(stage.Traverse()):
+        path = str(prim.GetPath())
+        if prim.GetTypeName() == "DomeLight" and path.startswith("/World/envs/"):
+            prim.SetActive(False)
+            quenched.append(path)
+    return quenched
+
+
+def _replay_anchor(robot):
+    """(live anchor articulation, recorded root key, joint-names stamp) for single
+    robots AND MultiRobot composites. Composites have no robot.articulation; their
+    recorded state trees flatten to robot/<name>/... — the anchor is the first
+    child by name (deterministic), and the stamp maps every child's joints."""
+    children = getattr(robot, "robots", None)
+    if isinstance(children, dict):
+        name = sorted(children)[0]
+        return (children[name].articulation, f"robot/{name}/root",
+                {n: list(c.articulation.joint_names) for n, c in sorted(children.items())})
+    return robot.articulation, "robot/root", list(robot.articulation.joint_names)
+
+
+def _load_shifted(ep_dir: Path, base_pos, root_key: str, device):
     """Episode arrays as device tensors, positions shifted onto the replay slot's
     origin. Every last-dim-13 array is a world-frame root state (the engine's own
     convention: pos 0:3, quat 3:7, vels 7:13) — only those get the shift."""
@@ -284,7 +348,7 @@ def _load_shifted(ep_dir: Path, base_pos, device):
     import torch
 
     data = {k: torch.as_tensor(v, device=device) for k, v in np.load(ep_dir / "traj.npz").items()}
-    shift = base_pos - data["robot/root"][0, 0:3]
+    shift = base_pos - data[root_key][0, 0:3]
     for k, v in data.items():
         if k != "action" and v.shape[-1] == 13:
             v[..., 0:3] += shift
@@ -297,8 +361,12 @@ def _load_shifted(ep_dir: Path, base_pos, device):
 def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int = 8,
                  fps: int | None = None, size=(640, 480), cams: list[str] | None = None,
                  adhoc: dict | None = None, warmup: int = WARMUP_DEFAULT,
-                 crf: int = 18, max_frames: int = 0, visual: str | None = None,
+                 crf: int = 18, max_frames: int = 0, trim_margin: int = -1,
+                 visual: str | None = None,
                  visual_draw: int | None = None, env_spacing: float = 50.0,
+                 view_suffix: str = "",
+                 pose_jitter: tuple[float, ...] | None = None,
+                 band_seed: int = 0,
                  device: str = "cuda:0") -> list[Path]:
     """Replay `eps` (all from `scene`) in chunks of `num_envs`, rendering every resolved
     view each frame and streaming one `imgs/<view>.mp4` per (episode, view) into each
@@ -317,7 +385,8 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         print(f"[replay] WARNING: env_spacing {env_spacing} <= far clip {_FAR_CLIP} — "
               f"neighbor envs will appear in frames", flush=True)
     env, gen, visual_values, views, surface_z = build_replay_env(
-        scene_dir, num_envs, device, cams, adhoc, size, env_spacing, visual_draw)
+        scene_dir, num_envs, device, cams, adhoc, size, env_spacing, visual_draw,
+        view_suffix=view_suffix, pose_jitter=pose_jitter)
     sensors = {n: env.iscene.sensors[n] for n in views}
     print(f"[replay {scene}] views: " + ", ".join(
         f"{n} (ego on {v['link']})" if v.get("link") else n for n, v in views.items()), flush=True)
@@ -333,7 +402,8 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
     if hook and hasattr(hook, "setup"):
         hook.setup(env)
     env.reset(seed=0)
-    base_pos = env.robot.articulation.data.root_pos_w.clone()  # (E, 3) — the shift anchor
+    anchor, root_key, joint_names_stamp = _replay_anchor(env.robot)
+    base_pos = anchor.data.root_pos_w.clone()  # (E, 3) — the shift anchor
 
     def render_once():
         """One restored-state frame: post_step BEFORE the render (glow in-frame), then
@@ -363,7 +433,9 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                 continue
             poses, quats, actual = [], [], []
             for i in range(num_envs):
-                g = lo + min(i, n_eps - 1)  # padded slots reuse the last episode's draw
+                # padded slots reuse the last episode's draw; band_seed keeps
+                # different passes' draws distinct AND deterministic
+                g = lo + min(i, n_eps - 1) + band_seed
                 draw = sample(v["bands"], g)
                 e = [draw.get(f"eye_{a}", x) for a, x in zip("xyz", v["eye"])]
                 t = [draw.get(f"target_{a}", x) for a, x in zip("xyz", v["target"])]
@@ -382,12 +454,23 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
     done: list[Path] = []
     for lo in range(0, len(eps), num_envs):
         chunk = eps[lo:lo + num_envs]
-        loaded = [_load_shifted(ep, base_pos[e], device) for e, ep in enumerate(chunk)]
+        loaded = [_load_shifted(ep, base_pos[e], root_key, device) for e, ep in enumerate(chunk)]
         # controller state is dropped: stateless leaves flatten to nothing (a composite
         # can't restore a partial tree), and kinematic replay never applies an action
         keys = [k for k in loaded[0][0]
-                if k != "action" and not k.startswith("robot/controller")]
-        T = [d["robot/joint_pos"].shape[0] for d, _ in loaded]
+                if k not in ("action", "action_noise") and "/controller" not in k]
+
+        def ep_rows(d: dict, m: dict) -> int:
+            rows = d[root_key].shape[0]
+            # trim the padded post-success tail: wide batches hold every finished
+            # env until the slowest one ends, and meta.success_step (earliest
+            # SUSTAINED success, generation-time graded) marks where this env was
+            # actually done. margin keeps the settle visible.
+            if trim_margin >= 0 and m.get("success_step") is not None:
+                rows = min(rows, int(m["success_step"]) + trim_margin)
+            return rows
+
+        T = [ep_rows(d, m) for d, m in loaded]
         t_max = max(T)
         # a traj row = one env.step = one control latch; the recorded control rate sets
         # the frame clock, NOT the rebuilt env's physics dt (the solve may have decimated)
@@ -432,6 +515,17 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         env.set_states(compose(0))
         for _ in range(max(0, warmup)):
             render_once()
+        # Lighting guard: a stage lit by the wrong/no light renders every frame of every
+        # episode in this process dark (the pc_ram stage-1 sweep silently wrote 29 dark
+        # episodes). Fail loudly on the first frame instead of shipping a dark dataset.
+        probe = render_once()
+        for n, r in probe.items():
+            luma = r[:len(chunk), ..., :3].float().mean().item()
+            if luma < MIN_WARMUP_LUMA:
+                raise SystemExit(
+                    f"[replay {scene}] view {n!r} renders dark after warmup (mean rgb {luma:.1f} "
+                    f"< {MIN_WARMUP_LUMA}) — a light is missing or the wrong dome light won; "
+                    f"see _quench_asset_dome_lights. Refusing to render this chunk.")
 
         for fi, t in enumerate(range(0, t_max, stride)):
             if max_frames and fi >= max_frames:
@@ -460,7 +554,7 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
                     "eye": list(eye), "target": list(target), "focal": v["focal"],
                     "link": v.get("link"), "cam_draw": (lo + i if n in placed else None),
                     "env_spacing": env_spacing,
-                    "joint_names": list(env.robot.articulation.joint_names),
+                    "joint_names": joint_names_stamp,
                     "scene_description": env.scene.describe(),
                     "success": meta.get("success"), "cell": meta.get("cell"),
                     "visual_hook": visual, "visual_draw": visual_draw, "visual_values": visual_values,
