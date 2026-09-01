@@ -8,6 +8,8 @@ than free-object relocation.
 
 Tasks:
   - `push_t` (PushTScene) — push a T-shaped block onto its matching target pad.
+  - `push_shapes` (PushShapesScene) — push three shaped blocks (T/X/L) onto their own
+    matching pads, correcting each block's yaw; multi-stage successor to `push_t`.
   - `coffee` (CoffeeServiceScene, the microwave port's Franka-native successor) —
     operate a capsule coffee machine's state machine (closed-cover + pod + cup
     preconditions, start/stop toggle, abort-on-early-open, spill abort, brew

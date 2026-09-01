@@ -110,7 +110,14 @@ def main() -> None:
         print(f"[binding-smoke] camera ready shape={np.asarray(annot.get_data()).shape}",
               flush=True)
     except Exception as exc:  # noqa: BLE001
-        print(f"[binding-smoke] camera setup FAILED ({exc!r})", flush=True)
+        # Clear the handle: `annot` is bound BEFORE attach/warmup can fail, so leaving it set
+        # made every later step() call a broken get_data() -> AnnotatorError escaped main()
+        # and the run wedged in Kit teardown until its outer timeout SIGKILLed it (measured
+        # on a 4090 pod, driver 580, where this camera path fails while the suite smokes'
+        # own path works). Recording is best-effort; the reach checks are the point.
+        annot = None
+        print(f"[binding-smoke] camera setup FAILED ({exc!r}); continuing without recording",
+              flush=True)
 
     step_i = 0
 

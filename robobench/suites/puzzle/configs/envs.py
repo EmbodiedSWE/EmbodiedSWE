@@ -2,6 +2,8 @@
 
 Four scenes, scene-physics-only first (NullRobot smoke/oracle), embodiments after:
   - push_t:     simple G1-native planar pushing alignment task (port).
+  - push_shapes: multi-stage G1-native shape sorting — three blocks (T/X/L) each pushed
+                and reoriented onto its own matching pad.
   - coffee:     capsule coffee machine state machine (brew one capsule coffee and
                 serve the filled mug on the tray).
   - syringe:    draw / triple-dose / re-park. Defining embodiment GR1-T2 (bimanual:
@@ -23,6 +25,7 @@ from robobench.robots import (
 )
 from robobench.suites.puzzle.scenes import (
     CoffeeServiceSceneCfg,
+    PushShapesSceneCfg,
     PushTSceneCfg,
     SpatulaFlipServeSceneCfg,
     SyringeDosingSceneCfg,
@@ -50,6 +53,28 @@ for _mode in ("joint", "pink_ik"):
                 control_mode=mode,
                 # The packing-bench front face is near y=-0.45. Keep 15 cm of
                 # clearance so G1's shins never initialize inside the chassis.
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.60, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+
+# ============================== push_shapes ======================================
+# Multi-stage successor to push_t: three shapes (T / X / L), three colour-keyed pads,
+# each block yawed off its pad so reorientation is a goal rather than a disturbance.
+# Same substrate as push_t — same bench, same 15 cm chassis clearance, same G1 modes.
+register_env(SUITE, lambda: EnvCfg(scene="push_shapes", robot="null", env_spacing=3))
+
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="push_shapes",
+                scene_cfg=PushShapesSceneCfg(),
+                robot="g1",
+                control_mode=mode,
                 robot_cfg=G1RobotCfg(base_pos=(0.0, -0.60, 0.75)),
                 env_spacing=3,
             )
