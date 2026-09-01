@@ -4,6 +4,12 @@ Importing this package registers every scene into `robobench.core.SCENES`. Impor
 modules defer isaaclab/pxr, so registration is safe without a running app.
 """
 
+from .fruit_delivery import FruitDeliveryScene, FruitDeliverySceneCfg
 from .wheel_carry import WheelCarryScene, WheelCarrySceneCfg
 
-__all__ = ["WheelCarryScene", "WheelCarrySceneCfg"]
+__all__ = [
+    "FruitDeliveryScene",
+    "FruitDeliverySceneCfg",
+    "WheelCarryScene",
+    "WheelCarrySceneCfg",
+]
