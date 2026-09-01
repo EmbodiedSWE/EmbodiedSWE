@@ -61,6 +61,12 @@ class PcRamAssemblySceneCfg(BaseCfg):
     align_axis_deg: float = 6.0  # max tilt of a stick's up axis off the slot axis (deg)
     align_yaw_deg: float = 3.0  # max heading error of a stick's length axis (deg)
     reset_pos_jitter: float = 0.01  # uniform +/- xy jitter for the loose sticks at reset (m)
+    # Uniform +/- XY jitter of the WHOLE CASE at reset (m; 0 = pinned at spawn, the historical
+    # behavior). Translation only — solves and the grader read seat positions as case_pos +
+    # seat_pos[k] with the case's IDENTITY orientation, so yaw must stay 0. Nonzero values give
+    # image->press-location covariance (the grounding VLA distillation needs); the demos' solve
+    # tracks the shifted case automatically (its waypoints derive from the live case pose).
+    case_jitter_xy: float = 0.0
     # Part friction (static = dynamic), set on every shape at bind. The moving stick runs
     # moderately slick against a grippier fixed case, so it slides down the channel but holds seat.
     ram_friction: float = 0.3
@@ -144,6 +150,43 @@ class PcRamAssemblyScene(BaseScene):
     # `/ram/collision/body`; it matches the visual shell). The holders' rails flank THESE
     # faces — the same pair a parallel-jaw grasp pinches.
     STICK_BODY_X: ClassVar[tuple[float, float]] = (-0.0037, 0.0036)
+
+    #: L5 external view (see BaseScene.CAMERAS): over the case's south-west corner, high enough
+    #: to see over the 195 mm walls into the DIMM cluster while the stick holders sit in the
+    #: foreground — probed on the nominal_0 render (2026-08-24); the wrist view carries the
+    #: fine insertion detail. Bands wiggle the eye a couple of cm per episode.
+    CAMERAS: ClassVar[dict[str, dict]] = {
+        # front: centred on the slot/stick midpoint from straight ahead, high enough (eye z 1.0)
+        # that the ready-pose upper arm (horizontal at z 0.66) sits inside the frame instead of
+        # crossing its top edge, and steep enough (~58 deg) to see INTO the case: the DIMM area
+        # of the motherboard and both sticks in their holders are in view at once (candidate D
+        # of the 2026-08-26 camera probes; the old (0.12,-0.62,0.62) view saw the slots at a
+        # grazing angle over the near wall).
+        "front": {"eye": (0.40, -0.78, 1.00), "target": (0.40, -0.18, 0.03), "focal": 16.0,
+                  "bands": {
+                      "eye_x": {"dist": "uniform", "lo": 0.38, "hi": 0.42},
+                      "eye_y": {"dist": "uniform", "lo": -0.80, "hi": -0.76},
+                      "eye_z": {"dist": "uniform", "lo": 0.98, "hi": 1.02},
+                  }},
+    }
+
+    #: L4 per-env physics bands (data_engine sampler grammar; nominal = the cfg default, slot 0
+    #: of every batch keeps it). The friction pair brackets the designed slick-stick / grippy-case
+    #: ratio the second stick's gravity-seat rides on (stock 0.3 / 0.75 — the pc_ram IK campaign's
+    #: robustness probe); mass ±20% around the 0.25 kg the PD/solver stability class was tuned at.
+    PHYSICAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "ram_friction": {"dist": "uniform", "lo": 0.25, "hi": 0.40,
+                         "reason": "around the 0.3 nominal; slick stick slides the channel"},
+        "case_friction": {"dist": "uniform", "lo": 0.60, "hi": 0.90,
+                          "reason": "around the 0.75 nominal; grippy case holds the seat"},
+        "ram_mass": {"dist": "uniform", "lo": 0.20, "hi": 0.30,
+                     "reason": "±20% of the 0.25 kg stability-class mass"},
+    }
+    #: L5 visual bands (replay/render, stage-wide per pass): the dome light is build-consumed.
+    VISUAL_PARAMS: ClassVar[dict[str, dict | None]] = {
+        "light_intensity": {"dist": "uniform", "lo": 2000.0, "hi": 3000.0,
+                            "reason": "around the 2500 nominal"},
+    }
 
     def __init__(self, cfg: PcRamAssemblySceneCfg | None = None) -> None:
         super().__init__(cfg or PcRamAssemblySceneCfg())
@@ -316,6 +359,26 @@ class PcRamAssemblyScene(BaseScene):
         mats[..., 0:2] = value  # [static, dynamic, restitution]
         asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
+    def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
+        """Write a PHYSICAL_PARAMS draw PER ENV through the PhysX views: `values[name]` is one
+        value per env slot. Frictions go onto every shape of the part (static = dynamic, as at
+        bind); the stick mass onto each stick's body."""
+        ids = torch.arange(env.num_envs, device="cpu")
+        for name, per_env in values.items():
+            col = torch.tensor([float(v) for v in per_env], dtype=torch.float32)  # (n,)
+            if name in ("ram_friction", "case_friction"):
+                for asset in (self.rams if name == "ram_friction" else [self.case]):
+                    mats = asset.root_physx_view.get_material_properties()  # (n, shapes, 3), cpu
+                    mats[..., 0:2] = col.view(-1, 1, 1).expand(mats.shape[0], mats.shape[1], 2)
+                    asset.root_physx_view.set_material_properties(mats, ids)
+            elif name == "ram_mass":
+                for ram in self.rams:
+                    masses = ram.root_physx_view.get_masses()  # (n, bodies), cpu
+                    masses[:] = col.view(-1, 1).expand_as(masses)
+                    ram.root_physx_view.set_masses(masses, ids)
+            else:
+                raise KeyError(f"{type(self).__name__}.apply_physical_params: unknown knob {name!r}")
+
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the case pinned at spawn, both sticks lying flat on the table
         beside it, with xy jitter."""
@@ -324,6 +387,15 @@ class PcRamAssemblyScene(BaseScene):
         m = len(env_ids)
         origin = self.env_origins[env_ids]  # (m, 3)
         wx, wy = c.workbench_pos
+
+        if c.case_jitter_xy > 0.0:
+            # kinematic case: re-pin at spawn + a per-env XY draw (identity orientation — see cfg)
+            pose = torch.zeros(m, 7, device=dev)
+            pose[:, 0:3] = origin + torch.tensor(
+                (wx, wy, c.surface_z + c.case_lift), device=dev)
+            pose[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.case_jitter_xy
+            pose[:, 3] = 1.0
+            self.case.write_root_pose_to_sim(pose, env_ids)
 
         for ram, (ix, iy) in zip(self.rams, c.ram_init_xy):
             st = torch.zeros(m, 13, device=dev)

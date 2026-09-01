@@ -11,8 +11,9 @@ key=value args override any field, hydra-style (values yaml-parsed):
         scene=scene_1 prompts='[scene, failure_mining]'
 
 The launcher creates NO cell — it assembles the instructions (contract + the
-condition's prompt modules + campaign facts) into the session ledger
-`<gen_root>/.agent/<ts>_<level>/` (with the RESOLVED condition.yaml beside it),
+condition's prompt modules + campaign facts) into a level-local session ledger
+(`scenes/.agent/…`, `scenes/<scene>/strategies/.agent/…`, or
+`<strategy>/phases/.agent/…`, with the resolved condition.yaml beside it),
 then launches the agent fenced in docker. The agent's world has three handles:
 /workspace — its writable home, the campaign (mounted rw at its true depth
 under /repo, so relative symlinks keep resolving); /reference — the eval run
@@ -77,7 +78,8 @@ def assemble(session: Path, gen_root: Path, cfg: dict, repo_as: Path, gen_as: Pa
         + (f"/{cfg['strategy']}" if cfg["level"] in ("strategy", "phase") else ""),
         "- your cli, on PATH (create each cell yourself, one per proposed variant):",
         *[f"  - `create_cell [--count N]` — new cell(s) from your start point" if t == "create_cell"
-          else f"  - `generate --headless {gen_as} --scene … [--strategy …] --num_envs 4` — test-launch a cell" if t == "generate"
+          else f"  - `generate --headless {gen_as} --scene … [--strategy …] "
+               "--num_envs <N>` — test-launch a cell" if t == "generate"
           else f"  - `{t}`" for t in cfg["cli"]],
         "\n### gen.yaml\n```yaml",
         (gen_root / "gen.yaml").read_text().rstrip(),

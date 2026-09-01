@@ -28,7 +28,8 @@ class NoisyActionEnv:
     """Every attribute delegates to the wrapped env; only step() perturbs."""
 
     def __init__(self, env, dims: slice, sigma: float = 0.0,
-                 prob: float = 1.0, duration: float = 0.0, seed: int = 0) -> None:
+                 prob: float = 1.0, duration: float = 0.0, seed: int = 0,
+                 gate_z: float = 0.0, gate_body: str = "panda_hand") -> None:
         self._env, self._dims, self._sigma = env, dims, float(sigma)
         ctrl_dt = env.dt * env.robot.control_period
         self._prob = float(prob)
@@ -36,6 +37,19 @@ class NoisyActionEnv:
         self._rng = torch.Generator().manual_seed(seed)
         self._left = None  # (E,) steps remaining in each env's noise window
         self.last_clean = self.last_executed = None
+        # Height gate: with gate_z > 0, noise applies only while `gate_body` is ABOVE gate_z (m,
+        # world). The precision phases (pick-close at the stick top, press/seat at the slot) all
+        # happen low; transport/lift/carry happen high — so a gate at e.g. 0.25 injects
+        # perturb-and-recover content into the phases with margin and never into the ones without
+        # (the pc_ram noise pilots showed the low phases have zero noise headroom).
+        self._gate_z = float(gate_z)
+        self._gate_idx = None
+        if self._gate_z > 0.0:
+            art = getattr(env.robot, "articulation", None)
+            names = list(getattr(art, "body_names", []) or [])
+            if gate_body not in names:
+                raise SystemExit(f"noise gate_z: body {gate_body!r} not in {names[:12]}…")
+            self._gate_idx = names.index(gate_body)
 
     def __getattr__(self, name: str):
         return getattr(self._env, name)
@@ -55,9 +69,19 @@ class NoisyActionEnv:
         self._left[start] = self._duration
         noisy = (self._left > 0) & active
         self._left -= (self._left > 0).long()
+        if self._gate_idx is not None:  # height gate: suppress noise in the low, precision phases
+            hand_z = self._env.robot.articulation.data.body_pos_w[:, self._gate_idx, 2].cpu()
+            noisy &= hand_z > self._gate_z
 
         noise = torch.randn(*a.shape, generator=self._rng) * self._sigma * noisy.unsqueeze(1)
         executed = clean.clone()
-        executed[:, self._dims] = (a + noise).clamp(-1, 1).to(clean.device, clean.dtype)
+        # Bound without ever distorting the CLEAN command: normalized spaces still clamp to
+        # +-1, but a raw command outside [-1, 1] (e.g. joint-position targets in radians —
+        # Franka j4 commands ~-2.15) keeps its own value as the bound. The old hard
+        # .clamp(-1, 1) silently crushed raw joint targets to +-1 rad whenever sigma > 0,
+        # flinging the arm (pc_ram noise pilots 2026-08-25: every sigma failed identically).
+        lo = torch.minimum(a, torch.full_like(a, -1.0))
+        hi = torch.maximum(a, torch.full_like(a, 1.0))
+        executed[:, self._dims] = (a + noise).clamp(lo, hi).to(clean.device, clean.dtype)
         self.last_clean, self.last_executed = clean, executed
         return self._env.step(executed, render)
