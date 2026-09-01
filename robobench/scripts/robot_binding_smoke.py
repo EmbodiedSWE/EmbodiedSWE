@@ -111,7 +111,14 @@ def main() -> None:
         print(f"[binding-smoke] camera ready shape={np.asarray(annot.get_data()).shape}",
               flush=True)
     except Exception as exc:  # noqa: BLE001
-        print(f"[binding-smoke] camera setup FAILED ({exc!r})", flush=True)
+        # Clear the handle: `annot` is bound BEFORE attach/warmup can fail, so leaving it set
+        # made every later step() call a broken get_data() -> AnnotatorError escaped main()
+        # and the run wedged in Kit teardown until its outer timeout SIGKILLed it (measured
+        # on a 4090 pod, driver 580, where this camera path fails while the suite smokes'
+        # own path works). Recording is best-effort; the reach checks are the point.
+        annot = None
+        print(f"[binding-smoke] camera setup FAILED ({exc!r}); continuing without recording",
+              flush=True)
 
     step_i = 0
 
@@ -292,7 +299,9 @@ def main() -> None:
                        f"hdfs dfs -put -f {args.out} {args.hdfs_dir}/{os.path.basename(args.out)}")
         print(f"[binding-smoke] hdfs upload rc={rc}", flush=True)
     print("ROBOT_BINDING_SMOKE_DONE", flush=True)
-    env.close()
+    # Do not call env.close() before the teardown watchdog exists.  Kit can hang inside
+    # this close path on headless rendering hosts, preventing `_hard_exit_teardown()` from
+    # ever arming its timer.  App shutdown below owns teardown and is hard-exit guarded.
 
 
 def _hard_exit_teardown() -> None:
