@@ -388,10 +388,10 @@ scenes/
         </tbody>
       </table></div>
 
-      <h3>Export (vla/scripts/export_lerobot.py — no Isaac)</h3>
-      <div class="block">~/Documents/Research/lerobot/.venv/bin/python vla/scripts/export_lerobot.py \
-    &lt;…/data_gen/&lt;gen_name&gt;&gt; --repo-id cosigen/bulb_franka_osc [--batches …] [--task "…"]</div>
-      <p>Lives in <code>vla/</code> — the lerobot side of the pipeline (see <code>vla/README.md</code>); the render contract above is the API between the two. Runs on <b>lerobot's own venv</b> (its deps are not in the Isaac venv) and consumes only files: rendered frames + <code>render_&lt;view&gt;.json</code> + <code>traj.npz</code>. Views are discovered from the contracts — every rendered view exports as its own stream. Per frame: <code>observation.images.&lt;view&gt;</code> for each view, <code>observation.state</code> = joint positions at the frame's tick, <code>action</code> = <b>the recorded controller command at that tick</b> — the env-loop action verbatim (franka osc: 6 EE-pose offsets, re-anchored to the current pose at every latch so they are rate-independent intent — a sustained press exports as a sustained offset — plus 2 gripper targets); a trained policy deploys through the same controller, and there is deliberately no action-space option, <code>task</code> = the scene description's "Goal:" sentence (or <code>--task</code>). Failed episodes are skipped by default. The dataset lands at <code>&lt;gen_name&gt;/datasets/&lt;repo_id&gt;</code>.</p>
+      <h3>Export (scripts/export_lerobot.py — no Isaac)</h3>
+      <div class="block">~/Documents/Research/lerobot/.venv/bin/python data_engine/scripts/export_lerobot.py \
+    &lt;…/data_gen/&lt;gen_name&gt;&gt; --repo-id cosigen/bulb_franka_osc --task "…"</div>
+      <p>The exporter runs in the LeRobot/openpi environment, not the Isaac environment. It reads verified episode metadata, <code>traj.npz</code>, rendered frames, and each <code>render_&lt;view&gt;.json</code> frame-index contract. The current pi0.5 schema uses the first rendered non-ego view as <code>image</code>, the first link-mounted view as <code>wrist_image</code>, eight joint-state values, seven action values, and the required <code>--task</code> instruction. Every visual draw directory (<code>imgs/</code>, <code>imgs_drawN/</code>) becomes a separate dataset episode over the same verified motion. Failed episodes are skipped unless explicitly included.</p>
 
       <h4>export_lerobot.py arguments</h4>
       <div class="twrap"><table>
@@ -399,12 +399,11 @@ scenes/
         <tbody>
           <tr><td class="name">gen_root</td><td class="t">—</td><td>the campaign dir, same as render.py's</td></tr>
           <tr><td class="name">--repo-id</td><td class="t">required</td><td>dataset id, e.g. <code>cosigen/bulb_franka_osc</code></td></tr>
-          <tr><td class="name">--batches / --episodes</td><td class="t">all rendered</td><td>which episodes to pack (only ones with <code>imgs/render_&lt;view&gt;.json</code> contracts count)</td></tr>
-          <tr><td class="name">--root</td><td class="t">&lt;gen_root&gt;/datasets/&lt;repo_id&gt;</td><td>where the dataset is written (must not already exist)</td></tr>
-          <tr><td class="name">--cams</td><td class="t">all rendered</td><td>views to pack — discovered from each episode's <code>render_&lt;view&gt;.json</code> contracts; every view becomes its own <code>observation.images.&lt;view&gt;</code> stream</td></tr>
-          <tr><td class="name">--task</td><td class="t">the scene's "Goal:" sentence</td><td>language instruction stored on every frame</td></tr>
-          <tr><td class="name">--robot-type</td><td class="t">the preset</td><td>metadata tag on the dataset</td></tr>
+          <tr><td class="name">--task</td><td class="t">required</td><td>language instruction stored on every frame</td></tr>
           <tr><td class="name">--include-failures</td><td class="t">off</td><td>keep episodes whose grader verdict was failure (skipped by default)</td></tr>
+          <tr><td class="name">--include-diagnostics</td><td class="t">off</td><td>also include nominal, probe, and agent-session test batches (excluded from the dataset by default)</td></tr>
+          <tr><td class="name">--allow-partial-render</td><td class="t">off</td><td>permit export before the multiply completion marker exists</td></tr>
+          <tr><td class="name">--state-indices / --action-indices</td><td class="t">unset</td><td>explicit mappings required when source vectors do not exactly match the schema's 8-D state / 7-D action</td></tr>
         </tbody>
       </table></div>
       <p class="note">Chaining from generation: <code>generate.py --render</code> runs render.py on the fresh batch after grading, and <code>--render_args "…"</code> forwards any of the render flags above.</p>
@@ -424,7 +423,7 @@ scenes/
       <p>eval already tunes solve constants: <code>eval/tools/parameter_search.py</code> (the <code>cosigen-parameter-optimize</code> skill) runs CMA-ES over a <code>space={"NAME": (lo, hi)}</code> declaration with per-env parameter arrays in ~512 parallel envs. The engine's <code>SOLVE_PARAMS</code> draws one set per batch from hand-set bands over the same kind of constants. Study unifying the two: shared constant names and space/band declaration, and the search's converged region as the evidence that sets <code>SOLVE_PARAMS</code> bands — search finds the safe region, generation samples inside it.</p>
 
       <h3>Generate batches across machines</h3>
-      <p>One <code>generate</code> run = one process, one GPU, one batch — fan-out needs only a dispatcher, since cells are independent, batches are append-only and seeds are explicit. Shard by index (machine k owns seed slice k, à la zeyu's <code>launch_pool.py</code>: rerunning worker k reproduces the same draw); executors = forge-style servers (<code>sim_gen/isaac/forge_server.py</code>); orchestrate with a ledger like <code>sim_gen/pipeline/generate_batch.py</code>. Merge = copy batch folders into <code>data/</code> + <code>refresh_metas</code>.</p>
+      <p><code>data_engine/scripts/orchestrate.py</code> is the infrastructure-neutral conductor for one campaign: nominal repair, wide-vectorization gate, authoring sessions, farming, scripted physics compounding, successful-only visual replay, status, and manifest. Cluster schedulers remain separate: they launch one orchestrator per task, supply an agent command, and persist the campaign directory. Batches are append-only and seeds/draw indices are explicit, so a campaign resumes from its own ledger and batch metadata.</p>
 
     </section>
 

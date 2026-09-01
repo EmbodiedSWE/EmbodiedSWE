@@ -11,7 +11,8 @@ they make the hard, rare segments of the task cheap to farm.
 Create, explicitly:
 
 1. `phases/phase_N/` — one cell PER proposal of how to divide/enter the solve
-   (via `create_cell`), self-contained and declared entirely in code:
+   (via `create_cell`). The command creates a runnable natural-start scaffold;
+   replace or extend it with the entry design you prove:
    - `solve_by_phase.py` — THIS cell's port: `solve(env, entry=<phase>)` runs
      from any phase of the division to task-done; `ENTRIES` documents the
      phases and their preconditions. Each `phase_N` is a different division
@@ -31,9 +32,9 @@ accept a mid-task start.
 
 ## Instructions: solve_by_phase.py
 
-`solve.py` usually separates into several phases. The port makes each phase an
-entry point: `solve(env, entry="<phase>")` jumps directly there and runs to
-task-done. A solution typically looks like:
+Base solves may be explicit state machines or linear/procedural programs. For
+an FSM, the port makes selected states entry points:
+`solve(env, entry="<phase>")` starts there and runs to task-done. For example:
 
     def solve(env):
         ...
@@ -69,10 +70,9 @@ If a value cannot be reconstructed (e.g. something integrated over motion),
 that phase is not an entry — do not force it; note the rejection and why in
 the port's docstring.
 
-Tips: phases that re-measure everything on entry (a regrasp) are free entries
-— find them first. `solve.py` is never touched. A procedural solve (a chain
-of step calls instead of an FSM) ports the same way: wrap the steps as
-functions, dispatch from entry, re-derive the earlier locals.
+Phases that re-measure everything on entry require the least calibration.
+`solve.py` is never touched. For a procedural solve, wrap natural step groups
+as functions, dispatch from the requested entry, and re-derive earlier locals.
 
 If you cannot decide how to divide, one phase is fine: keep
 `solve_by_phase.py` with a single entry — the solve's natural start — and
@@ -100,7 +100,7 @@ must satisfy the phase's precondition as documented in `ENTRIES`.
   relation (via IK); at a hand-free phase, object and arm are independent —
   set the arm freely, or just leave it where the scene reset put it.
 
-- **The pool** (`/workspace/data/`), when batches exist there — and your own
+- **The pool** (the campaign's `data/`), when batches exist there — and your own
   test batches add to it: every episode's `traj.npz` stores full restorable
   sim states, `env.set_states(...)` any recorded step. Successes give mid-task
   boundary states (e.g. "part placed, hand free"), perturbed with jitter for
@@ -116,9 +116,8 @@ must satisfy the phase's precondition as documented in `ENTRIES`.
   (poses, sources, jitters) — a builder that sets every env identically wastes
   the batch.
 - locate the campaign relative to YOUR OWN FILE, never a mount path: builders
-  also run outside the container. From `reset/<phase>.py` the pool is
-  `Path(__file__).resolve().parents[7] / "data"` — `/workspace/...` breaks on
-  the host.
+  also run outside the container. Walk upward to the first parent containing
+  `gen.yaml`, then join `data/`; do not encode a fixed parent depth.
 - the arm: the scene's own reset already ran — leaving the arm where it is
   often IS the precondition ("hand free and clear"). Only pose the arm if the
   phase genuinely needs it.
@@ -136,49 +135,38 @@ must satisfy the phase's precondition as documented in `ENTRIES`.
   are observable) and re-draw just the envs that missed — a dead entry state
   burns a full episode at generation time.
 
-A builder typically looks like (this one is real, for the bulb scene — your
-`scene.py` declares the asset names; everything is batched, one call covers
-all `env.num_envs` worlds; `set_states` is the same API used to restore
-recorded pool states):
+A builder follows this task-independent pattern. Resolve actual state keys,
+geometry, controller targets, and settling conditions from this campaign's
+scene and robot; the placeholders below are deliberately schematic:
 
     import torch
 
     def reset_0(env) -> None:
-        """Bulb resting in the socket bore, jittered on the axis."""
         E = env.num_envs
-        st = env.get_states()                        # {"scene": {...}, "robot": {...}}
-        bulb = st["scene"]["bulbs"]                  # (E, 1, 13): pos + quat + vel
-        sp = env.scene.sockets[0].data.root_pos_w    # (E, 3)
-        bulb[:, 0, 0:2] = sp[:, 0:2] + (torch.rand(E, 2, device=sp.device) - 0.5) * 0.004
-        bulb[:, 0, 2] = sp[:, 2] + 0.034             # just above free-rest
-        bulb[:, 0, 3:7] = torch.tensor([1.0, 0, 0, 0], device=sp.device)  # upright
-        bulb[:, 0, 7:13] = 0.0                       # at rest
-        # the arm: hardcode a pose when the phase needs one (set the targets
-        # too, or the controller pulls it back to the old ones)
-        ARM = torch.tensor([0.0, -0.4, 0.0, -2.1, 0.0, 1.9, 0.8, 0.04, 0.04])
-        st["robot"]["joint_pos"][:] = ARM            # (E, 9): 7 arm + 2 fingers
-        st["robot"]["joint_vel"][:] = 0.0
-        st["robot"]["joint_pos_target"][:] = ARM
+        st = env.get_states()
+        # 1. derive each env's entry state from its own observed fixture/task state
+        # 2. sample small per-env perturbations inside the entry precondition
+        # 3. write object and, only when needed, robot state + controller targets
+        # 4. set every velocity deliberately
         env.set_states(st)
         hold = torch.zeros(E, env.robot.action_dim, device=env.device)
-        hold[:, 6:8] = 0.04                          # fingers open, arm holds
-        for _ in range(72):                          # settle into contact
-            env.step(hold)
+        # If the entry requires settled contact, step `hold` until the
+        # observable precondition is stable; derive the bound from this scene.
 
 ## Verification
 
-    generate --headless /workspace --scene <scene> --strategy {base} \
-        --phase phase_N --num_envs 64 --seed 0
+    generate --headless . --scene <scene> --strategy {base} \
+        --phase phase_N --num_envs <N> --seed 0
 
 The batch sweeps ALL your reset files, one rollout of `--num_envs` episodes
 per file, the envs divided evenly among the file's builders — a single batch
 already exercises every entry and every builder; each episode's meta records
 its (file, builder) lineage.
 This generates one batch of data using your proposed `phase_N` and its initial
-conditions, under `/workspace/data/<batch>/`: one `ep_NNNN/` folder per
+conditions, under `data/<batch>/`: one `ep_NNNN/` folder per
 episode, success/fail in each episode's `meta.json`, and the batch summary
 (yield) in `data/<batch>/meta.json`. Physical parameters are sampled
 automatically (env 0 always keeps the plain, unsampled world); add
-`--nominal` to turn sampling off while you debug entries. Judge by success,
-not score — a mid-phase entry gets partial score for free (the entry state
-already satisfies part of the rubric).
+`--nominal` to turn sampling off while you debug entries. Judge by success
+only. A mid-task entry may begin with a higher rubric score; that does not
+make the episode successful.

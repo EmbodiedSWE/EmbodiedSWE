@@ -7,3 +7,4 @@ spelled out; never a bake path.
 """
 
 from . import bulb  # noqa: F401
+from . import pc_ram  # noqa: F401
