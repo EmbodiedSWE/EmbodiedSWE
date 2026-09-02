@@ -14,7 +14,19 @@ stack purely as installed packages, so **no Isaac Lab source clone is needed**.
 
 ## Setup
 
-Everything installs through **uv** into a project-local venv named **`cosigen`** (Python 3.11).
+Everything installs into a project-local venv named **`cosigen`** (Python 3.11), using **uv** for
+the binary stack plus targeted pip workarounds for legacy upstream packages.
+
+The recommended fail-fast installer pins the release-era transitive dependencies that upstream
+Isaac Lab 2.3.2 leaves open (`warp-lang`) and repairs the legacy `flatdict` build on current package
+indexes. It is safe to re-run and reuses an existing valid `.venv`:
+
+```bash
+./scripts/bootstrap_isaaclab_5_1.sh
+source .venv/bin/activate
+```
+
+The manual equivalent is documented below for debugging.
 
 ### 1. Create + activate the venv
 
@@ -28,7 +40,8 @@ source .venv/bin/activate
 ### 2. Install PyTorch + Isaac Sim
 
 ```bash
-uv pip install torch==2.7.0 --index-url https://download.pytorch.org/whl/cu128
+uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 \
+  --index-url https://download.pytorch.org/whl/cu128
 uv pip install "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com
 ```
 
@@ -39,10 +52,13 @@ Pin a version compatible with Isaac Sim 5.1 (`isaaclab` 2.3.2 = the v2.3 release
 Isaac Sim 4.5/5.0/5.1):
 
 ```bash
-uv pip install setuptools wheel
-CMAKE_POLICY_VERSION_MINIMUM=3.5 uv pip install "isaaclab[all]==2.3.2" \
-  --extra-index-url https://pypi.nvidia.com \
-  --no-build-isolation-package flatdict
+uv pip install pip==25.2 setuptools==81.0.0
+python -m pip install --no-cache-dir --no-build-isolation flatdict==4.0.1
+python -m pip install --no-cache-dir --no-deps warp-lang==1.11.0
+CMAKE_POLICY_VERSION_MINIMUM=3.5 python -m pip install --no-cache-dir \
+  flatdict==4.0.1 warp-lang==1.11.0 click==8.1.7 typing-extensions==4.12.2 \
+  "isaaclab[all]==2.3.2" \
+  --extra-index-url https://pypi.nvidia.com
 ```
 
 ### 4. Install robobench (this repo)
@@ -85,6 +101,22 @@ python -m robobench.scripts.smoke --list
 python -m robobench.scripts.smoke --env assembly.ikea_table.g1.joint
 
 ```
+
+For the `packing.egg_carton` contribution, run the evidence-producing validation pipeline from the
+CoSiGen root. It stops at the first failure and writes logs plus recorded frame archives under
+`validation_artifacts/`. With `CoSiGen_Solutions` checked out beside this repo, it also runs the held-out
+G1 reference solution:
+
+```bash
+./scripts/validate_egg_carton.sh
+
+# Final stability gate after the first run is calibrated:
+./scripts/validate_egg_carton.sh --solution-runs 3
+```
+
+An automated pass proves registry wiring, oracle happy/negative paths, recorded rendering, G1 reach,
+and reference actuation. The recorded output must still be watched end to end before the task is
+accepted; agent difficulty is evaluated separately.
 
 ## Newton env (folding / pouring / shoe_tying / dough suites)
 
