@@ -5,6 +5,14 @@ modules defer isaaclab/pxr, so registration is safe without a running app.
 """
 
 from .box_to_bin import BoxToBinScene, BoxToBinSceneCfg
+from .fruit_delivery import FruitDeliveryScene, FruitDeliverySceneCfg
 from .wheel_carry import WheelCarryScene, WheelCarrySceneCfg
 
-__all__ = ["BoxToBinScene", "BoxToBinSceneCfg", "WheelCarryScene", "WheelCarrySceneCfg"]
+__all__ = [
+    "BoxToBinScene",
+    "BoxToBinSceneCfg",
+    "FruitDeliveryScene",
+    "FruitDeliverySceneCfg",
+    "WheelCarryScene",
+    "WheelCarrySceneCfg",
+]
