@@ -1,7 +1,7 @@
 """Slice smoke — no robot: the KNIFE is driven kinematically through the chop choreography.
 
-NullRobot env. The smoke takes the presented knife off its stand and writes its pose every
-step: settle, then for every scored plane (end planes last) move above the plane, descend
+NullRobot env. The smoke lifts the knife off its rest and writes its pose every step:
+settle, then for every scored plane (end planes last) move above the plane, descend
 gently with the edge level until the SCENE gate releases the plane's weld (or the edge
 reaches the board), hold briefly, lift. Every release is the scene's own gate on the live
 food frame; separation is real physics. Verdict = `SliceFoodGrader.check_success()`.
@@ -72,7 +72,6 @@ def main() -> None:
 
     env.reset()
     grader = SliceFoodGrader(env)
-    scene.set_knife_staged(ids, False)  # this smoke drives the knife itself
 
     board_top = scene._board_top
     park_z = board_top + scene.food_height() + 0.10
