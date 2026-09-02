@@ -1,6 +1,6 @@
 """PushShapesScene — push three differently-shaped blocks onto their matching pads.
 
-A multi-stage successor to the single-block ``push_t`` port. Three plates (T, X, L) start
+A multi-stage extension of RoboDojo's single-block ``push_T``. Three plates (T, X, L) start
 in a row in front of the robot, each yawed away from its pad; three colour-keyed pads sit
 in a row beyond them. Solving requires, per piece, a pivot push to correct yaw and a
 translation to seat it — and doing so without knocking an already-seated neighbour out of
@@ -43,7 +43,7 @@ PIECES = ("t", "x", "l")
 class PushShapesSceneCfg(BaseCfg):
     """Rubric, layout, and measured asset constants for :class:`PushShapesScene`."""
 
-    # Per-piece success gate, inherited verbatim from the push_t port.
+    # Per-piece success gate, the RoboDojo push_T rubric verbatim.
     xy_tolerance: float = 0.007
     orientation_tolerance_deg: float = 7.0
     lift_tolerance: float = 0.010
@@ -118,7 +118,7 @@ class PushShapesSceneCfg(BaseCfg):
         self.asset_dir = self.asset_dir or str(shapes)
         # The T BLOCK stays the vendored RoboDojo mesh; X and L are authored beside it.
         self.block_usd = self.block_usd or {
-            "t": str(suite_assets / "push_t" / "block" / "main.usda"),
+            "t": str(suite_assets / "push_shapes" / "block_t" / "main.usda"),
             "x": str(shapes / "block_x" / "main.usda"),
             "l": str(shapes / "block_l" / "main.usda"),
         }
@@ -172,7 +172,7 @@ class PushShapesScene(BaseScene):
             if not Path(usd).is_file():
                 raise FileNotFoundError(
                     f"{usd} not found — run scripts/author_push_shapes_assets.py (authored "
-                    f"pieces) and scripts/vendor_push_t_assets.py (the RoboDojo T)"
+                    f"pieces) and scripts/vendor_push_shapes_t_asset.py (the RoboDojo T)"
                 )
 
         table_scale = 0.01
@@ -252,7 +252,7 @@ class PushShapesScene(BaseScene):
                         solver_velocity_iteration_count=2,
                         max_depenetration_velocity=0.25,
                         # Physical damping for a light plate on a laminate bench. The
-                        # push_t port clamped max_angular_velocity to 0.035 (~500x under the
+                        # the first port clamped max_angular_velocity to 0.035 (~500x under the
                         # Isaac Lab default), which made deliberate reorientation impossible;
                         # rotation is a GOAL here, so only mild damping remains.
                         linear_damping=0.15,

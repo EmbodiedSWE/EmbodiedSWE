@@ -99,7 +99,7 @@ def main() -> bool:
         # to be judgeable here is whether each outline sits on its own pad, and that is a
         # top-down question: a shallow angle (the first attempt used ~40 degrees) foreshortens
         # the two rows into one cluttered band and a shallow over-the-shoulder angle also lets
-        # the hands hide the contact, which is how the push_t deliverable went wrong.
+        # the hands hide the contact, which is how the first single-block deliverable went wrong.
         # ~65 degrees keeps the pieces readable while retaining enough obliquity to show
         # thickness, and the small +x offset stops the robot's arms from covering a lane.
         eye = np.array((0.10, mid_y + 0.30, c.surface_z + 0.64)) + origin
