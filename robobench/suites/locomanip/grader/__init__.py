@@ -11,8 +11,9 @@ check_success() — all required, anything missing or mismatched fails at
 construction. Register it in GRADERS.
 """
 
+from .box_to_bin import BoxToBinGrader
 from .wheel_carry import WheelCarryGrader
 
-GRADERS = {"wheel_carry": WheelCarryGrader}
+GRADERS = {"box_to_bin": BoxToBinGrader, "wheel_carry": WheelCarryGrader}
 
-__all__ = ["WheelCarryGrader", "GRADERS"]
+__all__ = ["BoxToBinGrader", "WheelCarryGrader", "GRADERS"]
