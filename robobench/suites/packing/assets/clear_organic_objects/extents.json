@@ -149,7 +149,16 @@
       0.04958,
       0.05068
     ],
-    "src": "derived: lemon1 mesh, lime-green tint (see scripts/make_lime_from_lemon.py)",
+    "src": "derived: lemon1 mesh, lime-green tint + coarse collider (see scripts/make_lime_from_lemon.py)",
+    "n_tex": 3
+  },
+  "lemon_g": {
+    "bbox_m": [
+      0.07616,
+      0.04958,
+      0.05068
+    ],
+    "src": "derived: lemon1 mesh, coarse collider (see scripts/make_lime_from_lemon.py)",
     "n_tex": 3
   }
 }

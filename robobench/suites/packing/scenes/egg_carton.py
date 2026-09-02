@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
@@ -44,70 +44,70 @@ class EggCartonSceneCfg(BaseCfg):
     """Config dials and measured structure for :class:`EggCartonScene`."""
 
     # --- tunable: rubric -----------------------------------------------------------------------
-    seat_xy_tol: float = tunable(0.021)  # egg centre radial tolerance around a cavity (m)
-    seat_z_min: float = tunable(0.015)  # egg-centre band in carton-body coordinates (m)
-    seat_z_max: float = tunable(0.042)  # source task accepts <= 40 mm; 2 mm solver margin
-    egg_tilt_max_deg: float = tunable(35.0)  # long egg axis versus carton local +/-z
-    lid_closed_deg: float = tunable(7.0)  # |joint| <= this is closed (joint range -90..0)
+    seat_xy_tol: float = 0.021  # egg centre radial tolerance around a cavity (m)
+    seat_z_min: float = 0.015  # egg-centre band in carton-body coordinates (m)
+    seat_z_max: float = 0.042  # source task accepts <= 40 mm; 2 mm solver margin
+    egg_tilt_max_deg: float = 35.0  # long egg axis versus carton local +/-z
+    lid_closed_deg: float = 7.0  # |joint| <= this is closed (joint range -90..0)
     # Final stage: the lid must be pushed closed after every target pocket is filled.  Off, the
     # rubric reduces to the original fill-only task (useful for ablations and older presets).
-    require_lid_closed: bool = tunable(True)
-    settle_speed: float = tunable(0.05)  # max egg linear speed while counting (m/s)
-    settle_joint_speed: float = tunable(0.10)  # max lid angular speed at success (rad/s)
+    require_lid_closed: bool = True
+    settle_speed: float = 0.05  # max egg linear speed while counting (m/s)
+    settle_joint_speed: float = 0.10  # max lid angular speed at success (rad/s)
 
     # --- tunable: task layout/randomization ----------------------------------------------------
     # ``basket_pos`` etc. name the egg SCATTER FRAME on the open table (the area where the
     # removed basket used to stand); the names are kept so bindings and solvers keyed on them
     # stay valid.
-    carton_pos: tuple[float, float] = tunable((0.14, 0.12))
-    basket_pos: tuple[float, float] = tunable((-0.14, 0.12))
-    carton_pos_jitter: float = tunable(0.010)
-    carton_yaw_jitter_deg: float = tunable(8.0)
-    basket_pos_jitter: float = tunable(0.010)
-    basket_yaw_jitter_deg: float = tunable(8.0)
-    egg_pos_jitter: float = tunable(0.006)
+    carton_pos: tuple[float, float] = (0.14, 0.12)
+    basket_pos: tuple[float, float] = (-0.14, 0.12)
+    carton_pos_jitter: float = 0.010
+    carton_yaw_jitter_deg: float = 8.0
+    basket_pos_jitter: float = 0.010
+    basket_yaw_jitter_deg: float = 8.0
+    egg_pos_jitter: float = 0.006
     # Eggs scatter around the scatter frame's own yaw, lying roughly parallel.  The
     # full-circle (180) jitter made the tableau unsolvable for a fixed-base arm on many reset
     # seeds: a side-lying egg whose long axis points at the robot presents only its blunt end
     # to a top-down pinch, and no wrist attitude reachable from this shoulder can cage such an
     # egg.  +/-30 degrees keeps visible per-seed variety (combined with frame yaw, carton
     # pose, and egg position jitter) while every egg stays physically pinchable from above.
-    egg_yaw_jitter_deg: float = tunable(30.0)
+    egg_yaw_jitter_deg: float = 30.0
     # --- info: measured asset structure --------------------------------------------------------
-    num_eggs: int = info(4)
-    target_eggs: int = info(3)
+    num_eggs: int = 4
+    target_eggs: int = 3
     # Composed holder asset is 1.2x its source layer: measured cavity centres are +/-30 mm.
-    cavity_centers: tuple[tuple[float, float], ...] = info(
+    cavity_centers: tuple[tuple[float, float], ...] = (
         ((-0.030, -0.030), (-0.030, 0.030), (0.030, -0.030), (0.030, 0.030))
     )
     # Four non-overlapping spawn cells in the table scatter area.  Slightly wider than the
     # old in-basket spacing so neighbouring eggs stay clear of a descending finger stack.
-    basket_slots: tuple[tuple[float, float], ...] = info(
+    basket_slots: tuple[tuple[float, float], ...] = (
         ((-0.050, -0.050), (-0.050, 0.050), (0.050, -0.050), (0.050, 0.050))
     )
-    carton_body: str = info("E_body_5")
-    lid_joint: str = info("RevoluteJoint_4compartmenteggcartons_up")
-    lid_open_deg: float = info(-90.0)
-    egg_spawn_lift: float = info(0.040)  # short settle drop onto the bare table
-    egg_mass: float = info(0.055)  # a real chicken egg, not the source metadata's 0.3 kg
-    egg_contact_offset: float = info(0.002)
-    carton_contact_offset: float = info(0.0015)
-    light_intensity: float = info(2500.0)
+    carton_body: str = "E_body_5"
+    lid_joint: str = "RevoluteJoint_4compartmenteggcartons_up"
+    lid_open_deg: float = -90.0
+    egg_spawn_lift: float = 0.040  # short settle drop onto the bare table
+    egg_mass: float = 0.055  # a real chicken egg, not the source metadata's 0.3 kg
+    egg_contact_offset: float = 0.002
+    carton_contact_offset: float = 0.0015
+    light_intensity: float = 2500.0
 
     # --- info: table preset (same relocatable packing-table convention as sibling scenes) ------
-    table: str = info("packing")
-    table_depth_scale: float = info(1.5)
-    surface_z: float | None = info(None)
+    table: str = "packing"
+    table_depth_scale: float = 1.5
+    surface_z: float | None = None
     # None -> the preset formula (surface_z - table height), which keeps the table feet exactly
     # on the floor.  Bindings that lower surface_z for a short embodiment can pin the floor at
     # 0 instead, burying the table base rather than sinking the whole world: a humanoid
     # standing beside the bench then has the floor at its feet.
-    ground_z: float | None = info(None)
-    workbench_pos: tuple[float, float] | None = info(None)
-    workbench_usd: str = info("")
-    asset_dir: str = info("")
-    carton_usd: str = info("")
-    egg_usd: str = info("")
+    ground_z: float | None = None
+    workbench_pos: tuple[float, float] | None = None
+    workbench_usd: str = ""
+    asset_dir: str = ""
+    carton_usd: str = ""
+    egg_usd: str = ""
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {
             "usd": ("lab_table", "table_instanceable.usd"),
