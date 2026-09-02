@@ -76,6 +76,7 @@ class PinkIKController(BaseController):
 
     def __init__(self, cfg: PinkIKControllerCfg) -> None:
         super().__init__(cfg, command_type="position")  # IK always outputs position targets
+        self._joint_position_override: Any | None = None
 
     def _resolve_joints(self, robot: Any) -> Any:
         return robot.articulation.find_joints(list(self.cfg.joint_names))[0]
@@ -150,6 +151,9 @@ class PinkIKController(BaseController):
         from isaaclab.controllers.pink_ik.local_frame_task import LocalFrameTask
         from isaaclab.utils import math as mu
 
+        if self._joint_position_override is not None:
+            return self._joint_position_override
+
         art = self.robot.articulation
         n = action.shape[0]
 
@@ -184,3 +188,26 @@ class PinkIKController(BaseController):
                     fi += 1
             out.append(ctrl.compute(cur_all[env_i], self._dt))  # (|chain|,) torch on device
         return torch.stack(out)
+
+    def set_joint_position_override(self, target: torch.Tensor) -> None:
+        """Temporarily command the IK chain in joint space.
+
+        This is intended for collision-free posture recovery between Cartesian skills.  The target
+        still flows through the articulation's position actuators on every environment step; it is
+        not a joint-state write.  Call :meth:`clear_joint_position_override` before resuming frame
+        tracking.
+        """
+        import torch
+
+        if target.ndim == 1:
+            target = target.unsqueeze(0)
+        expected = (self.robot.env.num_envs, len(self.joint_ids))
+        if tuple(target.shape) != expected:
+            raise ValueError(f"joint override shape {tuple(target.shape)} does not match {expected}")
+        self._joint_position_override = target.to(
+            device=self.robot.env.device, dtype=torch.float32
+        ).clone()
+
+    def clear_joint_position_override(self) -> None:
+        """Resume Cartesian Pink IK after a joint-position recovery segment."""
+        self._joint_position_override = None

@@ -207,6 +207,9 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Local task-validation evidence bundles
+validation_artifacts/
+
 # PyPI configuration file
 .pypirc
 
@@ -233,3 +236,9 @@ robobench/suites/*/videos/
 # of git). Committed specs + machinery live elsewhere (robobench/, and later agent/ + configs/).
 /experiments/*
 !/experiments/README.md
+
+# Interactive dev loop (scripts/runpod_dev.py): pod handle and pulled media are per-machine.
+.runpod_dev.json
+artifacts/
+*.npz
+*.mp4

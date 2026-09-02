@@ -7,6 +7,8 @@ the physics is proven.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
     BimanualFrankaCfg,
@@ -16,16 +18,85 @@ from robobench.robots import (
     MultiRobotCfg,
 )
 from robobench.suites.packing.scenes import (
+    EggCartonSceneCfg,
     PenHolderSceneCfg,
     ToolPackingSceneCfg,
 )
 
 SUITE = "packing"
+_EGG_CARTON_G1_USD = str(
+    Path(__file__).resolve().parents[1] / "assets" / "egg_carton" / "g1_rubber_fingers.usda"
+)
 
 
 # ---- RoboDojo fill-pen-holder (difficulty-floor tier, bimanual-friendly) ----------------------
 # Scene physics only (NullRobot oracle/smoke). -> "packing.pen_holder"
 register_env(SUITE, lambda: EnvCfg(scene="pen_holder", robot="null", env_spacing=3))
+
+
+# ---- RoboDojo fill-egg-holder (long-horizon humanoid tier) ------------------------------------
+# Scene physics only (NullRobot oracle/smoke). -> "packing.egg_carton"
+register_env(SUITE, lambda: EnvCfg(scene="egg_carton", robot="null", env_spacing=3))
+
+
+def _egg_carton_g1_cfg() -> EggCartonSceneCfg:
+    """G1 bimanual layout: basket left, four-cell carton right, both in its measured band.
+
+    The whole robot/fixture group sits 0.35 m closer to the table's front edge than the
+    original calibration so the pelvis (y=-0.80) clears the 1.14 m-deep tabletop (front edge
+    y=-0.57) instead of standing inside the bench.  The measured 0.40 m base-to-work offset —
+    the only band where the 15-degree pre-grasp is reachable — is preserved exactly.  The
+    fixtures sit close to the front edge on purpose: at a 0.23 m pull-back the ELBOW's
+    down-forward swing zone landed exactly on the tabletop edge slab (the old inside-the-table
+    base kept the elbow constrained above the top), and edge contact stalled every pocket
+    descent 60--80 mm high; at 0.35 m the elbow swings in free air beyond the edge and only
+    the wrist, well above surface height, crosses the edge plane.  ``ground_z=0`` pins the
+    floor at the humanoid's feet and buries the lowered table's base instead of sinking the
+    whole world by 0.29 m.
+    """
+    # Carton x=0.14 is the calibrated basin: shifting it to 0.08 to "help" the right column
+    # re-rolled the whole contact chaos and broke the proven transfers.  The three-egg solver
+    # fills back-right, front-left, then back-left (front-right is the spare).
+    return EggCartonSceneCfg(
+        surface_z=0.70,
+        ground_z=0.0,
+        basket_pos=(-0.14, -0.40),
+        carton_pos=(0.14, -0.40),
+    )
+
+
+# -> "packing.egg_carton.g1.{joint,pink_ik}".  Fixed-base G1 stands in front of the
+# packing table; each hand can cover one side while the 2x2 carton remains at midline reach.
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="egg_carton",
+                scene_cfg=_egg_carton_g1_cfg(),
+                robot="g1",
+                control_mode=mode,
+                # Keep the humanoid outside the front of the packing table and
+                # bring the movable work toward it instead.  RunPod calibration
+                # showed that a 0.62 m base-to-work offset left 114--193 mm of
+                # IK residual, while the 0.40 m band admits the 15-degree
+                # pre-grasp.  Moving the fixtures, rather than the pelvis, also
+                # avoids a visually implausible robot/table overlap.  Keep the
+                # stock G1 base height: lowering it made the elevated pre-grasp
+                # enter a shoulder singularity during RunPod calibration.
+                # This task uses a thin rubber pad material on the existing finger colliders.
+                # The source G1 hand is bare rigid plastic with its default physics material;
+                # RunPod contact traces showed geometrically valid three-point grasps sliding
+                # off a 41 g egg even during a 1 mm/substep lift.  The overlay changes friction
+                # only on the hand collision shapes, leaving egg/basket/carton contacts honest.
+                robot_cfg=G1RobotCfg(
+                    base_pos=(0.0, -0.80, 0.75),
+                    g1_usd=_EGG_CARTON_G1_USD,
+                ),
+                env_spacing=3,
+            )
+        ),
+    )
 
 
 # Robot bindings. Placements are STARTING guesses copied from the stacking-toy / packing measured

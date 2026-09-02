@@ -1,0 +1,201 @@
+#usda 1.0
+(
+    defaultPrim = "g1_29dof_with_hand_rev_1_0"
+    subLayers = [
+        @../../../../robots/assets/g1/g1.usd@
+    ]
+    upAxis = "Z"
+)
+
+# Task-specific pads for the stock G1 three-finger hand.  Distal links get the
+# high-friction grip compound.  Index/middle proximal links use a release
+# compound with high static but much lower dynamic friction: they help establish
+# the pinch, then slide once finger retraction starts instead of carrying the egg
+# out of its pocket.  Binding at each instanceable collision root makes every
+# referenced convex collider inherit the material without modifying the asset.
+over "g1_29dof_with_hand_rev_1_0"
+{
+    def Material "EggCartonFingerRubber" (
+        prepend apiSchemas = ["PhysicsMaterialAPI"]
+    )
+    {
+        float physics:dynamicFriction = 1.2
+        float physics:restitution = 0
+        float physics:staticFriction = 1.5
+    }
+
+    def Material "EggCartonFingerRelease" (
+        prepend apiSchemas = ["PhysicsMaterialAPI"]
+    )
+    {
+        float physics:dynamicFriction = 0.4
+        float physics:restitution = 0
+        float physics:staticFriction = 1.2
+    }
+
+    over "left_hand"
+    {
+        over "left_hand_index_0_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRelease> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+        }
+        over "left_hand_index_1_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+            def Cube "EggCartonRubberPad" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                double size = 1
+                bool physics:collisionEnabled = 1
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber>
+                color3f[] primvars:displayColor = [(0.025, 0.025, 0.025)]
+                double3 xformOp:translate = (0.026, -0.010, -0.010)
+                double3 xformOp:scale = (0.036, 0.024, 0.012)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+        over "left_hand_middle_0_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRelease> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+        }
+        over "left_hand_middle_1_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+            def Cube "EggCartonRubberPad" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                double size = 1
+                bool physics:collisionEnabled = 1
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber>
+                color3f[] primvars:displayColor = [(0.025, 0.025, 0.025)]
+                double3 xformOp:translate = (0.026, -0.010, 0.010)
+                double3 xformOp:scale = (0.036, 0.024, 0.012)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+        over "left_hand_thumb_2_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+        }
+    }
+
+    over "right_hand"
+    {
+        over "right_hand_index_0_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRelease> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+        }
+        over "right_hand_index_1_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+            def Cube "EggCartonRubberPad" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                double size = 1
+                bool physics:collisionEnabled = 1
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber>
+                color3f[] primvars:displayColor = [(0.025, 0.025, 0.025)]
+                double3 xformOp:translate = (0.026, -0.010, -0.010)
+                double3 xformOp:scale = (0.036, 0.024, 0.012)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+        over "right_hand_middle_0_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRelease> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+        }
+        over "right_hand_middle_1_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+            def Cube "EggCartonRubberPad" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                double size = 1
+                bool physics:collisionEnabled = 1
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber>
+                color3f[] primvars:displayColor = [(0.025, 0.025, 0.025)]
+                double3 xformOp:translate = (0.026, -0.010, 0.010)
+                double3 xformOp:scale = (0.036, 0.024, 0.012)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+        over "right_hand_thumb_2_link"
+        {
+            over "collisions" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber> (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+            }
+        }
+    }
+}
