@@ -76,7 +76,7 @@ def _clear_organic_objects_franka_cfg() -> ClearOrganicObjectsSceneCfg:
         # so the identification and long-horizon sequencing the task measures are intact. The
         # NULL preset keeps the full 11, so the scene and its oracle still cover RoboLab's whole
         # named set; this is the ARM binding's solvable tier.
-        exclude=("lime_a", "lime_b", "red_onion", "avocado01", "orange_01", "pumpkinlarge", "lime01_01",
+        exclude=("lemon_a", "lemon_b", "lime_a", "lime_b", "red_onion", "avocado01", "orange_01", "pumpkinlarge", "lime01_01",
                  "pomegranate01"),
         subset_sample=True,
         min_organics=4,
@@ -210,6 +210,13 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
         # presentation, pumpkinsmall single-azimuth, lime unliftable) remain the basis for
         # the working row's item poses; per-item validation continues on the pod.
         surface_z=0.78,
+        # PADS, for the palm CAGE (scene default 1.1 / 0.95). The cage does not squeeze the
+        # fruit -- the hand's pad gap bottoms out at 70 mm around a 51 mm lemon -- so what
+        # holds it against the palm through the lift-and-roll is friction; at the scene default
+        # a hulled lemon slid out of every lift (13-47 mm instead of 82-100). Set here rather
+        # than on the scene so the franka tier keeps the pads it was measured with.
+        item_static_friction=2.0,
+        item_dynamic_friction=1.8,
         table="robolab",
         table_depth_scale=1.3,  # multiplies the asset's LONG axis (world x after the -90
         # rotation): a 1.3 m-wide tabletop, matching the original scene's proportions.
@@ -243,7 +250,7 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
         # finger on its cap during the descent and blew up; the 30 mm pen holder had nothing to
         # squeeze; limes rolled onto a lumpy side and presented 67-71 mm. The clutter stays as
         # distractors, graded by the no-distractor-in-crate rule.
-        sort_to_bin=("lemon_01", "lemon_02"),
+        sort_to_bin=("lemon_a", "lemon_b"),
         sort_to_tray=("lime_a", "lime_b"),
         # (the limes' green is baked into their own asset, lime_g; no spawn-time override)
         fixed_layout=(
@@ -275,8 +282,8 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
             # arm's arc at torso yaw -36/-12, the two limes (-> tray, on the robot's left) on
             # the left arm's mirrored arc at +12/+36. Each arm works its own side; the crate
             # and tray are mirror images about the robot's midline.
-            ("lemon_01", 0.153, -0.290, 54.0),
-            ("lemon_02", 0.054, -0.246, 78.0),
+            ("lemon_a", 0.153, -0.290, 54.0),
+            ("lemon_b", 0.054, -0.246, 78.0),
             ("lime_a", -0.054, -0.246, 102.0),
             ("lime_b", -0.153, -0.290, 126.0),
             # Scenery spread: composed, colourful, OUT of the reach band, on a 1.3 x 0.7 m
@@ -300,7 +307,11 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
         # avocado and onion: measured NOT graspable by the G1 hand even lying and correctly
         # gripped (seat 21-34 mm, lift <= 0 on every try) -- out, so nothing on the table
         # invites an impossible grasp.
-        exclude=("red_onion", "avocado01"),
+        # lemon_01/lemon_02 are the manifest's SHARED lemon instances (the franka tier's
+        # targets, on the vendored colliders); this tier works its own `lemon_a`/`lemon_b` on the
+        # coarse-collider copy instead, so the shared pair is left out rather than spawned
+        # without a slot in the working row.
+        exclude=("red_onion", "avocado01", "lemon_01", "lemon_02"),
         subset_sample=False,
         shuffle_slots=False,
         # Small jitter so millimetre poses cannot be memorised; yaw stays authored until the
@@ -423,7 +434,7 @@ def _fruits_on_plate_franka_cfg() -> FruitsOnPlateSceneCfg:
         scatter_center=(0.0, 0.33),
         scatter_span=(0.48, 0.36),
         scatter_cols=4,
-        exclude=("lime_a", "lime_b", "orange_01", "pomegranate01", "lime01_01",
+        exclude=("lemon_a", "lemon_b", "lime_a", "lime_b", "orange_01", "pomegranate01", "lime01_01",
                  "serving_bowl", "wooden_spoons", "spatula"),
         slot_override=(),  # the two long utensils are excluded, so nothing needs a fixed slot
         subset_sample=True,
@@ -539,7 +550,7 @@ def _fruits_on_plate_g1_cfg() -> FruitsOnPlateSceneCfg:
         #     its yaw is commanded. Probed across eight reset draws: the lemon was liftable in every
         #     one, while the lime rolled out of the hand — no lift at a 72 mm span, and its
         #     in-hand seating 62-80 mm off afterwards. Excluded as unreliable by SHAPE, not span.
-        exclude=("lime_a", "lime_b", "lemon_02", "lime01", "lime01_01", "orange_01", "orange_02", "pomegranate01",
+        exclude=("lemon_a", "lemon_b", "lime_a", "lime_b", "lemon_02", "lime01", "lime01_01", "orange_01", "orange_02", "pomegranate01",
                  "pumpkinlarge", "redonion", "serving_bowl", "storage_box", "wooden_spoons",
                  "spatula"),
         # The distractor sits 180 mm beyond the fruit, well clear of the hand's swept volume
