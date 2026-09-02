@@ -4,8 +4,9 @@ One module per scene, mirroring `scenes/`. Import-light (torch deferred), and NO
 by the suite's `__init__` — graders are opt-in, constructed by the harness.
 """
 
+from .dice_food import DiceFoodGrader
 from .slice_food import SliceFoodGrader
 
-GRADERS = {"slice": SliceFoodGrader}
+GRADERS = {"slice": SliceFoodGrader, "dice": DiceFoodGrader}
 
-__all__ = ["SliceFoodGrader", "GRADERS"]
+__all__ = ["SliceFoodGrader", "DiceFoodGrader", "GRADERS"]
