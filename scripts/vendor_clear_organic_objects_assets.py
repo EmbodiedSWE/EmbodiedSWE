@@ -11,8 +11,11 @@ referenced by RELATIVE paths (`./textures/...`). So vendoring is: copy the USD v
 the referenced textures preserving their relative layout (downsampling >2K PNGs so the git
 footprint stays sane — every file well under GitHub's 100 MB limit), and record each object's
 measured bounding box to `extents.json` (the scene reads it for layout + the in-bin volume).
-Collision approximation / mass / spawn scale are set at spawn time in the scene cfg (the
-tool_packing pattern), NOT baked here — the source colliders are kept as-is.
+Mass / spawn scale are set at spawn time in the scene cfg (the tool_packing pattern). The
+collision approximation IS post-processed: `scripts/fix_clear_organic_colliders.py` gives the
+near-convex produce a single convex hull (the source `convexDecomposition` of a 10k-90k point
+scan is dozens of sliver hulls, and a robot finger pressing into a seam launched objects metres;
+see that script). Run it after vendoring.
 
 This box has no top-level `pxr` on the venv path (USD ships inside the kit extscache); the
 script re-execs itself with the extscache lib/PYTHONPATH so it runs headless WITHOUT booting
