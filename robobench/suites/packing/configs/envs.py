@@ -215,15 +215,15 @@ register_env(SUITE, lambda: EnvCfg(scene="stack_blocks", robot="null", env_spaci
 
 
 def _stack_blocks_g1_cfg() -> StackBlocksSceneCfg:
-    """G1 (short ~0.55 m arms), 0.7 m bench. Layout placed INSIDE the MEASURED right-wrist
-    reachable envelope (pink_probe.py reach map, base (0,-0.50,0.75) facing +y): usable band is
-    y in [-0.31, -0.10], x in [-0.15, 0.15] (x>=0 best); y>=0 is out of reach. Pad sits at the
-    forward reach limit; the four blocks scatter on a shallow arc BEHIND it (closer to the base,
-    where reach is strongest), so the arm picks near and places forward."""
+    """G1 (short ~0.55 m arms), 0.7 m bench. The base (below) stands at y=-0.66, clear of the
+    packing table's near edge (y = -0.572 = 0.381 half-depth x 1.5 stretch). Layout placed
+    inside the MEASURED right-wrist reach envelope (pink_probe.py reach map): usable band is
+    rel-base y in [+0.19, +0.40], x in [-0.15, 0.15] (x>=0 best). Pad at rel +0.33; the four
+    blocks scatter on a shallow arc behind it, within rel [+0.20, +0.26]."""
     return StackBlocksSceneCfg(
         surface_z=0.7,
-        pad_pos=(0.08, -0.14),
-        scatter_center=(0.0, -0.24),
+        pad_pos=(0.08, -0.33),
+        scatter_center=(0.0, -0.36),
         scatter_radii=(0.10,),
         scatter_arc=(210.0, 330.0),
     )
@@ -250,7 +250,8 @@ for _mode in ("joint", "pink_ik"):
                 scene_cfg=_stack_blocks_g1_cfg(),
                 robot="g1",
                 control_mode=mode,
-                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)),
+                # base clear of the table's near edge at -0.572 (see the cfg note)
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.66, 0.75)),
                 env_spacing=3,
             )
         ),
@@ -282,10 +283,15 @@ register_env(SUITE, lambda: EnvCfg(scene="classify_objects", robot="null", env_s
 
 
 def _classify_objects_g1_cfg() -> ClassifyObjectsSceneCfg:
+    # G1 (short ~0.55 m arms), 0.7 m bench; the base (below) stands at y=-0.66, clear of the
+    # packing table's near edge (y = -0.572 = 0.381 half-depth x 1.5 stretch). Layout placed
+    # inside the measured right-wrist reach band (rel-base y in [+0.19, +0.40], x in
+    # [-0.15, 0.15] — see the stack_blocks layout note): zones at rel +0.33, the scatter
+    # arc within rel [+0.20, +0.26].
     return ClassifyObjectsSceneCfg(
         surface_z=0.7,
-        zone_pos=((-0.11, -0.14), (0.0, -0.14), (0.11, -0.14)),
-        scatter_center=(0.0, -0.27),
+        zone_pos=((-0.11, -0.33), (0.0, -0.33), (0.11, -0.33)),
+        scatter_center=(0.0, -0.36),
         scatter_radii=(0.10,),
         scatter_arc=(205.0, 335.0),
     )
@@ -307,7 +313,8 @@ for _mode in ("joint", "pink_ik"):
         (lambda mode=_mode: EnvCfg(
             scene="classify_objects", scene_cfg=_classify_objects_g1_cfg(),
             robot="g1", control_mode=mode,
-            robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75)), env_spacing=3)),
+            # base clear of the table's near edge at -0.572 (see the cfg note)
+            robot_cfg=G1RobotCfg(base_pos=(0.0, -0.66, 0.75)), env_spacing=3)),
     )
     register_env(
         SUITE,
