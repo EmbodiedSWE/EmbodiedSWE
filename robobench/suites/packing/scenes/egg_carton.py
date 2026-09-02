@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 class EggCartonSceneCfg(BaseCfg):
     """Config dials and measured structure for :class:`EggCartonScene`."""
 
-    # --- tunable: rubric -----------------------------------------------------------------------
+    # --- rubric -----------------------------------------------------------------------
     seat_xy_tol: float = 0.021  # egg centre radial tolerance around a cavity (m)
     seat_z_min: float = 0.015  # egg-centre band in carton-body coordinates (m)
     seat_z_max: float = 0.042  # source task accepts <= 40 mm; 2 mm solver margin
@@ -55,7 +55,7 @@ class EggCartonSceneCfg(BaseCfg):
     settle_speed: float = 0.05  # max egg linear speed while counting (m/s)
     settle_joint_speed: float = 0.10  # max lid angular speed at success (rad/s)
 
-    # --- tunable: task layout/randomization ----------------------------------------------------
+    # --- task layout/randomization ----------------------------------------------------
     # ``basket_pos`` etc. name the egg SCATTER FRAME on the open table (the area where the
     # removed basket used to stand); the names are kept so bindings and solvers keyed on them
     # stay valid.
@@ -73,17 +73,17 @@ class EggCartonSceneCfg(BaseCfg):
     # egg.  +/-30 degrees keeps visible per-seed variety (combined with frame yaw, carton
     # pose, and egg position jitter) while every egg stays physically pinchable from above.
     egg_yaw_jitter_deg: float = 30.0
-    # --- info: measured asset structure --------------------------------------------------------
+    # --- measured asset structure --------------------------------------------------------
     num_eggs: int = 4
     target_eggs: int = 3
     # Composed holder asset is 1.2x its source layer: measured cavity centres are +/-30 mm.
     cavity_centers: tuple[tuple[float, float], ...] = (
-        ((-0.030, -0.030), (-0.030, 0.030), (0.030, -0.030), (0.030, 0.030))
+        (-0.030, -0.030), (-0.030, 0.030), (0.030, -0.030), (0.030, 0.030)
     )
     # Four non-overlapping spawn cells in the table scatter area.  Slightly wider than the
     # old in-basket spacing so neighbouring eggs stay clear of a descending finger stack.
     basket_slots: tuple[tuple[float, float], ...] = (
-        ((-0.050, -0.050), (-0.050, 0.050), (0.050, -0.050), (0.050, 0.050))
+        (-0.050, -0.050), (-0.050, 0.050), (0.050, -0.050), (0.050, 0.050)
     )
     carton_body: str = "E_body_5"
     lid_joint: str = "RevoluteJoint_4compartmenteggcartons_up"
