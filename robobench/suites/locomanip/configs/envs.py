@@ -14,7 +14,11 @@ from __future__ import annotations
 
 from robobench.core import EnvCfg, register_env
 from robobench.robots import G1RobotCfg
-from robobench.suites.locomanip.scenes import FruitDeliverySceneCfg, WheelCarrySceneCfg
+from robobench.suites.locomanip.scenes import (
+    BoxToBinSceneCfg,
+    FruitDeliverySceneCfg,
+    WheelCarrySceneCfg,
+)
 
 SUITE = "locomanip"
 
@@ -48,6 +52,35 @@ for _mode in ("loco_pink_ik", "loco_joint"):
                 control_mode=mode,
                 robot_cfg=G1RobotCfg(fixed_base=False),
                 scene_cfg=WheelCarrySceneCfg(),
+                env_spacing=8.0,
+            )
+        ),
+    )
+
+
+# ---- Box to bin (a cardboard box off a shelf board into a sorting bin, around a turn) ------------
+# Scene physics only (NullRobot: shelf, table, bin, box). -> "locomanip.box_to_bin"
+#
+# `env_spacing` = 8.0 for the same reason as wheel_carry: a walking robot leaves the footprint its
+# furniture defines, and neighbouring envs must not be somewhere this robot can walk into.
+register_env(SUITE, lambda: EnvCfg(scene="box_to_bin", robot="null", env_spacing=8.0))
+
+# MOBILE G1 (see the wheel_carry block above for why `fixed_base=False` is the whole point). No
+# placement override here either: the scene is laid out around `G1RobotCfg`'s default pelvis pose
+# (0, 0, 0.75) facing +y — the shelf face 0.46 m ahead is exactly the Arena task's stand-off.
+#   - "locomanip.box_to_bin.g1.loco_pink_ik" — arm+waist by whole-body Pink IK + a base command
+#     (action = 2 wrist poses 14 + 14 hand joints + 4 base = 32)
+#   - "locomanip.box_to_bin.g1.loco_joint"   — the same hardware by direct joint targets (31 + 4 = 35)
+for _mode in ("loco_pink_ik", "loco_joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="box_to_bin",
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(fixed_base=False),
+                scene_cfg=BoxToBinSceneCfg(),
                 env_spacing=8.0,
             )
         ),
