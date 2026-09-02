@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Verify and extract the two upstream RoboDojo ``push_T`` USDZ packages.
+"""Verify and extract the upstream RoboDojo ``push_T`` block package (push_shapes' T piece).
 
-Download the files listed in
-``robobench/suites/puzzle/assets/push_t/SOURCE.md`` into one directory, then run:
+Download the file listed in
+``robobench/suites/puzzle/assets/push_shapes/SOURCE_T.md`` into a directory, then run:
 
-    python3 scripts/vendor_push_t_assets.py --source-dir /path/to/downloads
+    python3 scripts/vendor_push_shapes_t_asset.py --source-dir /path/to/downloads
 
 The script is stdlib-only and preserves the source ``main.usdc`` bytes exactly.
 """
@@ -21,11 +21,7 @@ from pathlib import Path
 ASSETS = {
     "t": {
         "sha256": "98bae9ae3dddf67e58004695930c09f3d36f715dfa2bf5d65d1ed2b7179fa493",
-        "output": ("block", "source.usdc"),
-    },
-    "target_t": {
-        "sha256": "4823fa3cfaf1a41cd26dd29deca0f5549da20f1211284d5d944618701a2115bf",
-        "output": ("target_pad", "source.usdc"),
+        "output": ("block_t", "source.usdc"),
     },
 }
 GITHUB_FILE_LIMIT = 100 * 1024 * 1024
@@ -71,11 +67,11 @@ def main() -> None:
         "--source-dir",
         required=True,
         type=Path,
-        help="directory containing t.usdz and target_t.usdz",
+        help="directory containing t.usdz",
     )
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
-    output = repo / "robobench" / "suites" / "puzzle" / "assets" / "push_t"
+    output = repo / "robobench" / "suites" / "puzzle" / "assets" / "push_shapes"
     for name, spec in ASSETS.items():
         vendor_one(args.source_dir.resolve(), output, name, spec)
     print(f"[vendor] complete: {output}")
