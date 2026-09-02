@@ -4,6 +4,8 @@ Tasks:
   - `clear_organic_objects` (ClearOrganicObjectsScene) — sort the organic fruits & vegetables out of a
     cluttered table into the bin, leaving the non-food clutter (a port of RoboLab's
     ClearOrganicObjectsTask, on the RoboLab scanned assets).
+  - `egg_carton` (EggCartonScene) — pick side-lying eggs off the table, seat three of them
+    upright in distinct pockets of the open carton, then push the hinged lid closed.
   - `pen_holder` (PenHolderScene) — collect scattered pens into the holder cup.
   - `tool_packing` (ToolPackingScene) — stow tools into the right drawers of an
     articulated tool chest (2 glass doors + 3 drawers, real scanned assets) and
