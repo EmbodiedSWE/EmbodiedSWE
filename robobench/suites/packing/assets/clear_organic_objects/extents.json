@@ -1,146 +1,155 @@
 {
-  "lemon1": {
-    "bbox_m": [
-      0.07616,
-      0.04958,
-      0.05068
-    ],
-    "src": "fruits_veggies/lemon1.usd",
-    "n_tex": 3
-  },
-  "lemon2": {
-    "bbox_m": [
-      0.06037,
-      0.03967,
-      0.03953
-    ],
-    "src": "fruits_veggies/lemon2.usd",
-    "n_tex": 3
-  },
-  "lime": {
-    "bbox_m": [
-      0.07551,
-      0.06134,
-      0.06004
-    ],
-    "src": "fruits_veggies/lime.usd",
-    "n_tex": 3
-  },
-  "orange1": {
-    "bbox_m": [
-      0.07246,
-      0.07246,
-      0.08321
-    ],
-    "src": "fruits_veggies/orange1.usd",
-    "n_tex": 4
-  },
-  "orange2": {
-    "bbox_m": [
-      0.07182,
-      0.07182,
-      0.07352
-    ],
-    "src": "fruits_veggies/orange2.usd",
-    "n_tex": 4
-  },
-  "pomegranate": {
-    "bbox_m": [
-      0.11427,
-      0.11535,
-      0.11496
-    ],
-    "src": "fruits_veggies/pomegranate.usd",
-    "n_tex": 3
-  },
-  "avocado": {
-    "bbox_m": [
-      0.06113,
-      0.06074,
-      0.09199
-    ],
-    "src": "fruits_veggies/avocado.usd",
-    "n_tex": 3
-  },
-  "red_onion": {
-    "bbox_m": [
-      0.0594,
-      0.05966,
-      0.09028
-    ],
-    "src": "fruits_veggies/red_onion.usd",
-    "n_tex": 4
-  },
-  "pumpkinlarge": {
-    "bbox_m": [
-      0.08896,
-      0.09013,
-      0.08905
-    ],
-    "src": "vomp/pumpkinlarge/pumpkinlarge.usd",
-    "n_tex": 3
-  },
-  "pumpkinsmall": {
-    "bbox_m": [
-      0.07598,
-      0.07601,
-      0.07517
-    ],
-    "src": "vomp/pumpkinsmall/pumpkinsmall.usd",
-    "n_tex": 3
-  },
-  "whitepackerbottle_a01": {
-    "bbox_m": [
-      0.04331,
-      0.04331,
-      0.07678
-    ],
-    "src": "vomp/whitepackerbottle_a01/whitepackerbottle_a01.usd",
-    "n_tex": 3
-  },
-  "crabbypenholder": {
-    "bbox_m": [
-      0.05054,
-      0.03028,
-      0.03475
-    ],
-    "src": "vomp/crabbypenholder/crabbypenholder.usd",
-    "n_tex": 3
-  },
-  "milkjug_a01": {
-    "bbox_m": [
-      0.07683,
-      0.07662,
-      0.17237
-    ],
-    "src": "vomp/milkjug_a01/milkjug_a01.usd",
-    "n_tex": 1
-  },
-  "serving_bowl": {
-    "bbox_m": [
-      0.15968,
-      0.15968,
-      0.05203
-    ],
-    "src": "vomp/serving_bowl/serving_bowl.usd",
-    "n_tex": 4
-  },
-  "utilityjug_a03": {
-    "bbox_m": [
-      0.17125,
-      0.17147,
-      0.33567
-    ],
-    "src": "vomp/utilityjug_a03/utilityjug_a03.usd",
-    "n_tex": 0
-  },
-  "container_f24": {
-    "bbox_m": [
-      1.15838,
-      0.7958,
-      0.66998
-    ],
-    "src": "vomp/container_f24/container_f24.usd",
-    "n_tex": 4
-  }
+ "lemon1": {
+  "bbox_m": [
+   0.07616,
+   0.04958,
+   0.05068
+  ],
+  "src": "fruits_veggies/lemon1.usd",
+  "n_tex": 3
+ },
+ "lemon2": {
+  "bbox_m": [
+   0.06037,
+   0.03967,
+   0.03953
+  ],
+  "src": "fruits_veggies/lemon2.usd",
+  "n_tex": 3
+ },
+ "lime": {
+  "bbox_m": [
+   0.07551,
+   0.06134,
+   0.06004
+  ],
+  "src": "fruits_veggies/lime.usd",
+  "n_tex": 3
+ },
+ "orange1": {
+  "bbox_m": [
+   0.07246,
+   0.07246,
+   0.08321
+  ],
+  "src": "fruits_veggies/orange1.usd",
+  "n_tex": 4
+ },
+ "orange2": {
+  "bbox_m": [
+   0.07182,
+   0.07182,
+   0.07352
+  ],
+  "src": "fruits_veggies/orange2.usd",
+  "n_tex": 4
+ },
+ "pomegranate": {
+  "bbox_m": [
+   0.11427,
+   0.11535,
+   0.11496
+  ],
+  "src": "fruits_veggies/pomegranate.usd",
+  "n_tex": 3
+ },
+ "avocado": {
+  "bbox_m": [
+   0.06113,
+   0.06074,
+   0.09199
+  ],
+  "src": "fruits_veggies/avocado.usd",
+  "n_tex": 3
+ },
+ "red_onion": {
+  "bbox_m": [
+   0.0594,
+   0.05966,
+   0.09028
+  ],
+  "src": "fruits_veggies/red_onion.usd",
+  "n_tex": 4
+ },
+ "pumpkinlarge": {
+  "bbox_m": [
+   0.08896,
+   0.09013,
+   0.08905
+  ],
+  "src": "vomp/pumpkinlarge/pumpkinlarge.usd",
+  "n_tex": 3
+ },
+ "pumpkinsmall": {
+  "bbox_m": [
+   0.07598,
+   0.07601,
+   0.07517
+  ],
+  "src": "vomp/pumpkinsmall/pumpkinsmall.usd",
+  "n_tex": 3
+ },
+ "whitepackerbottle_a01": {
+  "bbox_m": [
+   0.04331,
+   0.04331,
+   0.07678
+  ],
+  "src": "vomp/whitepackerbottle_a01/whitepackerbottle_a01.usd",
+  "n_tex": 3
+ },
+ "crabbypenholder": {
+  "bbox_m": [
+   0.05054,
+   0.03028,
+   0.03475
+  ],
+  "src": "vomp/crabbypenholder/crabbypenholder.usd",
+  "n_tex": 3
+ },
+ "milkjug_a01": {
+  "bbox_m": [
+   0.07683,
+   0.07662,
+   0.17237
+  ],
+  "src": "vomp/milkjug_a01/milkjug_a01.usd",
+  "n_tex": 1
+ },
+ "serving_bowl": {
+  "bbox_m": [
+   0.15968,
+   0.15968,
+   0.05203
+  ],
+  "src": "vomp/serving_bowl/serving_bowl.usd",
+  "n_tex": 4
+ },
+ "utilityjug_a03": {
+  "bbox_m": [
+   0.17125,
+   0.17147,
+   0.33567
+  ],
+  "src": "vomp/utilityjug_a03/utilityjug_a03.usd",
+  "n_tex": 0
+ },
+ "container_f24": {
+  "bbox_m": [
+   1.15838,
+   0.7958,
+   0.66998
+  ],
+  "src": "vomp/container_f24/container_f24.usd",
+  "n_tex": 4
+ },
+ "lime_g": {
+  "bbox_m": [
+   0.07616,
+   0.04958,
+   0.05068
+  ],
+  "src": "derived: lemon1 mesh, lime-green tint (see scripts/make_lime_from_lemon.py)",
+  "n_tex": 3
+ }
 }

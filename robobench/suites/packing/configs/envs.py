@@ -70,7 +70,7 @@ def _clear_organic_objects_franka_cfg() -> ClearOrganicObjectsSceneCfg:
         # so the identification and long-horizon sequencing the task measures are intact. The
         # NULL preset keeps the full 11, so the scene and its oracle still cover RoboLab's whole
         # named set; this is the ARM binding's solvable tier.
-        exclude=("red_onion", "avocado01", "orange_01", "pumpkinlarge", "lime01_01",
+        exclude=("lime_a", "lime_b", "red_onion", "avocado01", "orange_01", "pumpkinlarge", "lime01_01",
                  "pomegranate01"),
         subset_sample=True,
         min_organics=4,
@@ -176,104 +176,135 @@ def _clear_organic_objects_g1_cfg() -> ClearOrganicObjectsSceneCfg:
     cannot descend between two touching items.
     """
     return ClearOrganicObjectsSceneCfg(
+        # (The superseded single-lemon deterministic tier's measured layout notes — grid
+        # pocket, bin standoff, one-column geometry, yaw-presentation analysis — live in git
+        # history at the previous revision; the fixed_layout below replaces the scatter grid
+        # entirely, so those dials are gone rather than dead.)
+        #
+        # REWORKED 2026-09-01 into the two-destination SORT tableau (bussing the table): the
+        # earlier single-lemon deterministic tier is superseded. Three structural changes,
+        # each answering a measured defect of the shipped cell:
+        #
+        # * The robot STANDS BESIDE the table now: the old cell's packing bench (0.57 m half
+        #   depth) had the pelvis 7 cm and the knees 10 cm inside its footprint (probed world
+        #   AABBs, 2026-09-01). The RoboLab wooden table is only 0.35 m half-deep, so at the
+        #   ORIGINAL measured pelvis (-0.50) the whole body clears its near edge by ~6 cm --
+        #   every measured grasp pocket from the shipped solve stays valid -- and with the
+        #   legs z-scaled to a 0.78 top the ground lands at z=0, so the feet stand naturally
+        #   on the floor. No riser, no reach re-derivation.
+        # * TWO destinations: blue crate (right) for produce, round tray (left) for the
+        #   non-food items. The tray is deliberately flat — placement on it cannot wedge or
+        #   penetrate the way a second crate's walls could.
+        # * The FULL 16-object manifest is on the table (the RoboLab original's colourful
+        #   richness): five in the front working row are the sort targets, the rest are a
+        #   composed scenery spread outside the reach band, graded only via the
+        #   no-distractor-in-bin rule.
+        #
+        # The old cell's measured grasp lessons (azimuth band 115-245, lemon narrow-axis
+        # presentation, pumpkinsmall single-azimuth, lime unliftable) remain the basis for
+        # the working row's item poses; per-item validation continues on the pod.
         surface_z=0.78,
-        # Bin pushed OUT and the grid pulled IN, roughly doubling the clear space between the
-        # produce and the crate wall (74 mm -> 154 mm). At the old spacing the wrist — which rides
-        # ~0.14 m toward +x of whatever it grasps — landed over the crate for the grid's east
-        # column, and a fruit near the wall left no room for the fingers descending on that side.
-        # Dropping to four items is what buys the room: a 2 x 2 grid instead of 3 x 2.
-        # 0.24, pulled in again for the PALM grasp: the fruit is now held only ~0.098 m from
-        # the wrist instead of ~0.144 m, which puts the wrist correspondingly FURTHER out at
-        # the drop pose. Measured carry residual with the deep aim at bin x 0.27 was 243 mm.
-        bin_pos=(0.24, -0.31),
+        table="robolab",
+        table_depth_scale=1.3,  # multiplies the asset's LONG axis (world x after the -90
+        # rotation): a 1.3 m-wide tabletop, matching the original scene's proportions.
+        # Destinations flank the working row at the reach annulus's edges; the DROP points
+        # the solve uses are their robot-near quadrants (the centres themselves sit at
+        # 0.36-0.41 m from the shoulder, past the 0.34 m pinch ceiling).
+        # 0.38: at 0.35 the crate's west wall (x 0.234) sat in the descent path of the hand
+        # picking the right-most item at torso yaw -25 deg (grip miss 115 mm, then the arm
+        # pressed on the kinematic crate and the scene blew apart -- measured).
+        bin_pos=(0.38, -0.16),
         bin_scale=(0.20, 0.22, 0.17),
-        # The grid is placed on a MEASURED sweet band, not a guess. Of 20 single-item placements
-        # swept with a probe, only two allowed a lift, and both sat 120-140 mm clear of the crate
-        # wall and 0.27-0.34 m from the shoulder. Closer to the
-        # crate than ~50 mm the descent residual jumps to 59-163 mm and nothing grasps; ~270 mm out
-        # the arm reaches fine but the lift dies at 20-48 mm.
-        # The two ORGANICS occupy the near row (grouped slot shuffling keeps produce in produce
-        # slots), so the near row is what has to land in the band: these dials put it at
-        # (-0.02, -0.26) and (0.06, -0.26) — 134-214 mm clear of the crate, 0.24-0.27 m out. The far
-        # row holds only distractors, which are never grasped, so its reach costs nothing.
-        # ONE COLUMN, and the organic pinned to the measured spot.
-        #
-        # cols=1 puts the three items in a line receding from the robot: the single organic nearest
-        # at (0.000, -0.240) and the two distractors 80 mm and 160 mm beyond it. That spot is not a
-        # round number — it is the middle of the pocket where a near-horizontal palm approach is
-        # actually holdable at a range of azimuths. The same point 20 mm further out (y -0.260) is
-        # 98-246 mm out of reach at the identical azimuth and tilt: that pocket is only a few
-        # centimetres across.
-        #
-        # A line also keeps the distractors out of the way in the RIGHT direction. At this tilt the
-        # hand's swept volume is only ~+/-30 mm across the finger straddle, so clutter 80 mm away in
-        # y cannot be caught, whereas the previous 2-column grid put a bottle 80 mm away in x —
-        # directly in the palm's path — or inside the crate footprint.
-        # BOTH organic slots straddle that spot, 15 mm either side of (0.000, -0.240).
-        # That is safe precisely because only ONE organic is present per episode — the other is
-        # parked in the depot — so the two slots never hold items at once and can sit as close
-        # together as reachability wants. Whichever type is drawn therefore lands inside the
-        # pocket, which a wider grid could not guarantee: the unused second slot of the previous
-        # layout sat 0.354 m from the shoulder, outside it.
-        # Row 1 holds the single distractor, 140 mm further out, well clear of the hand's swept
-        # volume (~+/-30 mm across the finger straddle at this tilt).
-        # cols=1 with two items -> two ROWS, which is what puts the organic exactly on the reachable
-        # spot (0.000, -0.240) and the distractor 140 mm beyond it at (0.000, -0.100).
-        # This is worth stating because getting it wrong is silent: `_slot_xy` derives rows from the
-        # item count, so cols=2 with two items collapses to a single row and the organic lands at
-        # y = scatter_center instead — 0.349 m from the shoulder, outside the reachable pocket, and
-        # every attempt then misses its staging pose by 132-176 mm. Change the item count and this
-        # geometry has to be re-derived.
-        scatter_center=(0.0, -0.17),
-        scatter_span=(0.10, 0.14),
-        scatter_cols=1,
-        # ONE organic, ONE distractor, and NO per-episode randomization. This tier is deliberately
-        # DETERMINISTIC, which is a real deviation from the suite convention and is stated as such:
-        # every other binding randomizes pose, slot and organic subset so a memorised pick list
-        # fails. Here that budget is spent on being deliverable instead.
-        #
-        # The reason is geometric, and it was measured rather than assumed. The G1's palm grasp is
-        # holdable only at approach azimuths 115-245 deg, and its reachable pocket on the bench is a
-        # few centimetres across. A lemon's graspable narrow axis lies 90 deg from its long axis, so
-        # yaw decides whether that axis is presentable inside the band at all:
-        #     free yaw (+/-180) ..... only about half the draws are favourable
-        #     yaw pinned near 0 ..... WORSE — pins the narrow axis near azimuth 90, just outside
-        #     yaw fixed at 90 ....... narrow axis at azimuth 180, dead centre of the band
-        # And of the produce only lemon_01 is dependably graspable here: lime01 settles tipped, so
-        # its span runs 77-114 mm along every reachable azimuth; pumpkinsmall is graspable at only
-        # one azimuth of twelve; lemon_02 (40 mm) is below the hand's minimum.
-        #
-        # So: lemon_01 at that spot, yaw fixed at the one favourable angle, no jitter, no shuffle,
-        # no subset sampling. Restoring randomization needs a wider reachable pocket — a taller
-        # bench, a mobile pelvis, or a two-handed strategy — not a cleverer controller.
-        exclude=("lemon_02", "lime01", "lime01_01", "orange_01", "orange_02", "pomegranate01",
-                 "pumpkinlarge", "pumpkinsmall", "red_onion", "avocado01", "serving_bowl",
-                 "utilityjug_a03", "milkjug_a01", "crabbypenholder"),
+        tray_pos=(-0.38, -0.16),
+        tray_scale=0.7,
+        # SORT THE CITRUS: lemons into the crate, oranges onto the tray. 2 + 2, chosen by
+        # measured hand behaviour, not taste. The G1 palm grasp is validated on SMOOTH CONVEX
+        # produce; every concave collider tried welded itself into the hand or blew up:
+        #   - pumpkinsmall: grasped and lifted 196 mm, then stayed on the open hand through a
+        #     palm-down roll and shaking (fingers hooked in its rib valleys), and the next
+        #     approaches -- made with a pumpkin-sized lump in the hand -- shoved the lemon off
+        #     the table; the pomegranate's crown is the same shape of problem;
+        #   - milk jug (77 mm, 172 mm tall, 0.4 kg): toppled on the first approach; the next
+        #     grasp caged the pumpkin against it and launched every item off the table;
+        #   - red onion / avocado: explosive scanned colliders (ejected tens of metres).
+        # The jugs, bowl, bottle and pen holder stay as CLUTTER: graded only through the
+        # no-distractor-in-the-crate rule.
+        # LEMONS TO THE CRATE, LIMES TO THE TRAY. Targets are the items that fit the hand: the
+        # Dex3's two long fingers are stacked ~57 mm apart (about 37 mm of clear gap, ~77 mm
+        # outer span), so a palm grasp only works on LYING produce <= ~50 mm tall. Measured
+        # failures that fixed this list: a 63 mm orange caged between the fingers and the palm
+        # blew up (9.5 m, then a numerical explosion); the 77 mm standing bottle took the upper
+        # finger on its cap during the descent and blew up; the 30 mm pen holder had nothing to
+        # squeeze; limes rolled onto a lumpy side and presented 67-71 mm. The clutter stays as
+        # distractors, graded by the no-distractor-in-crate rule.
+        sort_to_bin=("lemon_01", "lemon_02"),
+        sort_to_tray=("lime_a", "lime_b"),
+        # (the limes' green is baked into their own asset, lime_g; no spawn-time override)
+        fixed_layout=(
+            # WORKING ROW: a gentle arc, one item per torso yaw. The flat palm grasp's footprint
+            # is ~14 x 26 cm (fingertips 13 cm past the palm centre, thumb 7 cm to the side,
+            # wrist 2 cm above the table 8.5 cm on the robot side), so a second row 9 cm
+            # behind the first gets pressed into the table by the descending fingers and PhysX
+            # launches it metres (measured: pumpkin 11 m, lemon 4 m, jug 5 m in ONE descent).
+            # One row it is -- and one arm's static reach holds only two items of it. The solve
+            # therefore turns the WAIST toward each item, which moves the right arm's
+            # calibrated sweet spot (0.245 m ahead of the shoulder) along an arc of radius
+            # ~0.26 m about the pelvis (0, -0.50). These are the points of that arc at torso
+            # yaw -25, 0, +25, +45 deg, 0.10-0.11 m apart; the destinations flank them.
+            # arc of the sweet spot 0.27 m ahead of the shoulder, torso yaw -25/0/+25/+47 deg:
+            # >= 6 cm from the table's near edge, ~12 cm apart
+            # yaw = slot torso yaw + 90: the lemon's 50 mm short axis faces the palm of a hand
+            # whose palm normal is torso -x (the fruits tier's measured presentation, 90 deg
+            # centre in that cell), so the palm grasp closes across the narrow way.
+            # Arc of fruit_delivery's verified stance (fruit 0.26 m ahead of and 0.10 m inboard
+            # of the shoulder, i.e. 0.26 m dead ahead of the pelvis) at torso yaw -36/-12/+12/+36
+            # (~0.109 m apart, >= 6 cm from the table's near edge; the thumb side of every
+            # pick is already empty because picks go left to right). Container placement
+            # is checked against the open fingertips (13 cm past the item along the
+            # approach) and the thumb (8 cm to the robot's left) of every slot. The previous arc (0.27 m,
+            # yaws -25/0/+25/+46) was measured on video to put the open fingertips of the
+            # +46 slot onto the tray rim and the elbow of the 0 slot onto the crate's near
+            # corner; the jammed arm then crushed the fruit into the table (launched).
+            # BIMANUAL layout: the two lemons (-> crate, on the robot's right) on the right
+            # arm's arc at torso yaw -36/-12, the two limes (-> tray, on the robot's left) on
+            # the left arm's mirrored arc at +12/+36. Each arm works its own side; the crate
+            # and tray are mirror images about the robot's midline.
+            ("lemon_01", 0.153, -0.290, 54.0),
+            ("lemon_02", 0.054, -0.246, 78.0),
+            ("lime_a", -0.054, -0.246, 102.0),
+            ("lime_b", -0.153, -0.290, 126.0),
+            # Scenery spread: composed, colourful, OUT of the reach band, on a 1.3 x 0.7 m
+            # top spanning x[-0.65, +0.65], y[-0.35, +0.35].
+            ("milkjug_a01", -0.50, 0.16, 0.0),
+            ("whitepackerbottle_a01", -0.47, -0.12, 0.0),
+            ("lime01", 0.55, -0.20, 0.0),
+            ("lime01_01", -0.10, 0.10, 70.0),
+            ("orange_01", 0.36, 0.02, 0.0),
+            ("orange_02", -0.38, 0.12, 0.0),
+            ("crabbypenholder", 0.10, 0.02, 30.0),
+            ("pomegranate01", -0.44, -0.04, 0.0),
+            ("pumpkinsmall", 0.22, 0.06, 0.0),
+            ("utilityjug_a03", -0.24, 0.10, 15.0),
+            ("pumpkinlarge", 0.47, 0.14, 25.0),
+            ("serving_bowl", 0.28, 0.22, 0.0),
+        ),
+        # The onion and avocado are BACK (they were excluded while their scanned colliders --
+        # sliver-hull decompositions -- ejected them tens of metres from a clean spawn; those
+        # colliders are now single convex hulls). 16 objects on the table.
+        # avocado and onion: measured NOT graspable by the G1 hand even lying and correctly
+        # gripped (seat 21-34 mm, lift <= 0 on every try) -- out, so nothing on the table
+        # invites an impossible grasp.
+        exclude=("red_onion", "avocado01"),
         subset_sample=False,
-        reset_pos_jitter=0.0,
-        # 180, and it USED to read 90 for the same physical pose. The scene's reset was writing
-        # (cos yaw, 0, 0, sin yaw) instead of the half-angle, doubling every commanded orientation;
-        # that is fixed now, so reproducing this tier's MEASURED item pose takes 180 where it took
-        # 90 before. The value is pinned rather than re-chosen because the whole cell was
-        # measured against this presentation.
-        #
-        # And the correct description of it is not the one this line used to carry. At 180 deg the
-        # lemon's LONG axis lies along table x, so its 50 mm narrow axis presents at azimuth 90 —
-        # OUTSIDE the hand's reachable 115-245 band — and a grasp has to bridge its 76 mm profile
-        # instead. That is workable here (76 mm still enters an ~86 mm hand) and it is not the
-        # better pose: presenting the narrow axis at azimuth 180 instead, which is what
-        # `reset_yaw_center_deg=90` now means, brings the span down to 51 mm. Making that change
-        # would be a real improvement and it is NOT free — it also narrows the
-        # choice of grasp azimuths this pose admits, which this cell's staging residual still needs.
-        # So it belongs with a re-measured staging pose, not before it.
-        reset_yaw_center_deg=180.0,
-        reset_yaw_deg=0.0,
         shuffle_slots=False,
-        # Spawn essentially AT REST. The scene default drops items 30 mm and lets them settle, which
-        # TUMBLES them: with yaw commanded to 90 deg the lemon still measured 65-84 mm along the
-        # reachable azimuths rather than its 50 mm short axis, because a tipped box's oriented bbox
-        # contributes its z extent to horizontal spans. 2 mm preserves the commanded orientation,
-        # which is the entire point of a deterministic tier.
+        # Small jitter so millimetre poses cannot be memorised; yaw stays authored until the
+        # per-item grasps are re-validated at the new spots (the lemon lesson: yaw decides
+        # whether the graspable axis presents inside the hand's azimuth band at all).
+        reset_pos_jitter=0.006,
+        reset_yaw_center_deg=0.0,
+        reset_yaw_deg=0.0,
+        # Spawn essentially AT REST (2 mm): the default 30 mm drop tumbles items and destroys
+        # the authored presentation (measured on the old tier).
         drop_lift=0.002,
     )
 
@@ -301,7 +332,34 @@ for _mode in ("joint", "pink_ik"):
                 #
                 # Hand (20 / 2 -> 200 / 10). The default is tuned for free-air finger poses; a
                 # three-finger pinch on a 100 g fruit needs the phalanges to HOLD against contact.
+                #
+                # base y -0.50 (the measured original): with the RoboLab wooden table's
+                # 0.35 m half depth the body clears the near edge by ~6 cm at this pelvis,
+                # and the ground plane sits at z=0, so the feet stand on the floor.
                 robot_cfg=G1RobotCfg(base_pos=(0.0, -0.50, 0.75),
+                                     # Reset ARM POSE, measured (A/B on the single-item probe,
+                                     # 2026-09-01). Isaac's default rests both wrists at
+                                     # (+/-0.15, -0.30, 0.85): in the working row, tangled with
+                                     # crate, tray and items. Retracting the arms is NOT free:
+                                     # the arm IK is a warm-started local solver and several
+                                     # tucks (elbow-only 0.9; pitch -1.2 + elbow 1.4) parked
+                                     # the hand below the table edge or in a bad basin and
+                                     # the staging pose then missed by 265-366 mm (vs 31 mm
+                                     # from the default). Right arm: pitch -1.05 + elbow 1.0
+                                     # keeps the hand high (z ~0.92) over the table's middle
+                                     # and the IK healthy (33 mm staging at -0.9). Left arm:
+                                     # the solve's own LEFT_TUCK (roll 1.2, elbow 2.05), which
+                                     # swings it clear of the table entirely and is what the
+                                     # solve holds anyway.
+                                     init_joint_overrides={
+                                         "right_shoulder_pitch_joint": -1.05,
+                                         "right_elbow_joint": 1.0,
+                                         # left arm hangs naturally beside the hip (positive
+                                         # pitch swings it back, clear of the table edge)
+                                         "left_shoulder_pitch_joint": 0.45,
+                                         "left_shoulder_roll_joint": 0.16,
+                                         "left_elbow_joint": 0.90,
+                                     },
                                      arm_stiffness=1500.0,
                                      arm_damping=90.0,
                                      # 400, not Isaac's 20: a three-finger pinch on a 100 g fruit
@@ -359,7 +417,7 @@ def _fruits_on_plate_franka_cfg() -> FruitsOnPlateSceneCfg:
         scatter_center=(0.0, 0.33),
         scatter_span=(0.48, 0.36),
         scatter_cols=4,
-        exclude=("orange_01", "pomegranate01", "lime01_01",
+        exclude=("lime_a", "lime_b", "orange_01", "pomegranate01", "lime01_01",
                  "serving_bowl", "wooden_spoons", "spatula"),
         slot_override=(),  # the two long utensils are excluded, so nothing needs a fixed slot
         subset_sample=True,
@@ -466,7 +524,7 @@ def _fruits_on_plate_g1_cfg() -> FruitsOnPlateSceneCfg:
         #     its yaw is commanded. Probed across eight reset draws: the lemon was liftable in every
         #     one, while the lime rolled out of the hand — no lift at a 72 mm span, and its
         #     in-hand seating 62-80 mm off afterwards. Excluded as unreliable by SHAPE, not span.
-        exclude=("lemon_02", "lime01", "lime01_01", "orange_01", "orange_02", "pomegranate01",
+        exclude=("lime_a", "lime_b", "lemon_02", "lime01", "lime01_01", "orange_01", "orange_02", "pomegranate01",
                  "pumpkinlarge", "redonion", "serving_bowl", "storage_box", "wooden_spoons",
                  "spatula"),
         # The distractor sits 180 mm beyond the fruit, well clear of the hand's swept volume

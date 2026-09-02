@@ -91,6 +91,14 @@ class G1RobotCfg(BaseRobotCfg):
 
     g1_usd: str = ""  # "" -> the vendored robots/assets/g1/g1.usd
     g1_urdf: str = ""  # "" -> the vendored kinematics URDF (used by the pink_ik control mode)
+    # Optional joint-name -> angle overrides applied to the articulation's INITIAL pose (and
+    # therefore to what reset() restores). Isaac's G1 default rests both wrists at
+    # (+/-0.15, +0.20, +0.09) relative to the pelvis -- for a tabletop cell that is INSIDE
+    # the work area, resting the hands among (or into) the props; solves then have to
+    # special-case their first move away from home ("re-homing rakes the hand through the
+    # produce", the clear_organics lesson). A binding can instead park the arms bent and
+    # retracted here.
+    init_joint_overrides: dict | None = None
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parent / "assets" / "g1"
@@ -147,6 +155,9 @@ class G1Robot(BaseRobot):
         robot.spawn.articulation_props.fix_root_link = c.fixed_base  # weld pelvis to world if fixed
         robot.init_state.pos = c.base_pos
         robot.init_state.rot = c.base_rot
+        if c.init_joint_overrides:
+            robot.init_state.joint_pos = {**robot.init_state.joint_pos,
+                                          **c.init_joint_overrides}
         # The articulation PD (Isaac runs the loop in PhysX for these implicit actuators) — from cfg.
         robot.actuators["arms"].stiffness = c.arm_stiffness
         robot.actuators["arms"].damping = c.arm_damping
