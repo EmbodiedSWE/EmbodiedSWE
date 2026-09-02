@@ -40,12 +40,22 @@ from pxr import PhysxSchema, Usd, UsdPhysics  # noqa: E402
 # decomposition (scenery only now).
 HULL = ("orange1", "orange2", "pomegranate", "pumpkinlarge",
         "pumpkinsmall", "avocado", "red_onion", "crabbypenholder")
-# The lemons keep a DECOMPOSITION but a COARSE one. A single hull was measured to be wrong for
-# the lemon shape: the smooth hull rocks up and stands on its nipple within seconds (item height
-# 51 -> 76 mm before the first grasp), and the palm grasp then meets a 66-84 mm span. The
-# source decomposition's 256 slivers are what tunnelled through the table. Eight hulls keep the
-# flat spots that hold the lemon lying and have no slivers.
-COARSE = {"lemon1": 8, "lemon2": 8, "lime_g": 8}
+# `lemon_g` and `lime_g` -- the sort tier's OWN copies of the lemon mesh (see
+# make_lime_from_lemon.py) -- keep a DECOMPOSITION but a COARSE one. A single hull is wrong for
+# this shape: the smooth hull rocks up and stands on its nipple within seconds (measured item
+# height 51 -> 76 mm before the first grasp) and the palm grasp then meets a 66-84 mm span. The
+# source mesh's own decomposition is 256 slivers, which tunnelled through the table when the
+# descending hand pressed the fruit and launched it hundreds of metres (bit-identical across
+# runs, unchanged by capping arm and hand effort). Eight hulls keep the flat spots that hold the
+# lemon lying and have no slivers.
+#
+# WHY COPIES AND NOT lemon1/lemon2 THEMSELVES. `assets/clear_organic_objects/` is shared: the
+# `fruits_on_plate` scene (and `locomanip.fruit_delivery` on top of it) read their produce from
+# here. Re-collidering lemon1 in place took the verified `packing.fruits_on_plate.g1.joint`
+# solution from score 100 to 0 -- its cage lifted the coarse lemon 166 mm and then shed it on
+# the way to the staging pose. Collider choice is part of a GRASP's calibration, so the tier
+# that needs a different one gets its own asset.
+COARSE = {"lemon_g": 8, "lime_g": 8}
 # sliver colliders fully inside another collider's hull
 DISABLE_SUBSTR = ("Stem",)
 

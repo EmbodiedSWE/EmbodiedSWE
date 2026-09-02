@@ -204,7 +204,7 @@ class ClearOrganicObjectsSceneCfg(BaseCfg):
         ("lemon_01", "lemon1", True, 1.0, 0.10),
         # lemon_02 uses the SAME mesh as lemon_01 (was the lemon2 mesh at 1.2): the lemon1 mesh
         # is the one object the G1 hand grasps AND releases reliably, so every sort target is it.
-        ("lemon_02", "lemon1", True, 1.0, 0.10),
+        ("lemon_02", "lemon2", True, 1.0, 0.08),
         ("lime01", "lime", True, 1.0, 0.10),
         ("lime01_01", "lime", True, 1.0, 0.10),
         # Two more lemon-mesh produce, coloured lime-green (their own asset, below): the
@@ -214,11 +214,14 @@ class ClearOrganicObjectsSceneCfg(BaseCfg):
         # seated well and slid out on the lift, faceted limes launched, bottle and pen holder
         # geometrically impossible. A lime is a green lemon-shaped fruit, so the sort still
         # reads naturally: yellow into the crate, green onto the tray.
-        # `lime_g` is the lemon1 mesh in its OWN usd, tinted lime-green (scripts/
-        # make_lime_from_lemon.py). Own file on purpose: extra instances of the SAME lemon usd
-        # were launched hundreds of metres whenever a sibling instance was lifted 8-10 cm away
-        # (measured on four runs; never for the two picked first) -- shared cooked collision
-        # data. A separate asset gives PhysX its own.
+        # `lemon_g` and `lime_g` are the lemon1 mesh in their OWN usds, the latter tinted
+        # lime-green (scripts/make_lime_from_lemon.py). Own files for two measured reasons:
+        # extra instances of the SAME usd were launched hundreds of metres whenever a sibling
+        # instance was lifted 8-10 cm away (shared cooked collision data), and this tier's
+        # grasp needs a coarser lemon collider than `fruits_on_plate` -- which reads produce
+        # from this same directory -- was calibrated against.
+        ("lemon_a", "lemon_g", True, 1.0, 0.10),
+        ("lemon_b", "lemon_g", True, 1.0, 0.10),
         ("lime_a", "lime_g", True, 1.0, 0.10),
         ("lime_b", "lime_g", True, 1.0, 0.10),
         # oranges: the sort tier's TRAY targets, at their shipped 63 mm. Their collider is a
@@ -267,11 +270,12 @@ class ClearOrganicObjectsSceneCfg(BaseCfg):
     # per-item flat colour override (name -> rgb), bound stronger than the asset's material
     item_colors: dict = field(default_factory=dict)
     contact_offset: float = 0.004  # item speculative contact margin (m)
-    # 2.0 / 1.8: the produce colliders are single convex hulls (smooth by construction), and at
-    # the default-ish 1.1 the cage let a hulled lemon slide out during the lift-and-roll (lifts of
-    # 13-47 mm on every item). PhysX averages this with the hand's ~0.5, so the pair feels ~1.25.
-    item_static_friction: float = 2.0
-    item_dynamic_friction: float = 1.8
+    item_static_friction: float = 1.1  # produce skin vs rubber gripper pads (see assets())
+    item_dynamic_friction: float = 0.95
+    # (The G1 sort tier raises these to 2.0 / 1.8 in its own cfg: its palm CAGE holds a fruit by
+    # friction against the palm rather than by squeezing it, and at 1.1 a hulled lemon slid out
+    # of the cage during the lift-and-roll. That is a property of THAT grasp, not of the produce,
+    # so it lives in the binding — the franka tier keeps the pads it was measured with.)
     asset_dir: str = ""
 
     # derived (filled in __post_init__)
