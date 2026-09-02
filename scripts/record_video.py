@@ -90,9 +90,19 @@ def _patch_app_launcher() -> None:
     _orig_init = AppLauncher.__init__
 
     def _init(self, launcher_args=None, **kw):
-        existing = kw.get("kit_args") or ""
-        if _RTX_FIX not in existing:
-            kw["kit_args"] = f"{existing} {_RTX_FIX}".strip()
+        # a target built with `add_app_launcher_args` already carries `kit_args` in its
+        # Namespace; AppLauncher refuses the same key in both places, so merge into
+        # whichever side has it
+        ns_has = launcher_args is not None and not isinstance(launcher_args, dict) \
+            and hasattr(launcher_args, "kit_args")
+        if ns_has:
+            existing = getattr(launcher_args, "kit_args") or ""
+            if _RTX_FIX not in existing:
+                launcher_args.kit_args = f"{existing} {_RTX_FIX}".strip()
+        else:
+            existing = kw.get("kit_args") or ""
+            if _RTX_FIX not in existing:
+                kw["kit_args"] = f"{existing} {_RTX_FIX}".strip()
         return _orig_init(self, launcher_args, **kw)
 
     AppLauncher.__init__ = _init
