@@ -77,6 +77,11 @@ class SliceFoodSceneCfg(BaseCfg):
     # tip (0.22,-0.134)): rest/hold it rotated by this about the blade normal so the EDGE
     # is level, else the tip grounds 6 cm before the mid-blade
     knife_edge_tilt_deg: float = 28.2
+    # arm stand: a matching small cabinet (the island asset scaled) behind the island, top at
+    # island height — an arm's reach wants its base ~0.55 m behind the cut, past the island's
+    # y=-0.38 edge. None -> no stand.
+    arm_stand: tuple[float, float] | None = (0.0, -0.58)  # xy of the stand centre
+    arm_stand_size: tuple[float, float] = (0.40, 0.40)  # footprint (m)
     reset_pos_jitter: float = 0.0  # uniform +/- xy jitter of the food at reset
     # food rest orientation (w,x,y,z), applied to the whole welded assembly at reset
     food_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
@@ -224,6 +229,17 @@ class SliceFoodScene(BaseScene):
                 ),
             ),
         }
+        if c.arm_stand is not None:
+            # kitchen_island.usd is 1.15 x 0.761 x 0.858 centred at its origin (top at
+            # island_top when spawned at z 0.429); scaled to the stand footprint it reads as
+            # a matching cabinet — same marble top and doors
+            out["arm_stand"] = AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/ArmStand",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(c.arm_stand[0], c.arm_stand[1], 0.429)),
+                spawn=sim_utils.UsdFileCfg(
+                    usd_path=str(self.ASSETS / "kitchen_island.usd"),
+                    scale=(c.arm_stand_size[0] / 1.15, c.arm_stand_size[1] / 0.761, 1.0)),
+            )
         food_z = board_top + 0.001 - b0[2]  # nominal; reset() places the rotated assembly
         for k, meta in enumerate(man["pieces"]):
             if meta is None:
