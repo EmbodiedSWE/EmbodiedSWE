@@ -273,3 +273,125 @@ for _mode in ("osc", "joint"):
             )
         ),
     )
+
+
+# ==== stack_blocks (long-horizon humanoid tower building) ======================================
+# Appended by the stack_blocks contribution. Scene-physics-only first (NullRobot oracle/smoke),
+# humanoid bindings after. Placements mirror the reach-tuned pen_holder G1/GR1-T2 layout at the
+# same 0.7 m bench (re-verify with robot_binding_smoke before any agent run).
+from robobench.suites.packing.scenes import StackBlocksSceneCfg  # noqa: E402
+
+# Scene physics only (NullRobot oracle/smoke). -> "packing.stack_blocks"
+register_env(SUITE, lambda: EnvCfg(scene="stack_blocks", robot="null", env_spacing=3))
+
+
+def _stack_blocks_g1_cfg() -> StackBlocksSceneCfg:
+    """G1 (short ~0.55 m arms), 0.7 m bench. The base (below) stands at y=-0.66, clear of the
+    packing table's near edge (y = -0.572 = 0.381 half-depth x 1.5 stretch). Layout placed
+    inside the MEASURED right-wrist reach envelope (pink_probe.py reach map): usable band is
+    rel-base y in [+0.19, +0.40], x in [-0.15, 0.15] (x>=0 best). Pad at rel +0.33; the four
+    blocks scatter on a shallow arc behind it, within rel [+0.20, +0.26]."""
+    return StackBlocksSceneCfg(
+        surface_z=0.7,
+        pad_pos=(0.08, -0.33),
+        scatter_center=(0.0, -0.36),
+        scatter_radii=(0.10,),
+        scatter_arc=(210.0, 330.0),
+    )
+
+
+def _stack_blocks_gr1t2_cfg() -> StackBlocksSceneCfg:
+    """GR1-T2 (longer arms): same bench, slightly wider layout (reach re-verify pending)."""
+    return StackBlocksSceneCfg(
+        surface_z=0.7,
+        pad_pos=(0.10, -0.06),
+        scatter_center=(0.0, -0.20),
+        scatter_radii=(0.12,),
+        scatter_arc=(205.0, 335.0),
+    )
+
+
+# -> "packing.stack_blocks.g1.{joint,pink_ik}" / ".gr1t2.{joint,pink_ik}"
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="stack_blocks",
+                scene_cfg=_stack_blocks_g1_cfg(),
+                robot="g1",
+                control_mode=mode,
+                # base clear of the table's near edge at -0.572 (see the cfg note)
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.66, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="stack_blocks",
+                scene_cfg=_stack_blocks_gr1t2_cfg(),
+                robot="gr1t2",
+                control_mode=mode,
+                robot_cfg=GR1T2RobotCfg(base_pos=(0.0, -0.48, 0.95),
+                                        base_rot=(0.7071, 0.0, 0.0, 0.7071)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+
+# ==== classify_objects (long-horizon humanoid colour-sorting) ==================================
+# Appended by the classify_objects contribution. Null preset first, then humanoid bindings.
+# Layout placed inside the MEASURED G1 right-wrist reach envelope (pink_probe.py): usable band
+# y in [-0.31,-0.10], x in [-0.15,0.15] (x>=0 strongest; the left/-x side degrades toward the
+# front). Zones sit front (biased x>=-0.08), blocks scatter behind where reach is best.
+from robobench.suites.packing.scenes import ClassifyObjectsSceneCfg  # noqa: E402
+
+register_env(SUITE, lambda: EnvCfg(scene="classify_objects", robot="null", env_spacing=3))
+
+
+def _classify_objects_g1_cfg() -> ClassifyObjectsSceneCfg:
+    # G1 (short ~0.55 m arms), 0.7 m bench; the base (below) stands at y=-0.66, clear of the
+    # packing table's near edge (y = -0.572 = 0.381 half-depth x 1.5 stretch). Layout placed
+    # inside the measured right-wrist reach band (rel-base y in [+0.19, +0.40], x in
+    # [-0.15, 0.15] — see the stack_blocks layout note): zones at rel +0.33, the scatter
+    # arc within rel [+0.20, +0.26].
+    return ClassifyObjectsSceneCfg(
+        surface_z=0.7,
+        zone_pos=((-0.11, -0.33), (0.0, -0.33), (0.11, -0.33)),
+        scatter_center=(0.0, -0.36),
+        scatter_radii=(0.10,),
+        scatter_arc=(205.0, 335.0),
+    )
+
+
+def _classify_objects_gr1t2_cfg() -> ClassifyObjectsSceneCfg:
+    return ClassifyObjectsSceneCfg(
+        surface_z=0.7,
+        zone_pos=((-0.12, -0.10), (0.0, -0.10), (0.12, -0.10)),
+        scatter_center=(0.0, -0.24),
+        scatter_radii=(0.12,),
+        scatter_arc=(205.0, 335.0),
+    )
+
+
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (lambda mode=_mode: EnvCfg(
+            scene="classify_objects", scene_cfg=_classify_objects_g1_cfg(),
+            robot="g1", control_mode=mode,
+            # base clear of the table's near edge at -0.572 (see the cfg note)
+            robot_cfg=G1RobotCfg(base_pos=(0.0, -0.66, 0.75)), env_spacing=3)),
+    )
+    register_env(
+        SUITE,
+        (lambda mode=_mode: EnvCfg(
+            scene="classify_objects", scene_cfg=_classify_objects_gr1t2_cfg(),
+            robot="gr1t2", control_mode=mode,
+            robot_cfg=GR1T2RobotCfg(base_pos=(0.0, -0.48, 0.95),
+                                    base_rot=(0.7071, 0.0, 0.0, 0.7071)), env_spacing=3)),
+    )
