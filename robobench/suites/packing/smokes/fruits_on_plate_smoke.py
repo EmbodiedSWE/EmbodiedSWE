@@ -40,6 +40,17 @@ parser.add_argument("--no_video", action="store_true", default=False,
 parser.add_argument("--record_every", type=int, default=8)
 parser.add_argument("--out", type=str, default="fruits_on_plate_frames.npz")
 parser.add_argument("--hdfs_dir", type=str, default="")
+# The same physics/rubric smoke serves every scene that subclasses FruitsOnPlateScene (e.g. the
+# locomanip `fruit_delivery` kitchen table): the preset, the camera framing and the clear spot
+# used by the non-fruit recovery step are the only scene-specific inputs.
+parser.add_argument("--env", type=str, default="packing.fruits_on_plate",
+                    help="registered NullRobot preset of a FruitsOnPlateScene subclass")
+parser.add_argument("--eye", type=float, nargs=3, default=(0.34, -1.06, 1.40),
+                    help="camera eye, table-relative (z above the surface)")
+parser.add_argument("--target_at", type=float, nargs=3, default=(0.05, 0.12, 0.00),
+                    help="camera target, table-relative (z above the surface)")
+parser.add_argument("--recover_xy", type=float, nargs=2, default=(-0.34, 0.50),
+                    help="clear tabletop spot the misplaced non-fruit is returned to")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 if not args.no_video:
@@ -64,7 +75,7 @@ def main() -> None:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     robobench.discover()
     # NULL preset: full 14-item set, subset sampling OFF (deterministic full task).
-    env = ENVS.get("packing.fruits_on_plate")().build(num_envs=args.num_envs, device=device)
+    env = ENVS.get(args.env)().build(num_envs=args.num_envs, device=device)
     scene = env.scene
     c = scene.cfg
     n = env.num_envs
@@ -88,8 +99,9 @@ def main() -> None:
             # three-quarter view from the front-right — the sibling smoke's lesson is that
             # occlusion falls off with elevation, so the eye sits ~1.4 m above the surface and
             # ~1.1 m out, aimed at the middle of the grid.
-            env.sim.set_camera_view(tuple(np.array((0.34, -1.06, c.surface_z + 1.40)) + o),
-                                    tuple(np.array((0.05, 0.12, c.surface_z + 0.00)) + o),
+            eye = np.array(args.eye, dtype=float) + (0.0, 0.0, c.surface_z)
+            tgt = np.array(args.target_at, dtype=float) + (0.0, 0.0, c.surface_z)
+            env.sim.set_camera_view(tuple(eye + o), tuple(tgt + o),
                                     camera_prim_path="/OmniverseKit_Persp")
             rp = rep.create.render_product("/OmniverseKit_Persp", (960, 600))
             annot = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
@@ -218,7 +230,7 @@ def main() -> None:
     if args.demo:
         _save(frames, args)
         print("FRUITS_ON_PLATE_SMOKE_DONE", flush=True)
-        env.close()
+        _close(env)
         return
 
     # =========================== 3. negative A: one fruit left out ============================
@@ -244,7 +256,7 @@ def main() -> None:
     check(f"non-fruit on plate ({probe}): success False", not bool(scene.success()[0]))
     check("non-fruit on plate: score drops below 100", int(scene.score()[0]) < 100)
     # recover: take the non-fruit back off, onto clear table
-    place_on_table(probe, -0.34, 0.50)
+    place_on_table(probe, *args.recover_xy)
     settle(180)
     report("neg-B-recover")
     check("non-fruit removed: success recovers to True", bool(scene.success()[0]))
@@ -255,18 +267,30 @@ def main() -> None:
     print(f"[smoke] RESULT: {'ALL PASS' if all_ok else 'FAIL'} "
           f"({sum(ok for _n, ok in checks)}/{len(checks)} checks)", flush=True)
     print("FRUITS_ON_PLATE_SMOKE_DONE", flush=True)
-    env.close()
+    _close(env)
 
 
 def _save(frames: list, args) -> None:
     if not frames:
         return
     arr = np.stack(frames, axis=0)
-    np.savez_compressed(args.out, frames=arr, env="packing.fruits_on_plate")
+    np.savez_compressed(args.out, frames=arr, env=args.env)
     print(f"[smoke] saved {arr.shape} -> {args.out}", flush=True)
     if shutil.which("hdfs") and args.hdfs_dir:
         os.system(f"hdfs dfs -mkdir -p {args.hdfs_dir} 2>/dev/null; "
                   f"hdfs dfs -put -f {args.out} {args.hdfs_dir}/{os.path.basename(args.out)}")
+
+
+def _close(env) -> None:
+    """env.close() itself is where Kit teardown hangs (measured: a 13/13 PASS run then sat
+    until the 20 min `timeout` killed it, rc 124), so the exit watchdog is armed BEFORE it."""
+    import os as _os
+    import threading as _threading
+
+    watchdog = _threading.Timer(20.0, lambda: _os._exit(0))
+    watchdog.daemon = True
+    watchdog.start()
+    env.close()
 
 
 def _hard_exit_teardown() -> None:

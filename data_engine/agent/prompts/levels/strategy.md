@@ -3,30 +3,33 @@
 A **strategy is one way to do the task**, delivered as its own `solve.py`.
 The world stays the same (scene `{base}`); what multiplies here is
 **behavior**: a different order, a different grasp, a different division of
-labor produce demonstrations that genuinely look different — that is the
+labor produce demonstrations that are observably different — that is the
 variety this level adds to the dataset.
 
 What makes a strategy worth shipping:
 
 1. **It works** — shown by a test batch with successful episodes, judged by
-   the same grader as everything else. Propose freely and iterate: a
-   strategy that fails its first batches can usually be fixed, and bold
-   attempts that need a few rounds are worth more than safe ones that
-   don't.
+   the same grader as everything else. Failed experiments belong in
+   `SUMMARY.md`; they do not outrank a proven, observably distinct strategy.
 2. **It brings a different way of doing the task.** Aim for episodes that
    would look different side by side — a different order, a different
    grasp, a different role for each arm. Re-tuned numbers on the same
-   motion add little; a genuinely different approach is the value of this
+   motion add little; an observably distinct approach is the value of this
    level.
 
 ## What counts as a new strategy
 
-- **Small modifications** of the base strategy: do the subtasks in a
-  different valid order; grasp a different site on the part; approach from
-  the other side; hand a part over instead of reaching across.
-- **Big changes**: a genuinely new plan — e.g. where one strategy has a
-  single arm assemble while the other only reorients the workpiece, a new
-  strategy hands the part over and both arms work.
+- **Local structural changes**: use a different valid subtask order, contact
+  site, approach direction, or intermediate state.
+- **New plans**: change how responsibilities, regrasping, staging, or
+  recovery are organized while preserving the task definition.
+- **Restructured stages**: divide the task into different stages than the
+  base solve does, or swap the order of stages that don't strictly depend
+  on each other — stage structure is itself a diversity axis.
+- **Recovery strategies**: deliberately reach a recoverable off-nominal
+  state (an object set down short of its goal, a grasp released early, a
+  part left leaning) and solve from there — demonstrations of *fixing* a
+  situation add a useful diversity axis when they succeed.
 - **Not a new strategy**: an existing solve with different constants
   (speeds, forces, clearances). Those belong inside a solve as keyword
   arguments (below), not in a new cell.
@@ -65,15 +68,15 @@ rhythm, how task-done is detected. Your solve follows the same contract:
 the top of the file as UPPERCASE constants, with the values you actually
 solved with — those values ARE the nominal:
 
-    HOVER_DZ  = 0.02    # hover height above the part (m)
-    WIND_RATE = 1.0     # screwing-speed multiplier
-    GRIP_N    = 40.0    # grip force (N)
+    HOVER_DZ     = 0.02    # hover height above the object (m)
+    MOTION_RATE  = 1.0     # phase-speed multiplier
+    CONTACT_N    = 40.0    # task contact force (N)
 
     SOLVE_PARAMS = {
-        "HOVER_DZ":  {"dist": "uniform", "lo": 0.015, "hi": 0.03},
-        "WIND_RATE": {"dist": "uniform", "lo": 0.8, "hi": 1.3,
-                      "reason": "speed diversity at no risk"},
-        "GRIP_N":    None,   # declared, not sampled
+        "HOVER_DZ":    {"dist": "uniform", "lo": 0.015, "hi": 0.03},
+        "MOTION_RATE": {"dist": "uniform", "lo": 0.8, "hi": 1.3,
+                        "reason": "validated timing variation"},
+        "CONTACT_N":   None,   # declared, not sampled
     }
 
 `SOLVE_PARAMS` tells `generate` which constants it may vary: it draws ONE
@@ -108,10 +111,11 @@ untouched. Conditions that must hold:
 
 ## Verification
 
-    generate --headless /workspace --scene {base} --strategy strategy_N --num_envs 8 --seed 0
+    generate --headless . --scene {base} --strategy strategy_N \
+        --num_envs <N> --seed 0
 
 This generates one batch of data using your strategy, under
-`/workspace/data/<batch>/`: one `ep_NNNN/` folder per episode, success/fail
+`data/<batch>/`: one `ep_NNNN/` folder per episode, success/fail
 in each episode's `meta.json`, and the batch summary (yield) in
 `data/<batch>/meta.json`. Physical parameters are sampled automatically
 (env 0 always keeps the plain, unsampled world); add `--nominal` to turn

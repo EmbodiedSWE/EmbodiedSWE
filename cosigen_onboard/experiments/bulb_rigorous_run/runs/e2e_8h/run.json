@@ -1,0 +1,41 @@
+{
+  "exp": "/home/haoxiang/Documents/Research/CoSiGen/experiments/bulb_e2e",
+  "stage": "01_bulb_franka",
+  "preset": "assembly.bulb.franka.osc",
+  "set_states": true,
+  "control_mode_frozen": true,
+  "hints": [
+    "save_snapshot"
+  ],
+  "rules": [
+    "autonomous_operation"
+  ],
+  "task_files": {
+    "hints/save_snapshot.md": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "instructions.md": "1eb0f93cd174e4a8a3bdc4c6cb5306e6e851bc77861ea9a13b2c5dc4b12b0860",
+    "rules/autonomous_operation.md": "8193e9ef6c297071b677d7cbc56d15c4ca60c1eb56d0d1e50235946ee26ec8ed",
+    "task.md": "cb2a5f07f5680b55201c1d89ed671d676c7f1fc9662e149f120f153b80daa6c2"
+  },
+  "config": "/home/haoxiang/Documents/Research/CoSiGen/eval/prompts/configs/default.yaml",
+  "agent": "claude",
+  "model": "claude-fable-5",
+  "image": "rb-l1-agent:2.1.216",
+  "gpu": "0",
+  "budget_min": 480.0,
+  "started": "2026-07-27T21:33:17+00:00",
+  "ended": "2026-07-28T05:33:24+00:00",
+  "status": "timeout",
+  "container_exit_code": null,
+  "argv": [
+    "eval/scripts/run_agent.py",
+    "experiments/bulb_e2e",
+    "--model",
+    "claude-fable-5",
+    "--budget-min",
+    "480",
+    "--auto-submit-min",
+    "60",
+    "--run",
+    "e2e_8h"
+  ]
+}

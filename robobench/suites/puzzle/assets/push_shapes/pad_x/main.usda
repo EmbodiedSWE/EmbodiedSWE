@@ -1,0 +1,66 @@
+#usda 1.0
+(
+    defaultPrim = "PadX"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+# Authored X target pad: 0 mm thick and colour-keyed to its block so alignment is judgeable on camera (the upstream pad is 0.1 mm and renders as a shadow). Visual only — the scene disables its collision.
+def Xform "PadX" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+)
+{
+    def Scope "Looks"
+    {
+        def Material "PadXMat"
+        {
+            token outputs:surface.connect = </PadX/Looks/PadXMat/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.060, 0.160, 0.420)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.85
+                float inputs:specular = 0.5
+                token outputs:surface
+            }
+        }
+    }
+    def Mesh "part_0" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.038000, -0.014500, -0.000100), (0.038000, -0.014500, -0.000100), (0.038000, 0.014500, -0.000100), (-0.038000, 0.014500, -0.000100), (-0.038000, -0.014500, 0.000100), (0.038000, -0.014500, 0.000100), (0.038000, 0.014500, 0.000100), (-0.038000, 0.014500, 0.000100)]
+        float3[] extent = [(-0.038000, -0.014500, -0.000100), (0.038000, 0.014500, 0.000100)]
+        color3f[] primvars:displayColor = [(0.060, 0.160, 0.420)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </PadX/Looks/PadXMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+    def Mesh "part_1" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI",
+                              "MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 5, 4, 2, 3, 7, 6, 1, 2, 6, 5, 3, 0, 4, 7]
+        point3f[] points = [(-0.014500, -0.038000, -0.000100), (0.014500, -0.038000, -0.000100), (0.014500, 0.038000, -0.000100), (-0.014500, 0.038000, -0.000100), (-0.014500, -0.038000, 0.000100), (0.014500, -0.038000, 0.000100), (0.014500, 0.038000, 0.000100), (-0.014500, 0.038000, 0.000100)]
+        float3[] extent = [(-0.014500, -0.038000, -0.000100), (0.014500, 0.038000, 0.000100)]
+        color3f[] primvars:displayColor = [(0.060, 0.160, 0.420)] (
+            interpolation = "constant"
+        )
+        rel material:binding = </PadX/Looks/PadXMat>
+        uniform token subdivisionScheme = "none"
+        bool physics:collisionEnabled = 1
+        uniform token physics:approximation = "convexHull"
+    }
+}

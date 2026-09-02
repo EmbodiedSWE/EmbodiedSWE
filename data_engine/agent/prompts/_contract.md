@@ -10,22 +10,19 @@ and where to start.
 
 ## Your environment
 
-- `/workspace` — the campaign; your cwd; the ONLY writable place. Everything
-  you make lives here.
-- `/reference` — the eval run this campaign multiplies, read-only: its task,
-  and the agent workspace of how the solve was built. Usually the read that
-  pays off most, together with other campaigns' diversification histories
-  (their cells' `SUMMARY.md`).
-- `/repo` — the whole CoSiGen repo, read-only. Optional background: the
-  benchmark suite sources (`robobench/suites/…`), the data_engine, past
-  experiments.
-- Your **start point** inside the campaign is also read-only — copy it with
-  `create_cell`, never edit it in place.
+- **Your cwd is the campaign root** — the only place you write; everything
+  you make lives here. (Container sessions mount it at `/workspace` and add
+  read-only `/reference` — the eval run this campaign multiplies, usually the
+  read that pays off most — and `/repo`, the CoSiGen sources. Host sessions
+  have neither mount; the campaign's `gen.yaml` records the solve's
+  provenance instead.)
+- Your **start point** inside the campaign is read-only by contract — copy it
+  with `create_cell`, never edit it in place.
 - A GPU is available; `python` has Isaac Sim + Isaac Lab.
 
 ## The campaign
 
-    /workspace/
+    .                               (the campaign root, your cwd)
     ├─ gen.yaml                     the env preset + provenance of the solve
     ├─ scenes/<scene>/              one world + its judge
     │   ├─ scene/scene.py           full standalone scene — edits take effect
@@ -42,17 +39,30 @@ and where to start.
 - `create_cell [--count N]` — new cell(s) of this session's level, from this
   session's start point. One cell per distinct idea; run it as often as you
   have ideas.
-- `generate --headless /workspace --scene <s> [--strategy <t>] [--phase <p>]
-  --num_envs 4 --seed 0` — test-launch a cell: batched rollouts, every episode
+- `generate --headless . --scene <s> [--strategy <t>] [--phase <p>]
+  --num_envs <N> --seed 0` — test-launch a cell: batched rollouts, every episode
   graded, yield written to the batch meta under `data/`.
+
+Choose test width deliberately. Use parallel environments when the solve
+supports them and the experiment benefits from multiple independent verdicts;
+sequential exploration is also valid while developing a new idea. If
+`DGEN_NUM_ENVS` is set, it is the downstream scripted-stage width and is the
+right final compatibility test.
+
+Solves may author DART-style disturbances through the recorder's noise
+channel — `env.step(action, noise=perturbation)` — which executes
+`action + NOISE_SCALE * perturbation` while recording the clean `action` as
+the label. `NOISE_SCALE` is pipeline-controlled (`generate --noise_scale`,
+default 0), so authored noise is inert in normal testing. You also have a
+`view` tool that attaches video frames or images to the conversation — use it
+whenever judging motion from a rendered episode beats reading logs.
 
 ## How you work
 
 1. **Study first**: the start point's code (the working scene, grader and
-   solve you build on); `/reference` — the experience of solving this task:
-   what worked and what failed on the way to the delivered solve, and
-   potentially other diversification attempts; the pool's batch metas
-   (existing yields are your baselines).
+   solve you build on); the pool's batch metas (existing yields are your
+   baselines); and, where mounted, `/reference` — the experience of solving
+   this task: what worked and what failed on the way to the delivered solve.
 2. **Propose many**: each distinct variant gets its own cell via `create_cell`.
 3. **Author** inside your cells only.
 4. **Prove**: use `generate` to prove your ideas, and iterate on it as many
@@ -64,12 +74,10 @@ and where to start.
 
 ## Practical notes
 
-Running and verifying each new diversification costs real time: a test batch
-boots Isaac (minutes) and rolls out full episodes (tens of minutes). So don't
-serialize ideation behind verification — propose and author MANY cells up
-front, and test while you keep authoring. It is OK if the session ends before
-some cells got a test: leave them in place, clearly marked UNTESTED in their
-summary — testing them is a cheap job for whoever comes next.
+Generation boots Isaac and rolls out full episodes. Author independent ideas
+before waiting on one test, and keep working while batches run. If the session
+ends before a cell is tested, mark it `UNTESTED` in `SUMMARY.md`; never imply
+that an untested cell is proven.
 
 ## Leave behind
 

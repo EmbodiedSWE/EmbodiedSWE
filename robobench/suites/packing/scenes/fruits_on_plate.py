@@ -91,10 +91,15 @@ class FruitsOnPlateSceneCfg(BaseCfg):
     # resting in the dish, and will roll off. 0.88 -> a 133 mm counted radius on the unscaled
     # 151 mm plate, which still counts a fruit resting against the inside of the rim (its
     # centre is ~rim_radius - fruit_radius).
-    floor_local_z: float = 0.015  # min local z above the plate's base to count as "on" (m). The
-    # dish floor sits 11.5 mm above the base at the centre and rises to the 47 mm rim, so a
-    # fruit resting in the dish clears this comfortably while the radial test does the real
-    # work — as in RoboLab, where the footprint term is the discriminating one.
+    floor_local_z: float = 0.005  # min local z above the plate's base to count as "on" (m).
+    # The produce assets carry their ORIGIN AT THE BASE (every item rests with its origin at
+    # exactly surface_z), and the dish floor sits 11.5 mm above the plate base at the centre,
+    # rising to the 47 mm rim. So a fruit resting dead-centre in the dish has local z 0.011 —
+    # the earlier 0.015 (written as if the origin were at the fruit's centre) judged a lemon
+    # sitting in the middle of the plate as NOT on it (measured: radial 0, |v| 0.003,
+    # on_plate False), and only off-centre placements counted. 5 mm still excludes anything
+    # under or beside the plate (local z <= 0); the radial test does the real work — as in
+    # RoboLab, where the footprint term is the discriminating one.
     stack_local_z: float = 0.10  # extra local z above the rim an item may pile to and still
     # count (a fruit resting ON other fruit inside the dish, its centre over the footprint).
     # The full seven-fruit set does not fit the dish in one layer, so piling is expected.
@@ -306,11 +311,22 @@ class FruitsOnPlateScene(BaseScene):
         preset = c.TABLES[c.table]
         wx, wy = c.workbench_pos
         z0 = c.surface_z
-        table_z = z0 - preset["top_offset"]
-        ground_z = z0 - preset["height"]
         s = preset["scale"]
+        sz = s
+        if preset["top_offset"] and preset["top_offset"] == preset["height"]:
+            # A ground-standing table asset with its top at `height`: reach the requested
+            # work-surface height by SQUASHING the asset in z, not by sinking the ground.
+            # The old ground_z = z0 - height put the floor 0.214 m below the world origin,
+            # which read fine while the robot was (wrongly) welded inside the bench, but a
+            # robot standing BESIDE the table then floats 0.2 m above the visible floor.
+            sz = s * z0 / preset["height"]
+            table_z = 0.0
+            ground_z = 0.0
+        else:
+            table_z = z0 - preset["top_offset"]
+            ground_z = z0 - preset["height"]
         table_spawn = sim_utils.UsdFileCfg(usd_path=c.workbench_usd,
-                                           scale=(s, s * c.table_depth_scale, s))
+                                           scale=(s, s * c.table_depth_scale, sz))
         if preset["kinematic"]:
             table_spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
         pox, poy = self._plate_origin_xy()
@@ -392,6 +408,14 @@ class FruitsOnPlateScene(BaseScene):
         rx = ox * math.cos(t) - oy * math.sin(t)
         ry = ox * math.sin(t) + oy * math.cos(t)
         return (c.plate_pos[0] - rx, c.plate_pos[1] - ry)
+
+    def _ground_z(self) -> float:
+        """World z of the floor: 0 when the (squashed) table stands on it, else derived from
+        the preset height. Must mirror the branch in `assets()`."""
+        preset = self.cfg.TABLES[self.cfg.table]
+        if preset["top_offset"] and preset["top_offset"] == preset["height"]:
+            return 0.0
+        return self.cfg.surface_z - preset["height"]
 
     def _fixed_pose(self, name: str) -> tuple[float, float, float] | None:
         """(x, y, yaw_deg) if `name` has an explicit `slot_override`, else None."""
@@ -565,7 +589,7 @@ class FruitsOnPlateScene(BaseScene):
             if absent.any():
                 st[absent, 0] = wx + 1.2 + 0.16 * (i % 3)
                 st[absent, 1] = wy + 1.2 + 0.16 * (i // 3)
-                st[absent, 2] = z0 - c.TABLES[c.table]["height"] + 0.05
+                st[absent, 2] = self._ground_z() + 0.05
             st[:, 0:3] += origin
             self.items[name].write_root_state_to_sim(st, env_ids)
 
