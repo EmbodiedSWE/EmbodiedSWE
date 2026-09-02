@@ -1,11 +1,13 @@
 """Recorded NullRobot oracle/smoke for :mod:`packing.egg_carton`.
 
-The main path settles the reset tableau, kinematically carries one egg above a physical pocket,
-RELEASES it through the real opening, and verifies the 0 -> 90 -> 100 seating rubric.
+The main path settles the reset tableau, kinematically carries three eggs above three distinct
+physical pockets, RELEASES each through the real opening, verifies the staged
+0 -> 30 -> 60 -> 90 seating rubric, then drives the passive lid closed and verifies the final
+90 -> 100 stage.
 
 The full run additionally proves that an egg lying sideways at a cavity centre does not count
-and that get_state/set_state restores a quiet full-score state.  The other three eggs and the
-open articulated lid remain visible scene geometry but are not success requirements.
+and that get_state/set_state restores a quiet full-score state.  The fourth egg remains a
+visible distractor.
 
 Every invocation records viewport RGB frames. ``--demo`` runs only the clean solve.  Bodies
 and joints are driven through scene handles; NullRobot contributes no action.
@@ -187,24 +189,43 @@ def main() -> bool:
     egg_names = list(scene.eggs)
 
     def fill(count: int) -> None:
+        per_pocket = 90 // c.target_eggs
         for cavity, name in enumerate(egg_names[:count]):
             check(f"drop {name} into distinct cavity {cavity}", drop_egg(name, cavity))
+            expected = per_pocket * (cavity + 1)
             check(
-                f"score after {cavity + 1} egg(s) is 100",
-                bool((scene.score() == 100).all()),
+                f"score after {cavity + 1} egg(s) is {expected}",
+                bool((scene.score() == expected).all()),
             )
             report(f"after {cavity + 1} egg(s)")
+
+    def close_lid(steps: int = 120) -> None:
+        """Kinematically swing the passive lid from open to closed through real contact."""
+        start = scene.carton.data.joint_pos[:, scene._lid_j].clone()
+        for index in range(steps):
+            alpha = (index + 1) / steps
+            pos = scene.carton.data.joint_pos.clone()
+            vel = torch.zeros_like(scene.carton.data.joint_vel)
+            pos[:, scene._lid_j] = start * (1 - alpha)
+            scene.carton.write_joint_state_to_sim(pos, vel, env_ids=all_ids)
+            step(1)
 
     # =========================== clean oracle ================================================
     env.reset()
     step(120)
     report("reset tableau")
     check("reset score is zero", bool((scene.score() == 0).all()))
-    fill(1)
+    fill(c.target_eggs)
+    check(
+        "filled pockets alone do not reach success (lid still open)",
+        not bool(scene.success().any()),
+    )
+    close_lid()
     step(120)
     report("oracle complete")
-    check("one seated egg scores 100", bool((scene.score() == 100).all()))
-    check("one seated egg reaches success", bool(scene.success().all()))
+    check("lid reads closed", bool(scene.lid_closed().all()))
+    check("three seated eggs + closed lid score 100", bool((scene.score() == 100).all()))
+    check("three seated eggs + closed lid reach success", bool(scene.success().all()))
     solved_state = scene.get_state(all_ids)
 
     if not args.demo:

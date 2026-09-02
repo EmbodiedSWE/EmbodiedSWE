@@ -1,21 +1,25 @@
-"""EggCartonScene — place one egg upright in a physical carton cell.
+"""EggCartonScene — fill three carton cells with upright eggs, then close the lid.
 
 This is a scene-level port of RoboDojo's ``fill_egg_holder`` task using its original
-authored/scanned assets: a woven basket, four candidate eggs, and a compact articulated
-four-cell carton.  The robot must choose and reorient one of four side-lying eggs, then place it
-securely in one physical pocket.  The hinged lid remains open as scene geometry but is not part
-of the success condition.
+authored/scanned assets: four candidate eggs lying loose on the table, and a compact
+articulated four-cell carton.  (The source's woven basket was removed: its thin kinematic
+walls sat exactly where a fixed-base humanoid's finger stack must sweep, producing constant
+visual interpenetration that no motion plan could fully avoid.)  The long-horizon rubric has
+three stages: seat eggs in ``target_eggs`` (default three) DISTINCT pockets, one at a time,
+then push the hinged lid closed.  The lid is a passive damped revolute joint, so closing it
+is honest non-prehensile contact manipulation.
 
 The rubric is deliberately evaluated in the carton's BASE-LINK FRAME, so reset yaw/position
 randomization cannot change the meaning of "in a pocket".  A pocket counts only when one
 egg centre is close to its measured 2x2 cavity centre, at the source task's <=40 mm body-z
-band, aligned with the pocket axis, and settled.  A correctly occupied but still-moving pocket
-earns 90; one quiet occupied pocket is 100 and ``success()``.  The three unused eggs remain
-physical distractors in the basket.
+band, aligned with the pocket axis, and settled.  Each distinct occupied pocket earns
+``90 // target_eggs`` points (30/60/90 at the default three); 100 and ``success()`` require
+every target pocket filled, the lid closed (when ``require_lid_closed``), and everything
+settled.  The unused egg remains a physical distractor.
 
-The carton and basket stay fixed to the table, matching the source's egg-holder/Geometry
-placement.  Everything else is passive contact physics; there are no hidden welds or task
-state machines.  Heavy Isaac Lab imports are deferred so registry discovery stays app-free.
+The carton stays fixed to the table, matching the source's egg-holder/Geometry placement.
+Everything else is passive contact physics; there are no hidden welds or task state
+machines.  Heavy Isaac Lab imports are deferred so registry discovery stays app-free.
 """
 
 from __future__ import annotations
@@ -45,10 +49,16 @@ class EggCartonSceneCfg(BaseCfg):
     seat_z_max: float = tunable(0.042)  # source task accepts <= 40 mm; 2 mm solver margin
     egg_tilt_max_deg: float = tunable(35.0)  # long egg axis versus carton local +/-z
     lid_closed_deg: float = tunable(7.0)  # |joint| <= this is closed (joint range -90..0)
+    # Final stage: the lid must be pushed closed after every target pocket is filled.  Off, the
+    # rubric reduces to the original fill-only task (useful for ablations and older presets).
+    require_lid_closed: bool = tunable(True)
     settle_speed: float = tunable(0.05)  # max egg linear speed while counting (m/s)
     settle_joint_speed: float = tunable(0.10)  # max lid angular speed at success (rad/s)
 
     # --- tunable: task layout/randomization ----------------------------------------------------
+    # ``basket_pos`` etc. name the egg SCATTER FRAME on the open table (the area where the
+    # removed basket used to stand); the names are kept so bindings and solvers keyed on them
+    # stay valid.
     carton_pos: tuple[float, float] = tunable((0.14, 0.12))
     basket_pos: tuple[float, float] = tunable((-0.14, 0.12))
     carton_pos_jitter: float = tunable(0.010)
@@ -56,39 +66,48 @@ class EggCartonSceneCfg(BaseCfg):
     basket_pos_jitter: float = tunable(0.010)
     basket_yaw_jitter_deg: float = tunable(8.0)
     egg_pos_jitter: float = tunable(0.006)
-    egg_yaw_jitter_deg: float = tunable(180.0)
+    # Eggs scatter around the scatter frame's own yaw, lying roughly parallel.  The
+    # full-circle (180) jitter made the tableau unsolvable for a fixed-base arm on many reset
+    # seeds: a side-lying egg whose long axis points at the robot presents only its blunt end
+    # to a top-down pinch, and no wrist attitude reachable from this shoulder can cage such an
+    # egg.  +/-30 degrees keeps visible per-seed variety (combined with frame yaw, carton
+    # pose, and egg position jitter) while every egg stays physically pinchable from above.
+    egg_yaw_jitter_deg: float = tunable(30.0)
     # --- info: measured asset structure --------------------------------------------------------
     num_eggs: int = info(4)
-    target_eggs: int = info(1)
+    target_eggs: int = info(3)
     # Composed holder asset is 1.2x its source layer: measured cavity centres are +/-30 mm.
     cavity_centers: tuple[tuple[float, float], ...] = info(
         ((-0.030, -0.030), (-0.030, 0.030), (0.030, -0.030), (0.030, 0.030))
     )
-    # Four non-overlapping spawn cells inside the ~220 mm woven basket.
+    # Four non-overlapping spawn cells in the table scatter area.  Slightly wider than the
+    # old in-basket spacing so neighbouring eggs stay clear of a descending finger stack.
     basket_slots: tuple[tuple[float, float], ...] = info(
-        ((-0.040, -0.040), (-0.040, 0.040), (0.040, -0.040), (0.040, 0.040))
+        ((-0.050, -0.050), (-0.050, 0.050), (0.050, -0.050), (0.050, 0.050))
     )
     carton_body: str = info("E_body_5")
     lid_joint: str = info("RevoluteJoint_4compartmenteggcartons_up")
     lid_open_deg: float = info(-90.0)
-    basket_root_lift: float = info(0.0445)  # mesh bbox bottom is -44.25 mm
-    egg_spawn_lift: float = info(0.066)  # clear of basket floor; settles before control starts
+    egg_spawn_lift: float = info(0.040)  # short settle drop onto the bare table
     egg_mass: float = info(0.055)  # a real chicken egg, not the source metadata's 0.3 kg
     egg_contact_offset: float = info(0.002)
     carton_contact_offset: float = info(0.0015)
-    basket_contact_offset: float = info(0.0015)
     light_intensity: float = info(2500.0)
 
     # --- info: table preset (same relocatable packing-table convention as sibling scenes) ------
     table: str = info("packing")
     table_depth_scale: float = info(1.5)
     surface_z: float | None = info(None)
+    # None -> the preset formula (surface_z - table height), which keeps the table feet exactly
+    # on the floor.  Bindings that lower surface_z for a short embodiment can pin the floor at
+    # 0 instead, burying the table base rather than sinking the whole world: a humanoid
+    # standing beside the bench then has the floor at its feet.
+    ground_z: float | None = info(None)
     workbench_pos: tuple[float, float] | None = info(None)
     workbench_usd: str = info("")
     asset_dir: str = info("")
     carton_usd: str = info("")
     egg_usd: str = info("")
-    basket_usd: str = info("")
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {
             "usd": ("lab_table", "table_instanceable.usd"),
@@ -121,7 +140,6 @@ class EggCartonSceneCfg(BaseCfg):
         # eggs across the visual separator.
         self.carton_usd = self.carton_usd or str(task_assets / "egg_holder" / "g1_guided.usda")
         self.egg_usd = self.egg_usd or str(task_assets / "egg" / "main.usdc")
-        self.basket_usd = self.basket_usd or str(task_assets / "egg_basket" / "main.usdc")
         preset = self.TABLES[self.table]
         if self.surface_z is None:
             self.surface_z = preset["surface_z"]
@@ -146,13 +164,13 @@ class EggCartonScene(BaseScene):
 
     # ----- assets ------------------------------------------------------------------------------
     def assets(self) -> dict[str, Any]:
-        """Table, fixed basket, fixed-base articulated carton, and four loose eggs."""
+        """Table, fixed-base articulated carton, and four loose eggs on the tabletop."""
         import isaaclab.sim as sim_utils
         from isaaclab.actuators import ImplicitActuatorCfg
         from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 
         c = self.cfg
-        for usd in (c.carton_usd, c.egg_usd, c.basket_usd):
+        for usd in (c.carton_usd, c.egg_usd):
             if not Path(usd).is_file():
                 raise FileNotFoundError(
                     f"{usd} not found — run scripts/vendor_egg_carton_assets.py first"
@@ -161,7 +179,9 @@ class EggCartonScene(BaseScene):
         preset = c.TABLES[c.table]
         wx, wy = c.workbench_pos
         table_z = c.surface_z - preset["top_offset"]
-        ground_z = c.surface_z - preset["height"]
+        ground_z = (
+            c.ground_z if c.ground_z is not None else c.surface_z - preset["height"]
+        )
         scale = preset["scale"]
         table_spawn = sim_utils.UsdFileCfg(
             usd_path=c.workbench_usd,
@@ -198,25 +218,6 @@ class EggCartonScene(BaseScene):
                 ),
                 spawn=table_spawn,
             ),
-            # Source task marks the basket as Geometry.  A kinematic RigidObject preserves its
-            # detailed collision mesh and lets reset/state restore explicitly pin its pose.
-            "basket": RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/EggBasket",
-                spawn=sim_utils.UsdFileCfg(
-                    usd_path=c.basket_usd,
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-                    collision_props=sim_utils.CollisionPropertiesCfg(
-                        contact_offset=c.basket_contact_offset, rest_offset=0.0
-                    ),
-                ),
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(
-                        wx + c.basket_pos[0],
-                        wy + c.basket_pos[1],
-                        c.surface_z + c.basket_root_lift,
-                    )
-                ),
-            ),
             "carton": ArticulationCfg(
                 prim_path="{ENV_REGEX_NS}/EggCarton",
                 spawn=sim_utils.UsdFileCfg(
@@ -242,12 +243,18 @@ class EggCartonScene(BaseScene):
                     joint_vel={c.lid_joint: 0.0},
                 ),
                 # Passive stay-where-put lid: deliberate contact moves it, damping arrests it.
+                # Friction 0.25 (was 0.03): the fully open lid stands vertical with its centre
+                # of gravity directly above the hinge — a metastable pose where the light
+                # original friction let any arm brush topple it shut mid-task (watched on
+                # video: a back-row insertion dragged it closed, then dropped its egg on the
+                # shut box).  Cardboard-hinge-level friction ignores brushes but still yields
+                # to the deliberate two-stage closing push.
                 actuators={
                     "lid": ImplicitActuatorCfg(
                         joint_names_expr=[c.lid_joint],
                         stiffness=0.0,
-                        damping=0.12,
-                        friction=0.03,
+                        damping=0.25,
+                        friction=0.25,
                     )
                 },
             ),
@@ -304,7 +311,6 @@ class EggCartonScene(BaseScene):
     def bind(self, env: BaseEnv) -> None:
         super().bind(env)
         self.carton: Articulation = env.iscene["carton"]
-        self.basket: RigidObject = env.iscene["basket"]
         self.eggs: dict[str, RigidObject] = {
             f"egg_{i}": env.iscene[f"egg_{i}"] for i in range(self.cfg.num_eggs)
         }
@@ -314,7 +320,7 @@ class EggCartonScene(BaseScene):
         self._cavity_xy = torch.tensor(self.cfg.cavity_centers, device=env.device)
 
     def reset(self, env_ids: torch.Tensor) -> None:
-        """Open carton, randomize both fixtures, and scatter four side-lying eggs in basket."""
+        """Open carton, randomize its pose, and scatter four side-lying eggs on the table."""
         c = self.cfg
         dev = self.env.device
         m = len(env_ids)
@@ -343,7 +349,8 @@ class EggCartonScene(BaseScene):
             joint_pos, torch.zeros_like(joint_pos), env_ids=env_ids
         )
 
-        # Basket: kinematic, but randomized as a task fixture.  Eggs are placed in its frame.
+        # Egg scatter frame: a randomized pose on the open tabletop (where the removed basket
+        # used to stand); eggs are placed in this frame.
         basket_xy = torch.tensor(
             [wx + c.basket_pos[0], wy + c.basket_pos[1]], device=dev
         ).expand(m, 2).clone()
@@ -351,13 +358,6 @@ class EggCartonScene(BaseScene):
         basket_yaw = (torch.rand(m, device=dev) * 2 - 1) * math.radians(
             c.basket_yaw_jitter_deg
         )
-        bst = torch.zeros(m, 13, device=dev)
-        bst[:, 0:2] = basket_xy
-        bst[:, 2] = c.surface_z + c.basket_root_lift
-        bst[:, 3] = torch.cos(basket_yaw / 2)
-        bst[:, 6] = torch.sin(basket_yaw / 2)
-        bst[:, 0:3] += origin
-        self.basket.write_root_state_to_sim(bst, env_ids)
 
         slots = torch.tensor(c.basket_slots, device=dev)
         cos_y, sin_y = torch.cos(basket_yaw), torch.sin(basket_yaw)
@@ -394,7 +394,6 @@ class EggCartonScene(BaseScene):
             "carton_root": self.carton.data.root_state_w[env_ids].clone(),
             "carton_joint_pos": self.carton.data.joint_pos[env_ids].clone(),
             "carton_joint_vel": self.carton.data.joint_vel[env_ids].clone(),
-            "basket": self.basket.data.root_state_w[env_ids].clone(),
             "eggs": {
                 name: egg.data.root_state_w[env_ids].clone() for name, egg in self.eggs.items()
             },
@@ -406,19 +405,20 @@ class EggCartonScene(BaseScene):
         self.carton.write_joint_state_to_sim(
             state["carton_joint_pos"], state["carton_joint_vel"], env_ids=env_ids
         )
-        self.basket.write_root_state_to_sim(state["basket"], env_ids)
         for name, egg in self.eggs.items():
             egg.write_root_state_to_sim(state["eggs"][name], env_ids)
 
     # ----- task description --------------------------------------------------------------------
     def describe(self) -> str:
         return (
-            "A woven basket on the left holds four loose eggs, lying on their sides. On the "
-            "right is a small four-cell egg carton fixed to the table, with its hinged lid "
+            "Four loose eggs lie on their sides on the left half of the table. On the right "
+            "is a small four-cell egg carton fixed to the table, with its hinged lid "
             "standing fully open. The carton has four distinct pockets in a 2 by 2 layout.\n"
-            "Goal: choose one egg, pick it up, turn it upright, and place it securely in any "
-            "carton pocket. Leave that egg upright and settled. The other three eggs are "
-            "distractors and stay in the basket; the lid does not need to be closed."
+            "Goal (three stages): pick eggs from the table one at a time, turn each upright, "
+            "and place three eggs securely in three DISTINCT carton pockets; then push the "
+            "hinged lid closed over them. Every seated egg must remain upright and settled, "
+            "and the lid must rest closed at the end. The fourth egg is a distractor and can "
+            "stay on the table."
         )
 
     # ----- progress/rubric ---------------------------------------------------------------------
@@ -475,25 +475,25 @@ class EggCartonScene(BaseScene):
         lid_still = self.carton.data.joint_vel[:, self._lid_j].abs() < self.cfg.settle_joint_speed
         return egg_still & lid_still
 
-    def score(self) -> torch.Tensor:
-        """(N,) progress: 0 before seating, 90 while seating, then 100 once settled."""
-        occupied = self.occupied()
-        occupied_count = occupied.sum(dim=1)
-        base = torch.where(
-            occupied_count == 0,
-            torch.zeros_like(occupied_count),
-            torch.full_like(occupied_count, 90),
+    def _stages_complete(self) -> torch.Tensor:
+        """(N,) all target pockets filled by seated eggs, and (if required) lid closed."""
+        occupied_count = self.occupied().sum(dim=1)
+        complete = (occupied_count >= self.cfg.target_eggs) & (
+            self.seated().sum(dim=1) >= self.cfg.target_eggs
         )
-        complete = (
-            occupied_count >= self.cfg.target_eggs
-        ) & (self.seated().sum(dim=1) >= self.cfg.target_eggs)
-        return torch.where(complete & self.settled(), 100, base)
+        if self.cfg.require_lid_closed:
+            complete = complete & self.lid_closed()
+        return complete
+
+    def score(self) -> torch.Tensor:
+        """(N,) staged progress: ``90 // target_eggs`` per distinct occupied pocket
+        (30/60/90 at the default three), 100 once every stage — including the lid when
+        required — is complete and everything is settled."""
+        occupied_count = self.occupied().sum(dim=1)
+        per_pocket = 90 // self.cfg.target_eggs
+        base = per_pocket * occupied_count.clamp(max=self.cfg.target_eggs)
+        return torch.where(self._stages_complete() & self.settled(), 100, base)
 
     def success(self) -> torch.Tensor:
-        """One physical pocket is filled by an upright, settled egg."""
-        occupied_count = self.occupied().sum(dim=1)
-        return (
-            (occupied_count >= self.cfg.target_eggs)
-            & (self.seated().sum(dim=1) >= self.cfg.target_eggs)
-            & self.settled()
-        )
+        """Every target pocket filled by an upright, settled egg — and the lid closed."""
+        return self._stages_complete() & self.settled()
