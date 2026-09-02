@@ -76,11 +76,13 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spa
 # table edge (the smoke stages bolts kinematically in their holes, so the row is scenery).
 # Deterministic spawn; sim dt 1/240 (no SDF threads here — the smoke drives the scene's
 # kinematic screw joints, cf. pc_motherboard_smoke).
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.pc_motherboard.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_motherboard.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_motherboard.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.pc_motherboard.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.pc_motherboard.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -96,6 +98,59 @@ for _mode in ("osc", "impedance", "joint"):
             ),
             robot="franka",
             robot_cfg=FrankaRobotCfg(base_pos=(0.07, 0.0, 0.0)),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+
+# The SAME pc-motherboard cell for the transfer suite: gen3n7_panda + xarm7 (panda-hand dial).
+# Scene layout verbatim from the franka binding (7 holes spanning the 0.36-0.60 m top-down band
+# from the west base, key upright in its stand). gen3n7 (~0.9 m) keeps the franka's base spot;
+# the xarm7 (~0.70 m) moves 5 cm east so the far holes pull from its reach edge (0.60 -> 0.55 m)
+# while the near holes stay outside the close-in cliff.
+#   -> "assembly.pc_motherboard.{gen3n7_panda,xarm7}.{osc,impedance,joint}"
+_PC_MB_SCENE_KW = dict(
+    workbench_pos=(0.54, 0.0),
+    bolt_init_xy=tuple((-0.24 + k * 0.075, -0.42) for k in range(7)),
+    key_init_xy=(-0.24, -0.30),
+    key_init_z=0.001,
+    key_init_quat=(1.0, 0.0, 0.0, 0.0),
+    key_stand=True,
+    reset_pos_jitter=0.0,
+)
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_motherboard",
+            scene_cfg=PcMotherboardAssemblySceneCfg(**_PC_MB_SCENE_KW),
+            robot="gen3n7_panda",
+            robot_cfg=AttachedArmRobotCfg(base_pos=(0.07, 0.0, 0.0),
+                                          arm_effort_limit=120.0, gravity_compensation=True,
+                                          # probe-verified ready pose (2026-08-18): key stand +
+                                          # both hole-row extremes track to <= 1.0 cm from here
+                                          # (the class home marched 20 cm wide in a bad branch)
+                                          default_dof_pos=(-0.1329, 0.2094, 0.1780, 1.9612,
+                                                           -0.8736, 0.6256, -0.5926)),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_motherboard",
+            scene_cfg=PcMotherboardAssemblySceneCfg(**_PC_MB_SCENE_KW),
+            robot="xarm7",
+            robot_cfg=XArm7RobotCfg(gripper="panda_hand", base_pos=(0.12, 0.0, 0.0),
+                                    arm_effort_limit=120.0, gravity_compensation=True,
+                                    # probe-verified ready pose (2026-08-18): <= 1.0 cm at the
+                                    # key stand + hole extremes (the stock folded home could
+                                    # not descend — 22 cm z-stall)
+                                    default_dof_pos=(-4.4657, 0.8562, -1.9503, 0.6564,
+                                                     0.3913, 0.5140, -2.3288)),
             control_mode=mode,
             env_spacing=2,
             sim_overrides={"dt": 1.0 / 240.0},
@@ -134,11 +189,13 @@ register_env(SUITE, lambda: EnvCfg(scene="pc_gpu_ram", robot="null", env_spacing
 # holders (their lying defaults are ungraspable — see the single-task envs); deterministic
 # spawn (no jitter): the holders are static geometry authored at the spawn points. sim dt
 # 1/240 — the depth both force-driven smokes validated.
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.pc_gpu_ram.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_gpu_ram.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_gpu_ram.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.pc_gpu_ram.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.pc_gpu_ram.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -170,6 +227,62 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
+# The SAME pc-gpu-ram work cell for the arms proven on BOTH parent tasks (pc_gpu + pc_ram) —
+# scene layout copied VERBATIM from the franka binding above so every embodiment faces the
+# identical task; base placement follows each arm's pc_gpu spot shifted with the cell (the
+# case moves 40 mm north here and the base follows, as the franka's did). xArm7 is excluded:
+# its vendor hand cannot make the task's stick pinches (the reason its pc_ram binding was
+# removed), and this task installs both sticks.
+#   -> "assembly.pc_gpu_ram.{jaco2_n7, cobotta_pro_1300}.{osc,impedance,joint}"
+_PC_GPU_RAM_ARMS = (
+    ("jaco2_n7", Jaco2N7RobotCfg, dict(
+        # the pc_ram cell's NORTH spot shifted with the cell, then 40 mm WEST: the far
+        # (slot-0) align/press fold had no elbow margin from 0.60 (aligns escaped on
+        # timeout and the press wandered ~86 mm; measured across the order-flip A/B) —
+        # 0.56 keeps every pick at this short arm's proven 0.27+ m band and relieves the
+        # far-slot fold
+        base_pos=(0.56, -0.26, 0.0),
+        base_rot=(0.0, 0.0, 0.0, 1.0),
+        default_dof_pos=(0.1629, 2.2989, -0.2511, 0.7993, -2.3822, -0.9424, -0.0279),
+        arm_effort_limit=120.0,
+        gravity_compensation=True,
+    )),
+    ("cobotta_pro_1300", CobottaPro1300RobotCfg, dict(
+        default_dof_pos=(-0.2689, -0.2062, 2.3545, -0.0002, 0.9898, -0.2685),
+        arm_effort_limit=150.0,
+        # east+south of the franka spot: the near stick's pick would sit at a 0.28 m radius
+        # from there and this 1.3 m arm's elbow tops out at its limit folding that close
+        # (measured: j3 pinned at +2.46, margin 0.15, hand 237 mm short); from here the
+        # stick picks sit at 0.34-0.49 m and the in-case work at ~0.55 m — all comfortable
+        base_pos=(0.78, -0.34, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+    )),
+)
+for _robot, _cfg_cls, _kw in _PC_GPU_RAM_ARMS:
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, cfg_cls=_cfg_cls, kw=_kw, mode=_mode: EnvCfg(
+                scene="pc_gpu_ram",
+                scene_cfg=PcGpuRamAssemblySceneCfg(
+                    case_xy=(0.55, 0.04),
+                    card_init_xy=(-0.185, -0.321),
+                    card_init_z=0.030,
+                    card_init_quat=(0.70711, 0.0, 0.0, 0.70711),
+                    ram_init_xy=((-0.26, -0.32), (-0.11, -0.32)),
+                    ram_init_quat=(1.0, 0.0, 0.0, 0.0),
+                    ram_init_z=0.030,
+                    reset_pos_jitter=0.0,
+                    card_stand=True,
+                    ram_stand=True,
+                ),
+                robot=robot,
+                robot_cfg=cfg_cls(**kw),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 240.0},
+            ),
+        )
+
 # Franka arm at the pc-ram scene (the case/table preset sits at 0.55 here). Same north-strip
 # placement family as pc_gpu.franka: the base stands at (0.72, -0.34) yaw 180 with its whole
 # link0 footprint (x [-0.154, +0.072] x y +-0.095) on the top plate, and the two stick holders
@@ -179,11 +292,13 @@ for _mode in ("osc", "impedance", "joint"):
 # gripper env stages them UPRIGHT in the scene's foam holders, already in the seated
 # orientation. Deterministic spawn (no jitter): the holders are static geometry authored at the
 # spawn points. sim dt 1/240, the depth the force-driven pc_ram smoke runs at.
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.pc_ram.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_ram.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_ram.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.pc_ram.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.pc_ram.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -261,6 +376,37 @@ for _robot in ("z1_lite6g", "rizon4_panda", "gen3n7_panda", "sawyer_egk25", "fes
             ),
         )
 
+# The same pc-ram work cell for the xArm7 (panda-hand dial) — completing the transfer suite's
+# pc_ram coverage. Scene cfg verbatim as above; the ~0.70 m arm takes the Jaco2's closer base
+# spot (the shared 0.72 m mount leaves the far DIMM slot at its reach edge). Ready posture =
+# the pc_gpu xarm7 binding's, tuned for the same yaw-180 stance at this cell.
+#   -> "assembly.pc_ram.xarm7.{osc, impedance, joint}"
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_ram",
+            scene_cfg=PcRamAssemblySceneCfg(
+                ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
+                ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                reset_pos_jitter=0.0,
+                ram_stand=True,
+            ),
+            robot="xarm7",
+            robot_cfg=XArm7RobotCfg(
+                gripper="panda_hand",
+                base_pos=(0.60, -0.30, 0.0), base_rot=(0.0, 0.0, 0.0, 1.0),
+                arm_effort_limit=120.0,
+                gravity_compensation=True,  # gravity-blind task-space laws (the bulb binding's note)
+                default_dof_pos=(-0.0659, -0.3051, 0.0759, 0.6345, 0.0281, 0.9358, -0.0097),
+            ),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+
 # The same pc-ram work cell for two of the pc_gpu embodiments (Jaco2 N7 / Cobotta Pro 1300) —
 # scene cfg verbatim as above so every embodiment faces the identical task; per-embodiment base
 # placement + ready posture only.
@@ -299,8 +445,8 @@ for _name, _cfg_cls, _kw in _PC_RAM_PCGPU_ARMS:
             ),
         )
 
-# Franka arm at the allen-bolt scene (base at the origin). Placement follows the solve-verified
-# reach lessons of the sibling franka envs: the platform is pulled from the table preset's 0.50 m
+# Franka arm at the allen-bolt scene (base at the origin). Placement follows the reach limits the
+# sibling franka envs are laid out around: the platform is pulled from the table preset's 0.50 m
 # to 0.42 m (`platform_slots`) — the screwing happens under a TOP-DOWN hand, and beyond ~0.45 m
 # the gravity-uncompensated arm saturates several mm short (pc_gpu note), more than the socket's
 # 0.75 mm/side clearance; the loose key leaves the stock "+x row" (0.76 m, out of reach) for the
@@ -311,11 +457,13 @@ for _name, _cfg_cls, _kw in _PC_RAM_PCGPU_ARMS:
 # the ratcheting key lifts out of the socket between strokes (the force-driven smoke never
 # disengages, so only the robot env needs it). sim dt 1/240 — the depth the force-driven smoke
 # validated for a pressed M16 on the SDF threads (the scene's 1/120 is for parts at rest).
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.allen_bolt.franka.osc"       — operational-space control (default)
 #   - "assembly.allen_bolt.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.allen_bolt.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.allen_bolt.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.allen_bolt.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -342,6 +490,46 @@ for _mode in ("osc", "impedance", "joint"):
         ),
     )
 
+# The SAME allen-bolt cell for the transfer suite: gen3n7_panda + xarm7 (panda-hand dial).
+# Scene layout verbatim from the franka binding — platform 0.42 m, key pick ~0.36 m with its
+# far tip 0.43 m out — inside both reach envelopes (gen3n7 ~0.9 m, xarm7 ~0.70 m), so the base
+# stays at the origin. arm_effort_limit + gravity_compensation follow each arm's bulb/pc_ram kw.
+#   -> "assembly.allen_bolt.{gen3n7_panda,xarm7}.{osc,impedance,joint}"
+_ALLEN_SCENE_KW = dict(
+    platform_slots=((-0.08, 0.0),),
+    bolt_staged=True,
+    key_init_xy=((-0.24, 0.18),),
+    key_init_quat=(0.5, 0.5, 0.5, 0.5),
+    bolt_friction=0.3,
+    reset_pos_jitter=0.0,
+)
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="allen_bolt",
+            scene_cfg=AllenBoltAssemblySceneCfg(**_ALLEN_SCENE_KW),
+            robot="gen3n7_panda",
+            robot_cfg=AttachedArmRobotCfg(arm_effort_limit=120.0, gravity_compensation=True),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="allen_bolt",
+            scene_cfg=AllenBoltAssemblySceneCfg(**_ALLEN_SCENE_KW),
+            robot="xarm7",
+            robot_cfg=XArm7RobotCfg(gripper="panda_hand", arm_effort_limit=120.0,
+                                    gravity_compensation=True),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
+        ),
+    )
+
 # SO101 full-arm assembly (seat + screw the elbow servo, clip + screw the forearm fork onto its
 # horn) on a workbench, scene physics only.
 # -> "assembly.so101"
@@ -354,13 +542,15 @@ register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
 #   - nut_friction 0.4 — at the 0.01 default the jaws cannot transmit wrench torque to the nut;
 #   - sim dt 1/480 — a pressed M16 TUNNELS through the SDF threads at the scene's 1/120, so nothing
 #     can genuinely thread there (1/240 narrows the window, 1/480 clean).
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.nut_thread.franka.osc"       — arm by operational-space control (inertia-shaped; default,
 #                                              smooth on this arm)
 #   - "assembly.nut_thread.franka.impedance" — arm by Jacobian-transpose task-space impedance (Isaac's form)
+#   - "assembly.nut_thread.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.nut_thread.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.nut_thread.franka.joint"     — arm by direct joint position targets
 # (all carry a 2-finger gripper by direct position target.)
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -422,11 +612,13 @@ for _mode in ("osc", "impedance", "joint"):
 # 0.63 m (out of reach -> REORIENT_STUCK) on the centreline (parks wrist q7 near its stop). Baked in:
 # socket 9 cm closer, bulb at the ~0.43 m pick radius on the +y side (q7 margin).
 # (Per-shape bulb friction is already the scene default — no override needed.)
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.bulb.franka.osc"       — operational-space control (default)
 #   - "assembly.bulb.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.bulb.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.bulb.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.bulb.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -534,11 +726,13 @@ for _robot in ("rizon4_panda", "gen3n7_panda", "festo_panda", "sawyer_panda"):
 # jitter): the holder is static geometry authored at the spawn point, so a jittered card would
 # spawn inside a rail.
 # sim dt 1/240 — the depth the force-driven pc_gpu smoke validated for the 0.15 mm/side channel.
-# Three control modes, switchable by env name:
+# Five control modes, switchable by env name:
 #   - "assembly.pc_gpu.franka.osc"       — operational-space control (default)
 #   - "assembly.pc_gpu.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_gpu.franka.diff_ik"   — differential IK (joint position targets)
+#   - "assembly.pc_gpu.franka.pink_ik"   — Pink QP IK (joint position targets)
 #   - "assembly.pc_gpu.franka.joint"     — direct joint position targets
-for _mode in ("osc", "impedance", "joint"):
+for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
@@ -623,15 +817,52 @@ for _robot, _cfg_cls in (
             ),
         )
 
+# The SAME pc-gpu work cell for the panda-hand composites — scene layout copied VERBATIM from
+# the franka binding above so every embodiment faces the identical task; shared base at the
+# franka's north-strip spot, per-arm actuator/posture dials as in their pc_ram bindings.
+#   -> "assembly.pc_gpu.{rizon4_panda, gen3n7_panda, festo_panda}.{osc,impedance,joint}"
+_PC_GPU_COMPOSITE_KW: dict[str, dict] = {
+    "rizon4_panda": dict(arm_effort_limit=150.0, gravity_compensation=True,
+                         default_dof_pos=(0.6362, -0.4773, -0.1640, 2.5330, 0.5056, 1.4094, -1.5786)),
+    "gen3n7_panda": dict(arm_effort_limit=120.0,  # authored wrist ratings are 9 N*m
+                         gravity_compensation=True,
+                         default_dof_pos=(-0.0286, 0.3731, -0.1231, 2.0578, 0.0679, 0.7191, 1.3759)),
+    "festo_panda": dict(arm_effort_limit=150.0,
+                        gravity_compensation=True,  # authored masses are all zero
+                        default_dof_pos=(-0.1269, -0.5584, 0.4606, 0.0000, 0.5567, 1.4435)),
+}
+for _robot in ("rizon4_panda", "gen3n7_panda", "festo_panda"):
+    for _mode in ("osc", "impedance", "joint"):
+        register_env(
+            SUITE,
+            lambda robot=_robot, mode=_mode: EnvCfg(
+                scene="pc_gpu",
+                scene_cfg=PcGpuAssemblySceneCfg(
+                    card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36)
+                    card_init_z=0.030,  # tab-bottom plane = the holder's floor top
+                    card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                    reset_pos_jitter=0.0,
+                    card_stand=True,
+                ),
+                robot=robot,
+                robot_cfg=AttachedArmRobotCfg(
+                    **{"base_pos": (0.64, -0.34, 0.0), "base_rot": (0.0, 0.0, 0.0, 1.0),
+                       **_PC_GPU_COMPOSITE_KW[robot]},
+                ),
+                control_mode=mode,
+                env_spacing=2,
+                sim_overrides={"dt": 1.0 / 240.0},
+            ),
+        )
+
 # Two Frankas at the SO101 workbench as ONE robot (`BimanualFranka`: action = [left | right];
 # address one arm via `env.robot["left"]`). Bases stand on the bench top (z = 0.994, the default
-# packing table), 0.94 m apart — each arm works best 0.3-0.55 m from its own base, so the shared
-# zone sits around (0.4, 0).
-# Reach-verified (reach probes): in-zone tracking
-# <= 0.6 mm, both arms simultaneously at the shared zone OK. Known gotcha: the default home pose
-# parks each hand over the other arm's zone — tuck the idle arm.
-# TO VERIFY: arm-arm collision limits when one arm stretches cross-body (> 0.55 m); per-task base
-# retuning for hold+insert style work.
+# packing table), 0.80 m apart, the layout the full-arm assembly was solved at: the left arm at
+# the bench origin facing +x covers the screw band, the drill zone and the drive rests; the
+# right arm at (0.75, -0.28) yaw 135 covers the workpiece drags, the fixture holds and the
+# distal delivery corner. Each arm works best 0.3-0.55 m from its own base; the shared zone
+# sits around (0.4, -0.1). Known gotcha: the default home pose can park a hand over the other
+# arm's zone — tuck the idle arm.
 # -> "assembly.so101.bimanual_franka.{osc,impedance,joint}" (mode applies to both arms)
 for _mode in ("osc", "impedance", "joint"):
     register_env(
@@ -642,10 +873,16 @@ for _mode in ("osc", "impedance", "joint"):
                 robot="bimanual_franka",
                 control_mode=mode,
                 robot_cfg=BimanualFrankaCfg(robots={
-                    "left": ("franka", FrankaRobotCfg(  # yaw -50 deg, faces the proximal/motor zone
-                        base_pos=(0.0, 0.28, 0.994), base_rot=(0.90631, 0.0, 0.0, -0.42262))),
-                    "right": ("franka", FrankaRobotCfg(  # yaw +135 deg, faces the drill/fixture zone
-                        base_pos=(0.75, -0.28, 0.994), base_rot=(0.38268, 0.0, 0.0, 0.92388))),
+                    "left": ("franka", FrankaRobotCfg(  # yaw 0, faces the work zone from the origin
+                        base_pos=(0.0, 0.0, 0.994), base_rot=(1.0, 0.0, 0.0, 0.0),
+                        nullspace_dof_pos=())),  # nullspace pulls toward the home pose
+                    "right": ("franka", FrankaRobotCfg(  # yaw +135 deg, faces the drag/fixture zone
+                        base_pos=(0.75, -0.28, 0.994), base_rot=(0.38268, 0.0, 0.0, 0.92388),
+                        # home = the stock pose with q1 swung -1.0 rad: the hand spawns parked
+                        # south of the bench center instead of looming over the shared work zone
+                        default_dof_pos=(-1.0, -0.197, -0.0014, -1.976, -0.00028, 1.78, 0.786),
+                        nullspace_dof_pos=(0.0015, -0.197, -0.0014, -1.976, -0.00028, 1.78,
+                                           0.786))),
                 }),
                 env_spacing=3,
             )
@@ -894,7 +1131,7 @@ for _mode in ("joint", "pink_ik"):
     )
 
 # -> "assembly.chair.franka.{osc,joint}"
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (
@@ -989,3 +1226,29 @@ for _mode in ("osc", "joint"):
         ),
     )
 
+
+
+# ---- Steering-wheel pick-and-place (a wheel off the table into the basket beside it) -------------
+# Scene physics only (NullRobot: the wheel on the table, the basket beside it). -> "assembly.wheel_pick_place"
+register_env(SUITE, lambda: EnvCfg(scene="wheel_pick_place", robot="null", env_spacing=2.5))
+
+# Fixed-base G1 at the packing table, both control modes. No placement override: `G1RobotCfg`'s own
+# default pelvis pose (0, 0, 0.75) facing +y already suits this table, whose 0.694 m top was authored
+# around a robot of that height (unlike the ikea_table bindings, which have to lower the bench and
+# stand the robot back from it). `env_spacing` = 2.5 just clears the 2.47 m table.
+#   - "assembly.wheel_pick_place.g1.pink_ik" — arm+waist by whole-body Pink IK (action = two wrist
+#     poses + 14 hand joints = 28)
+#   - "assembly.wheel_pick_place.g1.joint"   — the same hardware by direct joint targets (31)
+for _mode in ("pink_ik", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="wheel_pick_place",
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(),
+                env_spacing=2.5,
+            )
+        ),
+    )

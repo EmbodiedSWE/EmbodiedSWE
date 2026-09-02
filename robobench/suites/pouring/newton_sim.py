@@ -63,7 +63,6 @@ class MpmSimCfg(SimCfg):
     num_substeps: int = 3  # MuJoCo substeps per MPM tick (rigid dt = dt/num_substeps = 1/600)
     mjwarp: dict[str, Any] = field(default_factory=dict)  # MJWarpSolverCfg overrides (merged over
     # _MJWARP_DEFAULTS inside to_isaaclab — sim_overrides replaces this dict wholesale)
-    finger_pads: bool = False  # analytic box pads on the Franka fingertips (force closure)
     liquid_feedback: bool = False  # 1.5-way coupling: MPM collider impulses -> rigid body_f
     liquid_force_clamp: float = 10.0  # per-grid-node fluid force clamp [N]
     welds: list = field(default_factory=list)  # builder-time MuJoCo equality welds
@@ -107,7 +106,6 @@ class MpmSimCfg(SimCfg):
                 rigid_solver_cfg=MJWarpSolverCfg(**{**_MJWARP_DEFAULTS, **self.mjwarp}),
                 mpm_solver_cfg=mpm_solver_cfg,
                 weld_specs=[tuple(w) for w in self.welds],
-                finger_pad_boxes=self.finger_pads,
                 liquid_feedback=self.liquid_feedback,
                 liquid_force_clamp=self.liquid_force_clamp,
             )

@@ -1,6 +1,9 @@
 """Canonical runnable env configs for the puzzle suite — registered in `ENVS` by name.
 
-Three scenes, scene-physics-only first (NullRobot smoke/oracle), embodiments after:
+Four scenes, scene-physics-only first (NullRobot smoke/oracle), embodiments after:
+  - push_t:     simple G1-native planar pushing alignment task (port).
+  - push_shapes: multi-stage G1-native shape sorting — three blocks (T/X/L) each pushed
+                and reoriented onto its own matching pad.
   - coffee:     capsule coffee machine state machine (brew one capsule coffee and
                 serve the filled mug on the tray).
   - syringe:    draw / triple-dose / re-park. Defining embodiment GR1-T2 (bimanual:
@@ -13,15 +16,19 @@ from __future__ import annotations
 
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
+    AttachedArmRobotCfg,
     BimanualFrankaCfg,
     FrankaRobotCfg,
     G1RobotCfg,
     GR1T2RobotCfg,
     PiperRobotCfg,
     WxaiRobotCfg,
+    XArm7RobotCfg,
 )
 from robobench.suites.puzzle.scenes import (
     CoffeeServiceSceneCfg,
+    PushShapesSceneCfg,
+    PushTSceneCfg,
     SpatulaFlipServeSceneCfg,
     SyringeDosingSceneCfg,
 )
@@ -29,6 +36,52 @@ from robobench.suites.puzzle.scenes import (
 SUITE = "puzzle"
 
 _FRANKA_ROT = (0.7071068, 0.0, 0.0, 0.7071068)
+
+
+# ================================ push_t =========================================
+# Simple G1-native planar push: source visual assets and strict 7 mm / 7 degree
+# alignment rubric. NullRobot exists for the recorded oracle; the two G1 modes are
+# the only embodiment bindings because this contribution fills the humanoid lane.
+register_env(SUITE, lambda: EnvCfg(scene="push_t", robot="null", env_spacing=3))
+
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="push_t",
+                scene_cfg=PushTSceneCfg(),
+                robot="g1",
+                control_mode=mode,
+                # The packing-bench front face is near y=-0.45. Keep 15 cm of
+                # clearance so G1's shins never initialize inside the chassis.
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.60, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
+
+
+# ============================== push_shapes ======================================
+# Multi-stage successor to push_t: three shapes (T / X / L), three colour-keyed pads,
+# each block yawed off its pad so reorientation is a goal rather than a disturbance.
+# Same substrate as push_t — same bench, same 15 cm chassis clearance, same G1 modes.
+register_env(SUITE, lambda: EnvCfg(scene="push_shapes", robot="null", env_spacing=3))
+
+for _mode in ("joint", "pink_ik"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="push_shapes",
+                scene_cfg=PushShapesSceneCfg(),
+                robot="g1",
+                control_mode=mode,
+                robot_cfg=G1RobotCfg(base_pos=(0.0, -0.60, 0.75)),
+                env_spacing=3,
+            )
+        ),
+    )
 
 
 # ================================ syringe ========================================
@@ -77,7 +130,7 @@ for _mode in ("joint", "pink_ik"):
     )
 
 # -> "puzzle.syringe.franka.{osc,joint}" — ground-level layout in front of the base.
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (
@@ -234,7 +287,7 @@ for _mode in ("joint", "pink_ik"):
 # side-reach where the OSC parked 11-21 mm off target). Gripper effort 25 N: a 120 N
 # pinch punts the tool when the close lands imperfectly; nullspace () — the default
 # posture winds the arm (the pen_holder lesson).
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (
@@ -248,6 +301,52 @@ for _mode in ("osc", "joint"):
                     nullspace_dof_pos=(),
                     gripper_effort_limit=25.0,
                     gripper_stiffness=2000.0,
+                ),
+                env_spacing=3,
+            )
+        ),
+    )
+
+# The SAME spatula cell for the transfer suite: gen3n7_panda + xarm7 (panda-hand dial).
+# Scene layout verbatim from the VERIFIED franka binding (targets 0.30-0.75 m on the +x work
+# line from the west mount). gen3n7 (~0.9 m) keeps the franka's mount; the xarm7 (~0.70 m)
+# moves 12 cm east so the far serve station pulls inside its envelope (0.75 -> 0.63 m).
+# Gripper effort capped at the franka binding's verified 25 N — a hard pinch punts the tool
+# when the close lands imperfectly (same handle, same panda hand).
+#   -> "puzzle.spatula.{gen3n7_panda,xarm7}.{osc,joint}"
+for _mode in ("osc", "joint"):
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="spatula",
+                scene_cfg=_spatula_franka_cfg(),
+                robot="gen3n7_panda",
+                control_mode=mode,
+                robot_cfg=AttachedArmRobotCfg(
+                    base_pos=(-0.60, 0.05, 0.0),
+                    arm_effort_limit=120.0,
+                    gravity_compensation=True,
+                    gripper_effort_limit=25.0,
+                ),
+                env_spacing=3,
+            )
+        ),
+    )
+    register_env(
+        SUITE,
+        (
+            lambda mode=_mode: EnvCfg(
+                scene="spatula",
+                scene_cfg=_spatula_franka_cfg(),
+                robot="xarm7",
+                control_mode=mode,
+                robot_cfg=XArm7RobotCfg(
+                    gripper="panda_hand",
+                    base_pos=(-0.48, 0.05, 0.0),
+                    arm_effort_limit=120.0,
+                    gravity_compensation=True,
+                    gripper_effort_limit=25.0,
                 ),
                 env_spacing=3,
             )
@@ -356,7 +455,7 @@ for _mode in ("joint", "pink_ik"):
     )
 
 # -> "puzzle.coffee.franka.{osc,joint}"
-for _mode in ("osc", "joint"):
+for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (

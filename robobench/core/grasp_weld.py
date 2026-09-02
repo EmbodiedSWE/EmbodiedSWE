@@ -39,10 +39,12 @@ inline copies. Holds ride get_state/set_state.
     wrap_off        (2,)   site window -> wrap proxy band offsets (m): the tip-origin proxy
                            reads wider than the true gap by the fingers' own geometry
                            (default (0.025, 0.050))
-    release_at      float  absolute closure value that releases a hold (m); None -> the legacy
-                           window-top + GRASP_RELEASE_MARGIN. Small-stroke jaws NEED it: a hand
-                           whose full opening cannot cross the panda-scaled hysteresis would
-                           otherwise never let go
+    release_margin  float  release hysteresis above the SITE window-top (m); None -> the
+                           panda-scaled GRASP_RELEASE_MARGIN. Window-relative so one value
+                           holds across parts of any size. Small-stroke jaws NEED a tighter
+                           one: a hand whose full opening cannot cross the panda-scaled
+                           hysteresis would otherwise never let go; pad-dropping linkages
+                           want release early in the opening sweep
     band_dist       float  pinch-point-to-band engage radius (m); None -> the scene's
                            grasp_weld_dist. Hands whose pinch centre rides off the band by
                            construction need it (shallow long-pad bites; wrap squeezes that
@@ -113,8 +115,23 @@ class GraspWeldContract:
             pinch_axis=(0.0, 1.0, 0.0),
             wrap_off=(0.025, 0.050),
             prox_release=0.15,
-            release_at=None,
+            release_margin=None,
             band_dist=None,
+            engage_debounce=None,  # substeps of consecutive qualification before the weld
+            # engages; None -> the scene's GRASP_DEBOUNCE
+            stall_src="joint_vel",  # what the stall gate measures: "joint_vel" (legacy — the
+            # closing dofs' speed) or "gap_rate" (the closure MEASURE's per-substep change).
+            # Mimic-driven linkages chatter their drive dof numerically while the pinch is
+            # geometrically dead (measured: gap constant to 0.01 mm across substeps, drive
+            # velocity flickering past every workable threshold) — gap_rate tests what
+            # "fingers stopped ON the part" physically means
+            gap_still=2.0e-5,  # "gap_rate" stall threshold (m/substep): a settled pinch reads
+            # <=1e-5; a closing sweep reads >=3e-5 even on a slow 100-step close
+            pinch_src="ray",  # where the pinch point lives: "ray" (legacy — hand origin +
+            # approach*pinch_offset) or "pads" (the live pad-body centroid). A static ray
+            # cannot track a CURLING hand across poses (measured: 62.7 mm off-band at a
+            # converged jaco2 cage whose live pad error was 4 mm) — the centroid is the
+            # physical pinch point whenever pad bodies exist
         )
         ifc = getattr(getattr(self.scene.env, "robot", None), "GRASP_IFACE", None)
         if ifc:
@@ -259,6 +276,11 @@ class GraspWeldContract:
         else:  # wrap: tip-origin proxy — thumb to finger-pair mid (monotone opening measure)
             fp = art.data.body_pos_w[:, self._gw_pads]
             gap = (fp[:, 0] - 0.5 * (fp[:, 1] + fp[:, 2])).norm(dim=-1)
+        if ifc["stall_src"] == "gap_rate":
+            prev = getattr(self, "_gw_prev_gap", None)
+            stalled = (gap - prev).abs() < ifc["gap_still"] if prev is not None \
+                else torch.zeros_like(stalled)
+            self._gw_prev_gap = gap.clone()
         return gap, stalled
 
     def _gw_windows(self):
@@ -284,8 +306,11 @@ class GraspWeldContract:
         hq = art.data.body_quat_w[:, self._gw_hand_i]
         gap, stalled = self._gw_closure(hq)
         wins = self._gw_windows()
-        approach = torch.tensor(ifc["approach"], dtype=hp.dtype, device=hp.device).expand_as(hp)
-        pinch = hp + quat_apply(hq, approach * ifc["pinch_offset"])
+        if ifc["pinch_src"] == "pads" and self._gw_pads:
+            pinch = art.data.body_pos_w[:, self._gw_pads].mean(dim=1)
+        else:
+            approach = torch.tensor(ifc["approach"], dtype=hp.dtype, device=hp.device).expand_as(hp)
+            pinch = hp + quat_apply(hq, approach * ifc["pinch_offset"])
 
         mode = ifc["closure"][0]
         if mode == "wrap":
@@ -306,9 +331,8 @@ class GraspWeldContract:
             if mode == "wrap":
                 past = bool(released[row])
             else:
-                rel_thr = ifc["release_at"]
-                if rel_thr is None:
-                    rel_thr = wins[s][1] + self.GRASP_RELEASE_MARGIN
+                m = ifc["release_margin"]
+                rel_thr = wins[s][1] + (m if m is not None else self.GRASP_RELEASE_MARGIN)
                 past = bool(gap[row] > rel_thr)
             if past:
                 self._gw_rel_count[row, s] += 1
@@ -341,13 +365,20 @@ class GraspWeldContract:
                 dim=-1,
             ) & free.unsqueeze(-1)
         import os as _os
-        if _os.environ.get("GW_DEBUG") and bool((dists < 0.03).any()):
+        if _os.environ.get("GW_DEBUG") and bool((dists < 0.08).any()):
             _s = int(dists[0].argmin())
+            _extra = ""
+            if mode == "wrap":
+                _extra = (f" closed {bool(closed_ok[0])} flank {bool(flank[0, _s])} "
+                          f"prox {float(prox_q[0]):.2f} cmd {float(cmd[0]):.2f} | terms "
+                          f"d{bool((dists[0, _s] < c))} w{bool((gap[0] > wins[_s][0]) & (gap[0] < wins[_s][1]))} "
+                          f"free{bool(free[0])} held{self.scene.grasp_held[0].tolist()}")
             print(f"[gw-debug] dist {float(dists[0, _s])*1e3:6.2f}mm gap {float(gap[0])*1e3:6.2f}mm "
                   f"win ({wins[_s][0]*1e3:.1f},{wins[_s][1]*1e3:.1f}) stalled {bool(stalled[0])} "
-                  f"ok {bool(ok[0, _s])} count {int(self._gw_count[0, _s])}", flush=True)
+                  f"ok {bool(ok[0, _s])} count {int(self._gw_count[0, _s])}{_extra}", flush=True)
         self._gw_count = torch.where(ok, self._gw_count + 1, torch.zeros_like(self._gw_count))
-        ready = (self._gw_count >= self.GRASP_DEBOUNCE).any(dim=-1) & free
+        _deb = int(ifc["engage_debounce"] or self.GRASP_DEBOUNCE)
+        ready = (self._gw_count >= _deb).any(dim=-1) & free
         for row in ready.nonzero(as_tuple=False).flatten().tolist():
             masked = torch.where(
                 self._gw_count[row] >= self.GRASP_DEBOUNCE, dists[row], torch.full_like(dists[row], torch.inf)

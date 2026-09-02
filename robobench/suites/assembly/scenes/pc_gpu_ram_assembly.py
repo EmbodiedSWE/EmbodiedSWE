@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from robobench.core import GraspWeldContract, SCENES, BaseCfg, BaseScene, SimCfg, info, tunable
+from robobench.core import GraspWeldContract, SCENES, BaseCfg, BaseScene, SimCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -43,76 +43,76 @@ if TYPE_CHECKING:
 
 @dataclass
 class PcGpuRamAssemblySceneCfg(BaseCfg):
-    """Config for `PcGpuRamAssemblyScene`. Each field is a `tunable()` curriculum/difficulty dial
-    or an `info()` structural constant (see `robobench.core.BaseCfg`). The gpu_* and ram_* gates
+    """Config for `PcGpuRamAssemblyScene`. Nothing is locked — a variant is just a copy with a few
+    fields changed. The gpu_* and ram_* gates
     and geometry carry the single-task scenes' proven values verbatim."""
 
-    # --- tunable: the curriculum / difficulty dials -----------------------------------------------
+    # --- the curriculum / difficulty dials -----------------------------------------------
     # Seating gates, per part family (see `pc_gpu_assembly`/`pc_ram_assembly` for their rationale;
     # the stick tilt gate is wider because a seated stick may legitimately rest leaned ~5 deg).
-    gpu_seat_depth: float = tunable(0.004)  # min tab depth below the PCIe mouth (m) to count seated
-    gpu_align_xy: float = tunable(0.003)  # max distance (m) of the card origin from its seated point
-    gpu_align_axis_deg: float = tunable(3.0)  # max tilt of the card's up axis off the slot axis (deg)
-    gpu_align_yaw_deg: float = tunable(3.0)  # max heading error of the card's length axis (deg)
-    ram_seat_depth: float = tunable(0.0037)  # min blade depth below a DIMM mouth (m) to count seated
-    ram_align_xy: float = tunable(0.003)  # max distance (m) of a stick origin from its seated point
-    ram_align_axis_deg: float = tunable(6.0)  # max tilt of a stick's up axis off the slot axis (deg)
-    ram_align_yaw_deg: float = tunable(3.0)  # max heading error of a stick's length axis (deg)
-    reset_pos_jitter: float = tunable(0.01)  # uniform +/- xy jitter for every loose part at reset (m)
+    gpu_seat_depth: float = 0.004  # min tab depth below the PCIe mouth (m) to count seated
+    gpu_align_xy: float = 0.003  # max distance (m) of the card origin from its seated point
+    gpu_align_axis_deg: float = 3.0  # max tilt of the card's up axis off the slot axis (deg)
+    gpu_align_yaw_deg: float = 3.0  # max heading error of the card's length axis (deg)
+    ram_seat_depth: float = 0.0037  # min blade depth below a DIMM mouth (m) to count seated
+    ram_align_xy: float = 0.003  # max distance (m) of a stick origin from its seated point
+    ram_align_axis_deg: float = 6.0  # max tilt of a stick's up axis off the slot axis (deg)
+    ram_align_yaw_deg: float = 3.0  # max heading error of a stick's length axis (deg)
+    reset_pos_jitter: float = 0.01  # uniform +/- xy jitter for every loose part at reset (m)
     # Part friction (static = dynamic), set on every shape at bind. Moving parts run moderately
     # slick against a grippier fixed case, so they slide down their channels but hold seat.
-    card_friction: float = tunable(0.3)
-    ram_friction: float = tunable(0.3)
-    case_friction: float = tunable(0.75)
+    card_friction: float = 0.3
+    ram_friction: float = 0.3
+    case_friction: float = 0.75
     # Weld-on-closure grasping (the benchmark's auto-weld contract, PhysX
     # form — the grasp-weld machinery at the end of this scene class):
     # close the fingers squarely across the card's body slab or flat across a stick's faces,
     # near the part's top edge, and it welds to the hand; open wide to release. Gripper envs
     # only (no-op under robot="null").
-    grasp_weld: bool = tunable(True)
-    grasp_weld_dist: float = tunable(0.010)  # pinch-point-to-grip-band engage radius (m)
+    grasp_weld: bool = True
+    grasp_weld_dist: float = 0.010  # pinch-point-to-grip-band engage radius (m)
 
-    # --- info: structure, reset layout, masses, asset paths (fixed) -------------------------------
+    # --- structure, reset layout, masses, asset paths (fixed) -------------------------------
     # Seated part origins (PCB-edge bottom centres) in the case's local frame; seated orientation =
     # the case's own axes (identity). Baked into the committed USDs (keep in sync if they change).
     # RAM slot 0 is the outermost (farthest from the CPU socket).
-    gpu_seat_pos: tuple[float, float, float] = info((-0.01595, 0.0293, 0.0035))
-    gpu_slot_mouth_z: float = info(0.0085)  # PCIe slot top in the case frame (5 mm at full seat)
-    ram_seat_pos: tuple[tuple[float, float, float], ...] = info(
-        ((-0.1426893, -0.0678899, 0.0002058), (-0.1237320, -0.0678899, 0.0002058))
-    )
-    ram_slot_mouth_z: float = info(0.0046456)  # DIMM channel wall top in the case frame
-    board_top: float = info(0.0)  # board face height in the case frame (the asset's own origin)
-    case_lift: float = info(0.0289)  # board face above the side panel the case lies on
-    card_mass: float = info(1.0)  # dual-fan RTX 2060 (kg)
-    ram_mass: float = info(0.25)  # keeps the press PD/solver in the proven stability class
-    light_intensity: float = info(2500.0)
+    gpu_seat_pos: tuple[float, float, float] = (-0.01595, 0.0293, 0.0035)
+    gpu_slot_mouth_z: float = 0.0085  # PCIe slot top in the case frame (5 mm at full seat)
+    ram_seat_pos: tuple[tuple[float, float, float], ...] = (
+        (-0.1426893, -0.0678899, 0.0002058), (-0.1237320, -0.0678899, 0.0002058))
+
+    ram_slot_mouth_z: float = 0.0046456  # DIMM channel wall top in the case frame
+    board_top: float = 0.0  # board face height in the case frame (the asset's own origin)
+    case_lift: float = 0.0289  # board face above the side panel the case lies on
+    card_mass: float = 1.0  # dual-fan RTX 2060 (kg)
+    ram_mass: float = 0.25  # keeps the press PD/solver in the proven stability class
+    light_intensity: float = 2500.0
     # Loose part start poses (table-relative xy; see the single-task scenes for the lying
     # defaults' rationale — a gripper env instead stages every part upright in a foam holder).
-    card_init_xy: tuple[float, float] = info((0.28, 0.0))
-    card_init_z: float = info(0.0022)
-    card_init_quat: tuple[float, float, float, float] = info((0.70711, 0.70711, 0.0, 0.0))  # flat
-    ram_init_xy: tuple[tuple[float, float], ...] = info(((0.27, -0.085), (0.27, 0.085)))
-    ram_init_z: float = info(0.0042)
-    ram_init_quat: tuple[float, float, float, float] = info((0.70711, 0.0, 0.70711, 0.0))  # flat
-    card_contact_offset: float = info(0.0001)  # well below the 0.15 mm/side channel grips
-    ram_contact_offset: float = info(0.0001)
-    case_contact_offset: float = info(0.0001)
+    card_init_xy: tuple[float, float] = (0.28, 0.0)
+    card_init_z: float = 0.0022
+    card_init_quat: tuple[float, float, float, float] = (0.70711, 0.70711, 0.0, 0.0)  # flat
+    ram_init_xy: tuple[tuple[float, float], ...] = ((0.27, -0.085), (0.27, 0.085))
+    ram_init_z: float = 0.0042
+    ram_init_quat: tuple[float, float, float, float] = (0.70711, 0.0, 0.70711, 0.0)  # flat
+    card_contact_offset: float = 0.0001  # well below the 0.15 mm/side channel grips
+    ram_contact_offset: float = 0.0001
+    case_contact_offset: float = 0.0001
     # Optional foam holders that present the parts UPRIGHT for a parallel-jaw grasp (each part's
     # lying default is ungraspable: flat, its only sub-80 mm dimension points up). Enable together
     # with upright init quats (identity = seated orientation) and init z = the holders' floor top.
-    card_stand: bool = info(False)
-    card_stand_gap: float = info(0.0025)  # rail clearance per side around the card's body slab (m)
-    ram_stand: bool = info(False)
-    ram_stand_gap: float = info(0.0012)  # rail clearance per side around a stick's body slab (m)
+    card_stand: bool = False
+    card_stand_gap: float = 0.0025  # rail clearance per side around the card's body slab (m)
+    ram_stand: bool = False
+    ram_stand_gap: float = 0.0012  # rail clearance per side around a stick's body slab (m)
     # Selectable work surface (same presets as the sibling scenes).
-    case_xy: tuple[float, float] | None = info(None)  # world xy the case sits at; None -> the
+    case_xy: tuple[float, float] | None = None  # world xy the case sits at; None -> the
     # table anchor. Shifting the case (with the robot base following) stretches the staging
     # strip south of it without touching any case-relative work geometry.
-    table: str = info("lab_table")  # which work surface: "lab_table" | "packing"
-    surface_z: float | None = info(None)  # table-top height (m); None -> the preset's
-    workbench_pos: tuple[float, float] | None = info(None)  # xy the table sits at; None -> preset
-    workbench_usd: str = info("")  # empty -> the preset's vendored USD
+    table: str = "lab_table"  # which work surface: "lab_table" | "packing"
+    surface_z: float | None = None  # table-top height (m); None -> the preset's
+    workbench_pos: tuple[float, float] | None = None  # xy the table sits at; None -> preset
+    workbench_usd: str = ""  # empty -> the preset's vendored USD
     TABLES: ClassVar[dict[str, dict[str, Any]]] = {
         "lab_table": {"usd": ("lab_table", "table_instanceable.usd"), "scale": 1.0,
                       "orient": (0.70711, 0.0, 0.0, 0.70711), "surface_z": 0.0, "pos": (0.55, 0.0),
@@ -122,10 +122,10 @@ class PcGpuRamAssemblySceneCfg(BaseCfg):
                     "top_offset": 0.994, "height": 0.994, "kinematic": True},
     }
     # Asset USDs; empty -> the prebuilt assets committed under `assets/`.
-    asset_dir: str = info("")
-    case_usd: str = info("")
-    card_usd: str = info("")
-    ram_usd: str = info("")
+    asset_dir: str = ""
+    case_usd: str = ""
+    card_usd: str = ""
+    ram_usd: str = ""
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parents[1] / "assets"

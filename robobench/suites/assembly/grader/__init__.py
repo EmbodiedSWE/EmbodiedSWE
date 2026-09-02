@@ -12,7 +12,8 @@ construction. Register it in GRADERS.
 """
 
 from .bulb_assembly import BulbAssemblyGrader
+from .pc_ram_assembly import PcRamAssemblyGrader
 
-GRADERS = {"bulb": BulbAssemblyGrader}
+GRADERS = {"bulb": BulbAssemblyGrader, "pc_ram": PcRamAssemblyGrader}
 
-__all__ = ["BulbAssemblyGrader", "GRADERS"]
+__all__ = ["BulbAssemblyGrader", "PcRamAssemblyGrader", "GRADERS"]

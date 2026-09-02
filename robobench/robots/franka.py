@@ -1,6 +1,6 @@
 """FrankaRobot — a Franka Emika Panda arm + parallel gripper, for table-top manipulation.
 
-A fixed-base 7-DOF arm with a 2-finger gripper. Three control modes (the gripper is always direct
+A fixed-base 7-DOF arm with a 2-finger gripper. Five control modes (the gripper is always direct
 position targets; switching the mode swaps only the arm controller):
 
   - "osc"       -> arm by operational-space control (`OperationalSpaceController`, inertia-shaped
@@ -9,11 +9,21 @@ position targets; switching the mode swaps only the arm controller):
   - "impedance" -> arm by Jacobian-transpose task-space impedance (`TaskSpaceImpedanceController`);
                    same 8-D action. The form Isaac's Factory tasks use; on this arm it can shake the
                    wrist (no inertia decoupling), so it's not the default.
+  - "diff_ik"   -> arm by differential IK (`DiffIKController`, batched DLS step -> joint position
+                   targets tracked by the arm PD); same 8-D action (same delta scales as the torque
+                   modes). The Isaac Lab task-space example recipe (`FRANKA_PANDA_HIGH_PD_CFG`, arm
+                   PD 400/80 — the cfg defaults here).
+  - "pink_ik"   -> arm by Pink multi-task QP IK (`PinkIKController`, per-env CPU solve over the
+                   vendored kinematics URDF) -> joint position targets tracked by the same arm PD;
+                   action = ABSOLUTE hand pose `[pos3, quat4 wxyz]` (env frame) + 2 gripper = 9.
+                   The GR00T-school teleop/retarget solver. NOTE: any script building a pink env
+                   must `import pinocchio` BEFORE AppLauncher (see `controllers/pink_ik.py`).
   - "joint"     -> arm by direct joint position targets (`JointController`); action = 7 arm + 2 gripper.
 
 The two torque modes load the arm actuators in TORQUE mode (zero stiffness/damping) so the
-controller's torques drive them; "joint" keeps the arm position PD. So `action_dim` and the arm
-actuator setup follow `control_mode`. Heavy imports are deferred so registration stays app-free.
+controller's torques drive them; "diff_ik"/"pink_ik"/"joint" keep the arm position PD
+(`arm_stiffness`/`arm_damping`). So `action_dim` and the arm actuator setup follow `control_mode`.
+Heavy imports are deferred so registration stays app-free.
 """
 
 from __future__ import annotations
@@ -21,19 +31,24 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
 from robobench.controllers import (
     CompositeController,
+    DiffIKController,
+    DiffIKControllerCfg,
+    FrameTaskCfg,
     JointController,
     JointControllerCfg,
     OperationalSpaceController,
+    PinkIKController,
+    PinkIKControllerCfg,
     TaskSpaceControllerCfg,
     TaskSpaceImpedanceController,
 )
-from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg, info, tunable
+from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation
@@ -47,55 +62,59 @@ class FrankaRobotCfg(BaseRobotCfg):
     `base_pos`/`base_rot` are placement dials; `fixed_base` + the asset are structural. The arm PD gains
     are used only in "joint" mode (OSC zeroes them for torque control); the gripper PD is always on."""
 
-    fixed_base: bool = info(True)  # weld the base to the world (a table-mounted arm)
-    base_pos: tuple[float, float, float] = tunable((0.0, 0.0, 0.0))  # base at the table level
-    base_rot: tuple[float, float, float, float] = tunable((1.0, 0.0, 0.0, 0.0))  # wxyz; faces +x
-    # Arm position-PD gains — used in "joint" mode only (OSC sets the arm actuators to torque mode).
-    arm_stiffness: float = tunable(400.0)
-    arm_damping: float = tunable(80.0)
+    fixed_base: bool = True  # weld the base to the world (a table-mounted arm)
+    base_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # base at the table level
+    base_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # wxyz; faces +x
+    # Arm position-PD gains — used in the position modes ("joint" / "diff_ik"; the torque modes zero
+    # them). 400/80 = Isaac's FRANKA_PANDA_HIGH_PD_CFG, "specifically used for IK tracking" — the
+    # stock 80/4 preset lags task-space targets badly.
+    arm_stiffness: float = 400.0
+    arm_damping: float = 80.0
     # Arm actuator effort cap [N*m]; None -> keep the preset's real-Panda limits (87/12). Raise for
     # scripted joint-position tracking that must not crawl at the real limits (kinematic-demo ports).
-    arm_effort_limit: float | None = tunable(None)
+    arm_effort_limit: float | None = None
     # Body-level gravity compensation fraction (Newton/MuJoCo backend only; 1.0 = weightless arm).
     # The preset's PhysX `disable_gravity` flag is IGNORED by the Newton pipeline — MuJoCo needs
     # `gravcomp`, else a kp=400 servo sags ~tau_g/kp (~0.1 rad on the shoulder when extended).
     # None -> leave the preset untouched (required under the PhysX/2.x venv).
-    gravity_compensation: float | None = tunable(None)
+    gravity_compensation: float | None = None
     # PhysX-side gravity compensation: disable gravity on the robot's links (the real Panda
     # gravity-compensates internally; the task-space torque law here has NO gravity term, so
     # with gravity on, extended poses spend the task gains fighting the arm's own weight —
     # MEASURED: commanded reorientations at low work poses stall 56-76 deg from target while
     # the same rotations track to 1-7 deg from the light tuck pose).
-    disable_arm_gravity: bool = tunable(False)
+    disable_arm_gravity: bool = False
     # Gripper PD gains (always position-controlled; holds / grasps the part).
-    gripper_stiffness: float = tunable(2000.0)
-    gripper_damping: float = tunable(100.0)
+    gripper_stiffness: float = 2000.0
+    gripper_damping: float = 100.0
     # Gripper actuator effort cap [N]; None -> keep the preset's default. Raise for pinch grips
     # that must not saturate (e.g. 500.0 for cloth, the isaaclab soft-lift tasks' value).
-    gripper_effort_limit: float | None = tunable(None)
+    gripper_effort_limit: float | None = None
     # Home posture of the 7 arm joints: the arm resets here. A forward-facing ready pose; retune per
     # task (e.g. to start the gripper near the work).
-    default_dof_pos: tuple[float, ...] = tunable((0.0015, -0.197, -0.0014, -1.976, -0.00028, 1.78, 0.786))
+    default_dof_pos: tuple[float, ...] = (0.0015, -0.197, -0.0014, -1.976, -0.00028, 1.78, 0.786)
     # Posture the task-space nullspace pulls toward; () -> use default_dof_pos. A non-singular elbow
     # config that actively resolves the arm's redundancy (keeps the wrist from drifting); kept separate
     # from the home pose on purpose.
-    nullspace_dof_pos: tuple[float, ...] = tunable((-1.3003, -0.4015, 1.1791, -2.1493, 0.4001, 1.9425, 0.4754))
+    nullspace_dof_pos: tuple[float, ...] = (-1.3003, -0.4015, 1.1791, -2.1493, 0.4001, 1.9425, 0.4754)
     # Nullspace posture stiffness; None -> the controller's default (10.0). MEASURED: at 10.0
     # the posture spring overpowers the task torque for world-z reorientations (stalls 76 deg
     # from target with every joint far from its limits) — soften it when a task needs large
     # wrist reorientation. Damping follows critically (2*sqrt(kp)).
-    kp_null: float | None = tunable(None)
+    kp_null: float | None = None
     # Task-space stiffness override [xyz, rpy]; None -> the controller's default
     # (100,100,100, 30,30,30). MEASURED: at rot-gain 30 a wrist welded to a ~2.5 kg
     # payload rolls ~16 deg toward a commanded 100 deg reorientation and equilibrates
     # (free-space: 1 deg residual) — the rotation channel needs more authority under
     # payload coupling.
-    task_prop_gains: tuple[float, ...] | None = tunable(None)
-    franka_usd: str = info("")  # "" -> the vendored robots/assets/franka/panda_instanceable.usd
+    task_prop_gains: tuple[float, ...] | None = None
+    franka_usd: str = ""  # "" -> the vendored robots/assets/franka/panda_instanceable.usd
+    franka_urdf: str = ""  # "" -> the vendored kinematics URDF (used by the pink_ik control mode)
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parent / "assets" / "franka"
         self.franka_usd = self.franka_usd or str(assets / "panda_instanceable.usd")
+        self.franka_urdf = self.franka_urdf or str(assets / "panda_kinematics.urdf")
 
 
 @ROBOTS.register("franka")
@@ -104,12 +123,19 @@ class FrankaRobot(BaseRobot):
     2 gripper fingers are always direct position targets, the 7 arm joints by the mode's arm controller
     (torque-mode OSC, or position-mode JointController)."""
 
-    control_modes: tuple[str, ...] = ("osc", "impedance", "joint")  # osc default: smooth on this arm
+    control_modes: tuple[str, ...] = ("osc", "impedance", "diff_ik", "pink_ik", "joint")  # osc default: smooth on this arm
     cfg: FrankaRobotCfg
 
     ARM_JOINTS: tuple[str, ...] = ("panda_joint[1-7]",)
     GRIPPER_JOINTS: tuple[str, ...] = ("panda_finger_joint.*",)
     EE_BODY: str = "panda_hand"  # the OSC control frame (a real body with a Jacobian)
+
+    #: Eye-in-hand view at the standard RealSense D435 bracket pose (ManiSkill panda_wristcam /
+    #: DROID rig): beside the hand, looking parallel to the +z approach axis, ~90 deg FOV.
+    CAMERAS: ClassVar[dict[str, dict]] = {
+        "wrist": {"link": "panda_hand", "eye": (0.0465, -0.02, 0.036), "target": (0.0465, -0.02, 0.3),
+                  "focal": 10.5},
+    }
 
     # Action/target rate (s). Torque modes (osc/impedance): ~15 Hz target (Isaac `Factory-NutThread`,
     # decim 8 @ 120 Hz), latched while the torque law recomputes every physics step (see
@@ -124,7 +150,7 @@ class FrankaRobot(BaseRobot):
     def assets(self) -> dict[str, Any]:
         """The Franka articulation (`FRANKA_PANDA_HIGH_PD_CFG`), base fixed per `cfg.fixed_base`, spawned
         at the configured pose. In the torque modes ("impedance"/"osc") the arm actuators are set to
-        torque mode (zero stiffness/damping); in "joint" mode they keep position PD. The gripper is always PD."""
+        torque mode (zero stiffness/damping); in "diff_ik"/"joint" mode they keep position PD. The gripper is always PD."""
         from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG
 
         c = self.cfg
@@ -187,6 +213,27 @@ class FrankaRobot(BaseRobot):
                 ts_cfg.task_deriv_gains = ()  # keep critical damping (2*sqrt(kp))
             cls = TaskSpaceImpedanceController if self.control_mode == "impedance" else OperationalSpaceController
             arm: Any = cls(ts_cfg)
+        elif self.control_mode == "diff_ik":
+            # Same 6-D delta action as the torque modes; the DLS step emits joint position targets
+            # the arm PD (cfg.arm_stiffness/arm_damping, HIGH_PD 400/80) tracks.
+            arm = DiffIKController(DiffIKControllerCfg(dt=ctrl_dt, ee_body=self.EE_BODY, arm_joint_names=self.ARM_JOINTS))
+        elif self.control_mode == "pink_ik":
+            # One frame task on the hand over the 7-joint chain (kinematics-only URDF; USD names ==
+            # URDF names on the panda). Task costs = the G1's proven set (position 8/m, orientation
+            # 2/rad, gain 0.5, lm 10 — the FrameTaskCfg defaults); the 1-DOF elbow redundancy is
+            # anchored by the nullspace posture pull toward home. Emits joint position targets the
+            # same 400/80 arm PD tracks.
+            arm = PinkIKController(
+                PinkIKControllerCfg(
+                    dt=ctrl_dt,
+                    urdf_path=self.cfg.franka_urdf,
+                    base_link="panda_link0",
+                    base_link_frame="panda_link0",
+                    frames=(FrameTaskCfg(self.EE_BODY),),
+                    joint_names=self.ARM_JOINTS,
+                    nullspace_joints=tuple(f"panda_joint{i}" for i in range(1, 8)),
+                )
+            )
         elif self.control_mode == "joint":
             arm = JointController(JointControllerCfg(self.ARM_JOINTS, dt=ctrl_dt), command_type="position")
         else:
@@ -221,6 +268,11 @@ class FrankaRobot(BaseRobot):
             arm = "7 arm joints by task-space impedance (joint torque); the action is 6 end-effector pose deltas"
         elif mode == "osc":
             arm = "7 arm joints by operational-space control (joint torque); the action is 6 end-effector pose deltas"
+        elif mode == "diff_ik":
+            arm = "7 arm joints by differential IK (joint position targets); the action is 6 end-effector pose deltas"
+        elif mode == "pink_ik":
+            arm = ("7 arm joints by Pink QP IK (joint position targets); the action is the absolute hand pose "
+                   "[pos, quat wxyz] in the env frame")
         else:
             arm = "7 arm joints by direct position targets"
         return (

@@ -69,6 +69,25 @@ Back in the CoSiGen repo root, with the venv still active:
 uv pip install -e .
 ```
 
+### 5. Whole-body IK (`pink_ik` control mode)
+
+The humanoid embodiments' `pink_ik` mode wraps Isaac Lab's Pink IK, whose solver stack is **not**
+pulled in by `isaaclab[all]`. Without it every IK solve throws and the controller silently returns
+the joints unchanged — the arms then just sag under gravity instead of tracking, with no error unless
+`show_ik_warnings` is on. Install the three pieces:
+
+```bash
+uv pip install "pin==4.0.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"
+```
+
+`daqp` is the QP solver Pink asks for **by name**, so it is required, not optional. Re-pin `numpy`
+afterwards: `pin`'s resolve pulls numpy 2, which breaks Isaac Sim 5.1's synthetic-data path — every
+`Camera` then dies at annotator attach with `TypeError: Unable to write from unknown dtype, kind=f,
+size=0`, i.e. no rendering and no video. pinocchio/pink/daqp all work fine against numpy 1.26.
+
+Any script that builds a `pink_ik` env must also `import pinocchio` **before** `AppLauncher` and set
+`enable_pinocchio=True` on the launcher args (see `robobench/controllers/pink_ik.py`).
+
 
 ## Run
 
@@ -99,14 +118,14 @@ An automated pass proves registry wiring, oracle happy/negative paths, recorded 
 and reference actuation. The recorded output must still be watched end to end before the task is
 accepted; agent difficulty is evaluated separately.
 
-## Newton env (folding suite)
+## Newton env (folding / pouring / shoe_tying / dough suites)
 
-The `folding` suite (T-shirt folding, `robobench/suites/folding/`) runs cloth — which needs
-IsaacLab **develop**'s Newton physics backend (MJWarp rigid + VBD cloth). That branch is not on
-PyPI, so the folding suite gets its own project-local venv, **`env_newton`** (Python 3.12,
-isaacsim 6.0, torch cu130), with the isaaclab packages installed *editable* from an IsaacLab
-**develop** checkout. The assembly suite keeps using `.venv` (isaaclab 2.3.2 / PhysX); the two
-venvs coexist — only the interpreter you launch with differs.
+The `folding`, `pouring`, `shoe_tying`, and `dough` suites run on IsaacLab **develop**'s Newton physics
+backend (cloth, liquids, and rods do not exist on the PhysX stack). That branch is not on PyPI,
+so these suites get their own project-local venv, **`env_newton`** (Python 3.12, isaacsim 6.0,
+torch cu130), with the isaaclab packages installed *editable* from an IsaacLab **develop**
+checkout and one shared Newton engine pin. The assembly suite keeps using `.venv` (isaaclab
+2.3.2 / PhysX); the two venvs coexist — only the interpreter you launch with differs.
 
 Extra prerequisite: the torch cu130 wheels need an NVIDIA driver ≥ r580 (CUDA 13).
 
@@ -145,17 +164,26 @@ uv pip install --python "$PY" "${NV[@]}" \
   -e "$SRC/isaaclab_contrib" -e "$SRC/isaaclab_assets" -e "$SRC/isaaclab"
 uv pip install --python "$PY" imageio imageio-ffmpeg   # for record_video
 uv pip install --python "$PY" -e .                     # robobench itself (declares no other deps)
+
+# Newton engine — the pin ALL Newton suites (folding, pouring, shoe_tying) run and are tested
+# against. It is newer than the commit isaaclab_newton pulls transitively, so install it last:
+uv pip install --python "$PY" \
+  "newton[sim] @ git+https://github.com/newton-physics/newton.git@f420998186ec70bc39323ccc374bcb6c2be1d14f" \
+  "warp-lang>=1.16,<1.17" "newton-usd-schemas>=0.4.1"
+# -> newton 1.6.0.dev0, warp 1.16, mujoco + mujoco-warp 3.11, newton-usd-schemas 0.5
+
+# and apply the small vendored compat patch to the IsaacLab checkout (newton 1.5 renamed a few
+# APIs the pinned develop commit still uses):
+git -C ~/IsaacLab apply scripts/isaaclab_newton16_compat.patch
 ```
 
 Notes:
 
-- The Newton engine itself needs no separate install — `isaaclab_newton[all]` pins and pulls the
-  exact `newton` git commit it is built against.
 - All seven `-e` packages are required: `isaaclab_ovphysx`/`isaaclab_physx` are hard imports of
   isaaclab's app launcher, and `isaaclab_visualizers[kit]` drives rendering (the folding smokes
   default to the kit visualizer).
 - Optional — only to run IsaacLab's in-tree reference tasks (e.g. `Isaac-Lift-Cloth-Franka-v0`),
-  not needed by the folding suite:
+  not needed by the suites:
   `uv pip install --python "$PY" "${NV[@]}" -e "$SRC/isaaclab_tasks" -e "$SRC/isaaclab_rl" -e "$SRC/isaaclab_ov"`
 
 ### 3. The folding suite
@@ -163,8 +191,8 @@ Notes:
 The `folding` suite (`robobench/suites/folding/`) folds a T-shirt (VBD cloth) on the coupled
 MJWarp+VBD substrate. The in-tree smoke is a simulation CAPABILITY CHECK, not a solution: on
 the benchmark env the Franka pinches the shirt with its real fingers and lifts it clear of the
-table (cloth-rise verdict). The Franka folding solution is kept out of the benchmark tree
-(gitignored `experiments/2026-07-16_tshirt_franka_joint/`).
+table (cloth-rise verdict). Any solution for it stays out of the benchmark tree, in the
+gitignored `experiments/` workspace.
 
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.folding.smokes.tshirt_fold_smoke --headless
@@ -182,8 +210,8 @@ coffee. ONE registered env on ONE registered scene: `pouring.latte.bimanual_fran
 benchmark: dynamic arms + dynamic vessels + auto-weld grasp contract + 1.5-way liquid
 feedback). The in-tree smoke is a simulation CAPABILITY CHECK, not a solution: both Frankas
 grasp the vessels through the scene's auto-weld contract and lift them (rise/upright/spill
-verdicts). The bimanual-Franka solution is kept out of the benchmark tree (gitignored
-`experiments/2026-07-20_latte_bimanual_franka_joint/`).
+verdicts). Any solution for it stays out of the benchmark tree, in the gitignored
+`experiments/` workspace.
 
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
@@ -194,3 +222,54 @@ Note: do **not** record COUPLED-substrate pouring runs with `scripts/record_vide
 live rendering corrupts the coupled MPM physics on this stack. Record via `--dump_states`
 (poses + particles to an `.npz`) plus offline replay (a replay renderer last exists at
 `f8c101d`: `scripts/replay_render.py`).
+
+### 5. The shoe_tying suite (same venv)
+
+The `shoe_tying` suite (`robobench/suites/shoe_tying/`) TIES a half knot from two initially
+separate shoelaces — Newton *rods* (capsule chains + cable joints, standalone VBD/AVBD) rooted
+at a sneaker's top eyelets — by moving their free ends through the classic four beats: cross
+into a mid-air X (pinched by 20 N spring-finger pins), thread under the junction, cross again,
+pull apart and seat on the tongue. Verdict, slack and pin-free: winding >= 140 deg on the knot
+sections, >= 6 cross-lace contacts, knot z < 155 mm. Rods have no IsaacLab asset type, so the
+scene injects them into the Newton `ModelBuilder` through the manager's per-world builder hooks
+(the in-tree MPM asset's mechanism). ONE registered env on ONE registered scene:
+`shoe_tying.knot` (robot-less; roots anchored, the free ends are kinematic handles driven per
+solver substep with closed-loop planning off the measured crossing):
+
+```bash
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
+  -m robobench.suites.shoe_tying.smokes.knot_smoke --headless
+```
+
+Rendering is Kit **RTX**: the smoke spawns a textured visual shoe USD and syncs one visual
+capsule prim per rod segment from `body_q` (the physics rod is prim-less). Record through the
+standard harness:
+
+```bash
+env_newton/bin/python scripts/record_video.py \
+  robobench.suites.shoe_tying.smokes.knot_smoke \
+  --video robobench/suites/shoe_tying/videos/knot_smoke.mp4 \
+  --eye 0.33 -0.31 0.40 --target-at 0.0 0.03 0.10
+```
+
+See `robobench/suites/shoe_tying/README.md` for the full recipe and pass criteria.
+
+### 6. The dough suite (same venv)
+
+The `dough` suite (`robobench/suites/dough/`) runs **elastoplastic dough** (implicit MPM with
+finite stiffness + von-Mises yield + full cohesion — Newton's "mud" recipe stiffened for shape
+retention) coupled with MJWarp rigid dynamics. The task: ROLL THE DOUGH OUT — grasp the rolling
+pin through the scene's auto-weld contract and flatten the ball into a thin, wide wrapper with
+low sliding passes (`scene.success()` gates the rolled sheet plus conservation guards; pushing
+is the MPM colliders' one verified dough transport — see the suite README's physics findings).
+ONE registered env on ONE registered scene: `dough.dumpling` (robot-less material tuning:
+pure-MPM substrate, kinematic pin). The suite ships the task only — robot bindings and
+solutions live in the gitignored `experiments/` workspace, which builds its own
+`EnvCfg(scene="dumpling", robot=...)` on the coupled substrate.
+
+Same coupled-substrate recording rule as pouring: never record live — dump states during the
+run and replay offline via `scripts/replay_render.py` (local-only, last in-tree at `f8c101d`;
+its latte-specific particle-key mapping needs one generalization for dough dumps: map each MPM
+object's prim leaf, lowercased, to the same-named dump key — `dough`).
+
+See `robobench/suites/dough/README.md` for the scene, material notes, and pass criteria.

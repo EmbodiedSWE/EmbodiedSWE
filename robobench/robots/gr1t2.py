@@ -32,7 +32,7 @@ from robobench.controllers import (
     PinkIKController,
     PinkIKControllerCfg,
 )
-from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg, info, tunable
+from robobench.core import ROBOTS, BaseRobot, BaseRobotCfg
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation
@@ -42,25 +42,25 @@ if TYPE_CHECKING:
 
 @dataclass
 class GR1T2RobotCfg(BaseRobotCfg):
-    """Config for `GR1T2Robot`. `base_pos`/`base_rot` are `tunable` placement dials; `fixed_base` +
-    asset path are `info`; the upper-body PD gains are `tunable` (default = Isaac's HIGH_PD values)."""
+    """Config for `GR1T2Robot`. `base_pos`/`base_rot` are placement dials; `fixed_base` + asset path
+    are structural; the upper-body PD gains default to Isaac's HIGH_PD values."""
 
-    fixed_base: bool = info(True)  # weld the pelvis to the world (build-time variant; see G1Robot)
-    base_pos: tuple[float, float, float] = tunable((0.0, 0.0, 0.95))  # GR1T2's natural standing height
-    base_rot: tuple[float, float, float, float] = tunable((1.0, 0.0, 0.0, 0.0))  # wxyz; identity (faces +x)
+    fixed_base: bool = True  # weld the pelvis to the world (build-time variant; see G1Robot)
+    base_pos: tuple[float, float, float] = (0.0, 0.0, 0.95)  # GR1T2's natural standing height
+    base_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # wxyz; identity (faces +x)
     # Arm + waist (trunk) PD gains — the articulation PD that tracks position targets. Defaults are
-    # Isaac's `GR1T2_HIGH_PD_CFG` manipulation values; tunable for compliance studies. Hands keep the
+    # Isaac's `GR1T2_HIGH_PD_CFG` manipulation values; adjust for compliance studies. Hands keep the
     # USD/cfg defaults.
-    arm_stiffness: float = tunable(4400.0)
-    arm_damping: float = tunable(40.0)
-    waist_stiffness: float = tunable(4400.0)
-    waist_damping: float = tunable(40.0)
+    arm_stiffness: float = 4400.0
+    arm_damping: float = 40.0
+    waist_stiffness: float = 4400.0
+    waist_damping: float = 40.0
     # Hand PD: the vendored USD's finger drives carry no usable stiffness, so explicit
     # gains are set here (sized for the small Fourier hand links).
-    hand_stiffness: float = tunable(60.0)
-    hand_damping: float = tunable(2.0)
-    gr1t2_usd: str = info("")  # "" -> the vendored robots/assets/gr1t2/GR1T2_fourier_hand_6dof.usd
-    gr1t2_urdf: str = info("")  # "" -> the vendored kinematics URDF (used by the pink_ik control mode)
+    hand_stiffness: float = 60.0
+    hand_damping: float = 2.0
+    gr1t2_usd: str = ""  # "" -> the vendored robots/assets/gr1t2/GR1T2_fourier_hand_6dof.usd
+    gr1t2_urdf: str = ""  # "" -> the vendored kinematics URDF (used by the pink_ik control mode)
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parent / "assets" / "gr1t2"
