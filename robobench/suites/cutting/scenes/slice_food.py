@@ -2,12 +2,12 @@
 releases the welds. Env name: cutting.slice (default carrot; `food="banana"` etc.).
 
 The object world: a food item baked offline into a welded rigid chain of transverse pieces,
-lying on a chopping board on a kitchen island, with a chef knife presented (world-welded,
-edge level) beside the board. **Goal: press the knife through every scored plane until the
-food is in the target number of pieces** — graded by `grader.SliceFoodGrader`.
-
-Embodiment-agnostic — it knows nothing about who drives the knife; the knife is a *scene*
-object handed over by `set_knife_staged(ids, False)` once a gripper has closed on it.
+lying on a chopping board on a kitchen island, with a chef knife lying edge-down on a
+two-notch steel knife rest beside the board (held by gravity alone; the plate is vertical
+and the edge level — a top-down pinch on the handle lifts it straight off). **Goal: pick up
+the knife and press it through every scored plane until the food is in the target number
+of pieces** — graded by `grader.SliceFoodGrader`. Embodiment-agnostic: the scene knows
+nothing about who drives the knife.
 
 Mechanic — weld release on press: piece welds are pre-authored ENABLED FixedJoints (one per
 scored plane). Every step the scene evaluates the cut gate in the FOOD's live frame and,
@@ -64,14 +64,18 @@ class SliceFoodSceneCfg(BaseCfg):
     board_friction: float = 0.8
     piece_friction: float = 0.6
     piece_density: float = 900.0
-    # knife presentation: world-welded in chop pose at this spot until the robot's fingers
-    # close on the handle and the driver calls set_knife_staged(ids, False)
-    knife_present: tuple[float, float] = (0.10, -0.15)
-    knife_hover: float = 0.16  # blade height above the board top while presented
+    # knife rest: two notched steel blocks on the counter; the knife lies edge-down in the
+    # notches, plate vertical, edge level (chop pose), held by gravity alone
+    knife_present: tuple[float, float] = (0.10, -0.21)  # xy of the first notch (heel side)
+    rest_notch_x: tuple[float, float] = (0.04, 0.16)  # knife-local x of the two notches
+    rest_floor_h: float = 0.03  # notch floor height above the counter (m)
+    rest_rail_h: float = 0.025  # rail height above the notch floor
+    rest_gap: float = 0.002  # rail clearance per side around the 4.2 mm plate
+    rest_block: tuple[float, float] = (0.03, 0.06)  # block footprint along / across the blade
     knife_mass: float = 0.18  # a 22 cm chef knife; heavier knives creep in a friction pinch
     # knife22r's cutting edge runs a 28 deg diagonal in its local frame (heel (0,-0.015) ->
-    # tip (0.22,-0.134)): present/hold it rotated by this about the blade normal so the
-    # EDGE is level, else the tip grounds 6 cm before the mid-blade
+    # tip (0.22,-0.134)): rest/hold it rotated by this about the blade normal so the EDGE
+    # is level, else the tip grounds 6 cm before the mid-blade
     knife_edge_tilt_deg: float = 28.2
     reset_pos_jitter: float = 0.0  # uniform +/- xy jitter of the food at reset
     # food rest orientation (w,x,y,z), applied to the whole welded assembly at reset
@@ -133,9 +137,48 @@ class SliceFoodScene(BaseScene):
         self.asset_dir = self.ASSETS / self.cfg.food
         self.manifest = json.loads((self.asset_dir / "manifest.json").read_text())
         self.knife_manifest = json.loads((self.ASSETS / self.KNIFE / "manifest.json").read_text())
-        self._knife_edge_off = self.knife_manifest["bounds"][0][1]  # local y-min (tip height)
         # planes: ("x", value); plane k joins pieces k and k+1; cut mask is per plane per env
         self.planes = [("x", p) for p in self.manifest["planes_x"]]
+        self._edge_samples: list[tuple[float, float, float]] | None = None
+
+    # ----- knife geometry ---------------------------------------------------------------------
+    def knife_edge(self) -> list[tuple[float, float, float]]:
+        """THE REAL CUTTING EDGE in the knife frame, sampled from the hull (local y_min per
+        local x, 1 cm steps). The bounds y_min is the TIP's height: the edge runs a 28 deg
+        diagonal from the heel (0, -0.015) to the tip (0.22, -0.134); a single point anchored
+        at (0, y_min) would sit 12 cm below the real heel and release cuts in the air."""
+        if self._edge_samples is None:
+            from pxr import Usd, UsdGeom
+
+            stage = Usd.Stage.Open(str(self.ASSETS / self.KNIFE / "piece_0.usd"))
+            pts = [tuple(p) for p in UsdGeom.Mesh(
+                stage.GetPrimAtPath("/Piece/Collision")).GetPointsAttr().Get()]
+            samples = []
+            for i in range(21):
+                x = 0.01 * i
+                ys = [p[1] for p in pts if abs(p[0] - x) < 0.008]
+                if ys:
+                    samples.append((x, min(ys), 0.0))
+            self._edge_samples = samples
+        return self._edge_samples
+
+    def _edge_point(self, x: float) -> tuple[float, float, float]:
+        return min(self.knife_edge(), key=lambda p: abs(p[0] - x))
+
+    def _rest_layout(self):
+        """Knife root pose (env-relative) laying the level edge on the notch floors, the xy of
+        the two notch blocks, and the notch floor height."""
+        c = self.cfg
+        R = self._rot3(c.knife_rot)
+        floor_z = c.island_top + c.rest_floor_h
+        offs = []
+        for x in c.rest_notch_x:
+            p = self._edge_point(x)
+            offs.append([sum(R[i][d] * p[d] for d in range(3)) for i in range(3)])
+        root = (c.knife_present[0] - offs[0][0], c.knife_present[1] - offs[0][1],
+                floor_z + 0.001 - offs[0][2])
+        notches = [(root[0] + o[0], root[1] + o[1]) for o in offs]
+        return root, notches, floor_z
 
     # ----- assets ---------------------------------------------------------------------------
     def assets(self) -> dict[str, Any]:
@@ -200,9 +243,33 @@ class SliceFoodScene(BaseScene):
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(pos=(cx, cy, cz + food_z)),
             )
+        # the knife rest: two notch blocks (static floor pad + two rails flanking the plate)
+        root, notches, floor_z = self._rest_layout()
+        steel = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.72, 0.73, 0.75), metallic=1.0,
+                                            roughness=0.35)
+        half_gap = 0.0021 + c.rest_gap
+        bx, by = c.rest_block
+        rail_w = (bx - 2 * half_gap) / 2
+        for i, (nx, ny) in enumerate(notches):
+            out[f"rest_floor_{i}"] = AssetBaseCfg(
+                prim_path=f"{{ENV_REGEX_NS}}/RestFloor{i}",
+                init_state=AssetBaseCfg.InitialStateCfg(
+                    pos=(nx, ny, c.island_top + c.rest_floor_h / 2)),
+                spawn=sim_utils.CuboidCfg(size=(bx, by, c.rest_floor_h),
+                                          collision_props=sim_utils.CollisionPropertiesCfg(),
+                                          visual_material=steel),
+            )
+            for side, sgn in (("L", -1.0), ("R", 1.0)):
+                out[f"rest_rail_{i}{side}"] = AssetBaseCfg(
+                    prim_path=f"{{ENV_REGEX_NS}}/RestRail{i}{side}",
+                    init_state=AssetBaseCfg.InitialStateCfg(
+                        pos=(nx + sgn * (half_gap + rail_w / 2), ny, floor_z + c.rest_rail_h / 2)),
+                    spawn=sim_utils.CuboidCfg(size=(rail_w, by, c.rest_rail_h),
+                                              collision_props=sim_utils.CollisionPropertiesCfg(),
+                                              visual_material=steel),
+                )
         # RIGID knife (no compliant contact — a strong pinch squashes through a compliant
-        # plate; softness lives in the FOOD), presented edge-level in chop pose, world-welded
-        # until the robot's fingers take it
+        # plate; softness lives in the FOOD), lying edge-level on the rest
         out["knife"] = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Knife",
             spawn=sim_utils.UsdFileCfg(
@@ -214,10 +281,7 @@ class SliceFoodScene(BaseScene):
                 ),
                 mass_props=sim_utils.MassPropertiesCfg(mass=c.knife_mass),
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(
-                pos=(c.knife_present[0], c.knife_present[1],
-                     board_top + c.knife_hover - self._knife_edge_off),
-                rot=tuple(c.knife_rot)),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=root, rot=tuple(c.knife_rot)),
         )
         return out
 
@@ -239,21 +303,7 @@ class SliceFoodScene(BaseScene):
         self.env_origins = env.iscene.env_origins
         self.cut = torch.zeros(env.num_envs, len(self.planes), dtype=torch.bool, device=env.device)
         self._board_top = self.cfg.surface_z
-        # THE REAL CUTTING EDGE, sampled from the knife hull (local y_min per local x). The
-        # bounds y_min is the TIP's height: the edge runs a 28 deg diagonal from the heel
-        # (0, -0.015) to the tip (0.22, -0.134); a single point anchored at (0, y_min) would
-        # sit 12 cm below the real heel and release cuts in the air.
-        from pxr import Usd, UsdGeom
-
-        kstage = Usd.Stage.Open(str(self.ASSETS / self.KNIFE / "piece_0.usd"))
-        kpts = torch.tensor([tuple(p) for p in UsdGeom.Mesh(
-            kstage.GetPrimAtPath("/Piece/Collision")).GetPointsAttr().Get()], dtype=torch.float32)
-        samples = []
-        for xs in torch.arange(0.0, 0.2001, 0.01):
-            col = kpts[(kpts[:, 0] - xs).abs() < 0.008]
-            if len(col):
-                samples.append(torch.tensor([float(xs), float(col[:, 1].min()), 0.0]))
-        self._edge_local = torch.stack(samples).to(env.device)  # (N, 3) knife frame
+        self._edge_local = torch.tensor(self.knife_edge(), device=env.device)  # (N, 3) knife frame
         # per-plane FLESH aim point: midpoint of the two adjacent piece centroids (curved
         # foods bend away from the chord line — a plane-slab test alone passes in mid-air)
         aims = []
@@ -263,7 +313,6 @@ class SliceFoodScene(BaseScene):
             aims.append(a)
         self._plane_aims = torch.stack(aims).to(env.device)  # (n_planes, 3) food frame
         self._precreate_weld_joints()
-        self._precreate_knife_stage_joints()
 
     @staticmethod
     def _rot3(q):
@@ -303,13 +352,12 @@ class SliceFoodScene(BaseScene):
             st[:, 0:2] += jit
             st[:, 3:7] = qf
             pc.write_root_state_to_sim(st, env_ids)
+        # the knife back on its rest
+        root, _, _ = self._rest_layout()
         ks = torch.zeros(m, 13, device=dev)
-        ks[:, 0:3] = origin + torch.tensor(
-            (c.knife_present[0], c.knife_present[1],
-             self._board_top + c.knife_hover - self._knife_edge_off), device=dev)
+        ks[:, 0:3] = origin + torch.tensor(root, device=dev)
         ks[:, 3:7] = torch.tensor(c.knife_rot, device=dev)
         self.knife.write_root_state_to_sim(ks, env_ids)
-        self.set_knife_staged(env_ids, True)
         self._reconcile_cuts(env_ids, torch.zeros(m, len(self.planes), dtype=torch.bool, device=dev))
 
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
@@ -334,8 +382,8 @@ class SliceFoodScene(BaseScene):
     def describe(self) -> str:
         c = self.cfg
         return (
-            f"A {c.food} lies on a chopping board on a kitchen island; a chef knife is "
-            f"presented beside the board. The {c.food} is scored at {len(self.planes)} "
+            f"A {c.food} lies on a chopping board on a kitchen island; a chef knife lies on a "
+            f"knife rest beside the board. The {c.food} is scored at {len(self.planes)} "
             f"transverse planes. Goal: pick up the knife and press its edge down through each "
             f"scored plane (blade aligned with the plane) to cut the {c.food} into slices. "
             f"The {c.food} is cut once every plane has been pressed through and the pieces "
@@ -452,40 +500,6 @@ class SliceFoodScene(BaseScene):
                 jt.CreateJointEnabledAttr(True)
                 per_plane.append(jp)
             self._joint_paths.append(per_plane)
-
-    def _precreate_knife_stage_joints(self) -> None:
-        # presentation weld: the knife hangs rock-still in chop pose until the robot's
-        # fingers close on the handle and the driver calls set_knife_staged(ids, False)
-        import omni.usd
-        from pxr import Gf, UsdPhysics
-
-        stage = omni.usd.get_context().get_stage()
-        c = self.cfg
-        self._stage_joint_paths: list[str] = []
-        origins = self.env_origins.cpu().numpy()
-        for e in range(self.env.num_envs):
-            jp = f"/World/envs/env_{e}/KnifeStage"
-            jt = UsdPhysics.FixedJoint.Define(stage, jp)
-            jt.CreateBody1Rel().SetTargets([f"/World/envs/env_{e}/Knife"])  # body0 = world
-            pos = (float(origins[e][0] + c.knife_present[0]),
-                   float(origins[e][1] + c.knife_present[1]),
-                   float(self._board_top + c.knife_hover - self._knife_edge_off))
-            jt.CreateLocalPos0Attr(Gf.Vec3f(*pos))
-            jt.CreateLocalRot0Attr(Gf.Quatf(*[float(v) for v in c.knife_rot]))
-            jt.CreateLocalPos1Attr(Gf.Vec3f(0.0, 0.0, 0.0))
-            jt.CreateJointEnabledAttr(True)
-            self._stage_joint_paths.append(jp)
-
-    def set_knife_staged(self, env_ids: torch.Tensor, staged: bool) -> None:
-        """Enable/disable the presentation weld. The task driver calls
-        `set_knife_staged(ids, False)` once the gripper has closed on the handle."""
-        import omni.usd
-        from pxr import UsdPhysics
-
-        stage = omni.usd.get_context().get_stage()
-        for e in env_ids.tolist():
-            UsdPhysics.FixedJoint.Get(
-                stage, self._stage_joint_paths[e]).GetJointEnabledAttr().Set(bool(staged))
 
     def _set_plane(self, env_i: int, plane_idx: int, *, enabled: bool) -> None:
         from pxr import UsdPhysics
