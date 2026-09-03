@@ -32,10 +32,12 @@ with a KINEMATIC pin for material tuning.
 ## Registered envs
 
 - `deformable.dumpling` — robot-less physics-tuning env (kinematic pin, pure-MPM substrate).
+- `deformable.dumpling.franka.joint` — Franka binding: dynamic arm and pin on the coupled
+  MJWarp+MPM substrate, joint-position control. Base 0.15 m outside the table's -x edge,
+  facing +x.
 
-The suite ships the TASK only. Robot bindings and solutions live outside the benchmark tree:
-an experiment builds its own `EnvCfg(scene="dumpling", robot=..., ...)` on the coupled
-substrate (see `experiments/`, gitignored).
+Both also answer to their legacy `dough.` names (`dough.dumpling`, `dough.dumpling.franka.joint`).
+Solutions live outside the benchmark tree (see `experiments/`, gitignored).
 
 Single-env only (`num_envs=1`): the MPM fixed grid spans the whole scene.
 
@@ -78,7 +80,7 @@ robobench/suites/deformable/
   __init__.py          suite registration entry (imports configs + scenes)
   newton_sim.py        DoughSimCfg — coupled MJWarp+MPM substrate cfg
   scenes/dumpling.py   DumplingSceneCfg + DumplingScene + the ball seeder + the pin spawner
-  configs/envs.py      "deformable.dumpling" (robot-less tuning binding)
+  configs/envs.py      "deformable.dumpling" (robot-less tuning) + "deformable.dumpling.franka.joint"
 ```
 
 ## Physics findings (the load-bearing simulator facts)
@@ -111,7 +113,6 @@ Hardening/dilatancy stay 0 so the dough remains re-workable.
 
 ## Future
 
-- Robot bindings as registered presets once the eval harness wants them back in-tree.
 - Follow-on stages (filling, wrapping, molding) were prototyped and then cut for scope — the
   full dumpling pipeline (place a filling, fold/mold a wrap) lives on as an archived
   experiment with verified runs and videos.
