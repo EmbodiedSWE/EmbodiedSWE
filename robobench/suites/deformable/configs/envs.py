@@ -14,6 +14,7 @@ Presets (and the legacy alias each one also answers to — the four scenes were 
   deformable.tshirt.franka.joint           folding.tshirt.franka.joint
   deformable.latte.bimanual_franka.joint   pouring.latte.bimanual_franka.joint
   deformable.dumpling                      dough.dumpling
+  deformable.dumpling.franka.joint         dough.dumpling.franka.joint
   deformable.knot                          shoe_tying.knot
   deformable.knot.aloha.joint              shoe_tying.knot.aloha.joint
 """
@@ -129,9 +130,7 @@ _register(
 # Robot-less physics-tuning env on the PURE-MPM substrate (MuJoCo rejects 0-joint models — the
 # tshirt null binding's pattern); the pin spawns KINEMATIC so the pure-MPM manager ghosts it into
 # an infinite-mass scripted collider. Iterate the material dials here — same dough physics, no
-# arm. The suite ships the TASK only: the scene (with its auto-weld grasp contract) plus this
-# registration. Robot bindings and solutions live outside the benchmark tree — an experiment
-# builds its own `EnvCfg(scene="dumpling", robot=..., ...)` on the coupled substrate.
+# arm.
 # -> "deformable.dumpling"
 _register(
     lambda: EnvCfg(
@@ -140,6 +139,31 @@ _register(
         env_spacing=3,
         scene_cfg=DumplingSceneCfg(pin_dynamic=False),
         sim_overrides={"coupled": False},
+    ),
+)
+
+# Franka on the COUPLED MJWarp+MPM substrate: dynamic arm and dynamic pin, arm by direct joint
+# position targets. Base 0.15 m outside the table's -x edge, facing +x (develop-xyzw quats:
+# identity = (0,0,0,1)). Franka knobs are the tshirt/latte bindings' proven dynamic set:
+# gravcomp=1.0 (a kp=400 servo sags ~0.1 rad at reach without it — PhysX disable_gravity is
+# IGNORED by the Newton pipeline), arm effort 300 N*m so tracking never crawls at the real Panda
+# limits, gripper effort 500 N for firm pinches. No `sim_overrides`: the scene's `sim_cfg()`
+# already selects the coupled substrate and carries its grasp-contract weld row.
+# -> "deformable.dumpling.franka.joint"
+_register(
+    lambda: EnvCfg(
+        scene="dumpling",
+        robot="franka",
+        control_mode="joint",
+        env_spacing=3,
+        robot_cfg=FrankaRobotCfg(
+            base_pos=(-0.50, 0.0, 0.0),
+            base_rot=(0.0, 0.0, 0.0, 1.0),
+            default_dof_pos=_HOME,
+            gravity_compensation=1.0,
+            arm_effort_limit=300.0,
+            gripper_effort_limit=500.0,
+        ),
     ),
 )
 
