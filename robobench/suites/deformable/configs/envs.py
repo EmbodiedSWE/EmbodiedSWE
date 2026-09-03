@@ -15,16 +15,21 @@ Presets (and the legacy alias each one also answers to — the four scenes were 
   deformable.latte.bimanual_franka.joint   pouring.latte.bimanual_franka.joint
   deformable.dumpling                      dough.dumpling
   deformable.knot                          shoe_tying.knot
+  deformable.knot.aloha.joint              shoe_tying.knot.aloha.joint
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
+from pathlib import Path
+
 from robobench.core import EnvCfg, register_env
-from robobench.robots import FrankaRobotCfg
+from robobench.robots import AlohaCfg, FrankaRobotCfg
+from robobench.robots.wx250s import Wx250sRobotCfg
 from robobench.robots.multi import BimanualFrankaCfg
 from robobench.suites.deformable.scenes import DumplingSceneCfg
+from robobench.suites.deformable.scenes.shoe_knot import ShoeKnotSceneCfg
 
 SUITE = "deformable"
 
@@ -146,3 +151,89 @@ _register(
 # Robot-less -> standalone VBD manager (cable joints are not MuJoCo-convertible).
 # -> "deformable.knot"
 _register(lambda: EnvCfg(scene="knot", robot="null", env_spacing=2.0))
+
+# The nut-thread task's lab-table workbench, reused as the aloha binding's work surface.
+# MONOREPO-ONLY cross-suite asset reference (73 MB — deliberately not duplicated into this
+# suite's assets/; copy it under deformable/assets/props/ if this binding ever ships through
+# eval/envbuild/extract.py, which only carries the target suite's tree).
+_LAB_TABLE_USD = str(
+    Path(__file__).resolve().parents[3] / "suites" / "assembly" / "assets" / "props" / "lab_table" / "table_instanceable.usd"
+)
+
+# Bimanual WidowX 250 6DOF (the classic Interbotix ALOHA arms; official menagerie model
+# converted to USD — see `robobench/robots/wx250s.py`) flanking the shoe on the nut-thread
+# task's lab-table workbench, arms by direct joint position targets. Runs on the suite's
+# PROXY-COUPLED rod substrate (`newton/lace_coupled_manager.py`): SolverMuJoCo owns the arms,
+# SolverVBD the rods, and the finger bodies are proxied into the rod solve (finger-lace
+# contact is real contact). The scene keeps only the eyelet roots anchored
+# (`kinematic_ends=False`) — the free ends are dynamic rod.
+# Work surface: the lab table spawned so its 1.28 x 0.91 m top is centered at env (0,0) with
+# the top at surface_z (USD origin sits at the tabletop, 0.394 m off-center in x, top plane
+# at -0.003); the physics twin box matches the top, and the ground sinks to the table feet
+# (surface_z - 1.04). Placement: bases ON the table top (z = surface_z, +0.5 mm so the base
+# plate doesn't start intersecting the tabletop collider) at x = ±0.42; the left arm at -x
+# is nearest lace 1's end (left flank), the right arm at +x lace 2's (right).
+# isaaclab develop uses **xyzw** quats: identity = (0,0,0,1); the right arm is yawed 180 deg.
+# Both fingers are actuated (the menagerie mimic equality does not survive conversion); the
+# right finger's coordinate mirrors the left — see the robot module.
+# -> "deformable.knot.aloha.joint"
+_register(
+    lambda: EnvCfg(
+        scene="knot",
+        # free ends dynamic; the tails rest splayed outward on open table
+        scene_cfg=ShoeKnotSceneCfg(
+            kinematic_ends=False,
+            end_splay=0.065,
+            table_usd=_LAB_TABLE_USD,
+            # raw table geometry: top x in [-0.455, 0.455], y in [-0.484, 0.796]; the VISUAL
+            # top plane sits at raw z=0.0 (the collision cube's top is 3 mm lower — aligning
+            # to that sinks the robot bases and the shoe into the visual top). The asset's
+            # authored root transform is replaced by the spawner; yaw 90 deg puts the 1.28 m
+            # axis along x (under the arms). x +0.016 slides the table 14 cm off the centered
+            # +0.156 so the fixture plate + cutout (world x ~-0.46 when centered) sit clear
+            # of the left arm's base.
+            table_usd_offset=(0.016, 0.0, 0.0),
+            table_usd_rot=(0.0, 0.0, 0.70711, 0.70711),  # xyzw: yaw +90 deg
+            table_size=(1.28, 0.91, 0.2),
+            ground_z=0.2 - 1.04,
+        ),
+        robot="aloha",
+        control_mode="joint",
+        robot_cfg=AlohaCfg(robots={
+            # ready pose: shoulder 0.4 + elbow 0.2 lean the arm over the table, wrist_angle
+            # 0.97 (= pi/2 - 0.6) points the gripper straight down
+            "left": ("wx250s", Wx250sRobotCfg(
+                base_pos=(-0.42, 0.0, 0.2005),
+                base_rot=(0.0, 0.0, 0.0, 1.0),  # xyzw identity: faces +x
+                default_dof_pos=(0.0, 0.4, 0.2, 0.0, 0.97, 0.0),
+                gripper_stiffness=6000.0,
+                gripper_damping=200.0,
+            )),
+            "right": ("wx250s", Wx250sRobotCfg(
+                base_pos=(0.42, 0.0, 0.2005),
+                base_rot=(0.0, 0.0, 1.0, 0.0),  # xyzw yaw 180 deg: faces -x
+                default_dof_pos=(0.0, 0.4, 0.2, 0.0, 0.97, 0.0),
+                gripper_stiffness=6000.0,
+                gripper_damping=200.0,
+            )),
+        }),
+        env_spacing=2.0,
+        sim_overrides={
+            "coupled": True,
+            # WX250s gripper proxies: the finger links (their pad + fingertip-sphere shapes
+            # are the model's only gripper colliders)
+            "coupling": {"proxy_body_keywords": ("finger_link",)},
+            # Rod-entry contact recipe for the coupled substrate: the upstream franka+cable
+            # example's AVBD penalty ramp plus contact history (the manager's proxy pipeline
+            # then uses "latest" contact matching — see lace_coupled_manager.py). The
+            # standalone knot binding keeps the scene's history+sticky recipe.
+            "vbd": {
+                "iterations": 20,
+                "rigid_contact_history": True,
+                "rigid_avbd_beta": 1.0e2,
+                "rigid_contact_k_start": 1.0e3,
+                "rigid_body_contact_buffer_size": 512,
+            },
+        },
+    ),
+)

@@ -1,0 +1,324 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "MuJoCo USD Converter v0.2.0"
+    }
+    defaultPrim = "wx250s"
+    doc = """Generated from Composed Stage of root layer /tmp/tmpuhhn8u3u/wx250s.usdc
+
+
+Generated from Composed Stage of root layer /tmp/mjcf_import_wx250s_k35si6ao/usdex_wx250s/wx250s.usdc
+
+
+Generated from Composed Stage of root layer /tmp/mjcf_import_wx250s_k35si6ao/temp_wx250s/wx250s.usd
+
+
+Generated from Composed Stage of root layer /home/yilang/research/CoSiGen/robobench/robots/assets/wx250s/wx250s/payloads/base.usd
+"""
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+over "wx250s"
+{
+    over "Geometry" (
+        prepend apiSchemas = ["PhysicsArticulationRootAPI", "NewtonArticulationRootAPI"]
+    )
+    {
+        bool newton:selfCollisionEnabled = 0
+
+        over "tn__wx250sbase_link_jN" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "PhysicsFilteredPairsAPI"]
+        )
+        {
+            point3f physics:centerOfMass = (-0.0380446, 0.000613892, 0.0193354)
+            float3 physics:diagonalInertia = (0.00252518, 0.00211519, 0.000690737)
+            rel physics:filteredPairs = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT>
+            float physics:mass = 0.538736
+            quatf physics:principalAxes = (0.50929195, 0.49088693, -0.49635893, 0.50326896)
+
+            over "tn__wx250sshoulder_link_lT" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            )
+            {
+                point3f physics:centerOfMass = (0.0000223482, 0.0000414609, 0.0066287)
+                float3 physics:diagonalInertia = (0.000588946, 0.000555655, 0.000378999)
+                float physics:mass = 0.480879
+                quatf physics:principalAxes = (0.013035204, 0.7063872, 0.012996005, 0.7075862)
+
+                over "tn__wx250supper_arm_link_WV0" (
+                    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                )
+                {
+                    point3f physics:centerOfMass = (0.0171605, 2.725e-7, 0.191323)
+                    float3 physics:diagonalInertia = (0.00364425, 0.003463, 0.000399348)
+                    float physics:mass = 0.430811
+                    quatf physics:principalAxes = (0.70553863, 0.047066677, -0.047066677, 0.70553863)
+
+                    over "tn__wx250supper_forearm_link_Yb0" (
+                        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                    )
+                    {
+                        point3f physics:centerOfMass = (0.107963, 0.000115876, 0)
+                        float3 physics:diagonalInertia = (0.000888, 0.000887807, 0.0000397035)
+                        float physics:mass = 0.234589
+                        quatf physics:principalAxes = (0.0009808292, 0.7071061, -0.0009808292, 0.7071061)
+
+                        over "tn__wx250slower_forearm_link_Yb0" (
+                            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                        )
+                        {
+                            point3f physics:centerOfMass = (0.0374395, 0.00522252, 0)
+                            float3 physics:diagonalInertia = (0.0001834, 0.000172527, 0.0000588633)
+                            float physics:mass = 0.220991
+                            quatf physics:principalAxes = (-0.073251136, 0.7033024, 0.073251136, 0.7033024)
+
+                            over "tn__wx250swrist_link_zO" (
+                                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                            )
+                            {
+                                point3f physics:centerOfMass = (0.04236, -0.000010663, 0.010577)
+                                float3 physics:diagonalInertia = (0.0000329057, 0.00003082, 0.0000268343)
+                                float physics:mass = 0.084957
+                                quatf physics:principalAxes = (0.60872114, 0.36349708, -0.3591751, 0.60689515)
+
+                                over "tn__wx250sgripper_link_VS" (
+                                    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                                )
+                                {
+                                    point3f physics:centerOfMass = (0.0325296, 4.2061e-7, 0.0090959)
+                                    float3 physics:diagonalInertia = (0.00307592, 0.00307326, 0.0030332)
+                                    float physics:mass = 0.110084
+                                    quatf physics:principalAxes = (0.5460811, 0.4196261, 0.6280101, 0.36237106)
+
+                                    over "tn__wx250sleft_finger_link_XY0" (
+                                        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                                    )
+                                    {
+                                        point3f physics:centerOfMass = (0.013816, 0, 0)
+                                        float3 physics:diagonalInertia = (0.00000479509, 0.0000037467, 0.00000148651)
+                                        float physics:mass = 0.016246
+                                        quatf physics:principalAxes = (0.7053842, 0.7053842, -0.049327113, -0.049327113)
+
+                                        over "tn__leftleft_g0_fH" (
+                                            prepend apiSchemas = ["NewtonCollisionAPI", "PhysicsMassAPI"]
+                                        )
+                                        {
+                                            float newton:contactGap = 0
+                                            float physics:density = 1000
+                                        }
+
+                                        over "tn__leftleft_g1_fH" (
+                                            prepend apiSchemas = ["NewtonCollisionAPI", "PhysicsMassAPI"]
+                                        )
+                                        {
+                                            float newton:contactGap = 0
+                                            float physics:density = 1000
+                                        }
+
+                                        def PhysicsPrismaticJoint "left_finger" (
+                                            prepend apiSchemas = ["NewtonMimicAPI", "PhysicsDriveAPI:linear", "PhysicsJointStateAPI:linear"]
+                                        )
+                                        {
+                                            float drive:linear:physics:maxForce = 35
+                                            float newton:mimicCoef1 = -1
+                                            rel newton:mimicJoint = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0/tn__wx250swrist_link_zO/tn__wx250sgripper_link_VS/tn__wx250sright_finger_link_nZ0/right_finger>
+                                            uniform token physics:axis = "Y"
+                                            custom rel physics:body0
+                                            prepend rel physics:body0 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0/tn__wx250swrist_link_zO/tn__wx250sgripper_link_VS>
+                                            custom rel physics:body1
+                                            prepend rel physics:body1 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0/tn__wx250swrist_link_zO/tn__wx250sgripper_link_VS/tn__wx250sleft_finger_link_XY0>
+                                            point3f physics:localPos0 = (0.066, 0, 0)
+                                            point3f physics:localPos1 = (0, 0, 0)
+                                            quatf physics:localRot0 = (1, 0, 0, 0)
+                                            quatf physics:localRot1 = (1, 0, 0, 0)
+                                            float physics:lowerLimit = 0.015
+                                            float physics:upperLimit = 0.037
+                                        }
+                                    }
+
+                                    over "tn__wx250sright_finger_link_nZ0" (
+                                        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+                                    )
+                                    {
+                                        point3f physics:centerOfMass = (0.013816, 0, 0)
+                                        float3 physics:diagonalInertia = (0.00000479509, 0.0000037467, 0.00000148651)
+                                        float physics:mass = 0.016246
+                                        quatf physics:principalAxes = (0.7053842, 0.7053842, 0.049327113, 0.049327113)
+
+                                        over "tn__rightright_g0_hK" (
+                                            prepend apiSchemas = ["NewtonCollisionAPI", "PhysicsMassAPI"]
+                                        )
+                                        {
+                                            float newton:contactGap = 0
+                                            float physics:density = 1000
+                                        }
+
+                                        over "tn__rightright_g1_hK" (
+                                            prepend apiSchemas = ["NewtonCollisionAPI", "PhysicsMassAPI"]
+                                        )
+                                        {
+                                            float newton:contactGap = 0
+                                            float physics:density = 1000
+                                        }
+
+                                        def PhysicsPrismaticJoint "right_finger" (
+                                            prepend apiSchemas = ["PhysicsDriveAPI:linear", "PhysicsJointStateAPI:linear"]
+                                        )
+                                        {
+                                            uniform token physics:axis = "Y"
+                                            custom rel physics:body0
+                                            prepend rel physics:body0 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0/tn__wx250swrist_link_zO/tn__wx250sgripper_link_VS>
+                                            custom rel physics:body1
+                                            prepend rel physics:body1 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0/tn__wx250swrist_link_zO/tn__wx250sgripper_link_VS/tn__wx250sright_finger_link_nZ0>
+                                            point3f physics:localPos0 = (0.066, 0, 0)
+                                            point3f physics:localPos1 = (0, 0, 0)
+                                            quatf physics:localRot0 = (1, 0, 0, 0)
+                                            quatf physics:localRot1 = (1, 0, 0, 0)
+                                            float physics:lowerLimit = -0.037
+                                            float physics:upperLimit = -0.015
+                                        }
+                                    }
+
+                                    def PhysicsRevoluteJoint "wrist_rotate" (
+                                        prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+                                    )
+                                    {
+                                        float drive:angular:physics:maxForce = 35
+                                        uniform token physics:axis = "X"
+                                        custom rel physics:body0
+                                        prepend rel physics:body0 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0/tn__wx250swrist_link_zO>
+                                        custom rel physics:body1
+                                        prepend rel physics:body1 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0/tn__wx250swrist_link_zO/tn__wx250sgripper_link_VS>
+                                        point3f physics:localPos0 = (0.065, 0, 0)
+                                        point3f physics:localPos1 = (0, 0, 0)
+                                        quatf physics:localRot0 = (1, 0, 0, 0)
+                                        quatf physics:localRot1 = (1, 0, 0, 0)
+                                        float physics:lowerLimit = -179.99927
+                                        float physics:upperLimit = 179.99927
+                                    }
+                                }
+
+                                def PhysicsRevoluteJoint "wrist_angle" (
+                                    prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+                                )
+                                {
+                                    float drive:angular:physics:maxForce = 35
+                                    uniform token physics:axis = "Y"
+                                    custom rel physics:body0
+                                    prepend rel physics:body0 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0>
+                                    custom rel physics:body1
+                                    prepend rel physics:body1 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0/tn__wx250swrist_link_zO>
+                                    point3f physics:localPos0 = (0.075, 0, 0)
+                                    point3f physics:localPos1 = (0, 0, 0)
+                                    quatf physics:localRot0 = (1, 0, 0, 0)
+                                    quatf physics:localRot1 = (1, 0, 0, 0)
+                                    float physics:lowerLimit = -100.000046
+                                    float physics:upperLimit = 122.99972
+                                }
+                            }
+
+                            def PhysicsRevoluteJoint "forearm_roll" (
+                                prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+                            )
+                            {
+                                float drive:angular:physics:maxForce = 35
+                                uniform token physics:axis = "X"
+                                custom rel physics:body0
+                                prepend rel physics:body0 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0>
+                                custom rel physics:body1
+                                prepend rel physics:body1 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0/tn__wx250slower_forearm_link_Yb0>
+                                point3f physics:localPos0 = (0.175, 0, 0)
+                                point3f physics:localPos1 = (0, 0, 0)
+                                quatf physics:localRot0 = (1, 0, 0, 0)
+                                quatf physics:localRot1 = (1, 0, 0, 0)
+                                float physics:lowerLimit = -179.99927
+                                float physics:upperLimit = 179.99927
+                            }
+                        }
+
+                        def PhysicsRevoluteJoint "elbow" (
+                            prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+                        )
+                        {
+                            float drive:angular:physics:maxForce = 35
+                            uniform token physics:axis = "Y"
+                            custom rel physics:body0
+                            prepend rel physics:body0 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0>
+                            custom rel physics:body1
+                            prepend rel physics:body1 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0/tn__wx250supper_forearm_link_Yb0>
+                            point3f physics:localPos0 = (0.04975, 0, 0.25)
+                            point3f physics:localPos1 = (0, 0, 0)
+                            quatf physics:localRot0 = (1, 0, 0, 0)
+                            quatf physics:localRot1 = (1, 0, 0, 0)
+                            float physics:lowerLimit = -122.99972
+                            float physics:upperLimit = 91.99983
+                        }
+                    }
+
+                    def PhysicsRevoluteJoint "shoulder" (
+                        prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+                    )
+                    {
+                        float drive:angular:physics:maxForce = 35
+                        uniform token physics:axis = "Y"
+                        custom rel physics:body0
+                        prepend rel physics:body0 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT>
+                        custom rel physics:body1
+                        prepend rel physics:body1 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT/tn__wx250supper_arm_link_WV0>
+                        point3f physics:localPos0 = (0, 0, 0.03865)
+                        point3f physics:localPos1 = (0, 0, 0)
+                        quatf physics:localRot0 = (1, 0, 0, 0)
+                        quatf physics:localRot1 = (1, 0, 0, 0)
+                        float physics:lowerLimit = -108.00025
+                        float physics:upperLimit = 114.00027
+                    }
+                }
+
+                def PhysicsRevoluteJoint "waist" (
+                    prepend apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+                )
+                {
+                    float drive:angular:physics:maxForce = 35
+                    uniform token physics:axis = "Z"
+                    custom rel physics:body0
+                    prepend rel physics:body0 = </wx250s/Geometry/tn__wx250sbase_link_jN>
+                    custom rel physics:body1
+                    prepend rel physics:body1 = </wx250s/Geometry/tn__wx250sbase_link_jN/tn__wx250sshoulder_link_lT>
+                    point3f physics:localPos0 = (0, 0, 0.072)
+                    point3f physics:localPos1 = (0, 0, 0)
+                    quatf physics:localRot0 = (1, 0, 0, 0)
+                    quatf physics:localRot1 = (1, 0, 0, 0)
+                    float physics:lowerLimit = -179.99927
+                    float physics:upperLimit = 179.99927
+                }
+            }
+
+            def PhysicsFixedJoint "PhysicsFixedJoint"
+            {
+                custom rel physics:body0
+                prepend rel physics:body0 = </wx250s>
+                custom rel physics:body1
+                prepend rel physics:body1 = </wx250s/Geometry/tn__wx250sbase_link_jN>
+                point3f physics:localPos0 = (0, 0, 0)
+                point3f physics:localPos1 = (0, 0, 0)
+                quatf physics:localRot0 = (1, 0, 0, 0)
+                quatf physics:localRot1 = (1, 0, 0, 0)
+            }
+        }
+    }
+
+    over "Physics"
+    {
+        over "PhysicsMaterial" (
+            prepend apiSchemas = ["PhysicsMaterialAPI", "NewtonMaterialAPI"]
+        )
+        {
+            float newton:rollingFriction = 0.0001
+            float newton:torsionalFriction = 0.005
+            float physics:dynamicFriction = 1
+        }
+    }
+}
+
