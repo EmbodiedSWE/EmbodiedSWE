@@ -47,7 +47,11 @@ class EggCartonSceneCfg(BaseCfg):
     seat_xy_tol: float = 0.021  # egg centre radial tolerance around a cavity (m)
     seat_z_min: float = 0.015  # egg-centre band in carton-body coordinates (m)
     seat_z_max: float = 0.042  # source task accepts <= 40 mm; 2 mm solver margin
-    egg_tilt_max_deg: float = 35.0  # long egg axis versus carton local +/-z
+    # Long egg axis versus carton local +/-z.  The scanned pocket is roomier than the egg at
+    # the floor, so a fully seated egg (centre at seat depth) comes to rest leaning against the
+    # funnel wall at up to ~47 degrees; 50 accepts that resting pose while still rejecting an
+    # egg lying across the mouth or wedged diagonally (>= 60 degrees).
+    egg_tilt_max_deg: float = 50.0
     lid_closed_deg: float = 7.0  # |joint| <= this is closed (joint range -90..0)
     # Final stage: the lid must be pushed closed after every target pocket is filled.  Off, the
     # rubric reduces to the original fill-only task (useful for ablations and older presets).
@@ -76,7 +80,12 @@ class EggCartonSceneCfg(BaseCfg):
     # --- measured asset structure --------------------------------------------------------
     num_eggs: int = 4
     target_eggs: int = 3
+    # The composed holder asset is 1.2x its source scan; it is spawned at 1/1.2 so the pockets
+    # match a 43 x 57 mm egg again (at 1.2x the 60 mm mouth let a side-lying egg lie across
+    # it and the 43+ mm floor let a standing egg topple into a diagonal jam).  Measured cavity
+    # centres are then +/-25 mm.
     # Composed holder asset is 1.2x its source layer: measured cavity centres are +/-30 mm.
+    carton_scale: float = 1.0
     cavity_centers: tuple[tuple[float, float], ...] = (
         (-0.030, -0.030), (-0.030, 0.030), (0.030, -0.030), (0.030, 0.030)
     )
@@ -87,7 +96,10 @@ class EggCartonSceneCfg(BaseCfg):
     )
     carton_body: str = "E_body_5"
     lid_joint: str = "RevoluteJoint_4compartmenteggcartons_up"
-    lid_open_deg: float = -90.0
+    # The lid starts open PAST vertical, leaning back 20 degrees like a real flopped-open
+    # carton lid.  Fully vertical (-90) it stands 5 mm from an egg being seated in the back
+    # row and the seating hand knocks it or the egg; leaning back it clears both by > 15 mm.
+    lid_open_deg: float = -110.0
     egg_spawn_lift: float = 0.040  # short settle drop onto the bare table
     egg_mass: float = 0.055  # a real chicken egg, not the source metadata's 0.3 kg
     egg_contact_offset: float = 0.002
@@ -239,7 +251,9 @@ class EggCartonScene(BaseScene):
                 ),
                 init_state=ArticulationCfg.InitialStateCfg(
                     pos=(wx + c.carton_pos[0], wy + c.carton_pos[1], c.surface_z),
-                    joint_pos={c.lid_joint: math.radians(c.lid_open_deg)},
+                    # The asset's hinge range is -90..0; the wider open angle is applied after
+                    # bind() widens the limit (Isaac Lab validates this default against the USD).
+                    joint_pos={c.lid_joint: math.radians(max(c.lid_open_deg, -90.0))},
                     joint_vel={c.lid_joint: 0.0},
                 ),
                 # Passive stay-where-put lid: deliberate contact moves it, damping arrests it.
@@ -316,6 +330,11 @@ class EggCartonScene(BaseScene):
         }
         self.env_origins = env.iscene.env_origins
         self._lid_j = self.carton.find_joints([self.cfg.lid_joint], preserve_order=True)[0][0]
+        # The scanned asset's hinge range is -90..0; widen the lower limit so the lid can rest
+        # at the configured open angle.
+        limits = self.carton.data.joint_pos_limits[:, self._lid_j].clone()
+        limits[:, 0] = torch.minimum(limits[:, 0], torch.full_like(limits[:, 0], math.radians(self.cfg.lid_open_deg)))
+        self.carton.write_joint_position_limit_to_sim(limits.unsqueeze(1), joint_ids=[self._lid_j])
         self._body_b = self.carton.body_names.index(self.cfg.carton_body)
         self._cavity_xy = torch.tensor(self.cfg.cavity_centers, device=env.device)
 
