@@ -13,7 +13,14 @@ include = ["robobench*"]
 
 # Curated USD assets shipped with suites (editable installs work without this; wheels need it).
 [tool.setuptools.package-data]
-"robobench.suites.folding" = ["assets/**/*.usd"]
+"robobench.suites.deformable" = [
+    "assets/**/*.usd",
+    "assets/**/*.usda",
+    "assets/**/*.usdc",
+    "assets/**/*.png",
+    "assets/**/*.jpg",
+    "assets/**/*.json",
+]
 "robobench.suites.packing" = [
     "assets/**/*.usd",
     "assets/**/*.usdc",
@@ -21,7 +28,6 @@ include = ["robobench*"]
     "assets/**/*.jpg",
     "assets/**/*.md",
 ]
-"robobench.suites.pouring" = ["assets/**/*.usd", "assets/**/*.png", "assets/**/*.json"]
 "robobench.suites.puzzle" = ["assets/**/*.usd", "assets/**/*.usda", "assets/**/*.usdc", "assets/**/*.png", "assets/**/*.jpg", "assets/**/*.json", "assets/**/*.md"]
 
 [tool.pyright]
