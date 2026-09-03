@@ -43,7 +43,7 @@ parser.add_argument("--hdfs_dir", type=str, default="")
 # The same physics/rubric smoke serves every scene that subclasses FruitsOnPlateScene (e.g. the
 # locomanip `fruit_delivery` kitchen table): the preset, the camera framing and the clear spot
 # used by the non-fruit recovery step are the only scene-specific inputs.
-parser.add_argument("--env", type=str, default="packing.fruits_on_plate",
+parser.add_argument("--env", type=str, default="locomanip.fruit_delivery",
                     help="registered NullRobot preset of a FruitsOnPlateScene subclass")
 parser.add_argument("--eye", type=float, nargs=3, default=(0.34, -1.06, 1.40),
                     help="camera eye, table-relative (z above the surface)")
