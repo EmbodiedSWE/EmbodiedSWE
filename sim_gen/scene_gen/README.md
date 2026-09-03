@@ -1,56 +1,77 @@
-# scene_gen — static scene backgrounds via Hunyuan
+# scene_gen — 3D scene generation via the Hunyuan world models
 
-Generate a static scene background via the Hunyuan world models. Currently
-tested on **HunyuanWorld 1.0** for 2.5D scene gen: text → 360° panorama
-(PanoDiT LoRA on FLUX.1-dev) → USD dome-light backdrop that drops into Isaac
-Sim as a photoreal surround with matching image-based lighting.
+Generate full 3D scenes for simulation from a prompt or a reference photo.
+The deliverable is a **3D Gaussian-splat scene** (visuals) plus a **TSDF mesh**
+(invisible static collider): splats are markedly sharper than any textured-mesh
+export of the same scene, and the mesh gives physics a surface to stand on.
 
-## Setup (single script)
-
-```bash
-./sim_gen/scene_gen/setup_hunyuan.sh [checkout-dir]   # clones HunyuanWorld-1.0 + installs lean deps
-export HUNYUANWORLD_ROOT=<checkout-dir>               # printed by the script
+```
+prompt / reference image            prompts/*.json
+        │
+[1] text|image -> 360 panorama      generate_scene.py  (HunyuanWorld 1.0 PanoDiT
+        │                           on FLUX.1-dev / FLUX.1-Fill-dev; 1920x960 equirect)
+        ▼
+[2] panorama -> 3D world            worldgen.sh  (HY-World 2.0: VLM trajectory planning,
+        │                           WorldStereo expansion, 3DGS training; 1 node, 1-8 GPUs)
+        ▼
+   RESULT_DIR/ply/point_cloud_*.ply   the 3DGS scene (INRIA format)
+   RESULT_DIR/ply/fuse_simplified.ply invisible collider mesh (~10k faces)
+        │
+[3] QA / use                        gaussian_render/render_splat_walk.py (video via gsplat —
+                                    no Isaac needed); collider mesh -> UsdPhysics static
+                                    tri-mesh in your task scene
 ```
 
-One-time: accept the gated license at https://huggingface.co/black-forest-labs/FLUX.1-dev
-(and `hf auth login` if needed). Weights (~35 GB) download on first run.
-
-## Build a scene
+## Stage 1 — panorama
 
 ```bash
-python -m sim_gen.scene_gen.generate_scene --spec prompts/robotics_kitchen.json --out-dir out/scene
-python -m sim_gen.scene_gen.generate_scene --prompt "..." --out-dir out/scene
-python -m sim_gen.scene_gen.generate_scene --image ref.png --prompt "..." --out-dir out/scene
+./sim_gen/scene_gen/setup_hunyuan.sh [checkout-dir]      # clone + lean deps (see script)
+export HUNYUANWORLD_ROOT=<checkout-dir>
+python -m sim_gen.scene_gen.generate_scene --spec prompts/robotics_kitchen.json --out-dir scene/
+python -m sim_gen.scene_gen.generate_scene --image ref.png --prompt "..." --out-dir scene/
 ```
 
-Scene specs live in [`prompts/`](prompts/) as small JSON files
-(`{"prompt", "negative_prompt", "image"?}`); text mode uses FLUX.1-dev +
-PanoDiT-Text, image-reference mode outpaints a perspective photo into the
-panorama via FLUX.1-Fill-dev + PanoDiT-Image (accept that gated license too —
-see `prompts/robotics_kitchen_with_image_ref.json`).
+Specs are small JSONs (`{"prompt", "negative_prompt", "image"?}`). Gated HF
+weights: accept FLUX.1-dev (and FLUX.1-Fill-dev for image mode) once.
+~4 min / 24 GB peak on a 32 GB GPU.
 
-Exports to the output directory: `panorama.png` (equirect 1920×960),
-`backdrop.usda` (DomeLight, latlong — the USD conversion; open or reference it
-directly in Isaac), `meta.json` (full provenance). ~4 min on a 32 GB GPU
-(peak ~24 GB with CPU offload).
+## Stage 2 — worldgen (3D stage setup)
 
-## Render / bake an example video (Isaac Sim, RTX GPU)
+Needs a [HY-World 2.0](https://github.com/Tencent-Hunyuan/HY-World-2.0) checkout
+and its env (follow upstream install; battle notes: build with `FORCE_CUDA=1`
+and your `TORCH_CUDA_ARCH_LIST` on CPU nodes, `pip install rtree` for the
+navmesh planner, the gsplat fork needs glm vendored at
+`gsplat/cuda/csrc/third_party/glm`, fused-ssim hardcodes its arch list —
+patch in your sm, and `spz` may be skipped: only `--convert_to_spz` needs it).
+Gated HF weights: `facebook/sam3`. A vLLM env serves Qwen3-VL-8B for planning.
 
 ```bash
-python -m sim_gen.scene_gen.render_scene views     --scene-dir out/scene   # 4 static views
-python -m sim_gen.scene_gen.render_scene video     --scene-dir out/scene   # 360° pan -> flythrough.mp4
-python -m sim_gen.scene_gen.render_scene composite --scene-dir out/scene   # + table, Franka, props
+HYWORLD2_ROOT=... HYWORLD2_PY=.../venv/bin/python VLLM_BIN=.../bin/vllm \
+SCENE_DIR=scene RESULT_DIR=scene_out ./sim_gen/scene_gen/worldgen.sh
 ```
 
-## Notes
+Scenes come out metric (a kitchen ~12x9 m, 2.8 m ceilings) in the panorama's
+frame: **z-up, meters, floor at z = -(camera eye height)**, ~-1.06 m typically.
 
-- 2.5D means the background is a panorama at infinity: perfect for static
-  cameras with your own workspace assets in front (the dome also lights them);
-  no parallax under camera translation and nothing to collide with — bring
-  your own floor/table physics.
-- Only two files of the HunyuanWorld checkout are used (the seam-blended
-  panorama pipeline); its heavy 3D-stage dependencies are never installed.
-- Deps: `torch` (CUDA), `diffusers==0.34.0` (pinned — the pipeline subclasses
-  Flux internals), `transformers`, `accelerate`, `peft`, `sentencepiece`,
-  `protobuf`, `opencv-python-headless`, `imageio[ffmpeg]`. Rendering needs an
-  Isaac Sim install (`isaacsim` python) and an RTX-capable GPU.
+## Stage 3 — render the Gaussian scene (`gaussian_render/`)
+
+| Script | What |
+|---|---|
+| `render_splat_walk.py` | ply -> QA video via gsplat (or 3dgrut); `--path orbit` auto-frames any scene, no Isaac/Omniverse. |
+| `camera_path.py` | intrinsics + paths: generic `poses_orbit` (auto-framed, any scene) and the hand-tuned kitchen walk-in as example. |
+| `bake_texture.py` | `check` / `bestview` texture tools if a textured mesh is still wanted. |
+| `make_cameras_from_path.py` | cameras.json for frames rendered on the walk path. |
+
+## Findings that shaped this design (verified on cluster + RTX 5090)
+
+- **Splats win on fidelity.** Multi-view texture projection onto the TSDF mesh
+  ghosts: the mesh sits a few cm off the true surfaces, so blending hundreds of
+  views smears every edge (a single-view bake round-trips exactly — it is a
+  geometry limit, not a calibration bug). If a textured mesh is required, use
+  `bake_texture.py bestview` (no blending) and expect below-splat quality.
+- **Do not route splats through Isaac's renderer.** ParticleField USD loads but
+  renders black/dots (pip Isaac Sim 5.1 and headless 6.0 both). Render splats
+  with gsplat outside Isaac and composite; inside Isaac use only the collider.
+- **Physics works on the generated world**: static tri-mesh collision on the
+  TSDF mesh rests objects at analytic heights; counters are gently wavy — put a
+  thin invisible collider plane where precise placement matters.
