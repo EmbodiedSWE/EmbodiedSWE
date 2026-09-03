@@ -1,0 +1,456 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "MuJoCo USD Converter v0.2.0"
+    }
+    doc = """Generated from Composed Stage of root layer /tmp/tmpuhhn8u3u/wx250s.usdc
+
+
+Generated from Composed Stage of root layer /tmp/mjcf_import_wx250s_k35si6ao/usdex_wx250s/wx250s.usdc
+
+
+Generated from Composed Stage of root layer /tmp/mjcf_import_wx250s_k35si6ao/temp_wx250s/wx250s.usd
+
+
+Generated from Composed Stage of root layer /home/yilang/research/CoSiGen/robobench/robots/assets/wx250s/wx250s/payloads/base.usd
+"""
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Scope "Instances"
+{
+    def Xform "wx250s_1_base" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_1_base>
+    )
+    {
+        over "wx250s_1_base" (
+            apiSchemas = ["MaterialBindingAPI", "MjcImageableAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wx250s_1_base/VisualMaterials/black>
+            int mjc:group = 2
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wx250s_1_base_1" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_1_base>
+    )
+    {
+        over "wx250s_1_base" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "MjcCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI", "PhysicsMassAPI", "MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding:physics
+            prepend rel material:binding:physics = </wx250s/Physics/PhysicsMaterial>
+            int mjc:group = 3
+            float newton:contactGap = 0 (
+                limits = {
+                    dictionary hard = {
+                        double minimum = 0
+                    }
+                }
+            )
+            token physics:approximation = "convexHull"
+            float physics:density = 1000
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "wx250s_2_shoulder" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_2_shoulder>
+    )
+    {
+        over "wx250s_2_shoulder" (
+            apiSchemas = ["MaterialBindingAPI", "MjcImageableAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wx250s_2_shoulder/VisualMaterials/black>
+            int mjc:group = 2
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wx250s_2_shoulder_1" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_2_shoulder>
+    )
+    {
+        over "wx250s_2_shoulder" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "MjcCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI", "PhysicsMassAPI", "MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding:physics
+            prepend rel material:binding:physics = </wx250s/Physics/PhysicsMaterial>
+            int mjc:group = 3
+            float newton:contactGap = 0 (
+                limits = {
+                    dictionary hard = {
+                        double minimum = 0
+                    }
+                }
+            )
+            token physics:approximation = "convexHull"
+            float physics:density = 1000
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "wx250s_3_upper_arm" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_3_upper_arm>
+    )
+    {
+        over "wx250s_3_upper_arm" (
+            apiSchemas = ["MaterialBindingAPI", "MjcImageableAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wx250s_3_upper_arm/VisualMaterials/black>
+            int mjc:group = 2
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wx250s_3_upper_arm_1" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_3_upper_arm>
+    )
+    {
+        over "wx250s_3_upper_arm" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "MjcCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI", "PhysicsMassAPI", "MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding:physics
+            prepend rel material:binding:physics = </wx250s/Physics/PhysicsMaterial>
+            int mjc:group = 3
+            float newton:contactGap = 0 (
+                limits = {
+                    dictionary hard = {
+                        double minimum = 0
+                    }
+                }
+            )
+            token physics:approximation = "convexHull"
+            float physics:density = 1000
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "wx250s_4_upper_forearm" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_4_upper_forearm>
+    )
+    {
+        over "wx250s_4_upper_forearm" (
+            apiSchemas = ["MaterialBindingAPI", "MjcImageableAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wx250s_4_upper_forearm/VisualMaterials/black>
+            int mjc:group = 2
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wx250s_4_upper_forearm_1" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_4_upper_forearm>
+    )
+    {
+        over "wx250s_4_upper_forearm" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "MjcCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI", "PhysicsMassAPI", "MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding:physics
+            prepend rel material:binding:physics = </wx250s/Physics/PhysicsMaterial>
+            int mjc:group = 3
+            float newton:contactGap = 0 (
+                limits = {
+                    dictionary hard = {
+                        double minimum = 0
+                    }
+                }
+            )
+            token physics:approximation = "convexHull"
+            float physics:density = 1000
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "wx250s_5_lower_forearm" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_5_lower_forearm>
+    )
+    {
+        over "wx250s_5_lower_forearm" (
+            apiSchemas = ["MaterialBindingAPI", "MjcImageableAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wx250s_5_lower_forearm/VisualMaterials/black>
+            int mjc:group = 2
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wx250s_5_lower_forearm_1" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_5_lower_forearm>
+    )
+    {
+        over "wx250s_5_lower_forearm" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "MjcCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI", "PhysicsMassAPI", "MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding:physics
+            prepend rel material:binding:physics = </wx250s/Physics/PhysicsMaterial>
+            int mjc:group = 3
+            float newton:contactGap = 0 (
+                limits = {
+                    dictionary hard = {
+                        double minimum = 0
+                    }
+                }
+            )
+            token physics:approximation = "convexHull"
+            float physics:density = 1000
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "wx250s_6_wrist" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_6_wrist>
+    )
+    {
+        over "wx250s_6_wrist" (
+            apiSchemas = ["MaterialBindingAPI", "MjcImageableAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wx250s_6_wrist/VisualMaterials/black>
+            int mjc:group = 2
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wx250s_6_wrist_1" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_6_wrist>
+    )
+    {
+        over "wx250s_6_wrist" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "MjcCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI", "PhysicsMassAPI", "MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding:physics
+            prepend rel material:binding:physics = </wx250s/Physics/PhysicsMaterial>
+            int mjc:group = 3
+            float newton:contactGap = 0 (
+                limits = {
+                    dictionary hard = {
+                        double minimum = 0
+                    }
+                }
+            )
+            token physics:approximation = "convexHull"
+            float physics:density = 1000
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "wx250s_7_gripper" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_7_gripper>
+    )
+    {
+        over "wx250s_7_gripper" (
+            apiSchemas = ["MaterialBindingAPI", "MjcImageableAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wx250s_7_gripper/VisualMaterials/black>
+            int mjc:group = 2
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wx250s_7_gripper_1" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_7_gripper>
+    )
+    {
+        over "wx250s_7_gripper" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "MjcCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI", "PhysicsMassAPI", "MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding:physics
+            prepend rel material:binding:physics = </wx250s/Physics/PhysicsMaterial>
+            int mjc:group = 3
+            float newton:contactGap = 0 (
+                limits = {
+                    dictionary hard = {
+                        double minimum = 0
+                    }
+                }
+            )
+            token physics:approximation = "convexHull"
+            float physics:density = 1000
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "wx250s_9_gripper_bar" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_9_gripper_bar>
+    )
+    {
+        over "wx250s_9_gripper_bar" (
+            apiSchemas = ["MaterialBindingAPI", "MjcImageableAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wx250s_9_gripper_bar/VisualMaterials/black>
+            int mjc:group = 2
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wx250s_9_gripper_bar_1" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_9_gripper_bar>
+    )
+    {
+        over "wx250s_9_gripper_bar" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "MjcCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI", "PhysicsMassAPI", "MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding:physics
+            prepend rel material:binding:physics = </wx250s/Physics/PhysicsMaterial>
+            int mjc:group = 3
+            float newton:contactGap = 0 (
+                limits = {
+                    dictionary hard = {
+                        double minimum = 0
+                    }
+                }
+            )
+            token physics:approximation = "convexHull"
+            float physics:density = 1000
+            token purpose = "guide"
+        }
+    }
+
+    def Xform "wx250s_10_gripper_finger" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_10_gripper_finger>
+    )
+    {
+        over "wx250s_10_gripper_finger" (
+            apiSchemas = ["MaterialBindingAPI", "MjcImageableAPI"]
+        )
+        {
+            custom rel material:binding
+            prepend rel material:binding = </Instances/wx250s_10_gripper_finger/VisualMaterials/black>
+            int mjc:group = 2
+        }
+
+        def Scope "VisualMaterials"
+        {
+            def Material "black" (
+                instanceable = true
+                prepend references = @./materials.usda@</Materials/black>
+            )
+            {
+            }
+        }
+    }
+
+    def Xform "wx250s_10_gripper_finger_1" (
+        prepend references = @./geometries.usd@</Geometries/wx250s_10_gripper_finger>
+    )
+    {
+        over "wx250s_10_gripper_finger" (
+            apiSchemas = ["PhysicsCollisionAPI", "NewtonCollisionAPI", "MjcCollisionAPI", "PhysicsMeshCollisionAPI", "NewtonMeshCollisionAPI", "PhysicsMassAPI", "MaterialBindingAPI"]
+        )
+        {
+            custom rel material:binding:physics
+            prepend rel material:binding:physics = </wx250s/Physics/PhysicsMaterial>
+            int mjc:group = 3
+            float newton:contactGap = 0 (
+                limits = {
+                    dictionary hard = {
+                        double minimum = 0
+                    }
+                }
+            )
+            token physics:approximation = "convexHull"
+            float physics:density = 1000
+            token purpose = "guide"
+        }
+    }
+}
+

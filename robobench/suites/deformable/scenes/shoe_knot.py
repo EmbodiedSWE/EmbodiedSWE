@@ -295,8 +295,20 @@ class ShoeKnotSceneCfg(BaseCfg):
     # table-top height [m]; the shoe (and the whole task frame) sits here — record_video.py anchors its camera
     # on this field
     surface_z: float = 0.2
-    # box table full extents [m]; centered under the shoe, top at surface_z
+    # box table full extents [m]; centered under the shoe, top at surface_z. With `table_usd`
+    # set this sizes the INVISIBLE physics twin instead — match it to the USD table's top.
     table_size: tuple[float, float, float] = (0.8, 0.8, 0.2)
+    # Optional USD work surface replacing the gray cuboid VISUAL (physics stays the hook-
+    # injected box twin, like the cuboid's). Point it at a table asset (e.g. the nut-thread
+    # task's lab table); `table_usd_offset`/`table_usd_rot` (xyzw) place the asset so its
+    # working surface is centered at env (0,0) with the top at `surface_z` — the spawner
+    # REPLACES any root transform authored in the asset, so bake it in here.
+    table_usd: str = ""
+    table_usd_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    table_usd_rot: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
+    # ground-plane height [m] (sunk below the table so it rests on its feet); the default
+    # matches the gray box ambient. Retune per table asset (feet depth differs).
+    ground_z: float = -1.05
     # --- solver (consumed by sim_cfg) ---
     num_substeps: int = 12
     vbd_iterations: int = 10
@@ -307,6 +319,14 @@ class ShoeKnotSceneCfg(BaseCfg):
     knot_z_max: float = 0.155  # seat gate [m]: the mid-air junction sits at 0.165-0.190
     # settled cross-lace contacts must stay below this (proves the laces start NOT intertwined)
     settled_contacts_max: int = 3
+    # True (the knot task): both free ends are zero-mass kinematic handles, driven directly by
+    # the smoke. False (robot bindings, e.g. deformable.knot.aloha.*): the ends stay DYNAMIC
+    # rod — only the eyelet roots remain anchored.
+    kinematic_ends: bool = True
+    # Outward x-offset [m] added to each lace's final waypoints (lace 1 -> -x, lace 2 -> +x):
+    # lays the free-end tails away from the shoe flank onto open table. 0 = the standalone
+    # knot curves, byte-identical.
+    end_splay: float = 0.0
     light_intensity: float = 3000.0
     shoe_visual_usd: str = ""  # '' -> the vendored assets/shoe_right_visual.usda
 
@@ -353,6 +373,15 @@ class ShoeKnotScene(BaseScene):
         w2 = LACE2_WAYPOINTS.copy()
         w1[0, 2] = self.surface_z(w1[0, 0], w1[0, 1]) - HOLE_DEPTH
         w2[0, 2] = self.surface_z(w2[0, 0], w2[0, 1]) - HOLE_DEPTH
+        if c.end_splay:
+            # lay the free-end tails outward onto open table (see cfg.end_splay): full offset
+            # on the last waypoint (dropped to rod height), half on the one before at half its
+            # authored height
+            for w, sgn in ((w1, -1.0), (w2, 1.0)):
+                w[-1, 0] += sgn * c.end_splay
+                w[-2, 0] += sgn * 0.5 * c.end_splay
+                w[-1, 2] = c.rod_radius
+                w[-2, 2] = max(w[-2, 2] * 0.5, c.rod_radius)
         self.lace_rest = [
             resample_by_arclength(catmull_rom(w1), self.seg_len),
             resample_by_arclength(catmull_rom(w2), self.seg_len),
@@ -389,6 +418,7 @@ class ShoeKnotScene(BaseScene):
             self.perm_arcs.append(arc)
 
         self.lace_bodies_w: dict[int, list[list[int]]] = {}  # world -> [lace1 bodies, lace2 bodies]
+        self.lace_joints_w: dict[int, list[list[int]]] = {}  # world -> [lace1 cable joints, lace2 ...]
         self.world_frames: dict[int, tuple[np.ndarray, np.ndarray]] = {}  # world -> (R, t)
 
     def surface_z(self, x: float, y: float, rad: float = 0.006) -> float:
@@ -414,24 +444,35 @@ class ShoeKnotScene(BaseScene):
         # visual shoe on the table top. The table cuboid is visual-only (its physics twin is
         # hook-injected); the lace visual capsules are authored + synced by the smoke.
         c = self.cfg
-        return {
-            "ground": AssetBaseCfg(
-                prim_path="/World/ground",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
-                spawn=sim_utils.GroundPlaneCfg(),
-            ),
-            "light": AssetBaseCfg(
-                prim_path="/World/light",
-                spawn=sim_utils.DomeLightCfg(intensity=c.light_intensity, color=(0.9, 0.9, 0.9)),
-            ),
-            "table": AssetBaseCfg(
+        if c.table_usd:
+            table = AssetBaseCfg(
+                prim_path="{ENV_REGEX_NS}/Table",
+                init_state=AssetBaseCfg.InitialStateCfg(
+                    pos=(c.table_usd_offset[0], c.table_usd_offset[1], c.surface_z + c.table_usd_offset[2]),
+                    rot=c.table_usd_rot,
+                ),
+                spawn=sim_utils.UsdFileCfg(usd_path=c.table_usd),
+            )
+        else:
+            table = AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, c.surface_z - 0.5 * c.table_size[2])),
                 spawn=sim_utils.CuboidCfg(
                     size=c.table_size,
                     visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.55, 0.55, 0.55)),
                 ),
+            )
+        return {
+            "ground": AssetBaseCfg(
+                prim_path="/World/ground",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, c.ground_z)),
+                spawn=sim_utils.GroundPlaneCfg(),
             ),
+            "light": AssetBaseCfg(
+                prim_path="/World/light",
+                spawn=sim_utils.DomeLightCfg(intensity=c.light_intensity, color=(0.9, 0.9, 0.9)),
+            ),
+            "table": table,
             "shoe_visual": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/ShoeVisual",
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, c.surface_z)),
@@ -522,11 +563,12 @@ class ShoeKnotScene(BaseScene):
             density=c.lace_density, ke=c.lace_ke, kd=c.lace_kd, mu=c.lace_mu, gap=0.0, is_visible=False
         )
         lace_bodies: list[list[int]] = []
+        lace_joints: list[list[int]] = []
         for i, pts in enumerate(self.lace_rest):
             pts_w = pts @ R.T + t
             wp_pts = [wp.vec3(*p) for p in pts_w]
             edge_q = newton.utils.create_parallel_transport_cable_quaternions(wp_pts, twist_total=0.0)
-            bodies, _ = builder.add_rod(
+            bodies, joints = builder.add_rod(
                 positions=wp_pts,
                 quaternions=edge_q,
                 radius=c.rod_radius,
@@ -542,18 +584,22 @@ class ShoeKnotScene(BaseScene):
                 body_frame_origin="com",
             )
             lace_bodies.append(list(bodies))
+            lace_joints.append(list(joints))
 
-        # kinematic anchors: both roots (pinned at the eyelets for the whole run) and both
-        # free ends (the driven handles). Zero mass = fixed for the solver; control moves them
-        # by writing body_q directly each substep.
+        # kinematic anchors: both roots (pinned at the eyelets for the whole run) and — for the
+        # handle-driven knot task only — both free ends. Zero mass = fixed for the solver;
+        # control moves anchors by writing body_q directly each substep. Robot bindings keep
+        # the ends dynamic (cfg.kinematic_ends=False).
         for bodies in lace_bodies:
-            for b in (bodies[0], bodies[-1]):
+            anchors = (bodies[0], bodies[-1]) if c.kinematic_ends else (bodies[0],)
+            for b in anchors:
                 builder.body_mass[b] = 0.0
                 builder.body_inv_mass[b] = 0.0
                 builder.body_inertia[b] = wp.mat33(0.0)
                 builder.body_inv_inertia[b] = wp.mat33(0.0)
 
         self.lace_bodies_w[world_idx] = lace_bodies
+        self.lace_joints_w[world_idx] = lace_joints
         self.world_frames[world_idx] = (R, t)
 
     # ----- curve validation (pre-sim; ported verbatim) ---------------------------------------------
@@ -679,17 +725,101 @@ class ShoeKnotScene(BaseScene):
         knot_z_local = float(((self.knot_pos(world) - t) @ R)[2])
         return self.knot_winding(world) >= c.winding_min_deg and contacts >= c.contacts_min and knot_z_local < c.knot_z_max
 
+    # ----- RTX visual layer -------------------------------------------------------------------------
+    # (module-level class below: `LaceVisuals` — shared by the suite's smokes)
+
     # ----- description ----------------------------------------------------------------------------
     def describe(self) -> str:
+        c = self.cfg
+        table = "a lab table" if c.table_usd else "a gray box table"
+        ends = (
+            "Both free ends are kinematic handles; both roots stay anchored."
+            if c.kinematic_ends
+            else "Both free ends are free rod resting on the table; both roots stay anchored."
+        )
         return (
-            "A 30 cm sneaker rests sole-down on a gray box table (top at z=0.20 m env-local; positions"
+            f"A 30 cm sneaker rests sole-down on {table} (top at z={c.surface_z:.2f} m env-local; positions"
             " below are relative to the table top). Two separate shoelaces (2.4 mm"
             " rods) root at its top eyelets — lace 1 at the right eyelet draping down the left"
             " flank, lace 2 at the left eyelet draping down the right — crossing only at the"
-            " lacing criss-cross, not intertwined. Both free ends are kinematic handles; both"
-            " roots stay anchored. Goal: tie the classic half knot (cross the ends into a mid-air"
+            f" lacing criss-cross, not intertwined. {ends}"
+            " Goal: tie the classic half knot (cross the ends into a mid-air"
             " X, thread lace 1's end under the junction, let it rise so the strands cross again,"
             " pull apart to the flanks and seat the knot on the tongue) so that, slack and with"
             " no helper forces, lace 1 winds >= 140 deg around lace 2 with >= 6 cross-lace"
             " contacts at z < 0.155 m — a self-sustaining knot tied from separate laces."
         )
+
+
+# ---------------------------------------------------------------- RTX visual layer
+
+
+class LaceVisuals:
+    """Visual-only USD capsules for the hook-injected rods (Kit RTX draws USD; the physics rod
+    has no prims): one capsule per rod segment, posed from `body_q` each frame, plus the static
+    permanent bridge arcs authored once. Shared by the suite's smokes (each smoke launches its
+    own app, so smokes cannot import each other); heavy imports (pxr, warp) stay lazy."""
+
+    def __init__(self, stage, scene: ShoeKnotScene, world: int = 0) -> None:
+        import warp as wp
+        from pxr import Gf, Sdf, UsdGeom, UsdShade
+
+        self._Gf, self._Sdf, self._UsdGeom = Gf, Sdf, UsdGeom
+        self.scene = scene
+        self.world = world
+        c = scene.cfg
+        UsdGeom.Xform.Define(stage, "/World/LaceVisuals")
+
+        mat = UsdShade.Material.Define(stage, "/World/LaceVisuals/mat")
+        pbr = UsdShade.Shader.Define(stage, "/World/LaceVisuals/mat/pbr")
+        pbr.CreateIdAttr("UsdPreviewSurface")
+        # color matched to the baked laces (see LACE_VISUAL_LINEAR); ior 1.0 = pure diffuse —
+        # thin capsules are mostly grazing-incidence silhouette and would gleam at ior 1.5
+        pbr.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*LACE_VISUAL_LINEAR))
+        pbr.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.85)
+        pbr.CreateInput("ior", Sdf.ValueTypeNames.Float).Set(1.0)
+        pbr.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+        mat.CreateSurfaceOutput().ConnectToSource(pbr.ConnectableAPI(), "surface")
+
+        def make_capsule(path: str, height: float):
+            cap = UsdGeom.Capsule.Define(stage, path)
+            cap.CreateAxisAttr(UsdGeom.Tokens.z)
+            cap.CreateRadiusAttr(float(c.rod_radius))
+            cap.CreateHeightAttr(float(height))
+            UsdShade.MaterialBindingAPI.Apply(cap.GetPrim()).Bind(mat)
+            return cap.AddTransformOp()
+
+        # static permanent bridges (posed once, from the same arcs the physics hook used)
+        R, t = scene.world_frames[world]
+        for k, arc in enumerate(scene.perm_arcs):
+            arc_w = arc @ R.T + t
+            for j, (a, b) in enumerate(zip(arc_w[:-1], arc_w[1:])):
+                d = b - a
+                length = float(np.linalg.norm(d))
+                q = wp.quat_between_vectors(wp.vec3(0.0, 0.0, 1.0), wp.vec3(*(d / length)))
+                op = make_capsule(f"/World/LaceVisuals/perm{k}_seg{j}", length)
+                op.Set(self._mat4(0.5 * (a + b), [q[0], q[1], q[2], q[3]]))
+
+        # dynamic lace segments: one capsule per rod body, synced from body_q
+        self.ops: list = []
+        self.bodies: list[int] = []
+        for i, bodies in enumerate(scene.lace_bodies_w[world]):
+            rest = scene.lace_rest[i]
+            seg_lens = np.linalg.norm(np.diff(rest, axis=0), axis=1)
+            for j, body in enumerate(bodies):
+                self.ops.append(make_capsule(f"/World/LaceVisuals/lace{i}_seg{j}", float(seg_lens[j])))
+                self.bodies.append(int(body))
+        self.bodies_arr = np.array(self.bodies)
+
+    def _mat4(self, pos, quat_xyzw):
+        Gf = self._Gf
+        m = Gf.Matrix4d()
+        m.SetRotate(Gf.Quatd(float(quat_xyzw[3]), float(quat_xyzw[0]), float(quat_xyzw[1]), float(quat_xyzw[2])))
+        m.SetTranslateOnly(Gf.Vec3d(float(pos[0]), float(pos[1]), float(pos[2])))
+        return m
+
+    def sync(self) -> None:
+        q = self.scene._nm._state_0.body_q.numpy()[self.bodies_arr]
+        with self._Sdf.ChangeBlock():
+            for op, row in zip(self.ops, q):
+                op.Set(self._mat4(row[:3], row[3:7]))

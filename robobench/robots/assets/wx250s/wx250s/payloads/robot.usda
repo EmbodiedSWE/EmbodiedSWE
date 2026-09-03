@@ -1,0 +1,132 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "MuJoCo USD Converter v0.2.0"
+    }
+    defaultPrim = "wx250s"
+    doc = """Generated from Composed Stage of root layer /tmp/tmpuhhn8u3u/wx250s.usdc
+
+
+Generated from Composed Stage of root layer /tmp/mjcf_import_wx250s_k35si6ao/usdex_wx250s/wx250s.usdc
+
+
+Generated from Composed Stage of root layer /tmp/mjcf_import_wx250s_k35si6ao/temp_wx250s/wx250s.usd
+
+
+Generated from Composed Stage of root layer /home/yilang/research/CoSiGen/robobench/robots/assets/wx250s/wx250s/payloads/base.usd
+"""
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+over "wx250s" (
+    prepend apiSchemas = ["IsaacRobotAPI"]
+)
+{
+    custom rel isaac:physics:robotJoints
+    custom rel isaac:physics:robotLinks
+
+    over "Geometry"
+    {
+        over "tn__wx250sbase_link_jN" (
+            prepend apiSchemas = ["IsaacLinkAPI"]
+        )
+        {
+            over "tn__wx250sshoulder_link_lT" (
+                prepend apiSchemas = ["IsaacLinkAPI"]
+            )
+            {
+                over "tn__wx250supper_arm_link_WV0" (
+                    prepend apiSchemas = ["IsaacLinkAPI"]
+                )
+                {
+                    over "tn__wx250supper_forearm_link_Yb0" (
+                        prepend apiSchemas = ["IsaacLinkAPI"]
+                    )
+                    {
+                        over "tn__wx250slower_forearm_link_Yb0" (
+                            prepend apiSchemas = ["IsaacLinkAPI"]
+                        )
+                        {
+                            over "tn__wx250swrist_link_zO" (
+                                prepend apiSchemas = ["IsaacLinkAPI"]
+                            )
+                            {
+                                over "tn__wx250sgripper_link_VS" (
+                                    prepend apiSchemas = ["IsaacLinkAPI"]
+                                )
+                                {
+                                    over "tn__wx250sleft_finger_link_XY0" (
+                                        prepend apiSchemas = ["IsaacLinkAPI"]
+                                    )
+                                    {
+                                        over "left_finger" (
+                                            prepend apiSchemas = ["IsaacJointAPI"]
+                                        )
+                                        {
+                                        }
+                                    }
+
+                                    over "tn__wx250sright_finger_link_nZ0" (
+                                        prepend apiSchemas = ["IsaacLinkAPI"]
+                                    )
+                                    {
+                                        over "right_finger" (
+                                            prepend apiSchemas = ["IsaacJointAPI"]
+                                        )
+                                        {
+                                        }
+                                    }
+
+                                    over "wrist_rotate" (
+                                        prepend apiSchemas = ["IsaacJointAPI"]
+                                    )
+                                    {
+                                    }
+                                }
+
+                                over "wrist_angle" (
+                                    prepend apiSchemas = ["IsaacJointAPI"]
+                                )
+                                {
+                                }
+                            }
+
+                            over "forearm_roll" (
+                                prepend apiSchemas = ["IsaacJointAPI"]
+                            )
+                            {
+                            }
+                        }
+
+                        over "elbow" (
+                            prepend apiSchemas = ["IsaacJointAPI"]
+                        )
+                        {
+                        }
+                    }
+
+                    over "shoulder" (
+                        prepend apiSchemas = ["IsaacJointAPI"]
+                    )
+                    {
+                    }
+                }
+
+                over "waist" (
+                    prepend apiSchemas = ["IsaacJointAPI"]
+                )
+                {
+                }
+            }
+
+            over "PhysicsFixedJoint" (
+                prepend apiSchemas = ["IsaacJointAPI"]
+            )
+            {
+            }
+        }
+    }
+}
+

@@ -9,9 +9,7 @@ ends (kinematic handles; the roots stay anchored at the eyelets) tie the classic
   the strands cross a second time) -> PULL APART + SEAT (antiparallel pulls to the flanks jam
   the crossing while the pins carry the knot onto the tongue pad, then release; slack last).
 
-The planning is closed-loop, exactly like the standalone: the X is measured from the live
-strands (retrying until they touch), and the thread/cinch trajectories are planned from that
-measurement. Verdict (sampled through the slack-and-pin-free check window, 13.8-14.8 s):
+The driver is the standalone's control half, ported 1:1. Verdict (sampled through the slack-and-pin-free check window, 13.8-14.8 s):
 winding >= 140 deg on the knot sections, >= 6 cross-lace contacts, knot seated at z < 155 mm,
 laces not intertwined at settle. All numbers are the standalone script's proven 3/3 values.
 
@@ -66,7 +64,7 @@ import warp as wp  # noqa: E402
 import robobench  # noqa: E402
 from robobench.core import ENVS  # noqa: E402
 from robobench.suites.deformable.newton.lace_manager import NewtonLaceVBDManager  # noqa: E402
-from robobench.suites.deformable.scenes.shoe_knot import LACE_VISUAL_LINEAR  # noqa: E402
+from robobench.suites.deformable.scenes.shoe_knot import LaceVisuals  # noqa: E402
 
 FPS = 60  # must match RodSimCfg.dt
 
@@ -138,90 +136,17 @@ class HandleTrajectory:
         return keys[-1][1]
 
 WRAP_RADIUS = 0.018
-PIN_GAIN = 300.0  # "finger" pinning strands at the crossing [N/m]
-PIN_FMAX = 20.0  # real fingers grip at tens of newtons; 6 N lost every time
+PIN_GAIN = 300.0  # "finger" pin spring [N/m]
+PIN_FMAX = 20.0  # pin force cap [N]
 PIN_DAMPING = 0.3
-
-
-# --------------------------------------------------------------- RTX visual layer
-
-
-class LaceVisuals:
-    """Visual-only USD capsules for the hook-injected rods (Kit RTX draws USD; the physics rod
-    has no prims): one capsule per rod segment, posed from `body_q` each frame, plus the static
-    permanent bridge arcs authored once."""
-
-    def __init__(self, stage, scene, world: int = 0) -> None:
-        from pxr import Gf, Sdf, UsdGeom, UsdShade
-
-        self._Gf, self._Sdf, self._UsdGeom = Gf, Sdf, UsdGeom
-        self.scene = scene
-        self.world = world
-        c = scene.cfg
-        root = UsdGeom.Xform.Define(stage, "/World/LaceVisuals")
-
-        mat = UsdShade.Material.Define(stage, "/World/LaceVisuals/mat")
-        pbr = UsdShade.Shader.Define(stage, "/World/LaceVisuals/mat/pbr")
-        pbr.CreateIdAttr("UsdPreviewSurface")
-        # color matched to the baked laces (see LACE_VISUAL_LINEAR); ior 1.0 = pure diffuse —
-        # thin capsules are mostly grazing-incidence silhouette and would gleam at ior 1.5
-        pbr.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*LACE_VISUAL_LINEAR))
-        pbr.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.85)
-        pbr.CreateInput("ior", Sdf.ValueTypeNames.Float).Set(1.0)
-        pbr.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
-        mat.CreateSurfaceOutput().ConnectToSource(pbr.ConnectableAPI(), "surface")
-
-        def make_capsule(path: str, height: float):
-            cap = UsdGeom.Capsule.Define(stage, path)
-            cap.CreateAxisAttr(UsdGeom.Tokens.z)
-            cap.CreateRadiusAttr(float(c.rod_radius))
-            cap.CreateHeightAttr(float(height))
-            UsdShade.MaterialBindingAPI.Apply(cap.GetPrim()).Bind(mat)
-            return cap.AddTransformOp()
-
-        # static permanent bridges (posed once, from the same arcs the physics hook used)
-        R, t = scene.world_frames[world]
-        for k, arc in enumerate(scene.perm_arcs):
-            arc_w = arc @ R.T + t
-            for j, (a, b) in enumerate(zip(arc_w[:-1], arc_w[1:])):
-                d = b - a
-                length = float(np.linalg.norm(d))
-                q = wp.quat_between_vectors(wp.vec3(0.0, 0.0, 1.0), wp.vec3(*(d / length)))
-                op = make_capsule(f"/World/LaceVisuals/perm{k}_seg{j}", length)
-                op.Set(self._mat4(0.5 * (a + b), [q[0], q[1], q[2], q[3]]))
-
-        # dynamic lace segments: one capsule per rod body, synced from body_q
-        self.ops: list = []
-        self.bodies: list[int] = []
-        for i, bodies in enumerate(scene.lace_bodies_w[world]):
-            rest = scene.lace_rest[i]
-            seg_lens = np.linalg.norm(np.diff(rest, axis=0), axis=1)
-            for j, body in enumerate(bodies):
-                self.ops.append(make_capsule(f"/World/LaceVisuals/lace{i}_seg{j}", float(seg_lens[j])))
-                self.bodies.append(int(body))
-        self.bodies_arr = np.array(self.bodies)
-
-    def _mat4(self, pos, quat_xyzw):
-        Gf = self._Gf
-        m = Gf.Matrix4d()
-        m.SetRotate(Gf.Quatd(float(quat_xyzw[3]), float(quat_xyzw[0]), float(quat_xyzw[1]), float(quat_xyzw[2])))
-        m.SetTranslateOnly(Gf.Vec3d(float(pos[0]), float(pos[1]), float(pos[2])))
-        return m
-
-    def sync(self) -> None:
-        q = self.scene._nm._state_0.body_q.numpy()[self.bodies_arr]
-        with self._Sdf.ChangeBlock():
-            for op, row in zip(self.ops, q):
-                op.Set(self._mat4(row[:3], row[3:7]))
 
 
 # --------------------------------------------------------------- closed-loop driver
 
 
 class KnotDriver:
-    """The standalone Example's control half, ported 1:1: scripted lift/X-form, then closed-loop
-    tuck -> thread -> cinch planned from the measured crossing, with spring-finger pins. Plans in
-    env-LOCAL frame (the authored constants' frame) and actuates in world."""
+    """The standalone Example's control half, ported 1:1. Plans in env-LOCAL frame (the
+    authored constants' frame) and actuates in world."""
 
     def __init__(self, scene, world: int = 0) -> None:
         self.scene = scene
@@ -237,7 +162,7 @@ class KnotDriver:
         # phases [s] — the standalone script's tuned times
         self.t_settle_end = 0.5
         self.t_peel_end = 1.4
-        self.t_lift_end = 3.4  # taut hold points are farther: <= 13 cm/s
+        self.t_lift_end = 3.4
         self.t_xform_end = 4.6
         self.t_x_measure = 4.8  # X measured (with retries) once strands touch
         self.t_check_start = 13.8  # the check window sits AFTER the cinch, the pin release,
@@ -250,19 +175,13 @@ class KnotDriver:
         pb = q0[self.ends[1], :3].copy()
         self.roots_pos = np.array([q0[self.roots[0], :3], q0[self.roots[1], :3]])
 
-        # STRETCH THE LACES STRAIGHT: every hold point sits at ~96% of the lace's length from
-        # its root, so the strand is a taut line with no loose rope (slack-held ends sag, flop,
-        # and coil around the other lace during the thread). Lift on own-root sides; then cross
-        # the ends over AND CARRY THEM FORE of the crossing so each taut strand TRAVERSES the
-        # junction in x and y (ends aft turn the X into a ridge and the tuck loop slips off).
-        # A's end is higher, so A's strand rests on top: deterministic over.
+        # hold points for the lift and the X (env-local; the standalone's constants)
         self.lift_a = self.W([0.076, 0.077, 0.284])
         self.lift_b = self.W([-0.086, 0.064, 0.252])
         self.x_a = self.W([-0.042, 0.086, 0.285])
         self.x_b = self.W([0.028, 0.078, 0.238])
 
-        # peel each end straight up first (a fast-dragged end outruns the chain — joints
-        # stretch into visible gaps), then carry it up at ~half speed
+        # peel each end straight up first, then carry it to its lift point
         peel_a = np.array([pa[0], pa[1], self.t[2] + 0.10])
         peel_b = np.array([pb[0], pb[1], self.t[2] + 0.10])
         self.traj_ends = [
@@ -307,7 +226,7 @@ class KnotDriver:
                 return name
         return "hold"
 
-    # planners (1:1 with the standalone; comments there tell the failure story) ---------------------
+    # planners (1:1 with the standalone) ------------------------------------------------------------
     def _add_pin(self, body: int, pos_w: np.ndarray) -> None:
         self.pins.append(
             (
@@ -337,16 +256,14 @@ class KnotDriver:
             return False
         P = 0.5 * (pA_l[iA] + pB_l[iB])  # env-local junction
 
-        # PINCH THE X: with short taut laces the crossing springs apart the moment lace 1's end
-        # lifts off — hold it with two finger pins (one per strand), pressed toward the midpoint
+        # pin the X: one finger pin per strand, pressed toward the midpoint
         mid = 0.5 * (pA_l[iA] + pB_l[iB])
         self._add_pin(self.lace_bodies[0][min(iA, len(pA_l) - 1)], self.W(mid + [0.0, 0.0, 0.003]))
         self._add_pin(self.lace_bodies[1][min(iB, len(pB_l) - 1)], self.W(mid - [0.0, 0.0, 0.003]))
         print(f"  X pinched: lace1 body {iA} + lace2 body {iB}")
 
         # stage 1: move to the dive staging point; the under-pass is planned in stage 2 from a
-        # fresh measurement. Tunnel axis is the constructed +y (fore-aft) — probing it from
-        # lace 2's chord swings 40-50 deg run to run and mis-aims the staging.
+        # fresh measurement. Tunnel axis: the constructed +y (fore-aft).
         n_h = np.array([0.0, 1.0, 0.0])
         dz = np.array([0.0, 0.0, 1.0])
         stage = P - 0.045 * n_h - 0.018 * dz
@@ -366,14 +283,14 @@ class KnotDriver:
         return True
 
     def _plan_thread(self) -> None:
-        """Thread lace 1's end through the tunnel UNDER the pinned X (<= ~7 cm/s throughout)."""
+        """Thread lace 1's end through the tunnel UNDER the pinned X."""
         pB_l = self.L(self.lace_points(1))
         okB = np.arange(6, len(pB_l) - 4)
         iB = int(okB[np.argmin(np.linalg.norm(pB_l[okB] - self._P0, axis=1))])
         P = self._P0  # the pins hold the junction where it was measured
 
         n_h = np.array([0.0, 1.0, 0.0])
-        # bias the pass toward lace 2's lower strand so the loop closes around the OTHER lace
+        # bias the pass toward lace 2's lower strand
         bias = 0.5 * (pB_l[max(iB - 4, 1)] - P)
         bias[2] = 0.0
         nb = np.linalg.norm(bias)
@@ -388,21 +305,20 @@ class KnotDriver:
             (t + 0.5, self.W(P - 0.030 * n_h - 0.024 * dz + bias)),  # dip on the entry side
             (t + 1.2, self.W(P - 0.024 * dz + bias)),  # directly beneath lace 2
             (t + 1.9, self.W(P + 0.040 * n_h - 0.010 * dz)),  # emerge on the far side
-            # rise only just past junction level: a tall rise lifts the fresh wrap back over
-            # the junction and un-threads it
+            # rise just past junction level
             (t + 2.6, self.W(P + 0.052 * n_h + 0.010 * dz)),
             (self.duration, self.W(P + 0.052 * n_h + 0.010 * dz)),
         ]
         self.traj_ends[0] = HandleTrajectory(keys)
         self._pinch_after = t + 0.6  # contact-triggered pinches allowed from here
-        # the knot is formed the moment the under-pass + rise complete — pull right then
+        # cinch once the under-pass + rise complete
         self._t_cinch = t + 2.7
         self._cinch_planned = False
         print(f"  threading under the X at {np.round(P, 3)}, tunnel axis {np.round(n_h, 2)}")
 
     def _plan_cinch(self) -> None:
-        """JAM the crossing (pins on), finger-carry the knot onto the tongue pad, pull both ends
-        down the flanks (antiparallel, exit-side rule), release the pins, slacken."""
+        """Pull apart + seat (pins on), carry the knot onto the tongue pad, pull both ends down
+        the flanks, release the pins, slacken."""
         t = self.sim_time
         P = self._P0
         jams = [
@@ -432,8 +348,8 @@ class KnotDriver:
                 (self.duration, self.W(slack)),
             ]
             self.traj_ends[i] = HandleTrajectory(keys)
-        # finger-carry to the seat: slide the pin targets from the pinch point to the tongue pad
-        # (the human press-and-pull); pins release only after the ends reach their flank targets
+        # slide the pin targets from the pinch point to the seat; pins release after the ends
+        # reach their flank targets
         self._pin_slide = (t + 0.4, t + 2.6, P.copy(), seat)
         self._pin_base = [tgt_arr.numpy()[0].copy() for _, tgt_arr, _, _ in self.pins]
         self._t_pins_off = t + 3.4

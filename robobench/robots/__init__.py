@@ -22,6 +22,7 @@ from .jaco2 import Jaco2N7Robot, Jaco2N7RobotCfg
 from .multi import Aloha, AlohaCfg, BimanualFranka, BimanualFrankaCfg, BimanualPiper, BimanualPiperCfg, MultiRobot, MultiRobotCfg
 from .null_robot import NullRobot
 from .piper import PiperRobot, PiperRobotCfg
+from .wx250s import Wx250sRobot, Wx250sRobotCfg
 from .wxai import WxaiRobot, WxaiRobotCfg
 from .xarm7 import XArm7Robot, XArm7RobotCfg
 
@@ -48,6 +49,8 @@ __all__ = [
     "MultiRobotCfg",
     "PiperRobot",
     "PiperRobotCfg",
+    "Wx250sRobot",
+    "Wx250sRobotCfg",
     "WxaiRobot",
     "WxaiRobotCfg",
     "XArm7Robot",
