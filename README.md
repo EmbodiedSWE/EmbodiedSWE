@@ -89,6 +89,25 @@ Any script that builds a `pink_ik` env must also `import pinocchio` **before** `
 `enable_pinocchio=True` on the launcher args (see `robobench/controllers/pink_ik.py`).
 
 
+## Task catalog
+
+Six suites, 28 tasks — the same table as the paper's Appendix B. A task is one registered scene;
+its runnable presets are `suite.scene[.robot[.control_mode]]` (list them with
+`python -m robobench.scripts.smoke --list`). Where the code name differs from the paper's it is
+given in parentheses.
+
+| Suite | Scenes (code name) |
+|---|---|
+| `assembly` | `allen_bolt`, `bulb`, `ikea_table`, `so101` (paper: SO_101), `nut_thread`, `pc_gpu`, `pc_gpu_ram`, `pc_motherboard`, `pc_ram` |
+| `packing` | `pen_holder`, `tool_packing`, `egg_carton`, `clear_organic_objects` |
+| `puzzle` | `coffee`, `spatula`, `syringe`, `push_shapes`, `classify_objects`, `stack_blocks` |
+| `deformable` | `tshirt`, `latte`, `dumpling`, `knot` (paper: shoe_knot) — Newton backend, see below |
+| `cutting` | `slice`, `dice` |
+| `locomanip` | `fruit_delivery`, `box_to_bin`, `wheel_carry` |
+
+The `deformable` presets also answer to their pre-merge names (`folding.tshirt…`,
+`pouring.latte…`, `dough.dumpling`, `shoe_tying.knot`).
+
 ## Run
 
 Always `source .venv/bin/activate` first
