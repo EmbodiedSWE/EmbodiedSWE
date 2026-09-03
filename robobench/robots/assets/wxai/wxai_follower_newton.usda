@@ -1,0 +1,93 @@
+#usda 1.0
+(
+    """WXAI follower for the NEWTON backend — the vendored wxai_follower.usd plus three
+    Newton-only fixes (do NOT use under PhysX):
+
+    1. A linear drive on right_carriage_joint. The vendored USD mirrors the right carriage
+       through a PhysX mimic joint (physxMimicJoint), which Newton's USD importer does not
+       read: without a DriveAPI the joint parses with JointTargetMode.NONE and the MuJoCo
+       conversion installs NO actuator, so later gain writes cannot move it. Same drive as
+       the left carriage (WxaiRobotCfg.actuate_right_carriage commands both equally).
+    2. ee_gripper_link deactivated (PhysX-disabled marker body; Newton parses it as a free
+       body that falls forever).
+    3. CollisionAPIs re-authored ON the finger-PAD collision Mesh prims (gripper_left/right).
+       The vendored USD applies PhysicsCollisionAPI to the parent XFORM
+       (`.../collisions/<link>/node_STL_BINARY_`) and PhysX extends it to descendant meshes;
+       OpenUSD's LoadUsdPhysicsFromRange (Newton's parser) requires the API on the geometry
+       prim and silently drops the Xform collider — every WXAI link parsed with
+       COLLIDE_SHAPES off. Only the pads are fixed here (the pinch surfaces; convexHull —
+       the pads' inner faces are planar so the hull is faithful). The CARRIAGE meshes are
+       deliberately left non-collidable: convex-hulling their L-shaped carriage+rail geometry
+       bloats each hull ~26 mm toward the mouth center, so the two carriage hulls collide in
+       free air and jam the gripper half-open (and their fat footprint clips the work)."""
+    defaultPrim = "wxai"
+    subLayers = [
+        @./wxai_follower.usd@
+    ]
+)
+
+over "wxai"
+{
+    # The jointless `ee_gripper_link` marker: its rigid body is DISABLED for PhysX, but
+    # Newton's importer still parses the prim as a free body (auto free joint) that would
+    # fall forever — deactivate it entirely for the Newton path (nothing references it:
+    # the robobench EE body is link_6).
+    over "ee_gripper_link" (
+        active = false
+    )
+    {
+    }
+
+    over "gripper_left"
+    {
+        over "collisions"
+        {
+            over "gripper_left"
+            {
+                over "node_STL_BINARY_"
+                {
+                    over "mesh" (
+                        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+                    )
+                    {
+                        uniform token physics:approximation = "convexHull"
+                    }
+                }
+            }
+        }
+    }
+
+    over "gripper_right"
+    {
+        over "collisions"
+        {
+            over "gripper_right"
+            {
+                over "node_STL_BINARY_"
+                {
+                    over "mesh" (
+                        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+                    )
+                    {
+                        uniform token physics:approximation = "convexHull"
+                    }
+                }
+            }
+        }
+    }
+
+    over "joints"
+    {
+        over "right_carriage_joint" (
+            prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+        )
+        {
+            float drive:linear:physics:damping = 10884
+            float drive:linear:physics:maxForce = 400
+            float drive:linear:physics:stiffness = 217687
+            float drive:linear:physics:targetPosition = 0
+            float drive:linear:physics:targetVelocity = 0
+            uniform token drive:linear:physics:type = "force"
+        }
+    }
+}

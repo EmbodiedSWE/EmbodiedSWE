@@ -1,0 +1,141 @@
+#usda 1.0
+(
+    defaultPrim = "wx250s"
+    doc = """WidowX 250 6DOF for the NEWTON backend - the menagerie-converted wx250s.usda plus three Newton-only fixes (do NOT use under PhysX untested):
+1. Real drive gains on all 8 joints. The MJCF converter writes DriveAPI stiffness=0, and Newton's MuJoCo conversion creates POSITION actuators only for drives with nonzero gains at parse time (zero-gain drives become effort mode and later gain writes cannot move them - the same landmine as the WXAI overlay). isaaclab actuator cfg overrides the values; these just have to be nonzero and sane.
+2. Finger travel extended (left lower 0.015 -> 0.0096 m, right upper mirrored): the stock gripper bottoms out at a 10.8 mm aperture at the fingertip contact line. Real ALOHA rigs bolt on custom fingertips; extending the carriage travel to aperture 0 is the sim stand-in.
+3. Flat pad-face box colliders on both fingers (faces at the +-0.0096 sphere line, guide purpose): the menagerie model's only finger colliders are four r=0.6 mm spheres (point contacts); the boxes give the pads real faces."""
+    subLayers = [
+        @./wx250s/wx250s.usda@
+    ]
+)
+
+over "wx250s"
+{
+    over "Geometry"
+    {
+        over "tn__wx250sbase_link_jN"
+        {
+            over "tn__wx250sshoulder_link_lT"
+            {
+                over "waist" (
+                    prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+                )
+                {
+                    float drive:angular:physics:damping = 0.4
+                    float drive:angular:physics:maxForce = 35
+                    float drive:angular:physics:stiffness = 8
+                }
+
+                over "tn__wx250supper_arm_link_WV0"
+                {
+                    over "shoulder" (
+                        prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+                    )
+                    {
+                        float drive:angular:physics:damping = 0.4
+                        float drive:angular:physics:maxForce = 35
+                        float drive:angular:physics:stiffness = 8
+                    }
+
+                    over "tn__wx250supper_forearm_link_Yb0"
+                    {
+                        over "elbow" (
+                            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+                        )
+                        {
+                            float drive:angular:physics:damping = 0.4
+                            float drive:angular:physics:maxForce = 35
+                            float drive:angular:physics:stiffness = 8
+                        }
+
+                        over "tn__wx250slower_forearm_link_Yb0"
+                        {
+                            over "forearm_roll" (
+                                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+                            )
+                            {
+                                float drive:angular:physics:damping = 0.4
+                                float drive:angular:physics:maxForce = 35
+                                float drive:angular:physics:stiffness = 8
+                            }
+
+                            over "tn__wx250swrist_link_zO"
+                            {
+                                over "wrist_angle" (
+                                    prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+                                )
+                                {
+                                    float drive:angular:physics:damping = 0.4
+                                    float drive:angular:physics:maxForce = 35
+                                    float drive:angular:physics:stiffness = 8
+                                }
+
+                                over "tn__wx250sgripper_link_VS"
+                                {
+                                    over "wrist_rotate" (
+                                        prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+                                    )
+                                    {
+                                        float drive:angular:physics:damping = 0.4
+                                        float drive:angular:physics:maxForce = 35
+                                        float drive:angular:physics:stiffness = 8
+                                    }
+
+                                    over "tn__wx250sleft_finger_link_XY0"
+                                    {
+                                        over "left_finger" (
+                                            prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+                                        )
+                                        {
+                                            float drive:linear:physics:damping = 100
+                                            float drive:linear:physics:maxForce = 35
+                                            float drive:linear:physics:stiffness = 2000
+                                            float physics:lowerLimit = 0.0096
+                                        }
+
+                                        def Cube "pad_collider" (
+                                            prepend apiSchemas = ["PhysicsCollisionAPI"]
+                                        )
+                                        {
+                                            uniform token purpose = "guide"
+                                            double size = 2
+                                            float3 xformOp:scale = (0.0276, 0.0015, 0.0145)
+                                            double3 xformOp:translate = (0.0155, -0.0081, 0)
+                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                                        }
+                                    }
+
+                                    over "tn__wx250sright_finger_link_nZ0"
+                                    {
+                                        over "right_finger" (
+                                            prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+                                        )
+                                        {
+                                            float drive:linear:physics:damping = 100
+                                            float drive:linear:physics:maxForce = 35
+                                            float drive:linear:physics:stiffness = 2000
+                                            float physics:upperLimit = -0.0096
+                                        }
+
+                                        def Cube "pad_collider" (
+                                            prepend apiSchemas = ["PhysicsCollisionAPI"]
+                                        )
+                                        {
+                                            uniform token purpose = "guide"
+                                            double size = 2
+                                            float3 xformOp:scale = (0.0276, 0.0015, 0.0145)
+                                            double3 xformOp:translate = (0.0155, 0.0081, 0)
+                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

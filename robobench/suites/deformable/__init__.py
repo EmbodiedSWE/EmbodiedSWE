@@ -19,7 +19,8 @@ Layout:
   newton/    the per-material Newton substrates — `cloth_sim.py` (NewtonSimCfg), `mpm_sim.py`
              (MpmSimCfg), `dough_sim.py` (DoughSimCfg), `rod_sim.py` (RodSimCfg) — plus the
              coupled MJWarp+MPM manager shared by latte and dumpling (`coupled_manager.py`) and
-             the rod manager specialization (`lace_manager.py`).
+             the rod manager specialization (`lace_manager.py`) and the proxy-coupled
+             MJWarp+VBD-rod manager for the knot scene's robot bindings (`lace_coupled_manager.py`).
   scenes/    the four scenes; `configs/` the registered env presets; `smokes/` the runnable
              capability checks; `assets/` shirt, mug, pitcher and shoe; `docs/` the dumpling and
              shoe-knot physics notes.
