@@ -70,11 +70,21 @@ class WxaiRobotCfg(BaseRobotCfg):
     # Posture the task-space nullspace pulls toward; () -> use default_dof_pos. (On a 6-DOF arm the
     # nullspace is degenerate away from singularities — this mostly matters near joint limits.)
     nullspace_dof_pos: tuple[float, ...] = ()
-    wxai_usd: str = ""  # "" -> the vendored assets/wxai/wxai_follower.usd
+    # Actuate `right_carriage_joint` too (gripper becomes 2 position targets, same [0, 0.044]
+    # range and equal values = symmetric mouth). The vendored USD mirrors the right carriage
+    # through a PhysX mimic joint (`physxMimicJoint`), which only PhysX honors — under the
+    # NEWTON backend (isaaclab develop; deformable knot scene) the joint parses as a free prismatic
+    # with no drive (and Newton's MuJoCo conversion installs actuators only for driven joints),
+    # so the right finger flops unless driven explicitly. Selects the `wxai_follower_newton.usda`
+    # overlay (the vendored USD + a right-carriage DriveAPI). Leave False on PhysX: driving a
+    # mimic'd joint fights the mimic constraint.
+    actuate_right_carriage: bool = False
+    wxai_usd: str = ""  # "" -> the vendored assets/wxai/wxai_follower.usd (or the newton overlay, see above)
 
     def __post_init__(self) -> None:
         assets = Path(__file__).resolve().parent / "assets" / "wxai"
-        self.wxai_usd = self.wxai_usd or str(assets / "wxai_follower.usd")
+        default = "wxai_follower_newton.usda" if self.actuate_right_carriage else "wxai_follower.usd"
+        self.wxai_usd = self.wxai_usd or str(assets / default)
 
 
 @ROBOTS.register("wxai")
@@ -100,6 +110,14 @@ class WxaiRobot(BaseRobot):
 
     def __init__(self, cfg: WxaiRobotCfg | None = None) -> None:
         super().__init__(cfg or WxaiRobotCfg())
+
+    @property
+    def gripper_joints(self) -> tuple[str, ...]:
+        """Actuated gripper joints for this instance — the left carriage alone (PhysX: the right
+        one is mimic'd in-USD), or both carriages under `cfg.actuate_right_carriage` (Newton)."""
+        if self.cfg.actuate_right_carriage:
+            return ("left_carriage_joint", "right_carriage_joint")
+        return self.GRIPPER_JOINTS
 
     # ----- assets -------------------------------------------------------------------------------
     def assets(self) -> dict[str, Any]:
@@ -134,7 +152,7 @@ class WxaiRobot(BaseRobot):
                     rot=c.base_rot,
                     joint_pos={
                         **{f"joint_{i}": float(q) for i, q in enumerate(c.default_dof_pos)},
-                        "left_carriage_joint": c.default_gripper_pos,
+                        **{j: c.default_gripper_pos for j in self.gripper_joints},
                     },
                 ),
                 actuators={
@@ -144,7 +162,7 @@ class WxaiRobot(BaseRobot):
                         damping=0.0 if torque_mode else c.arm_damping,
                     ),
                     "wxai_gripper": ImplicitActuatorCfg(
-                        joint_names_expr=list(self.GRIPPER_JOINTS),
+                        joint_names_expr=list(self.gripper_joints),
                         stiffness=c.gripper_stiffness,
                         damping=c.gripper_damping,
                     ),
@@ -162,7 +180,7 @@ class WxaiRobot(BaseRobot):
         FrankaRobot, with a 1-dof gripper leaf."""
         torque_mode = self.control_mode in ("impedance", "osc")
         ctrl_dt = self.TORQUE_CONTROL_DT if torque_mode else self.JOINT_CONTROL_DT
-        gripper = JointController(JointControllerCfg(self.GRIPPER_JOINTS, dt=ctrl_dt), command_type="position")
+        gripper = JointController(JointControllerCfg(self.gripper_joints, dt=ctrl_dt), command_type="position")
         if torque_mode:
             ts_cfg = TaskSpaceControllerCfg(
                 dt=ctrl_dt,
@@ -203,8 +221,14 @@ class WxaiRobot(BaseRobot):
             arm = "6 arm joints by operational-space control (joint torque); the action is 6 end-effector pose deltas"
         else:
             arm = "6 arm joints by direct position targets"
+        if self.cfg.actuate_right_carriage:
+            grip = (
+                "2 gripper carriages by direct position targets (each 0 closed .. 0.044 open; "
+                "command them equal for a symmetric mouth)"
+            )
+        else:
+            grip = "1 gripper carriage by direct position target (0 closed .. 0.044 open; the second finger mirrors it)"
         return (
             f"A Trossen WidowX AI arm (small 6-DOF cobot, ~0.5 m reach) with a parallel gripper, fixed "
-            f"to the table. Control mode '{mode}': {arm}, plus 1 gripper carriage by direct position "
-            f"target (0 closed .. 0.044 open; the second finger mirrors it). Action dim {self.action_dim}."
+            f"to the table. Control mode '{mode}': {arm}, plus {grip}. Action dim {self.action_dim}."
         )

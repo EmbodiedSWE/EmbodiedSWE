@@ -20,14 +20,30 @@ X is measured from the live strands and the thread/cinch are planned from that m
 4. **PULL APART + SEAT** — antiparallel pulls to the flanks jam the crossing while the pins
    carry the knot onto the tongue pad, release under the held tension, and the ends slacken.
 
-Registered env: `deformable.knot` (robot `null` — the handles are driven straight through the
-Newton manager, per solver substep).
+Registered envs:
+
+- `deformable.knot` (legacy alias `shoe_tying.knot`) — robot `null`: the handles are driven
+  straight through the Newton manager, per solver substep (standalone VBD manager).
+- `deformable.knot.aloha.joint` (alias `shoe_tying.knot.aloha.joint`) — bimanual WidowX 250 6DOF (the classic Interbotix ALOHA
+  arms; the OFFICIAL mujoco_menagerie `trossen_wx250s` model converted to USD — see
+  `robobench/robots/wx250s.py`) flanking the shoe on the nut-thread task's lab-table
+  workbench (cross-suite asset reference, see `configs/envs.py`; bases at x = ±0.42), arms
+  by direct joint position targets, on the suite's PROXY-COUPLED substrate
+  (`newton/lace_coupled_manager.py`): SolverMuJoCo owns the arms, SolverVBD the rods, and the finger
+  bodies are proxied into the rod solve (newton's `example_franka_cable_ik_pick_place`
+  recipe), so finger-lace contact is real contact. The scene keeps only the eyelet roots
+  anchored (`kinematic_ends=False`); both fingers are actuated with the right mirroring the
+  negated left, and the `wx250s_newton.usda` overlay carries the Newton-side asset fixes
+  (drive gains, finger travel, pad colliders).
 
 ## Run
 
 ```bash
 # full smoke: settle -> lift -> x-form -> tuck -> pull -> slack hold (headless physics + verdict)
 OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.deformable.smokes.knot_smoke --headless
+
+# ALOHA bimanual capability smoke: both arms lift the lace free ends off the table
+OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.deformable.smokes.aloha_lift_smoke --headless
 
 # author + validate the lace curves only (self/inter-lace clearance, shoe SDF), no sim
 ... knot_smoke --headless --validate-only
@@ -57,6 +73,11 @@ Verdict sampled through the slack-and-pin-free check window (13.8–14.8 s), kno
 Reference runs (RTX 5090, 2026-08-17): winding 337–430 deg, 23–29 contacts, seat z 97–118 mm —
 `videos/knot_smoke.mp4` is an RTX-recorded PASS.
 
+`aloha_lift_smoke` gates instead on both lace end sections still >= 60 mm above the table at
+the END of the hold, laces intact, states finite. Reference runs (RTX 5090, 2026-08-31, WidowX
+250 on the lab-table layout, 3/3): end heights +125..149 / +136..138 mm —
+`videos/aloha_lift_smoke.mp4` is an RTX-recorded PASS.
+
 ## Layout
 
 Physics and rendering are split (rods have no IsaacLab asset type):
@@ -65,10 +86,16 @@ Physics and rendering are split (rods have no IsaacLab asset type):
   per-world builder hook that injects the physics (table twin, invisible shoe collision
   trimesh, bridge capsules, both lace rods) into the Newton `ModelBuilder`.
 - `smokes/knot_smoke.py` — the tying choreography (`KnotDriver`, ported 1:1 from the
-  standalone script) + the RTX visual layer (`LaceVisuals`: one USD capsule per rod segment,
-  synced from `body_q`).
+  standalone script). The RTX visual layer (`LaceVisuals`: one USD capsule per rod segment,
+  synced from `body_q`) lives in the scene module — both smokes use it.
+- `smokes/aloha_lift_smoke.py` — the bimanual capability check: each arm lifts its lace's
+  free end clear of the table with its real fingers (PASS: both end sections still >= 60 mm
+  above the table at the END of the hold, laces intact).
 - `lace_manager.py` — VBD manager specialization (per-substep control, rod contact recipe).
-- `newton_sim.py` — `RodSimCfg`, the sim substrate (60 fps x 12 substeps).
+- `newton/lace_coupled_manager.py` — the robot substrate: SolverMuJoCo (arms) + SolverVBD (rods) under
+  newton's `SolverCoupledProxy`, gripper bodies proxied into the rod solve.
+- `newton_sim.py` — `RodSimCfg`, the sim substrate (60 fps x 12 substeps; `coupled=True`
+  selects the proxy-coupled manager).
 - `scripts/prepare_shoe_visual.py` — bakes `assets/shoe_right_visual.usda`, the textured render
   shoe the scene spawns.
 
@@ -83,7 +110,5 @@ Physics and rendering are split (rods have no IsaacLab asset type):
 
 ## Future
 
-- Robot in the loop: needs a coupled MJWarp-arm + VBD-rod manager (pouring's
-  `coupled_manager` precedent). Upstream reference at the pinned newton:
-  `newton/examples/multiphysics/example_mujoco_franka_vbd_cable_admm_solver.py` and
-  `example_franka_cable_ik_pick_place.py`.
+- A robot knot-tying task on the coupled substrate (the knot choreography itself is still
+  handle-driven in `knot_smoke.py`).

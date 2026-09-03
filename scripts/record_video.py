@@ -128,7 +128,8 @@ def _ensure(env) -> None:
     # the annotator without first selecting a render mode and warming the graph dies with
     # "TypeError: Unable to write from unknown dtype, kind=f, size=0" inside
     # omni.syntheticdata's intergraph dependency wiring (measured 2026-08-30).
-    env.sim.set_render_mode(env.sim.RenderMode.PARTIAL_RENDERING)
+    if hasattr(env.sim, "set_render_mode"):  # absent on isaaclab develop (Newton venv) — attach works without it there
+        env.sim.set_render_mode(env.sim.RenderMode.PARTIAL_RENDERING)
     env.sim.set_camera_view(eye=[anchor[i] + a.eye[i] for i in range(3)],
                             target=[anchor[i] + a.target_at[i] for i in range(3)])
     rp = rep.create.render_product("/OmniverseKit_Persp", tuple(a.size))
