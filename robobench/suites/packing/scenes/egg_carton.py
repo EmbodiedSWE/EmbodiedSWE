@@ -234,6 +234,7 @@ class EggCartonScene(BaseScene):
                 prim_path="{ENV_REGEX_NS}/EggCarton",
                 spawn=sim_utils.UsdFileCfg(
                     usd_path=c.carton_usd,
+                    scale=(c.carton_scale, c.carton_scale, c.carton_scale),
                     activate_contact_sensors=True,
                     articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                         articulation_enabled=True,

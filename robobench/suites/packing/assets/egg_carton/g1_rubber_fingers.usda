@@ -8,7 +8,10 @@
 )
 
 # Task-specific pads for the stock G1 three-finger hand.  Distal links get the
-# high-friction grip compound.  Index/middle proximal links use a release
+# high-friction grip compound.  The two distal pads sit 1 mm further apart than in the
+# author's first calibration (45 mm between the inner faces vs the egg's 43 mm): a 43 mm
+# egg then wedges lightly enough to slide out under gravity when the palm turns down
+# over a pocket, instead of having to be pried out by retracting a finger, which flicked it.  Index/middle proximal links use a release
 # compound with high static but much lower dynamic friction: they help establish
 # the pinch, then slide once finger retraction starts instead of carrying the egg
 # out of its pocket.  Binding at each instanceable collision root makes every
@@ -64,7 +67,7 @@ over "g1_29dof_with_hand_rev_1_0"
                 bool physics:collisionEnabled = 1
                 rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber>
                 color3f[] primvars:displayColor = [(0.025, 0.025, 0.025)]
-                double3 xformOp:translate = (0.026, -0.010, -0.010)
+                double3 xformOp:translate = (0.026, -0.010, -0.011)
                 double3 xformOp:scale = (0.036, 0.024, 0.012)
                 uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
             }
@@ -98,7 +101,7 @@ over "g1_29dof_with_hand_rev_1_0"
                 bool physics:collisionEnabled = 1
                 rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber>
                 color3f[] primvars:displayColor = [(0.025, 0.025, 0.025)]
-                double3 xformOp:translate = (0.026, -0.010, 0.010)
+                double3 xformOp:translate = (0.026, -0.010, 0.011)
                 double3 xformOp:scale = (0.036, 0.024, 0.012)
                 uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
             }
@@ -147,7 +150,7 @@ over "g1_29dof_with_hand_rev_1_0"
                 bool physics:collisionEnabled = 1
                 rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber>
                 color3f[] primvars:displayColor = [(0.025, 0.025, 0.025)]
-                double3 xformOp:translate = (0.026, -0.010, -0.010)
+                double3 xformOp:translate = (0.026, -0.010, -0.011)
                 double3 xformOp:scale = (0.036, 0.024, 0.012)
                 uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
             }
@@ -181,7 +184,7 @@ over "g1_29dof_with_hand_rev_1_0"
                 bool physics:collisionEnabled = 1
                 rel material:binding:physics = </g1_29dof_with_hand_rev_1_0/EggCartonFingerRubber>
                 color3f[] primvars:displayColor = [(0.025, 0.025, 0.025)]
-                double3 xformOp:translate = (0.026, -0.010, 0.010)
+                double3 xformOp:translate = (0.026, -0.010, 0.011)
                 double3 xformOp:scale = (0.036, 0.024, 0.012)
                 uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
             }
