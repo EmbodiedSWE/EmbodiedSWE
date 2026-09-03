@@ -1,7 +1,8 @@
-"""Build a static background scene via HunyuanWorld 1.0 and export it.
+"""Generate the scene panorama via HunyuanWorld 1.0 (stage 1 of the 3D pipeline).
 
-Text or image-reference -> 360 panorama -> USD dome backdrop, in one output dir:
-panorama.png + backdrop.usda + meta.json.
+Text or image-reference -> 360 panorama, in one output dir:
+panorama.png + meta.json. Feed the panorama to worldgen.sh (HY-World 2.0)
+to lift it into a 3D Gaussian-splat scene + collider mesh.
 
     python -m sim_gen.scene_gen.generate_scene --spec prompts/luxury_open_living_kitchen.json --out-dir out/scene
     python -m sim_gen.scene_gen.generate_scene --prompt "..." --out-dir out/scene
@@ -29,25 +30,6 @@ from pathlib import Path
 DEFAULT_NEGATIVE = ("human, person, people, crowd, animal, text, watermark, logo, "
                     "blur, noise, distortion, low-quality, low-resolution, messy")
 
-USDA_TEMPLATE = """#usda 1.0
-(
-    defaultPrim = "Backdrop"
-    metersPerUnit = 1
-    upAxis = "Z"
-)
-
-def Xform "Backdrop"
-{{
-    def DomeLight "SkyDome"
-    {{
-        float inputs:intensity = {intensity}
-        asset inputs:texture:file = @./panorama.png@
-        token inputs:texture:format = "latlong"
-        float3 xformOp:rotateXYZ = (0, 0, {yaw})
-        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
-    }}
-}}
-"""
 
 
 def _load_hy3dworld(root: Path, names: tuple[str, ...]):
@@ -133,8 +115,6 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=50)
     parser.add_argument("--height", type=int, default=960)
     parser.add_argument("--width", type=int, default=1920)
-    parser.add_argument("--dome-intensity", type=float, default=1000.0)
-    parser.add_argument("--dome-yaw", type=float, default=0.0)
     parser.add_argument("--hunyuan-root")
     args = parser.parse_args()
 
@@ -158,15 +138,12 @@ def main() -> None:
     t0 = time.time()
     pano = generate(args, prompt, negative, image)
     pano.save(out / "panorama.png")
-    (out / "backdrop.usda").write_text(USDA_TEMPLATE.format(
-        intensity=args.dome_intensity, yaw=args.dome_yaw))
     (out / "meta.json").write_text(json.dumps({
         "mode": "image" if image else "text", "prompt": prompt, "negative_prompt": negative,
         "image": image, "seed": args.seed, "steps": args.steps,
         "height": args.height, "width": args.width, "spec": args.spec,
         "seconds": round(time.time() - t0, 1)}, indent=2) + "\n")
-    print(f"[scene_gen] exported {out}/{{panorama.png, backdrop.usda, meta.json}} "
-          f"({time.time() - t0:.0f}s)")
+    print(f"[scene_gen] exported {out}/{{panorama.png, meta.json}} ({time.time() - t0:.0f}s)")
 
 
 if __name__ == "__main__":
