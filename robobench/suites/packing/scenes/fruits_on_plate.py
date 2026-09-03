@@ -1,8 +1,8 @@
 """FruitsOnPlateScene — RoboLab's **FruitsOnPlateTask**, ported.
 
-Registered as `fruits_on_plate`; runnable presets are `packing.fruits_on_plate` (NullRobot
-oracle, the full 14-item RoboLab set), `packing.fruits_on_plate.franka.{osc,diff_ik,pink_ik,
-joint}` and `packing.fruits_on_plate.g1.{joint,pink_ik}`.
+Registered as scene `fruits_on_plate` but NOT a catalog task: it has no env preset of its own.
+The class is kept as the base of `locomanip.fruit_delivery` (which inherits the identification
+half of the rubric verbatim) and its vendored assets are shared with `clear_organic_objects`.
 
 A port of NVlabs/RoboLab's `FruitsOnPlateTask`
 (github.com/NVlabs/RoboLab/blob/main/robolab/tasks/benchmark/fruits_to_plate.py): a kitchen
