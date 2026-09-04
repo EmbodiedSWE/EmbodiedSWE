@@ -16,6 +16,7 @@ from .attached import (
 )
 from .cobotta import CobottaPro1300Robot, CobottaPro1300RobotCfg
 from .franka import FrankaRobot, FrankaRobotCfg
+from .franka_robotiq import FrankaRobotiqRobot, FrankaRobotiqRobotCfg
 from .g1 import G1Robot, G1RobotCfg
 from .gr1t2 import GR1T2Robot, GR1T2RobotCfg
 from .jaco2 import Jaco2N7Robot, Jaco2N7RobotCfg
@@ -39,6 +40,10 @@ __all__ = [
     "CobottaPro1300RobotCfg",
     "FrankaRobot",
     "FrankaRobotCfg",
+
+    "FrankaRobotiqRobot",
+
+    "FrankaRobotiqRobotCfg",
     "G1Robot",
     "G1RobotCfg",
     "GR1T2Robot",

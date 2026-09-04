@@ -256,5 +256,9 @@ robobench/
   suites/    the task families (one folder per flavor; see each suite's own docs)
 ```
 
+Optional add-on outside this package: `../gsworld/` renders any robobench env photoreal from
+Gaussian splats (robot gaussians re-posed link by link from the articulation each step); robobench
+never imports it. See `gsworld/README.md`.
+
 > A per-suite section (what each flavor contains, how to add one) will be added once the first
 > suite is built.

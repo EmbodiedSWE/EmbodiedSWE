@@ -53,6 +53,12 @@ parser.add_argument("--eye", type=float, nargs=3, default=(0.9, -1.1, 0.65),
                     help="camera eye, relative to the env origin on the work surface")
 parser.add_argument("--target-at", type=float, nargs=3, default=(0.30, -0.05, 0.10), dest="target_at",
                     help="camera look-at point, same frame")
+parser.add_argument("--splat", default=None, metavar="auto|SCENE.json",
+                    help="render the frames photoreal with gsworld (optional package): 'auto' uses the "
+                         "robot's own splat model, or the franka_robotiq model for Panda-armed robots "
+                         "(arm links only); a .json is a gsworld scene config")
+parser.add_argument("--splat-side-by-side", action="store_true", dest="splat_sbs",
+                    help="write sim | splat side by side instead of the splat composite only")
 a, rest = parser.parse_known_args()  # extra args pass through to the target
 
 _base = os.path.splitext(os.path.basename(a.target))[0]  # strip dir + .py
@@ -111,7 +117,7 @@ def _patch_app_launcher() -> None:
 
 _patch_app_launcher()
 
-_rec = {"writer": None, "annot": None, "every": 1, "count": 0, "frames": 0, "max_frames": None}
+_rec = {"writer": None, "annot": None, "every": 1, "count": 0, "frames": 0, "max_frames": None, "splat": None}
 
 
 def _ensure(env) -> None:
@@ -145,9 +151,33 @@ def _ensure(env) -> None:
     if a.max_seconds is not None:
         _rec["max_frames"] = max(1, round(a.max_seconds * a.fps))
     _rec["writer"] = imageio.get_writer(video_path, fps=a.fps, quality=a.quality)
+    if a.splat:
+        _rec["splat"] = _make_splat_env(env, annot)
     cap = f", stop @ {_rec['max_frames']} frames ({a.max_seconds}s)" if _rec["max_frames"] else ""
     print(f"[record] {video_path}: {a.size[0]}x{a.size[1]} @ {a.fps} fps q{a.quality} "
           f"(1 frame / {_rec['every']} steps){cap}", flush=True)
+
+
+def _make_splat_env(env, annot):
+    """gsworld is optional: only imported when --splat is given."""
+    from gsworld.model import SplatModel
+    from gsworld.wrapper import SplatEnv
+
+    spec = a.splat
+    if spec.endswith(".json"):
+        senv = SplatEnv.from_config(env, spec)
+    elif spec == "auto":
+        from gsworld import assets as gs_assets
+
+        model = gs_assets.robot_model_for(env)  # by robot name; Panda-armed robots get the arm model
+        if model is None:
+            raise SystemExit("--splat auto: this robot has no splat model")
+        senv = SplatEnv(env, robot_splat=SplatModel(*model, device=str(env.device)))
+    else:
+        raise SystemExit("--splat takes 'auto' or a gsworld scene .json")
+    senv.use_viewport(annot, a.size[0], a.size[1])
+    print(f"[record] splat rendering on ({spec}); links: {len(senv.splat_links)}", flush=True)
+    return senv
 
 
 _orig_step = _envmod.BaseEnv.step
@@ -159,9 +189,13 @@ def _step(self, action, render: bool = False) -> None:
     grab = _rec["count"] % _rec["every"] == 0
     _orig_step(self, action, render=render or grab)
     if grab:
-        frame = np.asarray(_rec["annot"].get_data())
+        if _rec["splat"] is not None:
+            out = _rec["splat"].render()
+            frame = np.concatenate([out["sim_rgb"], out["rgb"]], axis=1) if a.splat_sbs else out["rgb"]
+        else:
+            frame = np.asarray(_rec["annot"].get_data())[..., :3]
         if frame.size:  # the first few frames can come back empty
-            _rec["writer"].append_data(frame[..., :3])
+            _rec["writer"].append_data(frame)
             _rec["frames"] += 1
             if _rec["max_frames"] is not None and _rec["frames"] >= _rec["max_frames"]:
                 print(f"[record] --max-seconds reached at {_rec['frames']} frames, stopping.",

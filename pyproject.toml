@@ -7,9 +7,14 @@ name = "cosigen"
 version = "0.1.0"
 description = ""
 
+# Optional: photoreal Gaussian-splat rendering (gsworld). robobench itself never imports these;
+# `pip install -e .[gs]` to enable SplatEnv rendering.
+[project.optional-dependencies]
+gs = ["gsplat", "scipy", "imageio[ffmpeg]"]
+
 # robobench/ — the relocatable benchmark ENV suite (the focus): core + robots + suites/<flavor>.
 [tool.setuptools.packages.find]
-include = ["robobench*"]
+include = ["robobench*", "gsworld*"]
 
 # Curated USD assets shipped with suites (editable installs work without this; wheels need it).
 [tool.setuptools.package-data]
@@ -29,6 +34,8 @@ include = ["robobench*"]
     "assets/**/*.md",
 ]
 "robobench.suites.puzzle" = ["assets/**/*.usd", "assets/**/*.usda", "assets/**/*.usdc", "assets/**/*.png", "assets/**/*.jpg", "assets/**/*.json", "assets/**/*.md"]
+"robobench.robots" = ["assets/franka_robotiq/*.usd"]
+"gsworld" = ["README.md", "assets/**/*"]
 
 [tool.pyright]
 reportPrivateUsage = "none"
