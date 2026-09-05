@@ -1,0 +1,15 @@
+# Bulb threading, Franka, OSC preset. Task-specific values; a `ppo:` block here overrides base.yaml.
+task:
+  name: bulb_franka_osc
+  preset: assembly.bulb.franka.osc     # registered scene:robot:mode — the frozen controller
+  episode_seconds: 60                  # rule: the task's own horizon (a scripted solve takes ~40-50 s)
+  num_envs: 1024                       # as many as fit; see throughput_note
+  # rl/scripts/smoke.py, RTX 5090, 2026-09-05: a control step (16 physics substeps @1/240) costs a
+  # fixed ~0.21-0.24 s regardless of env count (87% inside PhysX fetch_results), so env-steps/s
+  # scale linearly: 1 env 5/s · 16: 75 · 64: 296 · 256: 1,106 (5.9 GB) · 1024: 4,221 (17.6 GB).
+  throughput_note: "1024 envs -> 4.2k env-steps/s, 17.6 GB GPU (RTX 5090)"
+action:
+  affine:
+    - dims: [6, 7]                     # panda finger position targets, metres per finger
+      lo: 0.0                          # closed
+      hi: 0.04                         # fully open (80 mm aperture)

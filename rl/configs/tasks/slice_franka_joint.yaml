@@ -1,0 +1,19 @@
+# Slice food (carrot), Franka, JOINT preset (the only registered Franka mode for cutting): take the
+# knife off its stand, cut the welded piece chain plane by plane, keep pieces on the board. Joint
+# mode = raw joint position targets at 50 Hz, so the 7 arm dims map [-1,1] onto the joint limits.
+# dt 1/240. A `ppo:` block here overrides base.yaml.
+task:
+  name: slice_franka_joint
+  preset: cutting.slice.franka.joint
+  episode_seconds: 90
+  num_envs: 512
+  # rl/scripts/smoke.py, RTX 5090, 2026-09-05: 256 envs -> 5,844 env-steps/s (23 batched steps/s
+  # at the 48 Hz joint-mode control rate, 6.0 GB). Note the 48 Hz rate: 90 s = 4320 steps/episode.
+  throughput_note: "256 envs -> 5.8k env-steps/s, 6.0 GB; 1024 not yet measured"
+action:
+  affine:
+    - dims: [0, 1, 2, 3, 4, 5, 6]      # panda arm joints -> soft joint position limits
+      from: joint_limits
+    - dims: [7, 8]                     # fingers, metres
+      lo: 0.0
+      hi: 0.04

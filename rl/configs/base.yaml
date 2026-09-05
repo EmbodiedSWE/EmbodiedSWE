@@ -1,0 +1,45 @@
+# Defaults for every task. Nothing task-specific lives here. A task file (configs/tasks/*.yaml)
+# may override ANY key, including nested ppo.* values, by writing the same path — the loader
+# deep-merges, so only the listed keys change. Reward files select the reward source.
+seed: 0
+device: cuda:0
+
+obs:                      # the observation rule (robobench_rl/obs.py)
+  drop_keys: [joint_pos_target, joint_effort_target, controller]
+  env_local: true
+  ee_pose: true
+  last_action: true
+
+reward:                   # default = grader progress (privileged); rewards/*.yaml override
+  mode: progress          # progress | shaped
+  form: delta             # delta (potential gained; success terminates) | level (Isaac Lab style raw dense; runs to timeout)
+  progress_scale: 1.0
+  success_bonus: 1.0
+  action_penalty: 0.0         # action-rate penalty weight (|a_t - a_{t-1}|^2); off
+
+ppo:                      # rsl_rl train_cfg — Isaac Lab manipulation defaults, uniform across tasks
+  max_iterations: 1000    # training length (PPO iterations); env-steps = iterations * num_steps_per_env * num_envs
+  num_steps_per_env: 64
+  save_interval: 50       # checkpoint every N iterations (rsl_rl's own)
+  empirical_normalization: true
+  obs_groups: {policy: [policy], critic: [critic]}
+  policy:
+    class_name: ActorCritic
+    init_noise_std: 1.0
+    actor_hidden_dims: [256, 128, 64]
+    critic_hidden_dims: [256, 128, 64]
+    activation: elu
+  algorithm:
+    class_name: PPO
+    value_loss_coef: 1.0
+    use_clipped_value_loss: true
+    clip_param: 0.2
+    entropy_coef: 0.0
+    num_learning_epochs: 4
+    num_mini_batches: 4
+    learning_rate: 1.0e-4
+    schedule: adaptive
+    gamma: 0.99
+    lam: 0.95
+    desired_kl: 0.016
+    max_grad_norm: 1.0

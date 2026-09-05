@@ -1,0 +1,14 @@
+# Tool packing, Franka, OSC preset: stapler/scissors/knife into their drawers, drawers and doors shut.
+# Friction grasp, articulated cabinet, dt 1/120. Long horizon. A `ppo:` block here overrides base.yaml.
+task:
+  name: tool_packing_franka_osc
+  preset: packing.tool_packing.franka.osc
+  episode_seconds: 120
+  num_envs: 1024
+  # rl/scripts/smoke.py, RTX 5090, 2026-09-05: 256 envs -> 3,403 env-steps/s (13 batched steps/s, 4.8 GB).
+  throughput_note: "256 envs -> 3.4k env-steps/s, 4.8 GB; 1024 not yet measured"
+action:
+  affine:
+    - dims: [6, 7]
+      lo: 0.0
+      hi: 0.04

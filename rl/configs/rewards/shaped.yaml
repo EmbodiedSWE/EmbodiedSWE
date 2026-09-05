@@ -1,0 +1,9 @@
+# Reward: hand-designed dense shaping per task (robobench_rl/task_rewards/<scene>.py), written from
+# the scene's public accessors. Same delta-of-potential algebra as `progress`; only the author of
+# the potential differs.
+reward:
+  mode: shaped
+  form: delta
+  progress_scale: 1.0
+  success_bonus: 1.0
+  action_penalty: 0.0         # action-rate penalty weight (|a_t - a_{t-1}|^2); off
