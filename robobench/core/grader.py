@@ -25,19 +25,30 @@ class BaseGrader(ABC):
     method per stage, `setup()`, and `check_success()` — anything missing or
     mismatched fails loudly at construction.
 
-    `RUBRIC` = ((stage, weight) | (stage, weight, "once"), ...). Each stage
-    names a method on the grader returning its instantaneous PER-ENV value in
-    [0, 1] — a `(num_envs,)` tensor (a scalar broadcasts to every env);
-    discrete 0/1 for a satisfied-or-not check, continuous for a fraction.
-    A plain (stage, weight) entry is scored LIVE — its current value, so the
-    curve dips when the state is lost; a "once" entry is a milestone — scored
-    on the best value ever achieved per env (e.g. a pick that ends when the
-    part is placed). `progress()` = the weighted sum normalized by the weight
-    total, so weights are relative and need not sum to 1. The grader is
-    PER-TRAJECTORY throughout: every record and verdict is reported per
-    env, in the same format regardless of `num_envs` — aggregation
-    (statistics over the batch) is the harness scripts' job, never the
-    class's.
+    `RUBRIC` = ((stage, weight) | (stage, weight, "once" | "final"), ...).
+    Each stage names a method on the grader returning its instantaneous
+    PER-ENV value in [0, 1] — a `(num_envs,)` tensor (a scalar broadcasts to
+    every env); discrete 0/1 for a satisfied-or-not check, continuous for a
+    fraction. A plain (stage, weight) entry is scored LIVE — its current
+    value, so the curve dips when the state is lost; a "once" entry is a
+    milestone — scored on the best value ever achieved per env (e.g. a pick
+    that ends when the part is placed). A "final" entry is a verdict-time
+    gate (e.g. a rendered frame judged by a VLM): it is NOT evaluated per
+    step — its value is 0 throughout the run, so the peak progress a run can
+    record is `1 - w_final / total` — and `verdict()` evaluates it exactly
+    once (cached on the instance) on the final state. A final-stage method
+    may return either a value or `(value, details)`, where `details` is a
+    dict shared by every env or a list of one dict per env; the details land
+    under `"final"` in the per-trajectory verdict so the judge's inputs and
+    raw answer are auditable. With final stages, `score` is the larger of
+    the run's peak progress and the final-state progress with the final
+    stages filled in, and `success` additionally requires every final stage
+    to be at 1 — a final stage can only take credit away, never add it.
+    `progress()` = the weighted sum normalized by the weight total, so
+    weights are relative and need not sum to 1. The grader is PER-TRAJECTORY
+    throughout: every record and verdict is reported per env, in the same
+    format regardless of `num_envs` — aggregation (statistics over the
+    batch) is the harness scripts' job, never the class's.
     """
 
     SCENE: type | None = None
@@ -52,7 +63,7 @@ class BaseGrader(ABC):
         if not self.RUBRIC:
             raise TypeError(f"{type(self).__name__} declares no RUBRIC")
         self._stages = [(e[0], e[1], e[2] if len(e) > 2 else "live") for e in self.RUBRIC]
-        bad = [n for n, _, mode in self._stages if mode not in ("live", "once")]
+        bad = [n for n, _, mode in self._stages if mode not in ("live", "once", "final")]
         if bad:
             raise TypeError(f"{type(self).__name__} has unknown stage modes on: {bad}")
         missing = [n for n, _, _ in self._stages if not callable(getattr(self, n, None))]
@@ -65,6 +76,8 @@ class BaseGrader(ABC):
         self.num_envs = env.num_envs
         self._best = {n: torch.zeros(self.num_envs)
                       for n, _, mode in self._stages if mode == "once"}
+        self._final_stages = [n for n, _, mode in self._stages if mode == "final"]
+        self._final_cache: dict | None = None  # {stage: (value tensor, [details per env])}
         self.env = env
         self.scene = env.scene  # children re-annotate with their SCENE type
         self.steps = 0
@@ -102,11 +115,47 @@ class BaseGrader(ABC):
 
         values = {}
         for name, _, mode in self._stages:
-            v = self._per_env(getattr(self, name)(), name).float().clamp(0.0, 1.0)
+            if mode == "final":  # verdict-time only: worth 0 while the run is stepping
+                values[name] = torch.zeros(self.num_envs)
+                continue
+            v = self._per_env(getattr(self, name)(), name).float()
+            # A NaN stage value (a degenerate sim state, e.g. a restored snapshot with an
+            # uninitialised body) scores 0: torch.maximum propagates NaN, so without this one NaN
+            # would poison a "once" milestone for the rest of the run (seen 2026-09-04, box_to_bin
+            # `carried` when scoring reached-state logs).
+            v = torch.nan_to_num(v, nan=0.0).clamp(0.0, 1.0)
             if mode == "once":
                 v = self._best[name] = torch.maximum(self._best[name], v)
             values[name] = v
         return values
+
+    def _evaluate_final(self) -> dict:
+        """Run every "final" stage exactly once (the result is cached on the
+        instance — repeated `verdict()` calls reuse it) and return
+        `{stage: (clamped (num_envs,) value tensor, [details dict per env])}`.
+        A stage may return a bare value or `(value, details)`; `details` is
+        either one dict (shared by every env) or a list of `num_envs` dicts."""
+        if self._final_cache is not None:
+            return self._final_cache
+        out = {}
+        for name in self._final_stages:
+            ret = getattr(self, name)()
+            details = None
+            if isinstance(ret, tuple) and len(ret) == 2 and isinstance(ret[1], (dict, list)):
+                ret, details = ret
+            v = self._per_env(ret, name).float().clamp(0.0, 1.0)
+            if details is None:
+                per_env = [{} for _ in range(self.num_envs)]
+            elif isinstance(details, dict):
+                per_env = [dict(details) for _ in range(self.num_envs)]
+            else:
+                if len(details) != self.num_envs:
+                    raise ValueError(f"{type(self).__name__}.{name} returned {len(details)} "
+                                     f"detail dicts for {self.num_envs} envs")
+                per_env = [dict(d) for d in details]
+            out[name] = (v, per_env)
+        self._final_cache = out
+        return out
 
     def progress(self, values: dict | None = None):
         """The weighted rubric total per env — a `(num_envs,)` tensor."""
@@ -146,13 +195,33 @@ class BaseGrader(ABC):
                      for e in range(self.num_envs)]
         else:
             peaks = [round(float(x), 4) for x in self.progress()]
-        return [{"env": e, "success": bool(succ[e]), "score": peaks[e]}
-                for e in range(self.num_envs)]
+        if not self._final_stages:
+            return [{"env": e, "success": bool(succ[e]), "score": peaks[e]}
+                    for e in range(self.num_envs)]
+        # Final stages: evaluated once on the final state, then folded into the
+        # ladder. score = max(peak over the run, final-state progress with the
+        # final stages filled in); success also needs every final stage at 1.
+        final = self._evaluate_final()
+        values = self.measure()
+        for name, (v, _) in final.items():
+            values[name] = v
+        final_progress = self.progress(values)
+        out = []
+        for e in range(self.num_envs):
+            gate = all(bool(v[e] >= 1.0) for v, _ in final.values())
+            out.append({
+                "env": e,
+                "success": bool(succ[e]) and gate,
+                "score": max(peaks[e], round(float(final_progress[e]), 4)),
+                "final": {name: {"value": round(float(v[e]), 4), **per_env[e]}
+                          for name, (v, per_env) in final.items()},
+            })
+        return out
 
     def describe(self) -> str:
         """Criteria provenance — written next to every verdict."""
         doc = (self.__doc__ or "").strip().splitlines()[0]
-        weights = " · ".join(f"{n} ×{w:g}" + (" (once)" if mode == "once" else "")
+        weights = " · ".join(f"{n} ×{w:g}" + (f" ({mode})" if mode != "live" else "")
                              for n, w, mode in self._stages)
         return f"{type(self).__name__}: {doc} — rubric: {weights}"
 
