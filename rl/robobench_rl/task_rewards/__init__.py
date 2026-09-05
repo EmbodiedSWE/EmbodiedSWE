@@ -2,10 +2,10 @@
 
 Each task reward is a POTENTIAL phi(state) in [0, 1]: a weighted sum of dense stage terms a
 practitioner would write from the scene's public accessors (part poses, seated(), cfg tolerances)
-and the robot's hand pose — never from the private grader. The reward used in training is the
-per-step delta of this potential plus the success bonus (see robobench_rl/reward.py), the same
-algebra as the grader-progress reward, so the two conditions differ only in WHO wrote the
-potential: the task author's rubric, or a dense shaping written for RL.
+and the robot's hand pose — never from the private grader. The potential is paid every step
+(see robobench_rl/reward.py), the same algebra as the grader-progress reward, so the two
+conditions differ only in WHO wrote the potential: the task author's rubric, or a dense shaping
+written for RL.
 
 Add a task: subclass TaskReward in a new module, register it in `load_task_reward` under the
 scene's registry name (EnvCfg.scene), e.g. "bulb".

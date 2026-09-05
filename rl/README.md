@@ -14,11 +14,11 @@ graders, nothing else.
 |---|---|---|
 | Observation | flatten `get_states()` env-local, drop actuator setpoints/controller state, add EE pose + last action | `robobench_rl/obs.py` |
 | Action | the task's frozen controller preset, policy in [-1,1]; only gripper dims re-scaled | `configs/tasks/*.yaml` `action.affine` |
-| Reward (`rewards/progress`) | delta of the grader's weighted rubric progress + success bonus. **Privileged**: agents never see the grader | `robobench_rl/reward.py` |
-| Reward (`rewards/shaped`) | delta of a hand-designed dense potential per task, written from public scene accessors (reach, lift, transport, orient, approach, insert/thread) | `robobench_rl/task_rewards/<scene>.py` |
-| Episode | the task's own horizon in seconds; success terminates, timeout flagged | `configs/tasks/*.yaml` |
+| Reward (`rewards/progress`) | the grader's weighted rubric progress, paid every step, + success bonus. **Privileged**: agents never see the grader | `robobench_rl/reward.py` |
+| Reward (`rewards/shaped`) | a hand-designed dense potential per task, paid every step, written from public scene accessors (reach, lift, transport, orient, approach, insert/thread) | `robobench_rl/task_rewards/<scene>.py` |
+| Episode | the task's own horizon in seconds, always run to the limit (Isaac Lab style); success is logged, not terminal | `configs/tasks/*.yaml` |
 | Algorithm | rsl_rl PPO; defaults in the base, per-task overrides in the task file (deep-merged) | `configs/base.yaml`, `configs/tasks/*.yaml` |
-| Reporting | grader verdicts of exported checkpoints only; training reward is never a result | step 3 |
+| Reporting | grader verdicts of exported checkpoints only; training reward is never a result | `robobench_rl/export.py` |
 
 Config layering: `base.yaml` <- `tasks/<task>.yaml` <- `rewards/<reward>.yaml` <- `key=value` overrides.
 Deep-merged, so a task file overrides any base key by writing the same path, e.g. a `ppo:` block
@@ -30,9 +30,23 @@ with just `algorithm.learning_rate`. The merged config is dumped next to every r
    ```
    python rl/scripts/smoke.py --task bulb_franka_osc --num_envs 16 --steps 200 --headless
    ```
-2. **Train**: `rl/scripts/train.py` — rsl_rl PPO for a fixed number of iterations, checkpoints on its save interval.
-3. **Export + grade**: each checkpoint becomes a `solution/` folder (generic `solve.py` + weights)
-   and is graded by `eval/scripts/run_grade.py --solution ...` or `verify_solution.py`.
+2. **Train**: rsl_rl PPO for `ppo.max_iterations`, checkpoints every `ppo.save_interval`.
+   ```
+   python rl/scripts/train.py --task slice_franka_joint --reward shaped --headless \
+       --set task.num_envs=256 task.episode_seconds=20 ppo.max_iterations=300     # debug-sized
+   python rl/scripts/tb_summary.py rl/runs/slice_franka_joint/shaped/<stamp> --every 50
+   ```
+   Run dir `rl/runs/<task>/<reward>/<stamp>/`: `config.yaml` (merged config actually used),
+   `env.json` (obs layout, action bounds, control rate), tensorboard events, `model_<it>.pt`,
+   `summary.json`. `--set` overrides are for debugging; a real run changes the task yaml.
+3. **Export + grade**: a checkpoint becomes a self-contained `solution/` folder — generic
+   `solve.py`, TorchScript actor (`policy.pt`, normalizer included, no rsl_rl needed), a copy of
+   the observation rule (`rl_obs.py`), `env.json` — and is graded exactly like an agent's:
+   ```
+   python rl/scripts/export.py rl/runs/slice_franka_joint/shaped/<stamp> --checkpoint model_299.pt
+   python eval/scripts/verify_solution.py --preset cutting.slice.franka.joint --solution <run>/solutions/model_299
+   python eval/scripts/run_grade.py <exp> --solution <run>/solutions/model_299 --out <dir>   # full rubric, container
+   ```
 
 ## Measured throughput (step 1, RTX 5090, 2026-09-05)
 

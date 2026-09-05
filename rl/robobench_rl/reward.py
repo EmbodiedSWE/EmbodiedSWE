@@ -1,4 +1,4 @@
-"""Reward = delta of a potential + success bonus. Two reward files select the potential's author:
+"""Reward = a potential in [0, 1], paid every step, + success bonus. Two reward files select the potential's author:
 
   progress  P = the grader's weighted rubric progress (the task author's decomposition).
             "once" milestones are monotone; live stages dip when state is lost.
@@ -6,13 +6,13 @@
   shaped    P = a hand-designed dense potential written for RL from the scene's public accessors
             (robobench_rl/task_rewards/<scene>.py), one per task in the test subset.
 
-Two forms of turning the potential into a per-step reward (`reward.form`):
-  delta   r_t = scale * (P_t - P_{t-1}) + bonus * success_t   — return = potential gained + bonus;
-          unbiased under success termination (the default)
-  level   r_t = scale * P_t * step_dt + bonus * success_t     — Isaac Lab style dense reward; the
-          env then does NOT terminate on success (a raw level reward would punish finishing early)
-Both subtract penalty * |a_t - a_{t-1}|^2 (an action-RATE penalty: jitter, not motion; off by default). Success (termination/bonus) and the logged stage curve always come
-from the grader, in both modes, so training logs are comparable and the terminal signal is the same.
+Per-step reward (Isaac Lab style dense reward; episodes run to the time limit, success is not terminal):
+
+  r_t = (scale * P_t + bonus * success_t) * step_dt - penalty * |a_t - a_{t-1}|^2
+
+so holding the goal keeps paying: a full episode at the goal returns ~(scale + bonus) * episode_s.
+The penalty is an action-RATE term (jitter, not motion), off by default. Success and the logged
+stage curve always come from the grader, in both modes.
 
 Graders are single-trajectory objects (setup() captures start poses for all envs once; "once"
 milestones keep a best-ever per env). Training needs per-env auto-reset, so `reset(env_ids)`
@@ -43,26 +43,18 @@ def load_grader_cls(preset: str, scene_name: str):
 
 
 class GraderReward:
-    def __init__(self, env, grader_cls, scene_name: str, *, mode: str = "progress", form: str = "delta",
+    def __init__(self, env, grader_cls, scene_name: str, *, mode: str = "progress",
                  progress_scale: float = 1.0, success_bonus: float = 1.0, action_penalty: float = 0.0) -> None:
         if mode not in ("progress", "shaped"):
             raise ValueError(f"reward mode must be progress|shaped, got {mode!r}")
-        if form not in ("delta", "level"):
-            raise ValueError(f"reward form must be delta|level, got {form!r}")
-        self.env, self.mode, self.form = env, mode, form
+        self.env, self.mode = env, mode
         self.step_dt = env.dt * env.robot.control_period
         self.scale, self.bonus, self.penalty = progress_scale, success_bonus, action_penalty
         self.grader = grader_cls(env)  # runs setup() on the just-reset env
         self.device = env.device
         self.task = load_task_reward(scene_name)(env) if mode == "shaped" else None
-        self.prev = self._potential()
         self.prev_action = torch.zeros(env.num_envs, env.robot.action_dim, device=self.device)
         self.stage_names = [n for n, _, _ in self.grader._stages]
-
-    def _potential(self) -> torch.Tensor:
-        if self.task is not None:
-            return self.task.potential().to(self.device)
-        return self.grader.progress().to(self.device)
 
     def measure(self) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         vals = self.grader.measure()
@@ -83,14 +75,10 @@ class GraderReward:
             stages["shaped/potential"] = pot
         else:
             pot = p
-        if self.form == "delta":
-            r = self.scale * (pot - self.prev) + self.bonus * succ.float()
-        else:
-            r = self.scale * pot * self.step_dt + self.bonus * succ.float()
+        r = (self.scale * pot + self.bonus * succ.float()) * self.step_dt
         if self.penalty > 0:
             r = r - self.penalty * (action - self.prev_action).pow(2).sum(dim=-1)
         self.prev_action = action.clone()
-        self.prev = pot
         return r, succ, stages
 
     @torch.no_grad()
@@ -116,10 +104,9 @@ class GraderReward:
         if self.task is not None:
             self.task.reset(env_ids.to(self.device))
         self.prev_action[env_ids.to(self.device)] = 0.0
-        self.prev = self._potential()  # baseline for the delta after the reset
 
     def describe(self) -> str:
-        s = f"{self.mode} ({self.form}): grader {self.grader.describe()}"
+        s = f"{self.mode}: grader {self.grader.describe()}"
         if self.task is not None:
             s += f"\n        shaped {self.task.describe()}"
         return s

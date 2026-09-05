@@ -12,7 +12,6 @@ obs:                      # the observation rule (robobench_rl/obs.py)
 
 reward:                   # default = grader progress (privileged); rewards/*.yaml override
   mode: progress          # progress | shaped
-  form: delta             # delta (potential gained; success terminates) | level (Isaac Lab style raw dense; runs to timeout)
   progress_scale: 1.0
   success_bonus: 1.0
   action_penalty: 0.0         # action-rate penalty weight (|a_t - a_{t-1}|^2); off
@@ -21,10 +20,12 @@ ppo:                      # rsl_rl train_cfg — Isaac Lab manipulation defaults
   max_iterations: 1000    # training length (PPO iterations); env-steps = iterations * num_steps_per_env * num_envs
   num_steps_per_env: 64
   save_interval: 50       # checkpoint every N iterations (rsl_rl's own)
-  empirical_normalization: true
+  logger: tensorboard
   obs_groups: {policy: [policy], critic: [critic]}
   policy:
     class_name: ActorCritic
+    actor_obs_normalization: true     # running obs normalization (metres, radians, rad/s in one vector)
+    critic_obs_normalization: true
     init_noise_std: 1.0
     actor_hidden_dims: [256, 128, 64]
     critic_hidden_dims: [256, 128, 64]

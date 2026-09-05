@@ -3,7 +3,8 @@
 Actions: the policy emits [-1, 1]^action_dim on the task's FROZEN controller preset — the same
 `env.step(action)` a delivered solve(env) calls. Dims listed under `action.affine` are mapped to
 [lo, hi] (e.g. the Franka finger targets in metres); all others pass through. Episode = the task's
-horizon in seconds; success terminates, timeout is reported via extras["time_outs"]. Every env runs
+horizon in seconds, always run to the limit (dense level reward; success is logged, not terminal);
+the time-limit done is reported via extras["time_outs"] so PPO bootstraps it. Every env runs
 the scene's nominal physics; initial-condition variety comes only from the scene's own reset."""
 from __future__ import annotations
 
@@ -82,7 +83,7 @@ class RoboBenchVecEnv(VecEnv):
         print(f"[rl] obs rule ready (dim {self.num_obs})", flush=True)
         r = cfg.get("reward", {})
         self.reward_fn = GraderReward(self.env, load_grader_cls(t["preset"], env_cfg.scene), env_cfg.scene,
-                                      mode=r.get("mode", "progress"), form=r.get("form", "delta"),
+                                      mode=r.get("mode", "progress"),
                                       progress_scale=float(r.get("progress_scale", 1.0)),
                                       success_bonus=float(r.get("success_bonus", 1.0)),
                                       action_penalty=float(r.get("action_penalty", 0.0)))
@@ -108,9 +109,7 @@ class RoboBenchVecEnv(VecEnv):
         self.last_action = a
         reward, succ, stages = self.reward_fn.compute(a)
         time_out = self.episode_length_buf >= self.max_episode_length
-        # delta form: success is terminal. level form: run to the time limit (a raw dense reward
-        # would otherwise punish finishing early); success still logs and pays the bonus each step.
-        done = (succ | time_out) if self.reward_fn.form == "delta" else time_out
+        done = time_out  # fixed-length episodes: success is logged and paid, never terminal
         self._ep_ret += reward
         self._ep_peak = torch.maximum(self._ep_peak, stages["progress"])
         log = {f"/stage/{k}": v.mean() for k, v in stages.items()}
@@ -123,7 +122,7 @@ class RoboBenchVecEnv(VecEnv):
             log["/episode/success"] = succ[ids].float().mean()
             log["/episode/length_s"] = self.episode_length_buf[ids].float().mean() * self.step_dt
             self._reset_idx(ids)
-        extras = {"time_outs": time_out & ~succ, "log": log, "success": succ}
+        extras = {"time_outs": time_out, "log": log, "success": succ}
         return self.get_observations(), reward, done, extras
 
     def reset(self) -> TensorDict:
