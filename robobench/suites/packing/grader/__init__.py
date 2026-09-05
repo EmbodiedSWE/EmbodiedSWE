@@ -1,4 +1,4 @@
-"""Privileged graders for the locomanip suite — never shipped to agents.
+"""Privileged graders for the packing suite — never shipped to agents.
 
 One module per scene, mirroring `scenes/`. The eval extractor drops this
 folder from every agent-facing tree; only grading processes import it.
@@ -11,14 +11,16 @@ check_success() — all required, anything missing or mismatched fails at
 construction. Register it in GRADERS.
 """
 
-from .box_to_bin import BoxToBinGrader
-from .fruit_delivery import FruitDeliveryGrader
-from .wheel_carry import WheelCarryGrader
+from .clear_organic_objects import ClearOrganicObjectsGrader
+from .egg_carton import EggCartonGrader
+from .pen_holder import PenHolderGrader
+from .tool_packing import ToolPackingGrader
 
 GRADERS = {
-    "box_to_bin": BoxToBinGrader,
-    "fruit_delivery": FruitDeliveryGrader,
-    "wheel_carry": WheelCarryGrader,
+    "clear_organic_objects": ClearOrganicObjectsGrader,
+    "egg_carton": EggCartonGrader,
+    "pen_holder": PenHolderGrader,
+    "tool_packing": ToolPackingGrader,
 }
 
-__all__ = ["BoxToBinGrader", "FruitDeliveryGrader", "WheelCarryGrader", "GRADERS"]
+__all__ = [*sorted(c.__name__ for c in GRADERS.values()), "GRADERS"]

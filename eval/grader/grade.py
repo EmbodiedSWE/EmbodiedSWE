@@ -147,13 +147,30 @@ def main() -> None:
                          "spawns; each env's trajectory is scored and judged separately")
     ap.add_argument("--render", action="store_true",
                     help="render the run: /out/frames/*.jpg + frames.jsonl + render.json")
+    ap.add_argument("--cameras", action="store_true",
+                    help="enable cameras WITHOUT the per-step video renderer: what a grader's "
+                         "final-frame VLM gate needs (omni.replicator only exists with cameras on); "
+                         "the Newton coupled solvers cannot take per-step rendering, this they can")
     args = ap.parse_args()
     out = OUT
     out.mkdir(parents=True, exist_ok=True)
 
+    try:  # pink_ik presets need pinocchio imported BEFORE AppLauncher (robobench/controllers/pink_ik.py)
+        import pinocchio  # noqa: F401
+    except ImportError as exc:
+        print(f"[grade] pinocchio not importable ({exc}): a pink_ik preset will fail to boot", flush=True)
+
     from isaaclab.app import AppLauncher
 
-    app = AppLauncher(headless=True, enable_cameras=args.render).app  # noqa: F841 — before isaaclab.sim
+    if args.cameras and not args.render:
+        # isaaclab develop (Newton): rendering is pumped by VISUALIZERS, and only an active kit
+        # visualizer makes the framework create MPM particle points and sync Newton body
+        # transforms + deformable meshes into Fabric for RTX (measured 2026-09-05: without it the
+        # final frame showed the spawn-pose robot as a heap and no dough at all). Same launch as
+        # the suite's own recording smokes: headless + kit visualizer + cameras.
+        app = AppLauncher(headless=True, enable_cameras=True, visualizer=["kit"]).app  # noqa: F841
+    else:
+        app = AppLauncher(headless=True, enable_cameras=args.render).app  # noqa: F841 — before isaaclab.sim
 
     import robobench
 
@@ -210,6 +227,9 @@ def main() -> None:
                 "preset": args.preset, "scene": args.scene, "seed": args.seed,
                 "traj": e, "criteria": result["criteria"],
                 "success": v["success"], "score": v["score"],
+                # final-stage audit (VLM gate image path, prompt, raw answer) when the
+                # grader has one — absent otherwise
+                **({"final": v["final"]} if "final" in v else {}),
             }, indent=2) + "\n")
         s = batch_stats(per)
         result.update(success=s["success_rate"], score=s["score_mean"],
