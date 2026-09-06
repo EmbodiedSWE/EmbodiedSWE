@@ -23,10 +23,15 @@ class TaskReward:
 
     WEIGHTS: dict[str, float] = {}
 
-    def __init__(self, env) -> None:
+    def __init__(self, env, weights: dict[str, float] | None = None) -> None:
         self.env = env
         self.scene = env.scene
         self.device = env.device
+        if weights:  # debugging aid: `reward.weights: {reach: 1.0}` isolates terms; unknown names fail loudly
+            bad = set(weights) - set(self.WEIGHTS)
+            if bad:
+                raise KeyError(f"{type(self).__name__} has no terms {sorted(bad)}; have {sorted(self.WEIGHTS)}")
+            self.WEIGHTS = {k: float(v) for k, v in weights.items()}
         self.reset(torch.arange(env.num_envs, device=env.device))
 
     def reset(self, env_ids: torch.Tensor) -> None:  # capture per-env references (start heights, ...)
@@ -34,6 +39,11 @@ class TaskReward:
 
     def terms(self) -> dict[str, torch.Tensor]:
         raise NotImplementedError
+
+    def hover_target(self) -> torch.Tensor | None:
+        """(n, 3) world position above the grasp point for the warm-start curriculum, or None."""
+        return None
+
 
     def potential(self, terms: dict[str, torch.Tensor] | None = None) -> torch.Tensor:
         t = self.terms() if terms is None else terms

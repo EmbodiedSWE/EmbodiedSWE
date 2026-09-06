@@ -32,15 +32,18 @@ def _walk(d: dict, prefix: str = "") -> Iterator[tuple[str, Any]]:
 
 class StateObs:
     def __init__(self, env, *, drop_keys=("joint_pos_target", "joint_effort_target", "controller"),
-                 env_local: bool = True, ee_pose: bool = True, last_action: bool = True) -> None:
+                 env_local: bool = True, ee_pose: bool = True, last_action: bool = True,
+                 action_dim: int | None = None) -> None:
+        """`action_dim` = the POLICY's action width (the last-action slot); defaults to the env's."""
         self.env = env
+        self.action_dim = int(action_dim) if action_dim is not None else int(env.robot.action_dim)
         self.drop = tuple(drop_keys)
         self.env_local, self.with_ee, self.with_last_action = env_local, ee_pose, last_action
         self.origins = env.iscene.env_origins  # (n, 3)
         self._ee_idx = self._resolve_ee()
         self.layout: list[tuple[str, int, int]] = []
         self.dim = 0
-        self.compute(torch.zeros(env.num_envs, env.robot.action_dim, device=env.device))  # builds layout
+        self.compute(torch.zeros(env.num_envs, self.action_dim, device=env.device))  # builds layout
 
     def _resolve_ee(self) -> int | None:
         robot = self.env.robot

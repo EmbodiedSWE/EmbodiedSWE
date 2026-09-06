@@ -29,6 +29,9 @@ class ToolPackingShapedReward(TaskReward):
 
     def terms(self) -> dict[str, torch.Tensor]:
         from isaaclab.utils.math import quat_apply_inverse
+        # the part settles after reset (measured: the bulb drops 1.9 cm) — track the lowest height seen
+        # since reset as the lift baseline, or lift credit only starts above the unsettled spawn height
+        self._z0 = torch.minimum(self._z0, torch.stack([b.data.root_pos_w for b in self.scene.items.values()], dim=1)[..., 2])
 
         sc, c = self.scene, self.scene.cfg
         pos = torch.stack([b.data.root_pos_w for b in sc.items.values()], dim=1)  # (n,I,3)

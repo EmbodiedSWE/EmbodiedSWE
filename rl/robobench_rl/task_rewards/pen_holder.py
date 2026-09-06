@@ -28,6 +28,9 @@ class PenHolderShapedReward(TaskReward):
         self._z0[env_ids] = pos[env_ids, :, 2]
 
     def terms(self) -> dict[str, torch.Tensor]:
+        # the part settles after reset (measured: the bulb drops 1.9 cm) — track the lowest height seen
+        # since reset as the lift baseline, or lift credit only starts above the unsettled spawn height
+        self._z0 = torch.minimum(self._z0, self.scene._pen_tensors()[0][..., 2])
         sc, c = self.scene, self.scene.cfg
         pos, _quat, _vel = sc._pen_tensors()  # (n,P,3)
         b_loc, t_loc = sc._pen_ends_local()  # holder frame (n,P,3)

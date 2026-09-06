@@ -3,6 +3,4 @@
 # potential differs.
 reward:
   mode: shaped
-  progress_scale: 1.0
   success_bonus: 1.0
-  action_penalty: 0.0         # action-rate penalty weight (|a_t - a_{t-1}|^2); off

@@ -45,6 +45,11 @@ def main() -> None:
     venv = RoboBenchVecEnv(cfg)
     print(f"[smoke] build {time.time() - t0:.1f} s", flush=True)
     print(venv.describe(), flush=True)
+    if venv.hover_frac > 0:  # exercise the warm-start curriculum: full lockstep reset, then report hand->target
+        venv.reset()
+        t = venv.reward_fn.task.terms() if venv.reward_fn.task is not None else {}
+        print(f"[smoke] hover curriculum: warm envs {int(venv.preroll_warm.sum())}/{venv.num_envs}; "
+              + ", ".join(f"{k}={v.mean():.3f}" for k, v in t.items() if k in ("reach", "dist_m")), flush=True)
     obs = venv.get_observations()
     print(f"[smoke] obs policy shape {tuple(obs['policy'].shape)}  finite {bool(torch.isfinite(obs['policy']).all())}")
     print(f"[smoke] obs env0 first 16: {[round(x, 3) for x in obs['policy'][0, :16].tolist()]}")
@@ -73,10 +78,10 @@ def main() -> None:
         if k == args.steps // 2:  # exercise the partial reset on half the envs
             ids = torch.arange(0, n, 2, device=venv.device)
             venv._reset_idx(ids)
-            p_after = venv.reward_fn.prev
-            print(f"[smoke] partial reset of {len(ids)} envs: progress baseline after reset "
-                  f"reset-envs mean {p_after[ids].mean():.4f}, others mean "
-                  f"{p_after[torch.arange(1, n, 2, device=venv.device)].mean() if n > 1 else float('nan'):.4f}")
+            p_now, _ = venv.reward_fn.measure()
+            print(f"[smoke] partial reset of {len(ids)} envs: grader progress after reset, reset-envs mean "
+                  f"{p_now[ids].mean():.4f}, others mean "
+                  f"{p_now[torch.arange(1, n, 2, device=venv.device)].mean() if n > 1 else float('nan'):.4f}", flush=True)
     torch.cuda.synchronize()
     dt = time.time() - t0
     if prof is not None:

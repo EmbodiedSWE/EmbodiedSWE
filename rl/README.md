@@ -13,7 +13,7 @@ graders, nothing else.
 | Piece | Rule | Where |
 |---|---|---|
 | Observation | flatten `get_states()` env-local, drop actuator setpoints/controller state, add EE pose + last action | `robobench_rl/obs.py` |
-| Action | the task's frozen controller preset, policy in [-1,1]; only gripper dims re-scaled | `configs/tasks/*.yaml` `action.affine` |
+| Action | the task's frozen controller preset, policy in [-1,1]; `action.affine` re-scales gripper dims or maps arm dims to joint deltas | `configs/tasks/*.yaml`, `vec_env.py` |
 | Reward (`rewards/progress`) | the grader's weighted rubric progress, paid every step, + success bonus. **Privileged**: agents never see the grader | `robobench_rl/reward.py` |
 | Reward (`rewards/shaped`) | a hand-designed dense potential per task, paid every step, written from public scene accessors (reach, lift, transport, orient, approach, insert/thread) | `robobench_rl/task_rewards/<scene>.py` |
 | Episode | the task's own horizon in seconds, always run to the limit (Isaac Lab style); success is logged, not terminal | `configs/tasks/*.yaml` |
@@ -30,7 +30,9 @@ with just `algorithm.learning_rate`. The merged config is dumped next to every r
    ```
    python rl/scripts/smoke.py --task bulb_franka_osc --num_envs 16 --steps 200 --headless
    ```
-2. **Train**: rsl_rl PPO for `ppo.max_iterations`, checkpoints every `ppo.save_interval`.
+2. **Train**: rsl_rl PPO for `ppo.max_iterations`, checkpoints every `ppo.save_interval`. Optional
+   warm-start curriculum (`curriculum.hover_start_frac`): a fraction of envs starts each episode with the
+   hand servoed above the part (the shaped reward's `hover_target`); grading still starts from home.
    ```
    python rl/scripts/train.py --task slice_franka_joint --reward shaped --headless \
        --set task.num_envs=256 task.episode_seconds=20 ppo.max_iterations=300     # debug-sized

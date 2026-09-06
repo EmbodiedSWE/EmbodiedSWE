@@ -1,24 +1,13 @@
-"""Reward = a potential in [0, 1], paid every step, + success bonus. Two reward files select the potential's author:
+"""Reward = a potential in [0, 1] paid every step (Isaac Lab style) + a success bonus:
 
-  progress  P = the grader's weighted rubric progress (the task author's decomposition).
-            "once" milestones are monotone; live stages dip when state is lost.
-            PRIVILEGED — the coding agent never sees the grader. State this in any report.
-  shaped    P = a hand-designed dense potential written for RL from the scene's public accessors
-            (robobench_rl/task_rewards/<scene>.py), one per task in the test subset.
+    r_t = (P_t + bonus * success_t) * step_dt
 
-Per-step reward (Isaac Lab style dense reward; episodes run to the time limit, success is not terminal):
+  progress  P = the grader's weighted rubric progress — PRIVILEGED (agents never see the grader)
+  shaped    P = the task's hand-designed potential (task_rewards/<scene>.py)
 
-  r_t = (scale * P_t + bonus * success_t) * step_dt - penalty * |a_t - a_{t-1}|^2
-
-so holding the goal keeps paying: a full episode at the goal returns ~(scale + bonus) * episode_s.
-The penalty is an action-RATE term (jitter, not motion), off by default. Success and the logged
-stage curve always come from the grader, in both modes.
-
-Graders are single-trajectory objects (setup() captures start poses for all envs once; "once"
-milestones keep a best-ever per env). Training needs per-env auto-reset, so `reset(env_ids)`
-re-runs setup() and restores the rows of every un-reset env from a snapshot of the grader's
-per-env tensors, then zeroes the reset envs' milestones. Generic over any BaseGrader whose
-per-env state lives in tensor attributes with shape[0] == num_envs (all shipped graders)."""
+Success and the logged stage curve always come from the grader. Graders are single-trajectory objects
+(setup() captures start poses once, "once" milestones keep a best-ever), so `reset(env_ids)` re-runs
+setup() and restores the un-reset envs' rows from a snapshot of the grader's per-env tensors."""
 from __future__ import annotations
 
 import importlib
@@ -29,8 +18,8 @@ from .task_rewards import load_task_reward
 
 
 def load_grader_cls(preset: str, scene_name: str):
-    """`assembly.bulb.franka.osc` -> robobench.suites.assembly.grader.GRADERS['bulb']. Graders are
-    owned by the benchmark team; a scene without one cannot be trained or graded here yet."""
+    """`assembly.bulb.franka.osc` -> robobench.suites.assembly.grader.GRADERS['bulb']; graders are owned by
+    the benchmark team and a scene without one cannot be trained or graded here yet."""
     suite = preset.split(".")[0]
     try:
         mod = importlib.import_module(f"robobench.suites.{suite}.grader")
@@ -43,43 +32,34 @@ def load_grader_cls(preset: str, scene_name: str):
 
 
 class GraderReward:
-    def __init__(self, env, grader_cls, scene_name: str, *, mode: str = "progress",
-                 progress_scale: float = 1.0, success_bonus: float = 1.0, action_penalty: float = 0.0) -> None:
+    def __init__(self, env, grader_cls, scene_name: str, *, mode: str = "progress", success_bonus: float = 1.0,
+                 weights: dict | None = None) -> None:
         if mode not in ("progress", "shaped"):
             raise ValueError(f"reward mode must be progress|shaped, got {mode!r}")
-        self.env, self.mode = env, mode
+        self.env, self.mode, self.bonus = env, mode, success_bonus
         self.step_dt = env.dt * env.robot.control_period
-        self.scale, self.bonus, self.penalty = progress_scale, success_bonus, action_penalty
-        self.grader = grader_cls(env)  # runs setup() on the just-reset env
         self.device = env.device
-        self.task = load_task_reward(scene_name)(env) if mode == "shaped" else None
-        self.prev_action = torch.zeros(env.num_envs, env.robot.action_dim, device=self.device)
-        self.stage_names = [n for n, _, _ in self.grader._stages]
+        self.grader = grader_cls(env)  # runs setup() on the just-reset env
+        self.task = load_task_reward(scene_name)(env, weights) if mode == "shaped" else None
 
     def measure(self) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         vals = self.grader.measure()
-        p = self.grader.progress(vals).to(self.device)
-        return p, {k: v.to(self.device) for k, v in vals.items()}
+        return self.grader.progress(vals).to(self.device), {k: v.to(self.device) for k, v in vals.items()}
 
     def success(self) -> torch.Tensor:
         return self.grader._per_env(self.grader.check_success(), "check_success").bool().to(self.device)
 
-    def compute(self, action: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
-        p, stages = self.measure()  # grader rubric: always measured (logs + success), reward in `progress` mode
+    def compute(self) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
+        p, stages = self.measure()
         succ = self.success()
         stages["progress"] = p
+        pot = p
         if self.task is not None:
             t = self.task.terms()
             pot = self.task.potential(t).to(self.device)
             stages.update({f"shaped/{k}": v.to(self.device) for k, v in t.items()})
             stages["shaped/potential"] = pot
-        else:
-            pot = p
-        r = (self.scale * pot + self.bonus * succ.float()) * self.step_dt
-        if self.penalty > 0:
-            r = r - self.penalty * (action - self.prev_action).pow(2).sum(dim=-1)
-        self.prev_action = action.clone()
-        return r, succ, stages
+        return (pot + self.bonus * succ.float()) * self.step_dt, succ, stages
 
     @torch.no_grad()
     def reset(self, env_ids: torch.Tensor) -> None:
@@ -89,8 +69,7 @@ class GraderReward:
         if len(ids) >= n:
             g.setup()
         else:
-            snap = {k: v.clone() for k, v in vars(g).items()
-                    if torch.is_tensor(v) and v.dim() >= 1 and v.shape[0] == n}
+            snap = {k: v.clone() for k, v in vars(g).items() if torch.is_tensor(v) and v.dim() >= 1 and v.shape[0] == n}
             g.setup()  # recaptures ALL envs from live state ...
             keep = torch.ones(n, dtype=torch.bool)
             keep[ids] = False
@@ -103,7 +82,6 @@ class GraderReward:
             g._best[name][ids] = 0.0
         if self.task is not None:
             self.task.reset(env_ids.to(self.device))
-        self.prev_action[env_ids.to(self.device)] = 0.0
 
     def describe(self) -> str:
         s = f"{self.mode}: grader {self.grader.describe()}"
