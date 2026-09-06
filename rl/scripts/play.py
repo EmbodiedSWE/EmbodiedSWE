@@ -26,7 +26,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--solution", required=True)
 ap.add_argument("--num_envs", type=int, default=1)
 ap.add_argument("--seed", type=int, default=0)
-ap.add_argument("--trace", action="store_true", help="print env 0's shaped terms + grader stages once per second")
+ap.add_argument("--trace", action="store_true", help="print env 0's dense terms + grader stages once per second")
 ap.add_argument("--warm", action="store_true", help="warm-start diagnostic instead of the grading protocol")
 ap.add_argument("--episodes", type=int, default=1, help="--warm: repeat until env 0 picks")
 AppLauncher.add_app_launcher_args(ap)
@@ -53,8 +53,10 @@ def graded() -> None:
     peaks: dict[str, torch.Tensor] = {}
     tracer = None
     if args.trace:
+        sys.path.insert(0, str(SOL))
+        from robobench_rl.task_envs import load_task_env_cls  # the exported copy
         from robobench_rl.task_rewards import load_task_reward
-        task = load_task_reward(scene)(env)
+        task = (load_task_env_cls(META.get("task_env")).reward_cls or load_task_reward(scene))(env)
         every = max(1, int(round(1.0 / (env.dt * env.robot.control_period))))
         k = [0]
 
@@ -88,12 +90,12 @@ def graded() -> None:
 
 
 def warm() -> None:
-    from robobench_rl.vec_env import RoboBenchVecEnv
+    from robobench_rl.vec_env import make_vec_env
 
-    tc = json.loads(json.dumps(__import__("yaml").safe_load((SOL / "train_config.yaml").read_text())))
+    tc = json.loads(json.dumps(META["cfg"]))
     tc["task"]["num_envs"] = args.num_envs
     tc.setdefault("curriculum", {})["hover_start_frac"] = 1.0
-    venv = RoboBenchVecEnv(tc)
+    venv = make_vec_env(tc)
     policy = torch.jit.load(str(SOL / "policy.pt"), map_location=str(venv.device)).eval()
     for ep in range(args.episodes):
         venv.reset()
@@ -101,8 +103,7 @@ def warm() -> None:
         with torch.no_grad():
             for k in range(venv.max_episode_length):
                 a = policy(venv.get_observations()["policy"]).clamp(-1, 1)
-                venv.env.step(venv.map_action(a))
-                venv.last_action = a
+                venv.env.step(venv.process_actions(a))
                 _, stages = venv.reward_fn.measure()
                 for n, v in stages.items():
                     peaks[n] = torch.maximum(peaks.get(n, torch.zeros_like(v)), v)

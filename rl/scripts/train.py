@@ -1,6 +1,6 @@
 """Step 2: train PPO (rsl_rl OnPolicyRunner) on a robobench task through the RoboBenchVecEnv wrapper.
 
-    python rl/scripts/train.py --task slice_franka_joint --reward shaped --headless \
+    python rl/scripts/train.py --task slice_franka_joint --reward dense --headless \
         --set task.num_envs=256 task.episode_seconds=20 ppo.max_iterations=30
 
 Run dir: rl/runs/<task>/<reward>/<stamp>[_<name>]/ with config.yaml (the merged config actually
@@ -37,7 +37,7 @@ import torch  # noqa: E402
 from rsl_rl.runners import OnPolicyRunner  # noqa: E402
 
 from robobench_rl.config import dump_config, load_config  # noqa: E402
-from robobench_rl.vec_env import RoboBenchVecEnv  # noqa: E402
+from robobench_rl.vec_env import make_vec_env  # noqa: E402
 
 
 def make_train_cfg(cfg: dict) -> tuple[dict, int]:
@@ -56,14 +56,14 @@ def main() -> None:
     print(f"[train] run dir {log_dir}", flush=True)
 
     t0 = time.time()
-    venv = RoboBenchVecEnv(cfg)
+    venv = make_vec_env(cfg)
+    cfg = venv.cfg  # with the task env's defaults merged under it
     dump_config(cfg, log_dir / "config.yaml")
     print(f"[train] env ready in {time.time() - t0:.1f} s\n{venv.describe()}", flush=True)
     env_meta = {
-        "preset": cfg["task"]["preset"], "num_envs": venv.num_envs, "num_obs": venv.num_obs, "num_actions": venv.num_actions,
-        "step_dt": venv.step_dt, "max_episode_length": venv.max_episode_length, "obs": cfg.get("obs", {}),
-        "obs_layout": venv.obs_fn.layout, "action_map": venv.action_map_json(), "gripper_stiffness": venv.gripper_stiffness,
-        "reward": cfg["reward"], "ppo": cfg["ppo"],
+        "preset": cfg["task"]["preset"], "task_env": cfg["task"].get("task_env"), "num_envs": venv.num_envs,
+        "num_obs": venv.num_obs, "num_actions": venv.num_actions, "step_dt": venv.step_dt,
+        "max_episode_length": venv.max_episode_length, "obs_layout": venv.obs_fn.layout, "cfg": cfg,
     }
     (log_dir / "env.json").write_text(json.dumps(env_meta, indent=2))
 

@@ -1,4 +1,4 @@
-"""Hand-designed shaped rewards, one module per task in the RL test subset.
+"""Hand-designed dense rewards, one module per task in the RL test subset.
 
 Each task reward is a POTENTIAL phi(state) in [0, 1]: a weighted sum of dense stage terms a
 practitioner would write from the scene's public accessors (part poses, seated(), cfg tolerances)
@@ -55,15 +55,15 @@ class TaskReward:
 
 
 def load_task_reward(scene_name: str) -> type[TaskReward]:
-    from .bulb import BulbShapedReward
-    from .nut_thread import NutThreadShapedReward
-    from .pen_holder import PenHolderShapedReward
-    from .slice import SliceShapedReward
-    from .tool_packing import ToolPackingShapedReward
+    from .bulb import BulbDenseReward
+    from .nut_thread import NutThreadDenseReward
+    from .pen_holder import PenHolderDenseReward
+    from .slice import SliceDenseReward
+    from .tool_packing import ToolPackingDenseReward
 
-    table: dict[str, type[TaskReward]] = {"bulb": BulbShapedReward, "nut_thread": NutThreadShapedReward,
-                                          "pen_holder": PenHolderShapedReward, "tool_packing": ToolPackingShapedReward,
-                                          "slice": SliceShapedReward}
+    table: dict[str, type[TaskReward]] = {"bulb": BulbDenseReward, "nut_thread": NutThreadDenseReward,
+                                          "pen_holder": PenHolderDenseReward, "tool_packing": ToolPackingDenseReward,
+                                          "slice": SliceDenseReward}
     if scene_name not in table:
-        raise KeyError(f"no shaped reward for scene {scene_name!r}; have {sorted(table)}")
+        raise KeyError(f"no dense reward for scene {scene_name!r}; have {sorted(table)}")
     return table[scene_name]

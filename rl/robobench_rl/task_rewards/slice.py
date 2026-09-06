@@ -1,4 +1,4 @@
-"""Shaped potential for the slice scene (knife on a rest, scored food on a board).
+"""Dense potential for the slice scene (knife on a rest, scored food on a board).
 
     reach   hand at the nominal grasp POSE: pads at the handle centre, approaching from above, fingers
             opening across the plate (keypoint distance, so orientation counts — a side-on pinch
@@ -29,7 +29,7 @@ LIFT_FULL = 0.04  # m of lift that counts as fully taken (the rest notches are ~
 HELD_NEAR = 0.06  # m: knife handle point within this of the pads = "held" for the lift term (loose on purpose)
 
 
-class SliceShapedReward(TaskReward):
+class SliceDenseReward(TaskReward):
     WEIGHTS = {"reach": 0.1, "grasp": 0.1, "taken": 0.1, "carry": 0.1, "align": 0.1, "press": 0.2, "cut": 0.3}
 
     def reset(self, env_ids: torch.Tensor) -> None:

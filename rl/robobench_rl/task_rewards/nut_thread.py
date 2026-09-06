@@ -1,4 +1,4 @@
-"""Shaped potential for the nut-thread scene (scene accessors only, no grader).
+"""Dense potential for the nut-thread scene (scene accessors only, no grader).
 
     reach      finger pads at the nut
     lift       nut raised off the table
@@ -20,7 +20,7 @@ ENGAGE_Z = 0.035  # nut-origin height above the bolt origin at the thread start 
 LIFT_FULL = 0.06
 
 
-class NutThreadShapedReward(TaskReward):
+class NutThreadDenseReward(TaskReward):
     WEIGHTS = {"reach": 0.1, "lift": 0.1, "transport": 0.2, "upright": 0.1, "approach": 0.2, "thread": 0.3}
 
     def reset(self, env_ids: torch.Tensor) -> None:

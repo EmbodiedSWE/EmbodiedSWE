@@ -1,4 +1,4 @@
-"""Shaped potential for the tool-packing scene.
+"""Dense potential for the tool-packing scene.
 
     reach     finger pads at the nearest not-yet-stowed item
     lift      that item raised off the table
@@ -18,7 +18,7 @@ from .common import kernel, pinch_point, reach_kernel
 LIFT_FULL = 0.08
 
 
-class ToolPackingShapedReward(TaskReward):
+class ToolPackingDenseReward(TaskReward):
     WEIGHTS = {"reach": 0.1, "lift": 0.1, "carry": 0.2, "stowed": 0.3, "drawers": 0.2, "doors": 0.1}
 
     def reset(self, env_ids: torch.Tensor) -> None:

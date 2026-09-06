@@ -1,4 +1,4 @@
-"""Shared geometry helpers for the shaped rewards (public robot/scene data only)."""
+"""Shared geometry helpers for the dense rewards (public robot/scene data only)."""
 from __future__ import annotations
 
 import torch

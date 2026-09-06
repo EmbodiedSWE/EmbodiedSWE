@@ -1,6 +1,6 @@
 """Export a training checkpoint as a graded-able solution/ folder (no Isaac needed).
 
-    python rl/scripts/export.py rl/runs/slice_franka_joint/shaped/<stamp> [--checkpoint model_29.pt] [--out DIR]
+    python rl/scripts/export.py rl/runs/slice_franka_joint/dense/<stamp> [--checkpoint model_29.pt] [--out DIR]
 Default out: <run>/solutions/<checkpoint stem>/ . Then grade it like any agent solution, e.g.
     python eval/scripts/verify_solution.py --preset <preset> --solution <out>      (host, scene success only)
     python eval/scripts/run_grade.py <exp> --solution <out> --out <dir>            (container, full rubric)

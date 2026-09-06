@@ -11,7 +11,7 @@ obs:                      # the observation rule (robobench_rl/obs.py)
   last_action: true
 
 reward:                   # default = grader progress (privileged); rewards/*.yaml override
-  mode: progress          # progress | shaped
+  mode: progress          # progress | dense
   success_bonus: 1.0
 
 ppo:                      # rsl_rl train_cfg — Isaac Lab manipulation defaults, uniform across tasks

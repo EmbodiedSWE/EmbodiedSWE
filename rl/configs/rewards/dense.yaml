@@ -1,6 +1,6 @@
-# Reward: hand-designed dense shaping per task (robobench_rl/task_rewards/<scene>.py), written from
+# Reward: hand-designed dense reward per task (robobench_rl/task_rewards/<scene>.py), written from
 # the scene's public accessors. Same per-step algebra as `progress`; only the author of the
 # potential differs.
 reward:
-  mode: shaped
+  mode: dense
   success_bonus: 1.0

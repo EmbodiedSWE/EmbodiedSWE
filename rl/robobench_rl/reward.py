@@ -3,7 +3,7 @@
     r_t = (P_t + bonus * success_t) * step_dt
 
   progress  P = the grader's weighted rubric progress — PRIVILEGED (agents never see the grader)
-  shaped    P = the task's hand-designed potential (task_rewards/<scene>.py)
+  dense     P = a dense potential written for the task (task_rewards/<scene>.py, or the task env's reward_cls)
 
 Success and the logged stage curve always come from the grader. Graders are single-trajectory objects
 (setup() captures start poses once, "once" milestones keep a best-ever), so `reset(env_ids)` re-runs
@@ -33,14 +33,15 @@ def load_grader_cls(preset: str, scene_name: str):
 
 class GraderReward:
     def __init__(self, env, grader_cls, scene_name: str, *, mode: str = "progress", success_bonus: float = 1.0,
-                 weights: dict | None = None) -> None:
-        if mode not in ("progress", "shaped"):
-            raise ValueError(f"reward mode must be progress|shaped, got {mode!r}")
+                 weights: dict | None = None, task_cls=None) -> None:
+        if mode not in ("progress", "dense"):
+            raise ValueError(f"reward mode must be progress|dense, got {mode!r}")
         self.env, self.mode, self.bonus = env, mode, success_bonus
         self.step_dt = env.dt * env.robot.control_period
         self.device = env.device
         self.grader = grader_cls(env)  # runs setup() on the just-reset env
-        self.task = load_task_reward(scene_name)(env, weights) if mode == "shaped" else None
+        cls = task_cls or (load_task_reward(scene_name) if mode == "dense" else None)
+        self.task = cls(env, weights) if mode == "dense" else None
 
     def measure(self) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         vals = self.grader.measure()
@@ -57,8 +58,8 @@ class GraderReward:
         if self.task is not None:
             t = self.task.terms()
             pot = self.task.potential(t).to(self.device)
-            stages.update({f"shaped/{k}": v.to(self.device) for k, v in t.items()})
-            stages["shaped/potential"] = pot
+            stages.update({f"dense/{k}": v.to(self.device) for k, v in t.items()})
+            stages["dense/potential"] = pot
         return (pot + self.bonus * succ.float()) * self.step_dt, succ, stages
 
     @torch.no_grad()
@@ -86,5 +87,5 @@ class GraderReward:
     def describe(self) -> str:
         s = f"{self.mode}: grader {self.grader.describe()}"
         if self.task is not None:
-            s += f"\n        shaped {self.task.describe()}"
+            s += f"\n        dense {self.task.describe()}"
         return s

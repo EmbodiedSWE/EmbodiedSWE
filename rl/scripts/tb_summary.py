@@ -1,6 +1,6 @@
 """Print the scalars of a training run (tensorboard events) as a compact table.
 
-    python rl/scripts/tb_summary.py rl/runs/slice_franka_joint/shaped/<stamp> [--every 5] [--tags Train/mean_reward,...]
+    python rl/scripts/tb_summary.py rl/runs/slice_franka_joint/dense/<stamp> [--every 5] [--tags Train/mean_reward,...]
 """
 from __future__ import annotations
 

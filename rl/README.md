@@ -8,14 +8,39 @@ grader, train PPO, and grade checkpoints with the **same protocol** the agents a
 Independent of `eval/` (which runs agents in containers). It reuses `robobench` presets and
 graders, nothing else.
 
+## Layout and the three conditions
+
+```
+robobench_rl/
+  obs.py            generic observation rule (flattened get_states, env-local, + EE pose + last action)
+  reward.py         per-step reward from a potential: grader progress (privileged) or a dense one
+  vec_env.py        RoboBenchEnv — the base RL env (rsl_rl VecEnv) with Isaac-Lab-style task hooks:
+                    defaults, _setup, _process_actions (ActionMap), _get_extra_obs, _get_terminated, _hover_target
+  task_envs/        subclasses baking task-tuned changes into one class (bulb_tuned.py)
+  task_rewards/     dense potentials per scene (bulb, slice, nut_thread, pen_holder, tool_packing) + geometry
+  export.py         checkpoint -> solution/ (TorchScript actor + torch-only package copy + env.json); the solve
+                    ATTACHES the same task env to the graded env
+scripts/            smoke.py · train.py · export.py · play.py (grade / --warm diagnostic / video target) · tb_summary.py
+configs/            base.yaml <- tasks/<task>.yaml <- rewards/<reward>.yaml
+```
+
+| condition | command | what it tests |
+|---|---|---|
+| **progress** | `--task bulb_franka_osc --reward progress` | stock RL on the grader's own rubric (privileged reward), generic env |
+| **dense** | `--task bulb_franka_osc --reward dense` | stock RL on a dense reward written up front, generic env |
+| **tuned** | `--task bulb_franka_osc_tuned --reward dense` | task-tuned RL: the same dense reward plus an env class that bakes in the fixes found by iterating on the task (horizon, finger PD, curriculum, neck-relative obs, termination) |
+
+The generic env is `RoboBenchEnv`: config-driven action scaling, the observation rule, fixed-length episodes,
+no termination. A task env subclass overrides only what its condition needs.
+
 ## Design rules (one rule each, uniform across tasks)
 
 | Piece | Rule | Where |
 |---|---|---|
 | Observation | flatten `get_states()` env-local, drop actuator setpoints/controller state, add EE pose + last action | `robobench_rl/obs.py` |
-| Action | the task's frozen controller preset, policy in [-1,1]; `action.affine` re-scales gripper dims or maps arm dims to joint deltas | `configs/tasks/*.yaml`, `vec_env.py` |
+| Action | the task's frozen controller preset, policy in [-1,1]; ActionMap re-scales gripper dims or maps arm dims to joint deltas | `robobench_rl/vec_env.py` |
 | Reward (`rewards/progress`) | the grader's weighted rubric progress, paid every step, + success bonus. **Privileged**: agents never see the grader | `robobench_rl/reward.py` |
-| Reward (`rewards/shaped`) | a hand-designed dense potential per task, paid every step, written from public scene accessors (reach, lift, transport, orient, approach, insert/thread) | `robobench_rl/task_rewards/<scene>.py` |
+| Reward (`rewards/dense`) | a hand-designed dense potential per task, paid every step, written from public scene accessors (reach, lift, transport, orient, approach, insert/thread) | `robobench_rl/task_rewards/<scene>.py` |
 | Episode | the task's own horizon in seconds, always run to the limit (Isaac Lab style); success is logged, not terminal | `configs/tasks/*.yaml` |
 | Algorithm | rsl_rl PPO; defaults in the base, per-task overrides in the task file (deep-merged) | `configs/base.yaml`, `configs/tasks/*.yaml` |
 | Reporting | grader verdicts of exported checkpoints only; training reward is never a result | `robobench_rl/export.py` |
@@ -32,11 +57,11 @@ with just `algorithm.learning_rate`. The merged config is dumped next to every r
    ```
 2. **Train**: rsl_rl PPO for `ppo.max_iterations`, checkpoints every `ppo.save_interval`. Optional
    warm-start curriculum (`curriculum.hover_start_frac`): a fraction of envs starts each episode with the
-   hand servoed above the part (the shaped reward's `hover_target`); grading still starts from home.
+   hand servoed above the part (the dense reward's `hover_target`); grading still starts from home.
    ```
-   python rl/scripts/train.py --task slice_franka_joint --reward shaped --headless \
+   python rl/scripts/train.py --task slice_franka_joint --reward dense --headless \
        --set task.num_envs=256 task.episode_seconds=20 ppo.max_iterations=300     # debug-sized
-   python rl/scripts/tb_summary.py rl/runs/slice_franka_joint/shaped/<stamp> --every 50
+   python rl/scripts/tb_summary.py rl/runs/slice_franka_joint/dense/<stamp> --every 50
    ```
    Run dir `rl/runs/<task>/<reward>/<stamp>/`: `config.yaml` (merged config actually used),
    `env.json` (obs layout, action bounds, control rate), tensorboard events, `model_<it>.pt`,
@@ -45,7 +70,7 @@ with just `algorithm.learning_rate`. The merged config is dumped next to every r
    `solve.py`, TorchScript actor (`policy.pt`, normalizer included, no rsl_rl needed), a copy of
    the observation rule (`rl_obs.py`), `env.json` — and is graded exactly like an agent's:
    ```
-   python rl/scripts/export.py rl/runs/slice_franka_joint/shaped/<stamp> --checkpoint model_299.pt
+   python rl/scripts/export.py rl/runs/slice_franka_joint/dense/<stamp> --checkpoint model_299.pt
    python eval/scripts/verify_solution.py --preset cutting.slice.franka.joint --solution <run>/solutions/model_299
    python eval/scripts/run_grade.py <exp> --solution <run>/solutions/model_299 --out <dir>   # full rubric, container
    ```
@@ -74,7 +99,7 @@ envs overflowed the scene's default collision stack. Rerun any row with
 
 ## Task subset
 
-| task | preset | grasp | grader | shaped reward |
+| task | preset | grasp | grader | dense reward |
 |---|---|---|---|---|
 | bulb | assembly.bulb.franka.osc | friction | existing | `task_rewards/bulb.py` |
 | nut_thread | assembly.nut_thread.franka.osc | friction | **missing** (teammates) | `task_rewards/nut_thread.py` |

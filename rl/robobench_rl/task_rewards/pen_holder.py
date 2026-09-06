@@ -1,4 +1,4 @@
-"""Shaped potential for the pen-holder scene.
+"""Dense potential for the pen-holder scene.
 
     reach    finger pads at the nearest not-yet-inserted present pen
     lift     that pen raised off the table
@@ -18,7 +18,7 @@ from .common import kernel, pinch_point, reach_kernel
 LIFT_FULL = 0.10
 
 
-class PenHolderShapedReward(TaskReward):
+class PenHolderDenseReward(TaskReward):
     WEIGHTS = {"reach": 0.1, "lift": 0.1, "carry": 0.15, "tip_up": 0.1, "insert": 0.25, "all_in": 0.3}
 
     def reset(self, env_ids: torch.Tensor) -> None:

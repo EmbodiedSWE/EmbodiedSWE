@@ -33,7 +33,7 @@ app = AppLauncher(args).app
 import torch  # noqa: E402
 
 from robobench_rl.config import load_config  # noqa: E402
-from robobench_rl.vec_env import RoboBenchVecEnv  # noqa: E402
+from robobench_rl.vec_env import make_vec_env  # noqa: E402
 
 
 def main() -> None:
@@ -42,7 +42,7 @@ def main() -> None:
         ov.append(f"task.num_envs={args.num_envs}")
     cfg = load_config(args.task, args.reward, ov)
     t0 = time.time()
-    venv = RoboBenchVecEnv(cfg)
+    venv = make_vec_env(cfg)
     print(f"[smoke] build {time.time() - t0:.1f} s", flush=True)
     print(venv.describe(), flush=True)
     if venv.hover_frac > 0:  # exercise the warm-start curriculum: full lockstep reset, then report hand->target
@@ -104,7 +104,7 @@ def main() -> None:
           f", progress={p.mean():.4f}")
     if venv.reward_fn.task is not None:
         terms = venv.reward_fn.task.terms()
-        print("[smoke] shaped terms now: " + ", ".join(f"{k}={v.mean():.4f}" for k, v in terms.items()) +
+        print("[smoke] dense terms now: " + ", ".join(f"{k}={v.mean():.4f}" for k, v in terms.items()) +
               f", potential={venv.reward_fn.task.potential(terms).mean():.4f}")
     print(f"[smoke] obs finite {bool(torch.isfinite(obs['policy']).all())}  "
           f"gpu mem {torch.cuda.max_memory_allocated() / 2**30:.2f} GiB (torch) ")

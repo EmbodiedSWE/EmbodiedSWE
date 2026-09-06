@@ -1,24 +1,12 @@
-# Bulb threading, Franka, OSC preset — the settings that make PPO pick the bulb (grader `picked` 8/8 from
-# home at ~300 iterations x 32 steps x 1024 envs); keys here override base.yaml.
+# Bulb threading, Franka, OSC preset — the GENERIC env (conditions `progress` and `dense`): the task's own
+# horizon, config-driven action scaling, the default observation, no termination, no curriculum.
 task:
   name: bulb_franka_osc
   preset: assembly.bulb.franka.osc
-  episode_seconds: 14                  # approach ~5-7 s at the learned pace, then pinch + lift
+  episode_seconds: 60                  # the task's own horizon (a scripted solve takes ~40-50 s)
   num_envs: 1024                       # RTX 5090: 4.2k env-steps/s, 17.6 GB
 action:
   affine:
-    - dims: [6, 7]                     # panda finger position targets, metres per finger (independent)
+    - dims: [6, 7]                     # panda finger position targets, metres per finger
       lo: 0.0
       hi: 0.04
-robot:
-  gripper_stiffness: 8000              # finger PD the scripted bulb solvers write at runtime (preset: 2000)
-curriculum:
-  hover_start_frac: 0.5                # warm start half the envs 10 cm above the bulb neck (needs lockstep resets)
-  hover_steps: 90
-  hover_jitter: 0.03
-reward:
-  weights: {reach: 0.2, grasp: 0.2, lift: 0.6}   # first-stage (pick) shaping only
-ppo:
-  num_steps_per_env: 32
-  algorithm:
-    entropy_coef: 0.006

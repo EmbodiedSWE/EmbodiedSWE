@@ -2,7 +2,7 @@
 
 Independent of the eval harness and of any agent: build a registered preset with many
 envs, observe the flattened `env.get_states()`, reward from the suite's private grader
-(rubric-progress delta, or a hand-shaped potential), train PPO (rsl_rl), and export checkpoints
+(rubric-progress delta, or a hand-dense potential), train PPO (rsl_rl), and export checkpoints
 as `solve(env)` folders so the SAME grading protocol scores RL and coding agents alike.
 
 Layout:

@@ -1,4 +1,4 @@
-"""Shaped potential for the bulb-threading scene (public accessors only).
+"""Dense potential for the bulb-threading scene (public accessors only).
 
 Stages a practitioner would write for pick -> carry -> upright -> engage -> thread:
     reach      hand at the nominal grasp pose: pads at the neck waist, approaching from above, fingers
@@ -34,7 +34,7 @@ LIFT_FULL = 0.08  # m of lift that counts as fully lifted
 LIFT_BONUS_Z = 0.04  # m: the grader's pick_lift — above this the threshold half of `lift` pays in full
 
 
-class BulbShapedReward(TaskReward):
+class BulbDenseReward(TaskReward):
     WEIGHTS = {"reach": 0.1, "grasp": 0.1, "lift": 0.1, "transport": 0.15, "upright": 0.1, "approach": 0.15, "thread": 0.3}
 
     def reset(self, env_ids: torch.Tensor) -> None:
