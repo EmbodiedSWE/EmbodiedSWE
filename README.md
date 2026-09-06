@@ -121,6 +121,22 @@ python -m robobench.scripts.smoke --env assembly.ikea_table.g1.joint
 
 ```
 
+## VLA: bake, train, eval (lerobot)
+
+Policy training lives in [`vla/`](vla/README.md): `vla/convert` bakes generated episodes into
+a LeRobot dataset, `vla/eval` drives the same sim closed-loop with a trained policy, and
+[lerobot](https://github.com/huggingface/lerobot) itself is vendored as the submodule
+`vla/lerobot`, pinned to the revision every result was produced with. lerobot needs Python 3.12,
+so it gets its own venv next to the Isaac one:
+
+```bash
+git submodule update --init vla/lerobot     # or clone with --recurse-submodules
+./scripts/bootstrap_lerobot.sh              # -> .venv-lerobot with lerobot[training,pi,smolvla,diffusion] + the eval plugin
+```
+
+See `vla/README.md` for the two-venv layout and `vla/convert/README.md` / `vla/eval/README.md`
+for the bake and eval recipes.
+
 For the `packing.egg_carton` contribution, run the evidence-producing validation pipeline from the
 CoSiGen root. It stops at the first failure and writes logs plus recorded frame archives under
 `validation_artifacts/`. With `CoSiGen_Solutions` checked out beside this repo, it also runs the held-out

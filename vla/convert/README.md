@@ -14,7 +14,7 @@ construction; a new source costs one reader, a new label costs one pure function
 
 ## Bake
 
-    ~/Documents/Research/lerobot/.venv/bin/python vla/convert/convert.py \
+    .venv-lerobot/bin/python vla/convert/convert.py \
         <…/data_gen/<gen_name>> --repo-id cosigen/bulb_franka_osc \
         [--control_space joint_vel] [--control_freq 15]  (default space: joint_target) [--batches …] [--cams front wrist] \
         [--root <out>] [--task "…"] [--include-failures] \
