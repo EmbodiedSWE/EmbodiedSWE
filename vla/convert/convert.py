@@ -2,7 +2,7 @@
 
 Run with lerobot's OWN venv:
 
-    ~/Documents/Research/lerobot/.venv/bin/python vla/convert/convert.py \\
+    .venv-lerobot/bin/python vla/convert/convert.py \\
         <…/data_gen/<gen_name>> --repo-id cosigen/bulb_franka_osc \\
         [--control_space joint_vel] [--control_freq 15]  (default space: joint_target) [--batches …] \\
         [--cams front wrist] [--root <out dir>] [--task "…"] [--include-failures]
