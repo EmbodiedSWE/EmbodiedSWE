@@ -242,3 +242,6 @@ robobench/suites/*/videos/
 artifacts/
 *.npz
 *.mp4
+
+# lerobot venv (scripts/bootstrap_lerobot.sh) — py3.12, separate from the Isaac .venv
+.venv-lerobot/

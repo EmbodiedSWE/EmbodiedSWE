@@ -13,3 +13,7 @@
 	path = real_to_sim/objects/trellis1
 	url = https://github.com/microsoft/TRELLIS
 	ignore = untracked
+[submodule "vla/lerobot"]
+	path = vla/lerobot
+	url = https://github.com/huggingface/lerobot.git
+	ignore = untracked

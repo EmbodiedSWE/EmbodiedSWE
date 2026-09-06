@@ -2,7 +2,7 @@
 
 Install once into the lerobot venv (auto-discovered by name prefix):
 
-    ~/Documents/Research/lerobot/.venv/bin/pip install -e vla/eval/lerobot_env_cosigen
+    .venv-lerobot/bin/pip install -e vla/eval/lerobot_env_cosigen   (scripts/bootstrap_lerobot.sh does this)
 
 Then, with `vla/eval/serve.py <sim>` running in the CoSiGen venv:
 
