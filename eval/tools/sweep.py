@@ -15,8 +15,9 @@ THE PROTOCOL — your candidate is a generator:
     on `env.device`.
   * Each `yield` advances the WHOLE world by one step; when your function resumes, state
     is fresh — read it sliced by your group (e.g. `scene.part.data.root_pos_w[ids]`).
-  * When your function returns, your group is done: its envs receive zero actions (hold,
-    for delta-style controllers) until every candidate finishes.
+  * When your function returns, your group is scored immediately. Its envs receive zero
+    actions while longer candidates continue; those later actions are controller-dependent
+    and may move the group, but they cannot overwrite its saved return-state score.
   * NEVER: call `env.step`/`env.reset`/`env.set_states` (the tool owns stepping and
     state), touch envs outside `ids`, or set SIM-GLOBAL state (controller gains, torque
     limits, physics settings) — a global write applies to every candidate's envs
@@ -214,6 +215,23 @@ def sweep(
     try:
         env.set_states(state_n)
         gens, blocks, done = [], [None] * n_cand, [False] * n_cand
+        per_env = np.full(n_env, np.nan, dtype=np.float64)
+
+        def score_finished(indices):
+            """Save newly returned groups now, before another world step can move them."""
+            if not indices:
+                return
+            scored = objective(env)
+            if torch.is_tensor(scored):
+                scored = scored.detach().cpu().numpy()
+            current = np.asarray(scored, dtype=np.float64).reshape(-1)
+            if current.shape[0] < n_env:
+                raise ValueError(f"objective returned {current.shape[0]} scores for {n_env} "
+                                 f"envs — it must return one score per env")
+            for candidate_i in indices:
+                group_indices = ids_list[candidate_i].detach().cpu().numpy()
+                per_env[group_indices] = current[group_indices]
+
         for i, (fn, params) in enumerate(candidates):
             g = fn(env, ids_list[i], **params)
             if not inspect.isgenerator(g):
@@ -224,6 +242,7 @@ def sweep(
         for i, g in enumerate(gens):     # prime: run each to its first yield (no step yet)
             blocks[i] = resume(i, g, 0)
             done[i] = blocks[i] is None
+        score_finished([i for i, is_done in enumerate(done) if is_done])
         act_dim = act_dim_seen[0]
         last_beat = time.time()
         while not all(done):
@@ -240,23 +259,18 @@ def sweep(
                     full[ids_list[i]] = blocks[i]
             env.step(full)
             steps += 1
+            newly_finished = []
             for i, g in enumerate(gens):
                 if done[i]:
                     continue
                 blocks[i] = resume(i, g, steps)
                 if blocks[i] is None:
                     done[i] = True
+                    newly_finished.append(i)
                     if verbose:
                         print(f"[sweep] {names[i]} finished after {steps} step(s)",
                               flush=True)
-
-        scored = objective(env)
-        if torch.is_tensor(scored):
-            scored = scored.detach().cpu().numpy()
-        per_env = np.asarray(scored, dtype=np.float64).reshape(-1)
-        if per_env.shape[0] < n_env:
-            raise ValueError(f"objective returned {per_env.shape[0]} scores for {n_env} "
-                             f"envs — it must return one score per env")
+            score_finished(newly_finished)
     finally:
         env.set_states(pre)  # every env back exactly as the sweep found it
 

@@ -21,15 +21,19 @@ workspace carries over between stages.
 - `task.md` — the task: the scene, the robot, and the goal. Read it first.
 - `rules/` — if present: restrictions in force for this experiment. Each file
   states something that is disabled or constrained. Rules are binding.
-- `skills/` — if present: optional guidance provided for this run (API notes,
-  workflows, examples). Reading every skill before starting usually saves time.
-- `tools.md` — if present: python tools granted to this run. Their modules are
-  already installed at `/task/tools/`, which is on your `PYTHONPATH`, so your
-  scripts import them by name. Read `tools.md` before writing code — the tools
-  exist to save you real time.
+- `skills/` — if present: optional guidance (API notes, workflows, examples).
+  Read the relevant skill when the router selects that capability; do not preload
+  every skill before establishing the baseline.
+- `tool_router.md` — if present: the concise workflow and eligibility gates for
+  exactly the tools granted to this run. It is included below in these initial
+  instructions.
+- `tools.md` — if present: the complete API reference for those granted tools.
+  Their modules are installed at `/task/tools/`, which is on your `PYTHONPATH`.
+  Open the relevant section when the router sends you to a tool; the full
+  reference remains available without occupying the initial prompt.
 
-Only `task.md` is always there; a missing entry simply means no rules, skills,
-or tools apply to this run.
+A missing optional entry means those rules, skills, or tools do not apply to
+this run.
 
 ## Deliverable
 
@@ -80,6 +84,10 @@ deliverable.
   grading also tests other initial conditions, and GPU physics is not
   bit-deterministic (small errors compound), so closed-loop corrections beat
   open-loop replay.
+- Each development script is a fresh process and starts from a fresh
+  environment. If this run grants a state-restoration tool, only an explicit
+  restore inside that script changes its origin. Never assume simulator state
+  carried over from a previous script.
 - Running simulations headless saves time: `AppLauncher(headless=True)` —
   create it BEFORE importing anything that touches `isaaclab.sim`. The first
   sim launch takes ~1 minute; later launches are faster.
@@ -87,4 +95,9 @@ deliverable.
 - Kit sometimes hangs on app close — after your script prints its final
   status, `os._exit(0)` is an acceptable way to end it.
 - You can check the scene visually: capture camera frames to PNG, or record
-  entire videos to debug a whole attempt.
+  entire videos to debug a whole attempt. A filepath is not a visual
+  inspection: transport/open the actual image pixels before drawing a
+  conclusion from them.
+- Development runs, checkpoints, and search results are evidence, not the
+  official verdict. The final integrated solution must still pass the
+  harness's queued end-to-end verification from a fresh reset.
