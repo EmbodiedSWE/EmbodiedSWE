@@ -1,4 +1,4 @@
-"""Layered yaml config: base <- tasks/<task>.yaml <- rewards/<reward>.yaml <- `key.sub=value` overrides.
+"""Layered yaml config: base <- task env `defaults()` <- tasks/<task>.yaml <- rewards/<reward>.yaml <- `key.sub=value` overrides.
 
 The layering is the audit trail: the base holds the defaults and the observation rule; a task file
 sets the preset, horizon, env count, action mapping, and any per-task PPO overrides (same key path,
@@ -42,7 +42,13 @@ def load_config(task: str, reward: str | None = None, overrides: list[str] | Non
     Overrides are `a.b.c=value` with the value parsed as yaml (so `num_envs=64`, `x=[1,2]`)."""
     cfg = _load(CONFIG_DIR / "base.yaml")
     task_path = Path(task) if task.endswith(".yaml") else CONFIG_DIR / "tasks" / f"{task}.yaml"
-    cfg = _deep_merge(cfg, _load(task_path))
+    task_cfg = _load(task_path)
+    task_env = (task_cfg.get("task") or {}).get("task_env")
+    if task_env:  # a tuned env's own defaults (horizon, finger PD, PPO steps/entropy, ...) beat base.yaml, lose to the yaml
+        from .tasks import load_task_env_cls
+
+        cfg = _deep_merge(cfg, load_task_env_cls(task_env).defaults())
+    cfg = _deep_merge(cfg, task_cfg)
     if reward:
         reward_path = Path(reward) if reward.endswith(".yaml") else CONFIG_DIR / "rewards" / f"{reward}.yaml"
         cfg = _deep_merge(cfg, _load(reward_path))
