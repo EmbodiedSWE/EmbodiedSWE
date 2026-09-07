@@ -54,8 +54,8 @@ def graded() -> None:
     tracer = None
     if args.trace:
         sys.path.insert(0, str(SOL))
-        from robobench_rl.task_envs import load_task_env_cls  # the exported copy
-        from robobench_rl.task_rewards import load_task_reward
+        from robobench_rl.tasks import load_task_env_cls  # the exported copy
+        from robobench_rl.tasks import load_task_reward
         task = (load_task_env_cls(META.get("task_env")).reward_cls or load_task_reward(scene))(env)
         every = max(1, int(round(1.0 / (env.dt * env.robot.control_period))))
         k = [0]

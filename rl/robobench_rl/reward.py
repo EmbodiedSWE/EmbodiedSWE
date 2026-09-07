@@ -3,7 +3,7 @@
     r_t = (P_t + bonus * success_t) * step_dt
 
   progress  P = the grader's weighted rubric progress — PRIVILEGED (agents never see the grader)
-  dense     P = a dense potential written for the task (task_rewards/<scene>.py, or the task env's reward_cls)
+  dense     P = a dense potential written for the task (tasks/<scene>.py: the Dense class, or the tuned env's reward_cls)
 
 Success and the logged stage curve always come from the grader. Graders are single-trajectory objects
 (setup() captures start poses once, "once" milestones keep a best-ever), so `reset(env_ids)` re-runs
@@ -14,7 +14,7 @@ import importlib
 
 import torch
 
-from .task_rewards import load_task_reward
+from .tasks import load_task_reward
 
 
 def load_grader_cls(preset: str, scene_name: str):

@@ -1,4 +1,4 @@
-# Bulb, Franka, OSC preset — the TUNED env (condition `tuned`): robobench_rl/task_envs/bulb_tuned.py bakes in
+# Bulb, Franka, OSC preset — the TUNED env (condition `tuned`): robobench_rl/tasks/bulb.py bakes in
 # what task-specific debugging found (14 s horizon, finger PD 8000, warm-start curriculum, neck-relative
 # observation, off-table termination, first-stage reward weights, PPO entropy). Keys here override it.
 task:

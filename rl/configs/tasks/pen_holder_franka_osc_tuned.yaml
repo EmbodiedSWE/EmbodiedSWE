@@ -1,0 +1,6 @@
+# Pen holder, Franka, OSC preset — TUNED env (robobench_rl/tasks/pen_holder.py).
+task:
+  name: pen_holder_franka_osc_tuned
+  preset: packing.pen_holder.franka.osc
+  task_env: pen_tuned
+  num_envs: 1024

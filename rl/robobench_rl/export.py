@@ -3,7 +3,7 @@
 The grader mounts solution/ read-only with solve.py's directory on sys.path, in a container with
 robobench + torch but not this package or rsl_rl. So the folder carries: solve.py (generic loop), policy.pt
 (TorchScript actor + obs normalizer, deterministic), a copy of the torch-only parts of robobench_rl (obs
-rule, the env base class, task_envs, task_rewards) and env.json (task_env name, config, horizon) — solve()
+rule, the env base class, tasks/) and env.json (task_env name, config, horizon) — solve()
 ATTACHES the training-time task env to the graded env, so observation and action processing are identical."""
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import torch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from robobench_rl.task_envs import load_task_env_cls  # noqa: E402  (copied, torch-only)
+from robobench_rl.tasks import load_task_env_cls  # noqa: E402  (copied, torch-only)
 
 META = json.loads((HERE / "env.json").read_text())
 
@@ -76,11 +76,10 @@ def export_solution(run_dir: str | Path, checkpoint: str | Path, out_dir: str | 
     if pkg_dst.exists():
         shutil.rmtree(pkg_dst)
     pkg_dst.mkdir()
-    (pkg_dst / "__init__.py").write_text('"""runtime copy for grading (obs rule, task envs, task rewards)"""\n')
+    (pkg_dst / "__init__.py").write_text('"""runtime copy for grading (obs rule, tasks/)"""\n')
     for f in ("obs.py", "vec_env.py"):  # vec_env imports rsl_rl only if present
         shutil.copy(pkg_src / f, pkg_dst / f)
-    for sub in ("task_envs", "task_rewards"):
-        shutil.copytree(pkg_src / sub, pkg_dst / sub, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(pkg_src / "tasks", pkg_dst / "tasks", ignore=shutil.ignore_patterns("__pycache__"))
     (out_dir / "solve.py").write_text(SOLVE_TEMPLATE)
     meta_out = {k: meta[k] for k in ("preset", "task_env", "num_actions", "step_dt", "max_episode_length", "cfg")}
     meta_out.update(num_obs=n_obs, checkpoint=checkpoint.name, train_iteration=int(ckpt.get("iter", -1)), run_dir=str(run_dir))

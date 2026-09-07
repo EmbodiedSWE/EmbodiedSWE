@@ -16,8 +16,9 @@ robobench_rl/
   reward.py         per-step reward from a potential: grader progress (privileged) or a dense one
   vec_env.py        RoboBenchEnv — the base RL env (rsl_rl VecEnv) with Isaac-Lab-style task hooks:
                     defaults, _setup, _process_actions (ActionMap), _get_extra_obs, _get_terminated, _hover_target
-  task_envs/        subclasses baking task-tuned changes into one class (bulb_tuned.py)
-  task_rewards/     dense potentials per scene (bulb, slice, nut_thread, pen_holder, tool_packing) + geometry
+  tasks/            one module per task: <Scene>DenseReward (the DENSE condition: full-task potential proposed
+                    once, up front, never iterated), <Scene>TunedReward + <Scene>TunedEnv (the TUNED condition:
+                    expert-iterated first-stage reward + env changes); common.py = shared geometry terms
   export.py         checkpoint -> solution/ (TorchScript actor + torch-only package copy + env.json); the solve
                     ATTACHES the same task env to the graded env
 scripts/            smoke.py · train.py · export.py · play.py (grade / --warm diagnostic / video target) · tb_summary.py
@@ -27,8 +28,8 @@ configs/            base.yaml <- tasks/<task>.yaml <- rewards/<reward>.yaml
 | condition | command | what it tests |
 |---|---|---|
 | **progress** | `--task bulb_franka_osc --reward progress` | stock RL on the grader's own rubric (privileged reward), generic env |
-| **dense** | `--task bulb_franka_osc --reward dense` | stock RL on a dense reward written up front, generic env |
-| **tuned** | `--task bulb_franka_osc_tuned --reward dense` | task-tuned RL: the same dense reward plus an env class that bakes in the fixes found by iterating on the task (horizon, finger PD, curriculum, neck-relative obs, termination) |
+| **dense** | `--task bulb_franka_osc --reward dense` | stock RL on a full-task dense reward proposed once, up front (`tasks/bulb.py: BulbDenseReward`), generic env, no iteration |
+| **tuned** | `--task bulb_franka_osc_tuned --reward dense` | expert-iterated RL toward the first rubric stage: `tasks/bulb.py: BulbTunedReward` (measured grasp geometry, per-finger grasp, settled lift baseline) inside `BulbTunedEnv` (horizon, finger PD, warm-start curriculum, termination) |
 
 The generic env is `RoboBenchEnv`: config-driven action scaling, the observation rule, fixed-length episodes,
 no termination. A task env subclass overrides only what its condition needs.
@@ -40,7 +41,7 @@ no termination. A task env subclass overrides only what its condition needs.
 | Observation | flatten `get_states()` env-local, drop actuator setpoints/controller state, add EE pose + last action | `robobench_rl/obs.py` |
 | Action | the task's frozen controller preset, policy in [-1,1]; ActionMap re-scales gripper dims or maps arm dims to joint deltas | `robobench_rl/vec_env.py` |
 | Reward (`rewards/progress`) | the grader's weighted rubric progress, paid every step, + success bonus. **Privileged**: agents never see the grader | `robobench_rl/reward.py` |
-| Reward (`rewards/dense`) | a hand-designed dense potential per task, paid every step, written from public scene accessors (reach, lift, transport, orient, approach, insert/thread) | `robobench_rl/task_rewards/<scene>.py` |
+| Reward (`rewards/dense`) | a hand-designed dense potential per task, paid every step, written from public scene accessors (reach, lift, transport, orient, approach, insert/thread) | `robobench_rl/tasks/<scene>.py` |
 | Episode | the task's own horizon in seconds, always run to the limit (Isaac Lab style); success is logged, not terminal | `configs/tasks/*.yaml` |
 | Algorithm | rsl_rl PPO; defaults in the base, per-task overrides in the task file (deep-merged) | `configs/base.yaml`, `configs/tasks/*.yaml` |
 | Reporting | grader verdicts of exported checkpoints only; training reward is never a result | `robobench_rl/export.py` |
@@ -107,7 +108,7 @@ envs overflowed the scene's default collision stack. Rerun any row with
 | pen_holder | packing.pen_holder.franka.osc | yes | `pens_in` (a pen inserted tip-up) — pick + carry + insert | `pen_tuned` |
 | tool_packing | packing.tool_packing.franka.osc | yes | `stowed` (tool in its drawer) — the toolbox starts SHUT, so a drawer must be opened first | not attempted |
 
-Each tuned env is one subclass of `RoboBenchEnv` (`robobench_rl/task_envs/`). `pc_ram` and the other
+Each tuned env is one subclass of `RoboBenchEnv` (`<Scene>TunedEnv` in `robobench_rl/tasks/<scene>.py`). `pc_ram` and the other
 grasp-weld scenes are excluded: the weld joint pool is finite per process (8 welds per part), so a
 training env silently loses the ability to grasp after a few episodes.
 

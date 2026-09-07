@@ -1,4 +1,4 @@
-# Nut thread, Franka, OSC preset — TUNED env (robobench_rl/task_envs/nut_tuned.py): first-stage pick recipe.
+# Nut thread, Franka, OSC preset — TUNED env (robobench_rl/tasks/nut_thread.py): first-stage pick recipe.
 task:
   name: nut_thread_franka_osc_tuned
   preset: assembly.nut_thread.franka.osc

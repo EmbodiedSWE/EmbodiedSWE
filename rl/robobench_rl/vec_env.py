@@ -312,6 +312,6 @@ class RoboBenchEnv(VecEnv):
 
 def make_vec_env(cfg: dict, device: str | None = None) -> RoboBenchEnv:
     """Instantiate the task env named by `task.task_env` (generic RoboBenchEnv when absent)."""
-    from .task_envs import load_task_env_cls
+    from .tasks import load_task_env_cls
 
     return load_task_env_cls(cfg["task"].get("task_env"))(cfg, device=device)
