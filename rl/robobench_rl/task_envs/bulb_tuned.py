@@ -1,5 +1,5 @@
 """Bulb TUNED env: everything the task-tuned condition changes, in one class — horizon, finger PD, action map, warm-start target,
-extra observation, early termination and the dense reward (neck-waist grasp pose, per-finger grasp,
+early termination and the dense reward (neck-waist grasp pose, per-finger grasp,
 settled lift baseline)."""
 from __future__ import annotations
 
@@ -30,14 +30,6 @@ class BulbTunedEnv(RoboBenchEnv):
         b = self.env.scene.bulbs[0]
         return b.data.root_pos_w + quat_apply(b.data.root_quat_w, torch.tensor([0.0, 0.0, GRASP_Z], device=self.device).expand(self.num_envs, 3))
 
-    def _get_extra_obs(self):
-        """Neck-waist point of bulb 0 relative to the hand, and the bulb axis: what the pinch needs."""
-        from isaaclab.utils.math import quat_apply
-
-        art = self.env.robot.articulation
-        ee = list(art.data.body_names).index(self.env.robot.EE_BODY)
-        axis = quat_apply(self.env.scene.bulbs[0].data.root_quat_w, torch.tensor([0.0, 0.0, 1.0], device=self.device).expand(self.num_envs, 3))
-        return torch.cat([self._neck() - art.data.body_pos_w[:, ee], axis], dim=1)
 
     def _get_terminated(self):
         """Bulb knocked off the work surface (fell > 10 cm below its spawn height): end the episode."""

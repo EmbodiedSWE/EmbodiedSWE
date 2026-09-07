@@ -99,24 +99,29 @@ envs overflowed the scene's default collision stack. Rerun any row with
 
 ## Task subset
 
-| task | preset | grasp | grader | dense reward |
+| task | preset | grader (main) | first rubric stage = the pick target | tuned env |
 |---|---|---|---|---|
-| bulb | assembly.bulb.franka.osc | friction | existing | `task_rewards/bulb.py` |
-| nut_thread | assembly.nut_thread.franka.osc | friction | **missing** (teammates) | `task_rewards/nut_thread.py` |
-| pen_holder | packing.pen_holder.franka.osc | friction | **missing** (teammates) | `task_rewards/pen_holder.py` |
-| tool_packing | packing.tool_packing.franka.osc | friction | **missing** (teammates) | `task_rewards/tool_packing.py` |
-| slice | cutting.slice.franka.joint | friction (knife) | existing | `task_rewards/slice.py` (handle point to calibrate) |
+| bulb | assembly.bulb.franka.osc | yes | `lifted` (bulb 4 cm up, quasi-static) | `bulb_tuned` — 8/8 from home |
+| nut_thread | assembly.nut_thread.franka.osc | yes | `lifted` (nut origin at the bolt-top height) | `nut_tuned` — final checkpoint 8/8 from home (score 0.333), initialised from the bulb policy |
+| slice | cutting.slice.franka.joint | yes | `knife_taken` (knife above the rail height) | `slice_tuned` (Jacobian pre-roll for joint mode) |
+| pen_holder | packing.pen_holder.franka.osc | yes | `pens_in` (a pen inserted tip-up) — pick + carry + insert | `pen_tuned` |
+| tool_packing | packing.tool_packing.franka.osc | yes | `stowed` (tool in its drawer) — the toolbox starts SHUT, so a drawer must be opened first | not attempted |
 
-Graders for nut_thread, pen_holder and tool_packing are owned by the benchmark team and not yet
-written; until they land, the wrapper refuses those tasks (it needs a grader for success
-termination, the `progress` reward, and for grading checkpoints). Bulb and slice run today. Isaac Lab's Factory-NutThread is the last phase of our
-nut_thread (nut starts in the gripper above the bolt); an in-hand-start variant of our scene
-would reproduce it inside this harness as a positive control.
+Each tuned env is one subclass of `RoboBenchEnv` (`robobench_rl/task_envs/`). `pc_ram` and the other
+grasp-weld scenes are excluded: the weld joint pool is finite per process (8 welds per part), so a
+training env silently loses the ability to grasp after a few episodes.
 
-`pc_ram` was tried (256 envs, 1.1k env-steps/s) and dropped: its grasp relies on the
-weld-on-closure contract, whose per-env joint pool is finite for the life of the process (8
-welds per part), so a training env silently loses the ability to grasp after a few episodes.
-The same holds for every grasp-weld scene.
+## Reference tasks the tuned envs borrow from
+
+| reference | what we reuse |
+|---|---|
+| Isaac Lab `Isaac-Lift-Cube-Franka`: reach `1-tanh(d/0.1)`, lift bonus (weight 15) above 4 cm, object-dropping termination, 5 s episodes | the pick rungs (reach → grasp → lift with a threshold bonus), the off-table termination |
+| Isaac Lab `Factory-NutThread`: keypoint pose error with coarse/fine kernels, engaged + success bonuses, part starts in the gripper | keypoint reach to a grasp POSE; the warm-start curriculum stands in for the in-hand start |
+| ManiSkill `PickCube-v1`: reach `1-tanh(5d)`, +1 while grasped (contact-based), place gated on grasp, success 5 | grasp-gated later rungs; our per-finger closure window replaces the contact check (no contact sensors here) |
+| ManiSkill `PegInsertionSide-v1`: pre-insertion alignment (×3) then insertion (×5), success 10 | pen_holder's carry / tip-up / insert rungs |
+| Isaac Lab `Franka-Cabinet` (direct + manager-based `Open-Drawer`): handle distance `(1/(1+d²))²`, gripper-axis alignment, a grasp ladder — `align_grasp_around_handle` (one finger each side), `approach_gripper_handle` (per-finger distance, ×5), `grasp_handle` (finger closure paid only near the handle, ×0.5) — then drawer joint × 7.5 with milestone bonuses | the per-finger grasp ladder mirrors our per-finger window; the drawer stage a future `tool_tuned` env needs before its pick (the toolbox starts shut; the rubric pays nothing for an open drawer alone) |
+| Isaac Lab `Dexsuite` (Kuka-Allegro lift / reorient): every tracking term gated on a contact-sensor grasp (thumb + one finger over a force threshold) | the gating idea; no contact sensors in our scenes, so proximity + closure stands in |
+| Isaac Lab pick-and-place / stacking envs (GR-1, G1, Galbot, Agibot, Franka stack) | ship NO RL configs — imitation-learning setups; the RL zoo stops at cube lift + drawer + Factory insertions |
 
 ## Grader partial reset
 

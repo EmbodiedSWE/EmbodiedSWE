@@ -5,7 +5,10 @@ import importlib
 
 from ..vec_env import RoboBenchEnv
 
-REGISTRY = {"bulb_tuned": ("bulb_tuned", "BulbTunedEnv")}
+REGISTRY = {
+    "bulb_tuned": ("bulb_tuned", "BulbTunedEnv"),
+    "nut_tuned": ("nut_tuned", "NutTunedEnv"),
+}
 
 
 def load_task_env_cls(name: str | None) -> type[RoboBenchEnv]:

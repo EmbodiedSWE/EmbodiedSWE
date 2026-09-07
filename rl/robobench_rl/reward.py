@@ -42,6 +42,7 @@ class GraderReward:
         self.grader = grader_cls(env)  # runs setup() on the just-reset env
         cls = task_cls or (load_task_reward(scene_name) if mode == "dense" else None)
         self.task = cls(env, weights) if mode == "dense" else None
+        self.stage_names = [n for n, _, _ in self.grader._stages]
 
     def measure(self) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         vals = self.grader.measure()
@@ -81,6 +82,8 @@ class GraderReward:
                     new[km] = old.to(new.device)[km]
         for name in g._best:
             g._best[name][ids] = 0.0
+        if getattr(g, "_final_cache", None) is not None:  # "final" stages are verdict-time; never stale across resets
+            g._final_cache = None
         if self.task is not None:
             self.task.reset(env_ids.to(self.device))
 

@@ -178,6 +178,20 @@ class RoboBenchEnv(VecEnv):
     def _on_reset(self, ids: torch.Tensor) -> None:
         pass
 
+    def _hover_action(self, target: torch.Tensor, warm: torch.Tensor) -> torch.Tensor:
+        """One pre-roll action in policy space: P-servo the hand to `target` for the `warm` envs, zero for
+        the rest, fingers open. Default assumes pose-delta arm actions (OSC/IK presets); joint-mode envs
+        override with a Jacobian step."""
+        art = self.env.robot.articulation
+        ee = list(art.data.body_names).index(self.env.robot.EE_BODY)
+        ctrl = self.env.robot.controller
+        arm = ctrl.controllers[0] if hasattr(ctrl, "controllers") else ctrl
+        pos_scale = float(getattr(getattr(arm, "cfg", None), "pos_scale", 0.02))
+        a = torch.zeros(self.num_envs, self.num_actions, device=self.device)
+        a[:, 0:3] = ((target - art.data.body_pos_w[:, ee]) / pos_scale).clamp(-1.0, 1.0) * warm[:, None].float()
+        a[:, 6:] = 1.0  # fingers open (arm dims first, gripper last — every preset here)
+        return a
+
     # ----- build ---------------------------------------------------------------------------------
     def _build(self, cfg: dict, device: str | None):
         import robobench
@@ -275,16 +289,8 @@ class RoboBenchEnv(VecEnv):
         n = self.num_envs
         warm = torch.rand(n, device=self.device) < self.hover_frac
         target = target + (torch.rand(n, 3, device=self.device) * 2 - 1) * self.hover_jitter * torch.tensor([1.0, 1.0, 0.0], device=self.device)
-        art = self.env.robot.articulation
-        ee = list(art.data.body_names).index(self.env.robot.EE_BODY)
-        ctrl = self.env.robot.controller
-        arm = ctrl.controllers[0] if hasattr(ctrl, "controllers") else ctrl
-        pos_scale = float(getattr(getattr(arm, "cfg", None), "pos_scale", 0.02))
         for _ in range(self.hover_steps):
-            a = torch.zeros(n, self.num_actions, device=self.device)
-            a[:, 0:3] = ((target - art.data.body_pos_w[:, ee]) / pos_scale).clamp(-1.0, 1.0) * warm[:, None].float()
-            a[:, 6:] = 1.0  # fingers open (arm dims first, gripper last — every preset here)
-            self.env.step(self._process_actions(a))
+            self.env.step(self._process_actions(self._hover_action(target, warm)))
         self.preroll_warm = warm
         self._in_preroll = False
 

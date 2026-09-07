@@ -107,8 +107,9 @@ def warm() -> None:
                 _, stages = venv.reward_fn.measure()
                 for n, v in stages.items():
                     peaks[n] = torch.maximum(peaks.get(n, torch.zeros_like(v)), v)
-        picked = peaks.get("picked", peaks.get("knife_taken"))
-        print(f"[warm] ep{ep} per-env peak pick stage: {[round(float(x), 2) for x in picked]}", flush=True)
+        first = venv.reward_fn.stage_names[0] if hasattr(venv.reward_fn, "stage_names") else next(iter(peaks))
+        picked = peaks[first]
+        print(f"[warm] ep{ep} per-env peak {first}: {[round(float(x), 2) for x in picked]}", flush=True)
         if float(picked[0]) >= 0.5:
             print("[warm] env 0 PICKED", flush=True)
             break
