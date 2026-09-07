@@ -58,7 +58,8 @@ class TaskReward:
 DENSE = {"bulb": "BulbDenseReward", "nut_thread": "NutThreadDenseReward", "pen_holder": "PenHolderDenseReward",
          "slice": "SliceDenseReward", "tool_packing": "ToolPackingDenseReward"}
 TUNED_ENVS = {"bulb_tuned": ("bulb", "BulbTunedEnv"), "nut_tuned": ("nut_thread", "NutTunedEnv"),
-              "slice_tuned": ("slice", "SliceTunedEnv"), "pen_tuned": ("pen_holder", "PenTunedEnv")}
+              "slice_tuned": ("slice", "SliceTunedEnv"), "pen_tuned": ("pen_holder", "PenTunedEnv"),
+              "tool_packing_tuned": ("tool_packing", "ToolPackingTunedEnv")}
 
 
 def load_task_reward(scene_name: str) -> type[TaskReward]:
