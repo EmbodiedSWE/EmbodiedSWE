@@ -210,20 +210,6 @@ class SliceTunedEnv(RoboBenchEnv):
     def _hover_target(self):
         return self._handle() + torch.tensor([0.0, 0.0, 0.10], device=self.device)
 
-    def _reset_idx(self, ids):
-        if ids.numel() == self.num_envs:
-            return super()._reset_idx(ids)
-        # early termination (knife off the island): restart those envs from home but keep the batch in LOCKSTEP
-        # (episode_length_buf untouched, they time out with the rest). MEASURED on tuned2: the first knocked-off
-        # knife desynced one env, every later reset was partial, and the base class skipped the warm-start
-        # pre-roll for the remaining ~380 iterations — the curriculum ran for exactly one episode.
-        self.env.reset(ids)
-        self._on_reset(ids)
-        self.reward_fn.reset(ids)
-        self.last_action[ids] = 0.0
-        self._ep_ret[ids] = 0.0
-        self._ep_peak[ids] = 0.0
-
     @torch.no_grad()
     def _hover_preroll(self, ids):
         """Bridging warm start: a `hover_partial_frac` share of the warm envs is servoed for only a random number
