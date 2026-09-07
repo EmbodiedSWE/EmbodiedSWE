@@ -1,0 +1,12 @@
+# Bulb threading, Franka, OSC preset — the GENERIC env (conditions `progress` and `dense`): the task's own
+# horizon, config-driven action scaling, the default observation, no termination, no curriculum.
+task:
+  name: bulb_franka_osc
+  preset: assembly.bulb.franka.osc
+  episode_seconds: 60                  # the task's own horizon (a scripted solve takes ~40-50 s)
+  num_envs: 1024                       # RTX 5090: 4.2k env-steps/s, 17.6 GB
+action:
+  affine:
+    - dims: [6, 7]                     # panda finger position targets, metres per finger
+      lo: 0.0
+      hi: 0.04

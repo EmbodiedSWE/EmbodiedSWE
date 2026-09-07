@@ -1,0 +1,5 @@
+# Reward: privileged rubric progress (the standard RL condition). The coding agent never sees
+# the grader; disclose this wherever the arm is reported.
+reward:
+  mode: progress
+  success_bonus: 1.0

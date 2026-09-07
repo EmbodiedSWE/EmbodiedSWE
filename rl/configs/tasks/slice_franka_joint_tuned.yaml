@@ -1,0 +1,6 @@
+# Slice, Franka, JOINT preset — TUNED env (robobench_rl/tasks/slice.py): knife pick recipe.
+task:
+  name: slice_franka_joint_tuned
+  preset: cutting.slice.franka.joint
+  task_env: slice_tuned
+  num_envs: 512
