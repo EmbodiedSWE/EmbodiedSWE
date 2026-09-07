@@ -1,55 +1,51 @@
-"""Checkpoint tree — save a reached world state to disk and start a later run from it.
+"""Checkpoint tree — save a reached world state to disk, restore any saved state in a later
+process, and organise the saved states around the agent's own stage plan.
 
     from checkpoint_tree import CheckpointTree
+    tree = CheckpointTree(env)                       # right after env.reset(); reconciles n0
+    tree.plan(["leg 1 seated", "legs 1-2 seated", "legs 1-3 seated", "all 4 legs seated"])
+    result = tree.run_stage(1)                       # goto(previous boundary) -> stage_1.run(env)
+                                                     #   -> stage_1.check(env) -> save boundary
+    tree.goto_stage(2)                               # restore the latest stage-2 boundary
+    print(tree.show())                               # plan progress + every node
 
-    tree = CheckpointTree(env)                     # after env.reset()
-    tree.save("grasp holds",                       # -> 'n1'
-              action="approached from +x and closed at 0.004",
-              program=__file__, log=captured_stdout)
-    ...
-    tree.goto("n1")                                # in a LATER script, in a fresh process
+The tree is a plain tree of saved world states (`env.get_states()` tensors, one `.pt` per node)
+plus non-restorable attempt records. A stage boundary is an ordinary node tagged with its stage
+index; a stage may have several boundary nodes (different ways of reaching the same subgoal) and
+the agent chooses which one to continue from. Every script starts from the task's fresh reset
+(node `n0`) unless it explicitly calls `goto()` / `goto_stage()` / `run_stage()`.
 
-Why disk and not memory: every script you run is a new process that boots its own simulator,
-so a state kept in RAM dies with it. Nodes live under `<root>/` (default
-`/workspace/.checkpoints`): `tree.json` (the manifest), `<cid>.pt` (the state),
-`<cid>.code.py` (the program that produced it, when given), `<cid>.png` (a snapshot, when a
-viewer is attached).
+Stage modules live at `/workspace/solution/stages/stage_<k>.py` and expose
+    def run(env) -> None      # drives the world from the previous boundary to this stage's goal
+    def check(env) -> bool    # the agent's OWN verification of that goal (reported, never fatal)
+so `solve.py` can be their composition; `run_stage(k)` imports that module when no callables are
+passed. Nothing here grades anything: the rubric is applied elsewhere to the delivered program.
 
-The tree is a tree: `save()` hangs the new node off whichever node is current, so a risky
-variation costs nothing already earned — `goto()` the parent and branch again. Every node
-carries the original three-field annotation surface:
-
-  action      what was attempted and how it ended (yours; defaults to the label)
-  state_diff  what actually changed vs the parent — COMPUTED automatically from the two
-              saved states (object movements, joint deltas), so it is never missing
-  scene_diff  what changed visually — fill it after LOOKING at the parent/node snapshots
-              (`tree.annotate(cid, scene_diff=...)`); with a viewer attached, save()
-              captures the snapshot for you
-
-`goto()` and `tried_from()` replay those annotations (plus each branch's code and a
-[SUCCESS]/[CRASHED-style] flag), which is what stops a second identical attempt.
-
-State is whatever `env.get_states()` returns, restored with `env.set_states()`. Both calls
-are the raw mechanism; a condition that blocks `set_states` cannot grant this tool.
+Files under /workspace/.checkpoints: tree.json (manifest), <cid>.pt (state), <cid>.code.py
+(program that reached it), <cid>.log.txt (its full printed output), plus the viewer's snapshots.
 """
-
 from __future__ import annotations
 
+import contextlib
+import importlib.util
+import io
 import json
+import re
 import shutil
+import sys
 import time
-from dataclasses import dataclass, field
+import traceback
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any, Callable, Iterator
 
-# Self-declaration, read by eval/tools/__init__.py::discover(). A plain dict on purpose: this
-# file is also installed standalone on the agent's PYTHONPATH, where a relative import of the
-# tools package would fail.
 TOOL = {
     "name": "checkpoint_tree",
     "description": (
-        "Save world states as an annotated tree of nodes on disk and restore any of them in "
-        "a later run (save / goto): each node carries action, an automatically computed "
-        "state diff vs its parent, an optional snapshot and the program that reached it."
+        "Save world states as an annotated tree of nodes on disk and restore any of them in a "
+        "later run (save / goto); plan the task in stages and save one boundary node per "
+        "completed stage (plan / run_stage / goto_stage)."
     ),
     "exports": ("CheckpointTree",),
     "skill": "cosigen-checkpoint-tree",
@@ -58,420 +54,627 @@ TOOL = {
 }
 
 MANIFEST = "tree.json"
+DEFAULT_ROOT = "/workspace/.checkpoints"
+STAGES_DIR = "/workspace/solution/stages"
+OUTCOMES = ("ok", "partial", "failed", "crashed")
+POS_TOL = 2e-3          # m: a state entry that moved less than this is "unchanged" in a diff
+MOTION_LIN = 0.02       # m/s: above this the world is still moving (checkpoint not settled)
+MOTION_ANG = 0.2        # rad/s
+MOTION_JOINT = 0.05     # rad/s
+LIMIT_MARGIN = 0.05     # rad: a robot joint closer than this to a limit is flagged
 
 
+# ----- records -----------------------------------------------------------------------------------
 @dataclass
-class Node:
+class Record:
+    """A checkpoint (restorable, has a .pt) or an attempt (provenance only, no state)."""
     cid: str
+    kind: str                       # "checkpoint" | "attempt"
     parent: str | None
-    depth: int
-    label: str
-    note: str
-    created: float
-    children: list[str]
-    # the original three-field annotation surface
+    label: str                      # the STATE reached, in task terms (checkpoint) / action (attempt)
     action: str = ""
-    state_diff: str = ""
-    scene_diff: str = ""
-    # provenance: the program that produced this state (file name; text at <cid>.code.py),
-    # its printed log (stored IN FULL — zero-truncation), snapshot path, success at save time
+    note: str = ""
+    created: float = 0.0
+    stage: int | None = None        # stage index when the node is a stage boundary
+    origin: str = "fresh"           # what the live world was when this was made
+    outcome: str = "ok"
+    reusable: bool = True
     code_name: str = ""
-    log: str = ""
     snapshot: str = ""
-    success: bool | None = None
+    success: bool | None = None     # the scene's own success predicate at save time, if any
+    state_diff: str = ""            # computed: what moved versus the parent
+    scene_diff: str = ""            # the agent's, after looking at parent/node snapshots
+    joints: str = ""
+    health: dict = field(default_factory=dict)
+    metrics: dict = field(default_factory=dict)
 
     def as_json(self) -> dict:
-        return {
-            "cid": self.cid, "parent": self.parent, "depth": self.depth,
-            "label": self.label, "note": self.note, "created": self.created,
-            "children": list(self.children),
-            "action": self.action, "state_diff": self.state_diff,
-            "scene_diff": self.scene_diff, "code_name": self.code_name,
-            "log": self.log, "snapshot": self.snapshot, "success": self.success,
-        }
+        return asdict(self)
 
     @classmethod
-    def from_json(cls, d: dict) -> "Node":
-        return cls(cid=d["cid"], parent=d.get("parent"), depth=int(d.get("depth", 0)),
-                   label=d.get("label", ""), note=d.get("note", ""),
-                   created=float(d.get("created", 0.0)), children=list(d.get("children") or []),
-                   action=d.get("action", ""), state_diff=d.get("state_diff", ""),
-                   scene_diff=d.get("scene_diff", ""), code_name=d.get("code_name", ""),
-                   log=d.get("log", ""), snapshot=d.get("snapshot", ""),
-                   success=d.get("success"))
+    def from_json(cls, d: dict) -> "Record":
+        known = {k: d[k] for k in cls.__dataclass_fields__ if k in d}   # tolerate old manifests
+        known.setdefault("kind", "checkpoint")
+        known.setdefault("label", "")
+        return cls(**known)
 
 
-def _walk_state(tree, prefix=""):
-    """Yield (dotted_path, leaf) for every tensor and list in a get_states() tree."""
+def _jsonable(v: Any) -> Any:
+    if hasattr(v, "detach"):
+        v = v.detach().cpu()
+        return v.item() if v.numel() == 1 else v.tolist()
+    if isinstance(v, dict):
+        return {str(k): _jsonable(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_jsonable(x) for x in v]
+    return v
+
+
+def _leaves(tree, prefix=""):
+    """(dotted path, tensor) for every tensor in a get_states() tree."""
     import torch
-
     if isinstance(tree, dict):
         for k, v in tree.items():
-            yield from _walk_state(v, f"{prefix}.{k}" if prefix else str(k))
-    elif torch.is_tensor(tree) or isinstance(tree, list):
+            yield from _leaves(v, f"{prefix}.{k}" if prefix else str(k))
+    elif torch.is_tensor(tree):
         yield prefix, tree
 
 
-def _short(name: str) -> str:
-    return name.replace("scene.", "").replace("robot.", "robot ").replace(".root_state", "")
-
-
-def state_diff_text(parent_state, new_state, pos_tol: float = 2e-3,
-                    val_tol: float = 5e-3, rot_tol_deg: float = 2.0) -> str:
-    """Deterministic parent->node diff over env 0, spelled out in full: every changed
-    quantity as from -> to with its signed delta, plus an explicit list of what did NOT
-    change.
-
-    GENERAL BY CONVENTION, not by embodiment: the only structure this assumes is the state
-    dict's own naming — a tensor stored under a `root_state` key is a body pose in Isaac
-    Lab's layout (pos xyz + quat wxyz + velocities), the same name-based convention the
-    scene state readers/writers use, and is reported as position-per-axis + rotation angle.
-    Every OTHER leaf — joint vectors of any width, cloth nodal arrays, particle sets, bool
-    flags, int counters, per-env lists — is compared generically element-by-element, so a
-    new embodiment or scene never breaks the diff; at worst an exotic quantity is reported
-    as plain element changes instead of task words. Prose judgment stays with the agent;
-    the numbers never go missing or stay vague."""
-    import math
-
-    import torch
-
-    parent = dict(_walk_state(parent_state))
-    lines: list[str] = []
-    unchanged: list[str] = []
-
-    def pose_line(name: str, a, b) -> tuple[str | None, str]:
-        """a, b: (..., >=7) rows for one env — report each body row that moved. When nothing
-        clears tolerance, the second value says how much motion the tolerance is hiding, so
-        "unchanged" is readable as a display grouping, never as a claim of exact stillness."""
-        rows_a, rows_b = a.reshape(-1, a.shape[-1]), b.reshape(-1, b.shape[-1])
-        body_lines = []
-        max_dist = max_ang = 0.0
-        for r in range(rows_a.shape[0]):
-            p0, p1 = rows_a[r, 0:3], rows_b[r, 0:3]
-            dp = p1 - p0
-            dist = float(torch.linalg.norm(dp))
-            dot = min(1.0, abs(float((rows_a[r, 3:7] * rows_b[r, 3:7]).sum())))
-            ang = math.degrees(2.0 * math.acos(dot))
-            max_dist, max_ang = max(max_dist, dist), max(max_ang, ang)
-            parts = []
-            if dist > pos_tol:
-                axes = ", ".join(f"{ax} {p0[i]:+.3f}->{p1[i]:+.3f} ({dp[i]:+.3f})"
-                                 for i, ax in enumerate("xyz")
-                                 if abs(float(dp[i])) > pos_tol / 2)
-                parts.append(f"pos ({p0[0]:.3f},{p0[1]:.3f},{p0[2]:.3f})->"
-                             f"({p1[0]:.3f},{p1[1]:.3f},{p1[2]:.3f}), moved {dist:.3f}m"
-                             + (f" [{axes}]" if axes else ""))
-            if ang > rot_tol_deg:
-                parts.append(f"rotated {ang:.1f} deg")
-            if parts:
-                tag = f" body[{r}]" if rows_a.shape[0] > 1 else ""
-                body_lines.append(f"{name}{tag}: " + "; ".join(parts))
-        if body_lines:
-            return "; ".join(body_lines), ""
-        hidden = []
-        if max_dist > 0:
-            hidden.append(f"moved <={max_dist * 1000:.2g}mm")
-        if max_ang > 0:
-            hidden.append(f"rotated <={max_ang:.2g}deg")
-        return None, ", ".join(hidden)
-
-    def element_line(name: str, a, b) -> tuple[str | None, str]:
-        """Generic per-element diff for numeric/bool tensors of any shape."""
-        fa, fb = a.reshape(-1), b.reshape(-1)
-        if fa.dtype.is_floating_point:
-            delta = fb.float() - fa.float()
-            idx = (delta.abs() > val_tol).nonzero().reshape(-1).tolist()
-            fmt = lambda i: f"[{i}] {fa[i]:+.3f}->{fb[i]:+.3f} ({delta[i]:+.3f})"  # noqa: E731
-        else:  # bool / int state: any difference counts, shown verbatim
-            idx = (fa != fb).nonzero().reshape(-1).tolist()
-            fmt = lambda i: f"[{i}] {fa[i].item()}->{fb[i].item()}"  # noqa: E731
-        if not idx:
-            hidden = ""
-            if fa.dtype.is_floating_point:
-                m = float((fb.float() - fa.float()).abs().max()) if fa.numel() else 0.0
-                if m > 0:
-                    hidden = f"max delta {m:.2g}"
-            return None, hidden
-        # EVERY changed element, no cap: an 8-element display limit (removed 2026-08-01, user
-        # decision) was an unapproved truncation of the record.
-        shown = ", ".join(fmt(i) for i in idx)
-        return (f"{name}: {shown}; "
-                f"{fa.numel() - len(idx)} of {fa.numel()} elements unchanged"), ""
-
-    for path, leaf_new in _walk_state(new_state):
-        leaf_old = parent.get(path)
-        name = _short(path)
-        if leaf_old is None:
-            lines.append(f"{name}: appeared in this state (not in parent)")
+def state_diff_text(old, new, tol: float = POS_TOL) -> str:
+    """What changed between two saved states, by max absolute difference per entry."""
+    a = dict(_leaves(old))
+    moved = []
+    for path, t in _leaves(new):
+        u = a.get(path)
+        if u is None or u.shape != t.shape or not t.is_floating_point():
             continue
-        if isinstance(leaf_new, list):
-            old0 = leaf_old[0] if isinstance(leaf_old, list) and leaf_old else None
-            new0 = leaf_new[0] if leaf_new else None
-            if old0 == new0:
-                unchanged.append(name)
-            else:
-                lines.append(f"{name}: {old0!r} -> {new0!r}")
-            continue
-        if not (hasattr(leaf_old, "shape") and leaf_old.shape == leaf_new.shape):
-            lines.append(f"{name}: shape changed "
-                         f"{getattr(leaf_old, 'shape', '?')} -> {tuple(leaf_new.shape)}")
-            continue
-        a, b = leaf_old[0], leaf_new[0]
-        # Pose semantics BY NAME (the state dict's own convention), with a layout guard so a
-        # misnamed or restructured asset degrades to the generic path instead of misparsing.
-        if (path.endswith("root_state") and leaf_new.dtype.is_floating_point
-                and leaf_new.shape[-1] >= 7):
-            line, hidden = pose_line(name, a.float(), b.float())
-        else:
-            line, hidden = element_line(name, a, b)
-        if line:
-            lines.append(line)
-        else:
-            unchanged.append(f"{name} ({hidden})" if hidden else name)
-    if not lines:
-        return ("nothing changed beyond tolerance; unchanged: "
-                + (", ".join(unchanged) if unchanged else "(no comparable state)"))
-    if unchanged:
-        lines.append("unchanged: " + ", ".join(unchanged))
-    return "; ".join(lines)
+        d = float((t.detach().cpu().float() - u.detach().cpu().float()).abs().max())
+        if d > tol:
+            moved.append((d, f"{path.replace('scene.', '')} max|Δ|={d:.4f}"))
+    if not moved:
+        return f"nothing changed beyond tolerance ({tol} m/rad)"
+    moved.sort(reverse=True)
+    return "; ".join(s for _, s in moved[:10]) + (f"; +{len(moved) - 10} more" if len(moved) > 10 else "")
 
 
+# ----- health: is the live world a settled, restorable state? ------------------------------------
+def _articulations(env):
+    arts = getattr(getattr(env, "iscene", None), "articulations", None) or {}
+    return dict(arts)
+
+
+def _rigid_objects(env):
+    return dict(getattr(getattr(env, "iscene", None), "rigid_objects", None) or {})
+
+
+def _arm_joint_limits(env):
+    """(arm joint indices, limits [J,2], joint_pos [J]) of the robot articulation, or
+    ([], None, None) when the env has no robot articulation. Arm joints = the robot's
+    `ARM_JOINTS` patterns when it declares them, else every joint not matching its
+    `GRIPPER_JOINTS` patterns."""
+    robot = getattr(env, "robot", None)
+    art = getattr(robot, "articulation", None)
+    if art is None:
+        return [], None, None
+    d = art.data
+    lims = getattr(d, "soft_joint_pos_limits", None)
+    lims = d.joint_pos_limits if lims is None else lims
+    if lims is None:
+        return [], None, None
+    names = list(getattr(art, "joint_names", []) or [])
+    arm_pats = list(getattr(robot, "ARM_JOINTS", ()) or ())
+    grip_pats = list(getattr(robot, "GRIPPER_JOINTS", ()) or ())
+    if arm_pats:
+        ids = [i for i, n in enumerate(names) if any(re.fullmatch(p, n) for p in arm_pats)]
+    else:
+        ids = [i for i, n in enumerate(names) if not any(re.fullmatch(p, n) for p in grip_pats)]
+    return ids, lims[0], d.joint_pos[0]
+
+
+def checkpoint_health(env) -> dict[str, Any]:
+    """Read-only: motion (world still moving?), robot ARM joint-limit margin, scene success."""
+    h: dict[str, Any] = {"max_lin_vel": 0.0, "max_ang_vel": 0.0, "max_joint_vel": 0.0,
+                         "min_joint_margin_rad": None, "scene_success": None, "unsafe_reasons": []}
+    try:
+        for name, obj in _rigid_objects(env).items():
+            d = obj.data
+            h["max_lin_vel"] = max(h["max_lin_vel"], float(d.root_lin_vel_w.norm(dim=-1).max()))
+            h["max_ang_vel"] = max(h["max_ang_vel"], float(d.root_ang_vel_w.norm(dim=-1).max()))
+        for name, art in _articulations(env).items():
+            h["max_joint_vel"] = max(h["max_joint_vel"], float(art.data.joint_vel.abs().max()))
+        # Limit margin: the robot's ARM joints only. Gripper fingers sit at a limit whenever
+        # they are fully open or closed (Franka open = +0.04 of [0, 0.04]), and articulated
+        # scene objects (lids, drawers) reach their limits as GOALS — neither is unsafe.
+        ids, lims, q = _arm_joint_limits(env)
+        if lims is not None and len(ids):
+            margin = float(min((q[ids] - lims[ids, 0]).min(), (lims[ids, 1] - q[ids]).min()))
+            h["min_joint_margin_rad"] = margin
+        scene = getattr(env, "scene", None)
+        if scene is not None and callable(getattr(scene, "success", None)):
+            s = scene.success()
+            h["scene_success"] = bool(s.any()) if hasattr(s, "any") else bool(s)
+    except Exception as exc:  # noqa: BLE001 -- a readout bug must be visible, not hidden
+        print(f"[checkpoint_tree] health readout failed: {exc!r}", flush=True)
+        traceback.print_exc()
+    if h["max_lin_vel"] > MOTION_LIN or h["max_ang_vel"] > MOTION_ANG or h["max_joint_vel"] > MOTION_JOINT:
+        h["unsafe_reasons"].append("world still moving")
+    if h["min_joint_margin_rad"] is not None and h["min_joint_margin_rad"] < LIMIT_MARGIN:
+        h["unsafe_reasons"].append(f"robot joint within {h['min_joint_margin_rad']:.3f} rad of a limit")
+    h["unsafe"] = bool(h["unsafe_reasons"])
+    return h
+
+
+def health_summary(h: dict[str, Any] | None) -> str:
+    if not h:
+        return "(no health record)"
+    m = h.get("min_joint_margin_rad")
+    return (f"lin {h.get('max_lin_vel', 0):.3f} m/s, ang {h.get('max_ang_vel', 0):.2f} rad/s, "
+            f"joints {h.get('max_joint_vel', 0):.3f} rad/s, limit margin "
+            f"{'n/a' if m is None else f'{m:.3f} rad'}, scene success={h.get('scene_success')}"
+            + (f" — UNSAFE: {'; '.join(h['unsafe_reasons'])}" if h.get("unsafe") else ""))
+
+
+def _joints_text(env) -> str:
+    try:
+        parts = []
+        for name, art in _articulations(env).items():
+            d = art.data
+            lims = getattr(d, "soft_joint_pos_limits", None)
+            lims = d.joint_pos_limits if lims is None else lims
+            names = list(getattr(art, "joint_names", []) or [])
+            q = d.joint_pos[0]
+            if len(names) != q.shape[0]:
+                names = [f"j{i}" for i in range(q.shape[0])]
+            parts.append(name + ": " + ", ".join(
+                f"{n} {float(p):+.2f}" + (f" [{float(l[0]):+.2f},{float(l[1]):+.2f}]" if lims is not None else "")
+                for n, p, l in zip(names, q, lims[0] if lims is not None else [None] * len(names))))
+        return "; ".join(parts)
+    except Exception as exc:  # noqa: BLE001
+        return f"(joints readout failed: {exc!r})"
+
+
+# ----- the tree ----------------------------------------------------------------------------------
 class CheckpointTree:
-    """A disk-backed, annotated tree of saved simulator states for one task.
-
-    Construct it with a live env after `env.reset()`. Reopening it in a later process picks
-    up the same tree from disk, including which node was current. `attach_viewer(viewer)`
-    (a scene_view.Viewer) makes every save also capture a per-node snapshot PNG.
-    """
-
-    def __init__(self, env, root: str | Path = "/workspace/.checkpoints", *, verbose: bool = True):
+    def __init__(self, env, root: str | Path | None = None, *, verbose: bool = True,
+                 assume_reset: bool = True):
         self.env = env
-        self.root = Path(root)
+        self.root = Path(DEFAULT_ROOT if root is None else root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.verbose = verbose
-        self.nodes: dict[str, Node] = {}
-        self.current: str | None = None
+        self.records: dict[str, Record] = {}
+        self.stages: list[str] = []
         self._seq = 0
+        self._aseq = 0
         self._viewer = None
-        self._load_manifest()
+        self.current: str | None = None      # process-local active origin
+        self._origin = "fresh"
+        self._load()
+        self._reconcile_origin(assume_reset)
 
-    def attach_viewer(self, viewer) -> None:
-        """Capture a snapshot PNG for every node saved from now on (parent/node snapshots
-        are the raw material for `scene_diff` — look at both, then `annotate`)."""
-        self._viewer = viewer
-
-    # ----- persistence ---------------------------------------------------------------------
-    def _load_manifest(self) -> None:
-        path = self.root / MANIFEST
-        if not path.is_file():
+    # ----- persistence -----
+    def _load(self) -> None:
+        p = self.root / MANIFEST
+        if not p.is_file():
             return
-        try:
-            d = json.loads(path.read_text())
-        except Exception as exc:  # noqa: BLE001 -- a corrupt tree must be loud, not silent
-            print(f"[checkpoint_tree] {path} is unreadable ({exc!r}); starting a new tree")
-            return
-        self.nodes = {cid: Node.from_json(n) for cid, n in (d.get("nodes") or {}).items()}
-        self.current = d.get("current")
-        self._seq = int(d.get("seq", len(self.nodes)))
-        self._say(f"reopened {len(self.nodes)} node(s) from {self.root}; current={self.current}")
+        d = json.loads(p.read_text())
+        for cid, n in (d.get("nodes") or {}).items():
+            n.setdefault("kind", "checkpoint")
+            self.records[cid] = Record.from_json(n)
+        for aid, a in (d.get("attempts") or {}).items():
+            a.setdefault("kind", "attempt")
+            a.setdefault("cid", aid)
+            self.records[aid] = Record.from_json(a)
+        self.stages = list(d.get("plan") or [])
+        self._seq = max([int(c[1:]) for c in self.records if c.startswith("n") and c[1:].isdigit()], default=0)
+        self._aseq = max([int(c[1:]) for c in self.records if c.startswith("a") and c[1:].isdigit()], default=0)
 
     def _save_manifest(self) -> None:
-        payload = {
-            "nodes": {cid: n.as_json() for cid, n in self.nodes.items()},
-            "current": self.current,
-            "seq": self._seq,
-            "saved_at": time.time(),
-        }
-        (self.root / MANIFEST).write_text(json.dumps(payload, indent=2) + "\n")
+        nodes = {c: r.as_json() for c, r in self.records.items() if r.kind == "checkpoint"}
+        for c, n in nodes.items():   # `children` kept for readers of the old schema
+            n["children"] = [k for k, r in self.records.items() if r.kind == "checkpoint" and r.parent == c]
+        payload = {"nodes": nodes,
+                   "attempts": {c: r.as_json() for c, r in self.records.items() if r.kind == "attempt"},
+                   "plan": self.stages, "seq": self._seq, "attempt_seq": self._aseq,
+                   "current": None, "saved_at": time.time()}
+        (self.root / MANIFEST).write_text(json.dumps(payload, indent=1) + "\n")
 
     def _state_path(self, cid: str) -> Path:
         return self.root / f"{cid}.pt"
 
-    # ----- the operations that matter ------------------------------------------------------
-    def save(self, label: str, note: str = "", *, action: str = "",
-             program: str | Path | None = None, log: str = "") -> str:
-        """Save the CURRENT world state as a child of the current node. Returns its id.
+    def _reconcile_origin(self, assume_reset: bool) -> None:
+        """n0 is the task's fresh reset. A new process starts there iff its live world matches."""
+        import torch
+        live = self.env.get_states()
+        if "n0" not in self.records:
+            if not assume_reset:
+                self._say("no n0 exists and the live world was not asserted to be reset; call goto() before saving")
+                return
+            torch.save(live, self._state_path("n0"))
+            self.records["n0"] = Record(cid="n0", kind="checkpoint", parent=None, label="initial state",
+                                        action="environment reset", created=time.time(),
+                                        health=checkpoint_health(self.env), joints=_joints_text(self.env))
+            self.records["n0"].success = self.records["n0"].health.get("scene_success")
+            self.current, self._origin = "n0", "fresh"
+            self._save_manifest()
+            self._say(f"created fresh origin n0 at {self.root}")
+            return
+        diff = state_diff_text(torch.load(self._state_path("n0"), weights_only=False), live)
+        if diff.startswith("nothing changed"):
+            self.current, self._origin = "n0", "fresh"
+            self._say(f"reopened {len(self)} checkpoint(s), {sum(r.kind == 'attempt' for r in self.records.values())} "
+                      f"attempt(s); {len(self.stages)} planned stage(s); active origin n0 (fresh)")
+        else:
+            self.current = None
+            print(f"[checkpoint_tree] live world differs from n0 ({diff}); no active origin — call goto() "
+                  "explicitly before saving", flush=True)
 
-        label    the STATE reached, in the task's own terms ("part_0 secured in its mount",
-                 "cloth folded over the crease"), not the action attempted
-        note     measurements worth keeping next to the state
-        action   what was attempted and how it ended (defaults to the label)
-        program  path of the script that produced this state; its text is copied to
-                 <cid>.code.py so the node's edge is exactly that program
-        log      the printed output of that run, stored in full
+    # ----- the plan -----
+    def plan(self, stages: list[str]) -> str:
+        """Declare the stage plan: one entry per stage, in order, each naming the STATE that
+        completes it ('one leg seated', 'card seated in its slot'). A single entry is a valid
+        plan. Replaces any earlier plan; existing boundary nodes keep their stage tags."""
+        stages = [str(s).strip() for s in stages if str(s).strip()]
+        if not stages:
+            raise ValueError("a plan needs at least one stage")
+        self.stages = stages
+        self._save_manifest()
+        self._say(f"plan recorded: {len(stages)} stage(s)")
+        return self.plan_text()
+
+    replan = plan
+
+    def boundaries(self, k: int) -> list[str]:
+        """Restorable boundary nodes of stage k, oldest first."""
+        return sorted((c for c, r in self.records.items()
+                       if r.kind == "checkpoint" and r.stage == k and r.reusable),
+                      key=lambda c: self.records[c].created)
+
+    def plan_text(self) -> str:
+        if not self.stages:
+            return "plan: (none recorded — call tree.plan([...]); a single stage is fine)"
+        lines = [f"plan ({len(self.stages)} stage{'s' if len(self.stages) > 1 else ''}):"]
+        for i, s in enumerate(self.stages, 1):
+            b = self.boundaries(i)
+            lines.append(f"  {'✓' if b else '○'} stage {i}: {s}" + (f"  — boundary nodes: {', '.join(b)}" if b else ""))
+        return "\n".join(lines)
+
+    # ----- saving -----
+    def save(self, label: str, note: str = "", *, action: str = "", program: str | Path | None = None,
+             log: str = "", outcome: str = "ok", reusable: bool | None = None,
+             metrics: dict | None = None, stage: int | None = None, as_root: bool = False,
+             require: str = "warn") -> str:
+        """Save the live world as a child of this process's active origin.
+
+        label   the STATE reached, in the task's own terms
+        stage   mark the node as a boundary of that stage (run_stage does this for you)
+        Health is read-only and reported; `require="reject"` refuses an UNSAFE (still moving /
+        joint at a limit) state, "warn" (default) saves it with a warning, "off" says nothing.
+        The saved node becomes this process's active origin; later processes start at n0.
         """
         import torch
-
+        if outcome not in OUTCOMES:
+            raise ValueError(f"outcome must be one of {OUTCOMES}, got {outcome!r}")
+        parent = None if as_root else self.current
+        if not as_root and parent not in self.records:
+            raise RuntimeError("no active origin in this process (live world did not match n0); call goto() first "
+                               "or pass as_root=True")
+        if parent is not None and not self.records[parent].reusable:
+            raise RuntimeError(f"active origin {parent} is not reusable")
+        state = self.env.get_states()
+        health = checkpoint_health(self.env)
+        if health["unsafe"] and require != "off":
+            msg = f"UNSAFE candidate ({'; '.join(health['unsafe_reasons'])})"
+            if require == "reject":
+                raise RuntimeError(f"[checkpoint_tree] REJECTED {msg}")
+            self._say(f"WARNING {msg}: saved anyway; hold longer before saving a state you want to continue from")
+        if reusable is None:
+            reusable = outcome in ("ok", "partial")
         self._seq += 1
         cid = f"n{self._seq}"
-        parent = self.current
-        state = self.env.get_states()
         torch.save(state, self._state_path(cid))
-
-        # annotation: automatic numeric state diff vs the parent
         diff = ""
-        if parent and self._state_path(parent).is_file():
-            try:
-                parent_state = torch.load(self._state_path(parent), weights_only=False)
-                diff = state_diff_text(parent_state, state)
-            except Exception as exc:  # noqa: BLE001 -- a diff bug must not lose the save
-                diff = f"(state diff failed: {exc!r})"
-
-        code_name = ""
-        if program:
-            src = Path(program)
-            if src.is_file():
-                shutil.copyfile(src, self.root / f"{cid}.code.py")
-                code_name = src.name
-            else:
-                print(f"[checkpoint_tree] program {src} not found; node saved without code",
-                      flush=True)
-
+        if parent is not None:
+            diff = state_diff_text(torch.load(self._state_path(parent), weights_only=False), state)
         snapshot = ""
         if self._viewer is not None:
             try:
-                snapshot = self._viewer.snapshot(f"ckpt_{cid}_{label}")
+                snapshot = str(self._viewer.snapshot(f"ckpt_{cid}_{label}") or "")
             except Exception as exc:  # noqa: BLE001 -- a snapshot bug must not lose the save
-                print(f"[checkpoint_tree] snapshot failed: {exc!r}", flush=True)
-
-        success = None
-        try:
-            scene = getattr(self.env, "scene", None)
-            if scene is not None and hasattr(scene, "success"):
-                success = bool(scene.success()[0].item())
-        except Exception:  # noqa: BLE001 -- optional flag only
-            success = None
-
-        self.nodes[cid] = Node(
-            cid=cid, parent=parent,
-            depth=(self.nodes[parent].depth + 1) if parent and parent in self.nodes else 0,
-            label=label, note=note, created=time.time(), children=[],
-            action=action or label, state_diff=diff, code_name=code_name,
-            log=str(log or ""), snapshot=str(snapshot or ""), success=success,
-        )
-        if parent and parent in self.nodes:
-            self.nodes[parent].children.append(cid)
-        self.current = cid
+                print(f"[checkpoint_tree] snapshot failed for {cid}: {exc!r}", flush=True)
+        self.records[cid] = Record(
+            cid=cid, kind="checkpoint", parent=parent, label=label, action=action or label, note=note,
+            created=time.time(), stage=stage, origin="independent" if as_root else self._origin,
+            outcome=outcome, reusable=bool(reusable), code_name=self._store_program(cid, program),
+            snapshot=snapshot, success=health.get("scene_success"), state_diff=diff,
+            joints=_joints_text(self.env), health=health, metrics=dict(_jsonable(metrics or {})))
+        self._store_log(cid, log)
+        self.current, self._origin = cid, f"continued:{cid}"
         self._save_manifest()
-        self._say(f"saved {cid} '{label}'" + (f" (parent {parent})" if parent else " (root)")
-                  + (" [SUCCESS]" if success else ""))
-        # scene_diff is the agent's to write, and BOTH images it needs exist right now:
-        # this node's snapshot was just captured, the parent's at its own save. Hand over
-        # the exact paths and the exact call, so "look, then describe" costs one step.
-        parent_snap = self.nodes[parent].snapshot if parent and parent in self.nodes else ""
-        if snapshot and parent_snap:
-            self._say(f"scene_diff: LOOK at {parent_snap} (parent) vs {snapshot} (this), "
-                      f"then tree.annotate('{cid}', scene_diff='what visibly changed')")
+        self._say(f"saved {cid} '{label}'" + (f" [stage {stage} boundary]" if stage else "") +
+                  f" (parent {parent}, outcome {outcome}); health: {health_summary(health)}")
+        if diff:
+            self._say(f"changed vs {parent}: {diff}")
         return cid
 
-    def goto(self, cid: str) -> str:
-        """Restore the world to a saved node and make it current.
-
-        Returns `tried_from(cid)` — every branch already attempted from there, with its
-        action, what it changed, its visual diff and its code. Read it before re-attempting
-        anything: repeating a branch that already failed the same way is the most common way
-        to waste a run."""
-        import torch
-
-        if cid not in self.nodes:
-            raise KeyError(f"no checkpoint '{cid}'; have {sorted(self.nodes)}")
-        path = self._state_path(cid)
-        if not path.is_file():
-            raise FileNotFoundError(f"{cid} has no saved state at {path}")
-        self.env.set_states(torch.load(path, weights_only=False))
-        self.current = cid
+    def record_attempt(self, action: str, outcome: str, note: str = "", log: str = "",
+                       program: str | Path | None = None, *, parent: str | None = None,
+                       metrics: dict | None = None, stage: int | None = None) -> str:
+        """Remember a tried edge WITHOUT a restorable state (failures stay non-reusable)."""
+        if outcome not in OUTCOMES:
+            raise ValueError(f"outcome must be one of {OUTCOMES}, got {outcome!r}")
+        parent = parent or self.current
+        self._aseq += 1
+        aid = f"a{self._aseq}"
+        self.records[aid] = Record(
+            cid=aid, kind="attempt", parent=parent, label=action, action=action, note=note,
+            created=time.time(), stage=stage, origin=self._origin, outcome=outcome, reusable=False,
+            code_name=self._store_program(aid, program), health=checkpoint_health(self.env),
+            metrics=dict(_jsonable(metrics or {})))
+        self._store_log(aid, log)
         self._save_manifest()
-        self._say(f"world restored to {cid} '{self.nodes[cid].label}'")
+        self._say(f"recorded attempt {aid} from {parent}: {action} -> {outcome}")
+        return aid
+
+    @contextmanager
+    def attempt(self, action: str, *, program: str | Path | None = None, stage: int | None = None) -> Iterator[dict]:
+        """`with tree.attempt('press deeper') as a:` — records the block as an attempt from the
+        current origin: `crashed` if it raises (re-raised), else a['outcome'] (default 'failed')."""
+        a = {"outcome": "failed", "note": "", "log": "", "metrics": None}
+        try:
+            yield a
+        except BaseException:
+            self.record_attempt(action, "crashed", note=traceback.format_exc()[-2000:], log=a["log"],
+                                program=program, metrics=a["metrics"], stage=stage)
+            raise
+        self.record_attempt(action, a["outcome"], note=a["note"], log=a["log"], program=program,
+                            metrics=a["metrics"], stage=stage)
+
+    def _store_program(self, rid: str, program: str | Path | None) -> str:
+        if not program:
+            return ""
+        src = Path(program)
+        if src.is_file():
+            shutil.copy(src, self.root / f"{rid}.code.py")
+            return src.name
+        (self.root / f"{rid}.code.py").write_text(str(program))
+        return "(inline)"
+
+    def _store_log(self, rid: str, log: str) -> None:
+        (self.root / f"{rid}.log.txt").write_text("" if log is None else str(log))
+
+    # ----- restoring -----
+    def goto(self, cid: str, q_ref: str = "preserve") -> str:
+        """Restore the world to a saved node and make it the active origin. Returns
+        tried_from(cid). q_ref="reseed" additionally resets controller integrators."""
+        import torch
+        r = self.records.get(cid)
+        if r is None or r.kind != "checkpoint":
+            raise KeyError(f"no checkpoint '{cid}'; checkpoints: {sorted(c for c, x in self.records.items() if x.kind == 'checkpoint')}")
+        if not r.reusable:
+            raise ValueError(f"{cid} is not reusable (outcome={r.outcome})")
+        self.env.set_states(torch.load(self._state_path(cid), weights_only=False))
+        if q_ref == "reseed":
+            n = self._reset_controllers()
+            self._say(f"reseeded {n} controller(s)")
+        elif q_ref != "preserve":
+            raise ValueError("q_ref must be 'preserve' or 'reseed'")
+        self.current, self._origin = cid, f"goto:{cid}"
+        self._say(f"world restored to {cid} '{r.label}'" + (f" [stage {r.stage} boundary]" if r.stage else "")
+                  + f"; health: {health_summary(checkpoint_health(self.env))}")
+        self._say("the restore kept gripper/actuator setpoints: send an intentional first command before stepping")
         return self.tried_from(cid)
 
-    def annotate(self, cid: str, *, action: str | None = None,
-                 state_diff: str | None = None, scene_diff: str | None = None,
+    def goto_stage(self, k: int, cid: str | None = None, q_ref: str = "preserve") -> str:
+        """Restore a boundary of stage k: the latest one, or the given node (must be tagged k)."""
+        if cid is None:
+            b = self.boundaries(k)
+            if not b:
+                raise KeyError(f"stage {k} has no boundary node yet; run_stage({k}) first")
+            cid = b[-1]
+        elif self.records.get(cid) is None or self.records[cid].stage != k:
+            raise KeyError(f"{cid} is not a boundary of stage {k}")
+        return self.goto(cid, q_ref=q_ref)
+
+    def _reset_controllers(self) -> int:
+        n = 0
+        stack = [getattr(self.env, "robot", None)]
+        seen = set()
+        while stack:
+            obj = stack.pop()
+            if obj is None or id(obj) in seen:
+                continue
+            seen.add(id(obj))
+            ctrl = getattr(obj, "controller", None)
+            if ctrl is not None and callable(getattr(ctrl, "reset", None)):
+                ctrl.reset()
+                n += 1
+            kids = getattr(obj, "robots", None) or getattr(ctrl, "controllers", None) or {}
+            stack.extend(kids.values() if isinstance(kids, dict) else list(kids))
+        return n
+
+    # ----- the stage protocol -----
+    def run_stage(self, k: int, run: Callable | None = None, check: Callable | None = None, *,
+                  from_node: str | None = None, program: str | Path | None = None,
+                  label: str | None = None) -> dict:
+        """Develop stage k from the previous boundary and save its boundary when its check passes.
+
+        1. origin: `from_node` if given, else the latest boundary of stage k-1 (n0 for k=1) —
+           restored with goto() unless it is already the active origin;
+        2. `run(env)` drives the world (stdout is captured as the node's log and also shown);
+        3. `check(env)` -> bool is the agent's own verification, REPORTED, never fatal;
+        4. check passed (or no check given): the state is saved as a stage-k boundary node with
+           `program`; check failed: an attempt is recorded and NOTHING is saved.
+        `run`/`check` default to /workspace/solution/stages/stage_<k>.py's functions.
+        Returns {"stage", "passed", "node" | "attempt", "health", "origin"}.
+        """
+        if run is None or check is None:
+            mod = self._load_stage_module(k)
+            run = run or getattr(mod, "run", None)
+            check = check if check is not None else getattr(mod, "check", None)
+            program = program or mod.__file__
+            if run is None:
+                raise AttributeError(f"{mod.__file__} defines no run(env)")
+        if from_node is None:
+            if k <= 1:
+                from_node = "n0"
+            else:
+                b = self.boundaries(k - 1)
+                if not b:
+                    raise RuntimeError(f"stage {k - 1} has no boundary node; run_stage({k - 1}) first, "
+                                       f"or pass from_node=<cid> explicitly")
+                from_node = b[-1]
+        if self.current != from_node:
+            self.goto(from_node)
+        name = label or (self.stages[k - 1] if 0 < k <= len(self.stages) else f"stage {k} reached")
+        self._say(f"stage {k} '{name}': running from {from_node}")
+        buf = io.StringIO()
+        with _Tee(buf):
+            try:
+                run(self.env)
+            except BaseException as exc:
+                log = buf.getvalue()
+                aid = self.record_attempt(f"stage {k}: {name}", "crashed", note=repr(exc), log=log,
+                                          program=program, parent=from_node, stage=k)
+                print(f"[checkpoint_tree] stage {k} CRASHED ({exc!r}); recorded as {aid}", flush=True)
+                raise
+            passed = None
+            if check is not None:
+                try:
+                    passed = bool(check(self.env))
+                except BaseException as exc:  # noqa: BLE001 -- a broken check is the agent's bug to see
+                    print(f"[checkpoint_tree] stage {k} check raised {exc!r}; treating as FAILED", flush=True)
+                    traceback.print_exc()
+                    passed = False
+        log = buf.getvalue()
+        health = checkpoint_health(self.env)
+        if passed is False:
+            aid = self.record_attempt(f"stage {k}: {name}", "failed", note="stage check returned False",
+                                      log=log, program=program, parent=from_node, stage=k)
+            print(f"[checkpoint_tree] stage {k} check FAILED — not saved (attempt {aid}); health: "
+                  f"{health_summary(health)}. Fix the stage and run_stage({k}) again, or goto_stage({k - 1}) "
+                  "and change approach.", flush=True)
+            return {"stage": k, "passed": False, "attempt": aid, "health": health, "origin": from_node}
+        cid = self.save(name, note="" if passed is None else "stage check passed", action=f"stage {k}: {name}",
+                        program=program, log=log, stage=k)
+        print(f"[checkpoint_tree] stage {k} {'check passed' if passed else 'saved (no check given)'} -> boundary "
+              f"{cid}. {self.plan_text()}", flush=True)
+        return {"stage": k, "passed": passed, "node": cid, "health": health, "origin": from_node}
+
+    @staticmethod
+    def _load_stage_module(k: int):
+        path = Path(STAGES_DIR) / f"stage_{k}.py"
+        if not path.is_file():
+            raise FileNotFoundError(f"{path} does not exist: write it with run(env) and check(env), "
+                                    "or pass run=/check= callables")
+        spec = importlib.util.spec_from_file_location(f"stage_{k}", path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[f"stage_{k}"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+
+    # ----- reading -----
+    def annotate(self, cid: str, *, action: str | None = None, scene_diff: str | None = None,
                  note: str | None = None) -> None:
-        """Fill or refine a node's annotations — in particular `scene_diff` after you have
-        looked at the parent's and the node's snapshots."""
-        node = self.nodes.get(cid)
-        if node is None:
-            raise KeyError(f"no checkpoint '{cid}'")
+        r = self.records[cid]
         if action is not None:
-            node.action = action
-        if state_diff is not None:
-            node.state_diff = state_diff
+            r.action = action
         if scene_diff is not None:
-            node.scene_diff = scene_diff
+            r.scene_diff = scene_diff
         if note is not None:
-            node.note = note
+            r.note = note
         self._save_manifest()
 
-    # ----- reading the tree ----------------------------------------------------------------
-    def tried_from(self, cid: str | None = None) -> str:
-        """Every branch already attempted from a node — action, state diff, visual diff and
-        code — one block per child, in the original digest layout."""
+    def tried_from(self, cid: str | None = None, *, verbose: bool = False) -> str:
+        """Everything already tried from a node — checkpoints and attempts — with outcomes."""
         cid = cid or self.current
-        if cid not in self.nodes:
-            return ""
-        kids = self.nodes[cid].children
+        kids = sorted((r for r in self.records.values() if r.parent == cid), key=lambda r: r.created)
         if not kids:
             return f"nothing tried from {cid} yet"
-        blocks = [f"already tried from {cid}:"]
-        for ch in kids:
-            n = self.nodes[ch]
-            flags = " [SUCCESS]" if n.success else ""
-            head = f"  [{ch}] {n.action or n.label}{flags}"
-            detail = ""
-            if n.state_diff:
-                detail += f"\n     changed: {n.state_diff}"
-            if n.scene_diff:
-                detail += f"\n     visual: {n.scene_diff}"
-            if n.note:
-                detail += f"\n     note: {n.note}"
-            code_path = self.root / f"{ch}.code.py"
-            if code_path.is_file():
-                code = code_path.read_text().strip()
-                indented = "\n".join("       " + ln for ln in code.splitlines())
-                blocks.append(f"{head}{detail}\n     code ({n.code_name}):\n{indented}")
-            else:
-                blocks.append(f"{head}{detail}")
-        return "\n".join(blocks)
+        out = [f"already tried from {cid}:"]
+        for r in kids:
+            out.append(f"  [{r.cid}] {r.kind} outcome={r.outcome} reusable={r.reusable}"
+                       + (f" stage={r.stage}" if r.stage else "") + f": {r.action or r.label}")
+            if r.note:
+                out.append(f"     note: {r.note}")
+            if r.state_diff:
+                out.append(f"     changed: {r.state_diff}")
+            if r.code_name:
+                out.append(f"     code: {r.code_name} ({self.root / (r.cid + '.code.py')})")
+            if verbose:
+                out.append(f"     log:\n" + self.get_log(r.cid))
+        return "\n".join(out)
 
     def show(self) -> str:
-        """The whole tree with each node's annotations, current node marked — the same
-        surface the original live tree view printed."""
-        if not self.nodes:
-            return "(no checkpoints yet)"
-        roots = [c for c, n in self.nodes.items() if not n.parent]
-        out: list[str] = []
+        """The plan with its boundaries, then the whole tree (current node marked)."""
+        out = [self.plan_text(), ""]
+        roots = sorted((c for c, r in self.records.items() if r.kind == "checkpoint" and r.parent is None),
+                       key=lambda c: self.records[c].created)
 
-        def walk(cid: str) -> None:
-            n = self.nodes[cid]
-            mark = " <- current" if cid == self.current else ""
-            flag = " [SUCCESS]" if n.success else ""
-            pad = "  " * n.depth
-            out.append(f"{pad}[{cid}] {n.label}{flag}{mark}")
-            if n.action and n.action != n.label:
-                out.append(f"{pad}      action: {n.action}")
-            if n.state_diff:
-                out.append(f"{pad}      state diff: {n.state_diff}")
-            if n.scene_diff:
-                out.append(f"{pad}      scene diff: {n.scene_diff}")
-            if n.note:
-                out.append(f"{pad}      note: {n.note}")
-            if n.snapshot:
-                out.append(f"{pad}      snapshot: {n.snapshot}")
-            for ch in n.children:
-                walk(ch)
+        def walk(cid: str, depth: int) -> None:
+            r = self.records[cid]
+            pad = "  " * depth
+            out.append(f"{pad}[{cid}] {r.label}" + (f"  <stage {r.stage}>" if r.stage else "")
+                       + ("  [SUCCESS]" if r.success else "") + ("  <- current" if cid == self.current else ""))
+            out.append(f"{pad}      health: {health_summary(r.health)}")
+            if r.action and r.action != r.label:
+                out.append(f"{pad}      action: {r.action}")
+            if r.state_diff:
+                out.append(f"{pad}      changed: {r.state_diff}")
+            if r.scene_diff:
+                out.append(f"{pad}      visual: {r.scene_diff}")
+            if r.note:
+                out.append(f"{pad}      note: {r.note}")
+            if r.snapshot:
+                out.append(f"{pad}      snapshot: {r.snapshot}")
+            atts = [a for a in self.records.values() if a.kind == "attempt" and a.parent == cid]
+            if atts:
+                out.append(f"{pad}      failed attempts from here: " + "; ".join(f"[{a.cid}] {a.action} ({a.outcome})" for a in atts))
+            for ch in sorted((c for c, x in self.records.items() if x.kind == "checkpoint" and x.parent == cid),
+                             key=lambda c: self.records[c].created):
+                walk(ch, depth + 1)
 
-        for r in sorted(roots, key=lambda c: int(c[1:]) if c[1:].isdigit() else 0):
-            walk(r)
+        for c in roots:
+            walk(c, 0)
         return "\n".join(out)
 
     def get_log(self, cid: str) -> str:
-        """The full printed log stored with a node (never truncated)."""
-        node = self.nodes.get(cid)
-        return node.log if node else ""
+        p = self.root / f"{cid}.log.txt"
+        return p.read_text() if p.is_file() else ""
+
+    def attach_viewer(self, viewer) -> None:
+        """Every save also captures a snapshot PNG through this scene_view Viewer."""
+        self._viewer = viewer
+
+    def health(self) -> dict[str, Any]:
+        h = checkpoint_health(self.env)
+        self._say(f"health live: {health_summary(h)}")
+        return h
 
     def __len__(self) -> int:
-        return len(self.nodes)
+        return sum(r.kind == "checkpoint" for r in self.records.values())
 
     def _say(self, msg: str) -> None:
         if self.verbose:
             print(f"[checkpoint_tree] {msg}", flush=True)
+
+
+class _Tee:
+    """Capture stdout into a buffer while still printing it."""
+    def __init__(self, buf: io.StringIO):
+        self.buf = buf
+
+    def __enter__(self):
+        self._orig = sys.stdout
+        sys.stdout = self
+        return self
+
+    def __exit__(self, *exc):
+        sys.stdout = self._orig
+        return False
+
+    def write(self, s: str) -> int:
+        self.buf.write(s)
+        return self._orig.write(s)
+
+    def flush(self) -> None:
+        self._orig.flush()

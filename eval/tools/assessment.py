@@ -5,7 +5,8 @@
     assess(scene="part_0 in place; part_1 tipped over next to its goal",
            log="goal metric 3.1mm of 5mm; gripper lost contact at t=210",
            failure_modes="grasp slips during the transfer — approach angle too steep",
-           keep=True, label="part_0 in place", tree=tree)   # tree: optional CheckpointTree
+           keep=True, label="part_0 in place", env=env,
+           action="transfer part_0", outcome="partial", program=__file__)
 
     print(history())        # in a LATER script: what did I already conclude?
 
@@ -17,8 +18,8 @@ the code again. Two things make this worth calling rather than just thinking:
     fresh process with no memory; `history()` is how a later run recalls what was already tried
     and concluded, instead of rediscovering it;
   * `keep=True` couples the verdict to the checkpoint tree: a state judged worth building on is
-    saved AS PART OF the judgment (pass the tree), so "good state" and "saved state" cannot
-    drift apart.
+    saved AS PART OF the judgment (pass `tree`, or `env` to open one loudly), so "good state"
+    and "saved state" cannot drift apart.
 
 `assess` refuses empty prose — "see log" recorded three runs in a row is how an agent loops on
 the same failure. If the outcome rests on constants you picked by hand, say in `constants_plan`
@@ -46,12 +47,32 @@ TOOL = {
 }
 
 DEFAULT_ROOT = "/workspace/.assessments"
+OUTCOMES = ("ok", "partial", "failed", "crashed")
 
 
 def _path(root: str | Path | None) -> Path:
     p = Path(root or DEFAULT_ROOT)
     p.mkdir(parents=True, exist_ok=True)
     return p / "reviews.jsonl"
+
+
+def _open_checkpoint_tree(env, checkpoint_root: str | Path | None, reason: str):
+    if __package__:
+        from .checkpoint_tree import CheckpointTree
+    else:
+        from checkpoint_tree import CheckpointTree
+
+    chosen_root = checkpoint_root or getattr(env, "checkpoint_root", None)
+    print(
+        f"[assessment] AUTO-OPENING CheckpointTree(env) to {reason}"
+        + (f" at {chosen_root}" if chosen_root else ""),
+        flush=True,
+    )
+    # assess() is called at the END of a world-moving run. The live state must not be
+    # mislabeled as canonical n0 merely because this is the first tree construction.
+    kwargs = {"assume_reset": False}
+    return (CheckpointTree(env, root=chosen_root, **kwargs)
+            if chosen_root else CheckpointTree(env, **kwargs))
 
 
 def assess(
@@ -62,8 +83,13 @@ def assess(
     keep: bool = False,
     label: str = "",
     tree=None,
+    env=None,
+    program: str | Path | None = None,
+    action: str = "",
+    outcome: str = "ok",
     constants_plan: str = "",
     root: str | Path | None = None,
+    checkpoint_root: str | Path | None = None,
 ) -> dict:
     """Record one run's review. Returns the record (with `checkpoint` when one was saved).
 
@@ -73,6 +99,10 @@ def assess(
     keep            True when this end state is worth building on
     label           the state reached (required with keep) — it becomes the checkpoint label
     tree            a checkpoint_tree.CheckpointTree; with keep=True the state is saved to it
+    env             live environment; opens CheckpointTree(env) when one is needed and tree is absent
+    program         complete source provenance copied by the checkpoint tree
+    action          action attempted (defaults to label, then failure_modes)
+    outcome         ok | partial | failed | crashed
     constants_plan  when the outcome rests on hand-picked numbers: 'searching' or why not
     """
     missing = [k for k, v in (("scene", scene), ("log", log),
@@ -83,31 +113,79 @@ def assess(
     if keep and not str(label or "").strip():
         raise ValueError("keep=True needs a label: name the STATE reached, "
                          "e.g. 'part_0 secured in its mount'")
+    outcome = str(outcome or "").lower()
+    if outcome not in OUTCOMES:
+        raise ValueError(f"outcome must be one of {OUTCOMES}, got {outcome!r}")
+    if keep and tree is None and env is None:
+        raise ValueError(
+            "keep=True requires tree=CheckpointTree(env) or env=...; "
+            "a kept verdict without a saved state is not allowed")
+
+    keep_requested = bool(keep)
+    failed = outcome in ("failed", "crashed")
+    keep_state = keep_requested and not failed
+    resolved_action = str(action or label or failure_modes).strip()
 
     record = {
         "t": time.time(),
         "scene": str(scene).strip(),
-        "log": str(log).strip(),
+        # Exact log, including leading/trailing whitespace and every character.
+        "log": str(log),
         "failure_modes": str(failure_modes).strip(),
-        "keep": bool(keep),
+        "keep": keep_state,
+        "keep_requested": keep_requested,
         "label": str(label or "").strip(),
+        "action": resolved_action,
+        "outcome": outcome,
+        "program": str(program) if program is not None else "",
         "constants_plan": str(constants_plan or "").strip(),
     }
-    if keep:
-        if tree is not None:
-            # the note carries the log IN FULL — a [:200] slice here (removed 2026-08-01) was
-            # a silent truncation; anything long is still one field in one node
-            record["checkpoint"] = tree.save(record["label"], note=record["log"])
-        else:
-            print("[assessment] keep=True but no tree passed — the verdict is recorded, the "
-                  "state is NOT saved (pass tree=CheckpointTree(env) to save it)", flush=True)
+    provenance_metrics = {
+        "assessment_scene": record["scene"],
+        "assessment_failure_modes": record["failure_modes"],
+        "constants_plan": record["constants_plan"],
+        "keep_requested": keep_requested,
+    }
+
+    if keep_state:
+        if tree is None:
+            tree = _open_checkpoint_tree(env, checkpoint_root, "save the kept assessment")
+        # Keep the default branch digest concise: failure prose is the note, while the dedicated
+        # log field/file carries the exact full log and metrics carry the complete assessment.
+        as_root = getattr(tree, "current", None) is None
+        if as_root:
+            print(
+                "[assessment] no verified active origin is available; storing this kept "
+                "state as an independent root with origin=unknown-live-root, not inventing "
+                "a parent edge",
+                flush=True,
+            )
+        record["checkpoint"] = tree.save(
+            record["label"], note=record["failure_modes"], action=record["action"],
+            program=program, log=record["log"], outcome=outcome,
+            metrics=provenance_metrics, as_root=as_root,
+        )
+    elif tree is not None or env is not None:
+        if tree is None:
+            tree = _open_checkpoint_tree(env, checkpoint_root, "record the non-kept attempt")
+        if keep_requested and failed:
+            print(
+                f"[assessment] outcome={outcome} cannot be a reusable kept checkpoint; "
+                "recording it as a non-reusable attempt instead",
+                flush=True,
+            )
+        record["attempt"] = tree.record_attempt(
+            record["action"], outcome, note=record["failure_modes"],
+            log=record["log"], program=program, metrics=provenance_metrics,
+        )
 
     path = _path(root)
     with path.open("a") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
     n = sum(1 for _ in path.open())
     print(f"[assessment] recorded review #{n}"
-          + (f" (checkpoint {record['checkpoint']})" if record.get("checkpoint") else ""),
+          + (f" (checkpoint {record['checkpoint']})" if record.get("checkpoint") else "")
+          + (f" (attempt {record['attempt']})" if record.get("attempt") else ""),
           flush=True)
     return record
 
@@ -122,10 +200,13 @@ def history(n: int = 10, root: str | Path | None = None) -> str:
     for i, line in enumerate(lines, 1):
         try:
             r = json.loads(line)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            print(f"[assessment] invalid history JSON on selected line {i}: {exc!r}", flush=True)
             continue
         mark = " [KEPT" + (f" -> {r['checkpoint']}" if r.get("checkpoint") else "") + "]" \
             if r.get("keep") else ""
+        if r.get("attempt"):
+            mark += f" [ATTEMPT {r['attempt']} {r.get('outcome', '')}]"
         out.append(f"{i}. {r.get('label') or '(no label)'}{mark}\n"
                    f"   scene: {r.get('scene', '')}\n"
                    f"   log: {r.get('log', '')}\n"

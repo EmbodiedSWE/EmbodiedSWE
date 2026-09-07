@@ -1,6 +1,8 @@
 == Sweep (the sweep tool) ==
-When you are choosing BETWEEN approaches — not tuning numbers — run the candidates you
-name SIMULTANEOUSLY, each from the same saved state, and rank them. A candidate is
+Eligibility gate: use sweep when you are choosing BETWEEN strategies — different control flow,
+grasp side, phase ordering, or recovery policy — not when a viable maneuver merely needs numeric
+tuning. Run the candidates you name SIMULTANEOUSLY, each from the same explicit origin, and rank
+them. A candidate is
 (function, params): your function, with its own control flow — the same function with
 different parameters, different functions, any mix — all stepping one simulator together,
 each on its own slice of the parallel envs. Everything finishes in the wall-clock of the
@@ -15,7 +17,10 @@ The protocol — your candidate is a generator `def my_approach(env, ids, **para
     `env.device`. Every yield is validated; a wrong shape fails loudly, naming you.
   * Each `yield` advances the WHOLE world one step; on resume, read fresh state sliced
     by your group (e.g. `scene.part.data.root_pos_w[ids]`).
-  * Returning ends your group: its envs hold at zero action until all candidates finish.
+  * Returning ends your group and captures that group's objective immediately, before later
+    world steps can move it. Its envs still receive zero actions while other candidates finish,
+    but those later states do not overwrite the captured score. Under `diff_ik`, zero action
+    means zero commanded velocity, not absolute-pose holding.
   * NEVER: call `env.step`/`env.reset`/`env.set_states` (the tool owns stepping and
     state), touch envs outside `ids`, or set SIM-GLOBAL state (controller gains, torque
     limits, physics settings) — a global write hits every candidate's envs instantly and
@@ -53,8 +58,15 @@ builders you write, each returning (len(ids), action_dim) rows for your group):
     # -> {"ranking": [best candidate's index first, ...], "best": (name, params),
     #     "scores": [...], "stds": [...]} — scores stay in your candidate order
 
-  * Settle WHICH approach wins here, then hand the winner's constants to
-    `parameter_search.search` to tune: sweep runs what you name, search invents values.
+  * Sweep runs only the approaches you name. Record failed candidates and why they failed, not
+    just the winner. First replay the winning strategy as a stable viable maneuver; only then,
+    if its remaining uncertainty is numeric, hand its seed constants to
+    guarded `parameter_search.tune`.
   * Run it like a search: from a script via `parameter_search.launch()` — never in the
-    foreground; the log shows a running heartbeat, each candidate finishing, and the
-    final ranking. Long candidates take time — let it run.
+    foreground. That launch is a fresh process: use `start_state=` for an explicit checkpoint
+    origin, otherwise the origin is fresh. The log shows a running heartbeat, each candidate
+    finishing, and the final ranking. Long candidates take time — let it run.
+
+After integration, test the winner on a 2–3-instance holdout that was not used to choose it.
+Neither a sweep ranking nor checkpoint replay replaces the queued full-solution verifier from a
+fresh reset.

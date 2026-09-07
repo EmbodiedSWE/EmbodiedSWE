@@ -95,6 +95,16 @@ class Viewer:
         except Exception as exc:  # noqa: BLE001 -- a quality tweak must not block capture
             print(f"[scene_view] could not force FXAA ({exc!r}); captures may ghost after "
                   f"teleports", flush=True)
+        # Isaac 5.1 / replicator 1.12 (`annotator_utils._resize_data_for_overscan`) reads
+        # `/rtx/dataWindowNDC/{0..3}`; headless builds leave them UNSET (None), `None != 0`
+        # takes the overscan branch and every annotator read dies with `None - None`.
+        # An un-overscanned render product is exactly (0, 0, 0, 0), which skips that branch.
+        import carb.settings
+
+        _settings = carb.settings.get_settings()
+        for _i in range(4):
+            if _settings.get(f"/rtx/dataWindowNDC/{_i}") is None:
+                _settings.set_float(f"/rtx/dataWindowNDC/{_i}", 0.0)
 
         # Replicas are batch machinery, not scenery: hide envs 1..N-1 from the renderer.
         try:
