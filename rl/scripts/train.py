@@ -40,12 +40,45 @@ from robobench_rl.config import dump_config, load_config  # noqa: E402
 from robobench_rl.vec_env import make_vec_env  # noqa: E402
 
 
-def make_train_cfg(cfg: dict) -> tuple[dict, int]:
-    """rsl_rl train_cfg from cfg['ppo']; max_iterations is ours, everything else is rsl_rl's."""
+def make_train_cfg(cfg: dict) -> tuple[dict, int, float, float]:
+    """rsl_rl train_cfg from cfg['ppo']; max_iterations / snapshot_minutes / max_wall_minutes are ours."""
     ppo = copy.deepcopy(cfg["ppo"])
     max_iterations = int(ppo.pop("max_iterations"))
+    snapshot_min = float(ppo.pop("snapshot_minutes", 0) or 0)
+    max_wall_min = float(ppo.pop("max_wall_minutes", 0) or 0)
     ppo.setdefault("logger", "tensorboard")
-    return ppo, max_iterations
+    return ppo, max_iterations, snapshot_min, max_wall_min
+
+
+class StopTraining(Exception):
+    pass
+
+
+class WallClock:
+    """Wall-clock control of the training process, hooked on runner.log (rsl_rl calls it once per iteration):
+    save a `model_<it>.pt` snapshot every `snapshot_minutes`, and stop (after a final save) once `max_wall_minutes`
+    of training have elapsed. Either 0 = off. Iteration-based `save_interval` keeps working alongside."""
+
+    def __init__(self, runner: OnPolicyRunner, snapshot_min: float, max_wall_min: float) -> None:
+        self.runner, self._log = runner, runner.log
+        self.snapshot_s, self.max_wall_s = snapshot_min * 60, max_wall_min * 60
+        self.t0 = self.last_snapshot = time.time()
+        self.stopped = False
+        runner.log = self
+
+    def __call__(self, locs: dict, *a, **k) -> None:
+        self._log(locs, *a, **k)
+        now, it = time.time(), self.runner.current_learning_iteration
+        path = os.path.join(self.runner.log_dir, f"model_{it}.pt")
+        if self.snapshot_s and now - self.last_snapshot >= self.snapshot_s:
+            self.runner.save(path)
+            self.last_snapshot = now
+            print(f"[train] wall-clock snapshot -> {path} ({(now - self.t0) / 60:.1f} min)", flush=True)
+        if self.max_wall_s and now - self.t0 >= self.max_wall_s:
+            self.runner.save(path)
+            self.stopped = True
+            print(f"[train] max_wall_minutes reached at iteration {it} -> {path}", flush=True)
+            raise StopTraining
 
 
 def main() -> None:
@@ -67,7 +100,7 @@ def main() -> None:
     }
     (log_dir / "env.json").write_text(json.dumps(env_meta, indent=2))
 
-    train_cfg, max_iterations = make_train_cfg(cfg)
+    train_cfg, max_iterations, snapshot_min, max_wall_min = make_train_cfg(cfg)
     runner = OnPolicyRunner(venv, train_cfg, log_dir=str(log_dir), device=str(venv.device))
     if args.resume:
         runner.load(args.resume)
@@ -75,12 +108,19 @@ def main() -> None:
     print(f"[train] PPO for {max_iterations} iterations x {train_cfg['num_steps_per_env']} steps x "
           f"{venv.num_envs} envs = {max_iterations * train_cfg['num_steps_per_env'] * venv.num_envs:,} env-steps",
           flush=True)
-    t0 = time.time()
+    if snapshot_min or max_wall_min:
+        print(f"[train] wall clock: snapshot every {snapshot_min:g} min, stop after {max_wall_min:g} min (0 = off)", flush=True)
+    clock = WallClock(runner, snapshot_min, max_wall_min)
+    t0, it0 = time.time(), runner.current_learning_iteration
     lockstep = venv.hover_frac > 0  # the hover curriculum needs every env to reset together
-    runner.learn(num_learning_iterations=max_iterations, init_at_random_ep_len=not lockstep)
+    try:
+        runner.learn(num_learning_iterations=max_iterations, init_at_random_ep_len=not lockstep)
+    except StopTraining:
+        pass
     wall = time.time() - t0
-    summary = {"iterations": max_iterations, "wall_s": round(wall, 1),
-               "env_steps": max_iterations * train_cfg["num_steps_per_env"] * venv.num_envs,
+    iterations = runner.current_learning_iteration - it0 + 1  # rsl_rl's counter is the last completed iteration
+    summary = {"iterations": iterations, "wall_s": round(wall, 1), "stopped_by": "max_wall_minutes" if clock.stopped else "max_iterations",
+               "env_steps": iterations * train_cfg["num_steps_per_env"] * venv.num_envs,
                "episodes": venv.total_episodes, "successes": venv.total_successes,
                "final_model": f"model_{runner.current_learning_iteration}.pt"}
     (log_dir / "summary.json").write_text(json.dumps(summary, indent=2))
