@@ -18,6 +18,8 @@ ppo:                      # rsl_rl train_cfg — Isaac Lab manipulation defaults
   max_iterations: 1000    # training length (PPO iterations); env-steps = iterations * num_steps_per_env * num_envs
   num_steps_per_env: 64
   save_interval: 50       # checkpoint every N iterations (rsl_rl's own)
+  snapshot_minutes: 60    # ALSO checkpoint every N wall-clock minutes (0 = off)
+  max_wall_minutes: 300   # stop the training process after N wall-clock minutes, saving first (0 = off)
   logger: tensorboard
   obs_groups: {policy: [policy], critic: [critic]}
   policy:

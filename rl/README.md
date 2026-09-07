@@ -56,7 +56,7 @@ with just `algorithm.learning_rate`. The merged config is dumped next to every r
    ```
    python rl/scripts/smoke.py --task bulb_franka_osc --num_envs 16 --steps 200 --headless
    ```
-2. **Train**: rsl_rl PPO for `ppo.max_iterations`, checkpoints every `ppo.save_interval`. Optional
+2. **Train**: rsl_rl PPO for `ppo.max_iterations`, checkpoints every `ppo.save_interval` iterations and/or every `ppo.snapshot_minutes` of wall clock; `ppo.max_wall_minutes` stops the process (after a final save) regardless of iterations. Optional
    warm-start curriculum (`curriculum.hover_start_frac`): a fraction of envs starts each episode with the
    hand servoed above the part (the dense reward's `hover_target`); grading still starts from home.
    ```
