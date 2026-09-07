@@ -1,42 +1,65 @@
 == Checkpoint tree (the checkpoint_tree tool) ==
 You have a tool for saving a world state and coming back to it — including from a LATER
-script, in a fresh process. Use it: every script boots the simulator from the task's initial
-condition, so without it a state that took twenty minutes to reach must be re-derived.
+script, in a fresh process. Every script boots from the task's initial condition (node `n0`);
+restoration happens only when that script explicitly calls `goto()`, `goto_stage()` or
+`run_stage()`. Declare each experiment as `origin=fresh` or `origin=checkpoint:<id>`.
+
+The tool is built around your stage plan. Work in this shape:
 
     from checkpoint_tree import CheckpointTree
+    tree = CheckpointTree(env)                 # immediately after env.reset(); reconciles n0
+    tree.attach_viewer(viewer)                 # optional: every save also captures a snapshot
 
-    tree = CheckpointTree(env)            # after env.reset(); reopens an existing tree
-    tree.attach_viewer(viewer)            # optional: every save also captures a snapshot
-    tree.save("part_0 secured in its mount",   # -> 'n3'; label = the STATE reached
-              action="approached from +x, contact-first, then re-gripped",  # what you attempted
-              note="goal error 2.1mm; grip width 8.2mm",                    # measurements
-              program=__file__,           # the script that produced this state
-              log=my_captured_output)     # its printed output, kept in full
-    tree.goto("n1")                       # restore that state and make it current
-    print(tree.show())                    # the whole annotated tree, current node marked
-    print(tree.tried_from("n1"))          # every branch tried from n1 and how each ended
+    # 1. plan — one entry per stage, naming the STATE that completes it. Keep it to a few
+    #    real seams (2–4 is typical); ONE stage is a valid plan when the task has no clean
+    #    seam or is easier to debug as a whole.
+    tree.plan(["card seated in its slot", "first RAM stick seated", "both RAM sticks seated"])
 
-Each node carries three annotations. `action` (yours) says what was attempted; `state_diff`
-is COMPUTED automatically — object movements and joint deltas versus the parent, so what a
-branch actually changed is never missing; `scene_diff` is yours to fill after LOOKING at the
-parent's and the node's snapshots:
+    # 2. one module per stage: /workspace/solution/stages/stage_<k>.py with
+    #        def run(env): ...      # from the previous boundary state to this stage's goal
+    #        def check(env): ...    # your own verification of that goal -> bool
+    #    solve.py is their composition: for k in 1..N: stage_k.run(env)
 
-    tree.annotate("n3", scene_diff="part_0 now flush with its mount; gripper clear")
+    # 3. develop a stage from the previous boundary; its boundary is saved when check passes
+    r = tree.run_stage(2)                      # goto(latest stage-1 boundary) -> run -> check -> save
+    r = tree.run_stage(2, from_node="n4")      # or continue from a specific stage-1 node
+    r = tree.run_stage(1, run=my_fn, check=my_check, program=__file__)   # callables instead of a module
+
+    # 4. navigate the plan
+    tree.goto_stage(1)                         # restore the latest boundary of stage 1
+    tree.goto("n4")                            # or any node; returns what was already tried from it
+    print(tree.show())                         # plan progress (✓/○ per stage, boundary nodes) + the tree
+    print(tree.tried_from("n4"))               # every branch tried from n4 and how each ended
+
+    # bookkeeping. save() is ONLY for a stage boundary reached outside run_stage (pass stage=k);
+    # a state that completes no stage is never saved — record it as an attempt instead.
+    tree.save("card seated in its slot", stage=1, action="pressed 6 mm after alignment", program=__file__, log=out)
+    tree.record_attempt("press 5 mm deeper", "failed", note="part tipped at t=90", program=__file__, log=out)
+    tree.annotate("n2", scene_diff="card now flush with the slot; gripper clear")
 
 How to work with it:
 
-  * Save whenever a stage lands — a grasp that finally holds, an aligned part, a completed
-    sub-goal. Label the STATE reached in your task's own terms ("part_0 secured", "cloth
-    folded over the crease", "container half filled"), not the action attempted.
-  * Pass `program=` so the node records exactly the code that reached it — a later you (or a
-    later script) can reread the winning program instead of reconstructing it.
-  * Branch instead of gambling: before a change that could ruin a good state, save; if the
-    variation is worse, `goto()` the parent and branch again. Nothing earned is lost.
-  * Read `tried_from()` before re-attempting anything. Two branches failing with the same
-    state_diff means the approach is wrong, not under-tuned.
-  * Nodes persist under /workspace/.checkpoints across all your scripts.
+  * A stage boundary is saved at the END OF EVERY COMPLETED STAGE — that is the rule, not
+    an exception. Before `run(env)` returns, hold still long enough for the world to settle
+    and for your `check(env)` to measure the subgoal; then `run_stage` saves the boundary.
+    If `check` returns False nothing is saved: the run is recorded as an attempt and you are
+    told why. A stage may end up with several boundary nodes (different ways of reaching the
+    same subgoal); `goto_stage(k, cid=...)` picks one.
+  * Between boundaries, do not save: diagnostic probes, partial motions and hopeful poses
+    are not stages. Record failed stage attempts (`run_stage` does it for you; `record_attempt`
+    or `with tree.attempt(...)` for anything else) so `tried_from()` stops you from repeating
+    them.
+  * Every save prints a health block (world still moving? robot joint at a limit? scene
+    success flag). It is information: a moving or limit-pinned state is a fragile place to
+    continue from. `save(..., require="reject")` refuses an UNSAFE state.
+  * Read `tried_from()` before re-attempting a stage from the same boundary. Two attempts that
+    fail with the same state change mean the approach is wrong, not under-tuned: go back to
+    the previous boundary and change approach, or re-plan (`tree.plan([...])` again — existing
+    boundaries keep their stage numbers).
+  * Pass `program=` (run_stage does) so the node records exactly the code that reached it;
+    `/workspace/.checkpoints/<cid>.code.py` and `.log.txt` hold that program and its full output.
+  * With a viewer attached, look at the parent's and the node's snapshots after a save and
+    write down what changed: `tree.annotate(cid, scene_diff='...')`.
 
-State is whatever `env.get_states()` returns, restored with `env.set_states()`. This
-restores state for YOUR exploration; it is not a way to place objects into a goal
-configuration — the task must still be solved by physical manipulation, and the graded run
-blocks state writes entirely.
+Checkpoints accelerate development; they do not prove the integrated solution. The final
+`solve.py` — the stages composed, run from a fresh reset — must still pass the queued verifier.
