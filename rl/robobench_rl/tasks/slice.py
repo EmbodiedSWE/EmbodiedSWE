@@ -98,7 +98,11 @@ class SliceTunedReward(TaskReward):
 
     HANDLE_LOCAL = (-0.05, 0.03, 0.0)
     HANDLE_WIDTH = 0.005  # m pad-to-pad when stalled on the 4 mm plate (finger-joint sum ~ pad gap)
-    LIFT_FULL = 0.04  # m of lift that counts as fully taken (the rest notches are ~1-2 cm deep)
+    # m of lift (above the settled rest) that counts as fully taken. MEASURED: the knife settles 2.1 cm into the
+    # notches after reset (root 0.923 -> 0.902 within 10 steps) and the grader's knife_taken wants a rise of
+    # rest_rail_h (2.5 cm) above the UNSETTLED reset height, i.e. 4.6 cm above the settled rest — the old 0.04
+    # paid full credit for lifts the grader never counted (training: taken 0.5 vs knife_taken 0.004)
+    LIFT_FULL = 0.08
     HELD_NEAR = 0.06  # m: knife handle point within this of the pads = "held" for the lift term (loose on purpose)
 
     WEIGHTS = {"reach": 0.1, "grasp": 0.1, "taken": 0.1, "carry": 0.1, "align": 0.1, "press": 0.2, "cut": 0.3}
@@ -171,9 +175,14 @@ class SliceTunedReward(TaskReward):
 
 class SliceTunedEnv(RoboBenchEnv):
     """Slice TUNED env (first-stage target: the grader's `knife_taken` — knife root lifted above the rail height).
-    Joint-mode Franka preset: arm dims are small joint deltas; the warm-start servo therefore takes a damped
-    least-squares Jacobian step toward a hover pose above the handle. Per-finger grasp on the 4 mm plate, lift
-    gated on proximity from the settled height."""
+    Joint-mode Franka preset: arm dims are joint deltas relative to the CURRENT joint position; the warm-start
+    servo therefore takes a damped least-squares Jacobian step toward a hover pose above the handle. Per-finger
+    grasp on the 4 mm plate, lift gated on proximity from the settled height.
+    MEASURED (2026-09-06): a joint delta of `scale` per step against the arm PD (kp 400 / kd 80) caps the joint
+    speed at scale*kp/kd — 0.25 rad/s at the original 0.05 (the hover servo needed all 240 steps for a 0.47 m
+    move); 0.15 (0.75 rad/s) learned the pick from the hover start in 100 iterations and scored from home at
+    200 (graded 2/8). Wall-clock note: 20 s episodes = 960 steps = 15 PPO iterations, so `zoo.sh tb`/tb_summary
+    rows at multiples of 15 are episode STARTS (stage terms ~0), not policy collapses."""
     name = "slice_tuned"
     reward_cls = SliceTunedReward
 
@@ -181,9 +190,10 @@ class SliceTunedEnv(RoboBenchEnv):
     def defaults(cls):
         return {
             "task": {"episode_seconds": 20},
-            "action": {"affine": [{"dims": [0, 1, 2, 3, 4, 5, 6], "from": "joint_delta", "scale": 0.05},
+            "action": {"affine": [{"dims": [0, 1, 2, 3, 4, 5, 6], "from": "joint_delta", "scale": 0.15},
                                   {"dims": [7, 8], "lo": 0.0, "hi": 0.04}]},
-            "curriculum": {"hover_start_frac": 0.5, "hover_steps": 240, "hover_jitter": 0.02},
+            "curriculum": {"hover_start_frac": 0.6, "hover_steps": 100, "hover_jitter": 0.02,
+                           "hover_partial_frac": 0.6, "hover_partial_steps": 100},
             "reward": {"weights": {"reach": 0.2, "grasp": 0.2, "taken": 0.6}},
             "ppo": {"num_steps_per_env": 64, "algorithm": {"entropy_coef": 0.006}},
         }
@@ -199,6 +209,44 @@ class SliceTunedEnv(RoboBenchEnv):
 
     def _hover_target(self):
         return self._handle() + torch.tensor([0.0, 0.0, 0.10], device=self.device)
+
+    def _reset_idx(self, ids):
+        if ids.numel() == self.num_envs:
+            return super()._reset_idx(ids)
+        # early termination (knife off the island): restart those envs from home but keep the batch in LOCKSTEP
+        # (episode_length_buf untouched, they time out with the rest). MEASURED on tuned2: the first knocked-off
+        # knife desynced one env, every later reset was partial, and the base class skipped the warm-start
+        # pre-roll for the remaining ~380 iterations — the curriculum ran for exactly one episode.
+        self.env.reset(ids)
+        self._on_reset(ids)
+        self.reward_fn.reset(ids)
+        self.last_action[ids] = 0.0
+        self._ep_ret[ids] = 0.0
+        self._ep_peak[ids] = 0.0
+
+    @torch.no_grad()
+    def _hover_preroll(self, ids):
+        """Bridging warm start: a `hover_partial_frac` share of the warm envs is servoed for only a random number
+        of steps (<= hover_partial_steps), so episode starts are spread ALONG the home->hover servo path instead
+        of sitting at its two ends. Measured (tuned1-3): the pick was learned from the hover start (4/8) but never
+        from home (0/8) — the home envs closed to ~9 cm keypoint distance and stalled there; a start distribution
+        with no states between home and hover gives the policy nothing to chain."""
+        target = self._hover_target()
+        if ids.numel() != self.num_envs:
+            return super()._hover_preroll(ids)  # prints the lockstep warning
+        cur = self.cfg.get("curriculum", {}) or {}
+        pfrac, psteps = float(cur.get("hover_partial_frac", 0.0)), int(cur.get("hover_partial_steps", self.hover_steps))
+        self._in_preroll = True
+        n, dev = self.num_envs, self.device
+        warm = torch.rand(n, device=dev) < self.hover_frac
+        steps = torch.full((n,), self.hover_steps, device=dev)
+        partial = torch.rand(n, device=dev) < pfrac
+        steps[partial] = (torch.rand(int(partial.sum()), device=dev) * psteps).long()
+        target = target + (torch.rand(n, 3, device=dev) * 2 - 1) * self.hover_jitter * torch.tensor([1.0, 1.0, 0.0], device=dev)
+        for t in range(self.hover_steps):
+            self.env.step(self._process_actions(self._hover_action(target, warm & (t < steps))))
+        self.preroll_warm = warm
+        self._in_preroll = False
 
     def _hover_action(self, target, warm):
         """Joint-space servo: dq = J^+ (target - ee) (position rows, damped), scaled into the joint-delta action."""

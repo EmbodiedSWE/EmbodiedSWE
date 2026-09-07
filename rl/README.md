@@ -103,8 +103,8 @@ envs overflowed the scene's default collision stack. Rerun any row with
 | task | preset | grader (main) | first rubric stage = the pick target | tuned env |
 |---|---|---|---|---|
 | bulb | assembly.bulb.franka.osc | yes | `lifted` (bulb 4 cm up, quasi-static) | `bulb_tuned` — 8/8 from home |
-| nut_thread | assembly.nut_thread.franka.osc | yes | `lifted` (nut origin at the bolt-top height) | `nut_tuned` — final checkpoint 8/8 from home (score 0.333), initialised from the bulb policy |
-| slice | cutting.slice.franka.joint | yes | `knife_taken` (knife above the rail height) | `slice_tuned` (Jacobian pre-roll for joint mode) |
+| nut_thread | assembly.nut_thread.franka.osc | yes | `lifted` (nut origin at the bolt-top height) | `nut_tuned` — 8/8 `lifted` from home (0.333), initialised from the bulb policy; resuming it with the carry weights `--set "reward.weights={reach: 0.1, grasp: 0.1, lift: 0.2, transport: 0.3, upright: 0.1, approach: 0.2}"` reached 8/8 `lifted` + `aligned` (0.667) after 50 more iterations |
+| slice | cutting.slice.franka.joint | yes | `knife_taken` (knife above the rail height) | `slice_tuned` — 8/8 from home on two seeds (0.111): joint_delta 0.15 (the arm PD caps joint speed at scale·kp/kd), LIFT_FULL 0.08 (the knife sinks 2.1 cm into the notches after reset while the grader keeps the unsettled height), lockstep partial reset, bridging pre-roll; 300 it + 300 it resume, best checkpoint by grading every 50 |
 | pen_holder | packing.pen_holder.franka.osc | yes | `pens_in` (a pen inserted tip-up) — pick + carry + insert | `pen_tuned` |
 | tool_packing | packing.tool_packing.franka.osc | yes | `stowed` (tool in its drawer) — the toolbox starts SHUT, so a drawer must be opened first | not attempted |
 
