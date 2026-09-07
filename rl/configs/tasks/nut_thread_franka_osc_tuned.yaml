@@ -1,0 +1,6 @@
+# Nut thread, Franka, OSC preset — TUNED env (robobench_rl/tasks/nut_thread.py): first-stage pick recipe.
+task:
+  name: nut_thread_franka_osc_tuned
+  preset: assembly.nut_thread.franka.osc
+  task_env: nut_tuned
+  num_envs: 1024                       # dt 1/480: ~2.4k env-steps/s expected at 1024

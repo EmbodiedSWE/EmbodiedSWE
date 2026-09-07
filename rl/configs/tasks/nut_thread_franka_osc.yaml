@@ -1,0 +1,17 @@
+# Nut threading, Franka, OSC preset. Loose M16 nut on the table -> pick, carry, thread onto the fixed
+# bolt. Franka binding runs physics at dt 1/480 (32 substeps per 15 Hz control step) — SDF threads
+# tunnel at 1/120. Isaac Lab's Factory-NutThread starts with the nut IN the gripper above the bolt;
+# this is the whole task. A `ppo:` block here overrides base.yaml.
+task:
+  name: nut_thread_franka_osc
+  preset: assembly.nut_thread.franka.osc
+  episode_seconds: 90                  # scripted solves take ~60 s
+  num_envs: 1024                       # see throughput_note
+  # rl/scripts/smoke.py, RTX 5090, 2026-09-05: 256 envs -> 606 env-steps/s (2.4 batched steps/s,
+  # 5.9 GB). Half of bulb's rate, as expected from 32 vs 16 substeps; SDF thread collision dominates.
+  throughput_note: "256 envs -> 0.6k env-steps/s, 5.9 GB; 1024 not yet measured"
+action:
+  affine:
+    - dims: [6, 7]                     # panda finger position targets, metres per finger
+      lo: 0.0
+      hi: 0.04
