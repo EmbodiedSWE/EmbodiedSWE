@@ -201,7 +201,7 @@ Two processes (lerobot needs py>=3.12, Isaac is 3.11), one contract:
 
     # once: install the plugin into the lerobot venv (auto-discovered by name)
     uv pip install -e vla/eval/lerobot_env_cosigen \
-        --python ~/Documents/Research/lerobot/.venv/bin/python
+        --python .venv-lerobot/bin/python   # or just: ./scripts/bootstrap_lerobot.sh
 
     # terminal 1 (Isaac venv) — pins the eval condition; stays warm across runs
     .venv/bin/python vla/eval/serve.py bulb_jointpd_60hz --headless
