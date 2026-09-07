@@ -1,0 +1,12 @@
+# Tool packing, Franka, OSC preset — the TUNED env (condition `tuned`): robobench_rl/tasks/tool_packing.py bakes in
+# the drawer-pull -> pick -> drop ladder, the pose warm-start + drawer curriculum, finger PD 8000, 24 s horizon,
+# off-table termination and the PPO tweaks. Keys here override it.
+task:
+  name: tool_packing_franka_osc_tuned
+  preset: packing.tool_packing.franka.osc
+  task_env: tool_packing_tuned
+  num_envs: 512
+ppo:                       # base.yaml wins over the env's defaults(), so the recipe's PPO tweaks live here
+  num_steps_per_env: 32
+  algorithm:
+    entropy_coef: 0.006
