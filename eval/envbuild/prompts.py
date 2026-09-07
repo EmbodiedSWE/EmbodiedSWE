@@ -14,6 +14,7 @@ thing that reads a config.
     ├── rules/<name>.md    the selected rules the agent MUST follow
     ├── skills/<name>.md   the selected skills the agent MAY follow
     ├── tools.md           the granted tools' doc sections (written by envbuild/tools.py)
+    ├── tool_router.md     the granted tools' workflow + eligibility gates (in the prompt)
     └── skills/<pkg>/      each granted tool's companion skill package
 """
 
@@ -95,15 +96,26 @@ def render_task_dir(
     # namespace from here — no env var, and no way for the prompt and the toolset to disagree.
     (task_dir / "condition.json").write_text(json.dumps(condition.as_record(), indent=2) + "\n")
 
+    # tool_router.md — the concise workflow + eligibility gates for the granted tools. It
+    # replaces the full tools.md in the initial prompt (the agent opens tools.md on demand when
+    # the router sends it to a tool), and agent-entry.sh also rides it on the Claude SYSTEM
+    # prompt every leg so compaction cannot drop it. Reconstructed 2026-09-06 from the rendered
+    # /task of the 2026-09-05 campaign pod (the renderer that wrote it was lost with the laptop);
+    # the body is the same for every grant set that campaign used (all five tools).
+    router = ""
+    if condition.tools:
+        granted = ", ".join(f"`{t}`" for t in condition.tools)
+        router = (PROMPTS_DIR / "tool_router.md").read_text().format(granted=granted).strip() + "\n"
+        (task_dir / "tool_router.md").write_text(router)
+
     # instructions.md — the contract verbatim (it explains the /task folder semantics
     # generically), plus the notes that depend on how this run is driven rather than on the
-    # condition. The granted tools' sections are appended IN the prompt, not only left as
-    # tools.md: the CLI's first message is this file, and a tool the agent has to discover by
-    # listing /task is a tool half-granted (2026-07-31: agents found tools.md only by exploring).
+    # condition. The router is appended IN the prompt: the CLI's first message is this file,
+    # and a tool the agent has to discover by listing /task is a tool half-granted
+    # (2026-07-31: agents found tools.md only by exploring).
     contract = (PROMPTS_DIR / "_contract.md").read_text().strip() + "\n"
-    tools_doc = tool_install.prompt_sections(condition)
-    if tools_doc:
-        contract += "\n" + tools_doc
+    if router:
+        contract += "\n" + router
     if budget_min:
         contract += "\n" + _BUDGET_NOTE.format(minutes=budget_min) + "\n"
     if carryover:
