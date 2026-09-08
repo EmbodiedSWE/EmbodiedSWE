@@ -183,9 +183,6 @@ class NutTunedEnv(RoboBenchEnv):
     def _nut(self) -> torch.Tensor:
         return self.env.scene.nuts[0].data.root_pos_w
 
-    def _get_terminated(self):
-        c = self.env.scene.cfg
-        return self._nut()[:, 2] < (c.surface_z + c.nut_init_z - 0.10)
 
     def _hover_target(self):
         return self._nut() + torch.tensor([0.0, 0.0, 0.10], device=self.device)

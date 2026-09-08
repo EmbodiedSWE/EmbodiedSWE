@@ -193,7 +193,7 @@ class BulbTunedReward(TaskReward):
 
 class BulbTunedEnv(RoboBenchEnv):
     """Bulb TUNED env: everything the task-tuned condition changes, in one class — horizon, finger PD, action map, warm-start target,
-    early termination and the dense reward (neck-waist grasp pose, per-finger grasp,
+    the dense reward (neck-waist grasp pose, per-finger grasp,
     settled lift baseline)."""
     name = "bulb_tuned"
     reward_cls = BulbTunedReward
@@ -215,10 +215,6 @@ class BulbTunedEnv(RoboBenchEnv):
         b = self.env.scene.bulbs[0]
         return b.data.root_pos_w + quat_apply(b.data.root_quat_w, torch.tensor([0.0, 0.0, BulbTunedReward.GRASP_Z], device=self.device).expand(self.num_envs, 3))
 
-    def _get_terminated(self):
-        """Bulb knocked off the work surface (fell > 10 cm below its spawn height): end the episode."""
-        c = self.env.scene.cfg
-        return self.env.scene.bulbs[0].data.root_pos_w[:, 2] < (c.surface_z + c.bulb_init_z - 0.10)
 
     def _hover_target(self):
         return self._neck() + torch.tensor([0.0, 0.0, 0.10], device=self.device)
