@@ -189,12 +189,6 @@ class PenTunedEnv(RoboBenchEnv):
             "ppo": {"num_steps_per_env": 32, "algorithm": {"entropy_coef": 0.006}},
         }
 
-    def _get_terminated(self):
-        """No early termination: the warm-start / in-hand curricula need LOCKSTEP resets, and one env terminating early
-        (a pen knocked off the table) desynchronises it for the rest of training — measured on pen_r9: after the first
-        termination at iteration ~30 every reset was partial, the base class skipped the pre-roll each time (93 skips) and
-        the in-hand lift signal vanished. A pen off the table is simply a lost episode here."""
-        return None
 
     def _cur(self, key: str) -> float:
         return float((self.cfg.get("curriculum") or {}).get(key, 0.0))
