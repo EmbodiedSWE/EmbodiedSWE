@@ -67,8 +67,8 @@ parser.add_argument("--render_args", default="",
 # pipeline default; the scripted uniform wrapper is opt-in via --sigma.
 parser.add_argument("--noise_scale", type=float, default=0.0,
                     help="master switch for solve-authored noise (env.step(..., noise=…)): "
-                         "0 = execute clean (default; probes/farm), 1.0 = execute the "
-                         "authored perturbations (compound)")
+                         "0 = execute clean (default; probes/base set), 1.0 = execute the "
+                         "authored perturbations (the dynamics harvest)")
 parser.add_argument("--sigma", type=float, default=0.0,
                     help="scripted uniform action-noise sigma (0 = off, the default; "
                          "the solve-authored noise_scale channel is the standard path)")

@@ -228,7 +228,10 @@ class BulbAssemblyScene(BaseScene):
                 "friction_correlation_distance": 0.00625,
                 "gpu_max_rigid_contact_count": 2**23,
                 "gpu_max_rigid_patch_count": 2**23,
-                "gpu_collision_stack_size": 2**28,
+                # 2**28 overflowed at 512 envs (PhysX asked for 848 MB; 33k overflow errors in
+                # one datagen wave). An overflow DROPS contacts nondeterministically, so every
+                # recording made under it was physically wrong and none replayed.
+                "gpu_collision_stack_size": 2**30,
                 "gpu_max_num_partitions": 1,
             },
         )

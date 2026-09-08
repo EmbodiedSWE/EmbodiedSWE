@@ -110,6 +110,27 @@ def _machine_step(
     return running, timer, events
 
 
+def _set_translate(prim, vec) -> None:
+    """Set a prim's translate op IDEMPOTENTLY (batch-safe USD authoring).
+
+    `GridCloner` clones env prims by COMPOSITION, not by copy: for i >= 1,
+    `/World/envs/env_i/CM_visual` composes from `env_0`'s, so a child authored under
+    `env_0` is already reachable — carrying env_0's `xformOp:translate` — the moment the
+    same path is Define()d under `env_i`, and `AddTranslateOp()` raises "the xformOp
+    'xformOp:translate' already exists". That was every num_envs >= 2 build of this
+    scene crashing (found by two datagen vectorize agents independently). Reuse the
+    existing op; add one only when the prim has none."""
+    from pxr import Gf, UsdGeom
+
+    xf = UsdGeom.Xformable(prim)
+    value = Gf.Vec3d(*[float(v) for v in vec])
+    for op in xf.GetOrderedXformOps():
+        if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
+            op.Set(value)
+            return
+    xf.AddTranslateOp().Set(value)
+
+
 # ----- custom compound spawners (the shared compound-spawner pattern) ----------------------------
 _SPAWNER_CACHE: dict[str, Any] = {}
 
@@ -1150,10 +1171,8 @@ class CoffeeServiceScene(BaseScene):
         for i in range(self.env.num_envs):
             run = UsdGeom.Sphere.Define(stage, f"/World/envs/env_{i}/CM_visual/run")
             run.CreateRadiusAttr(0.008)
-            xf = UsdGeom.Xformable(run)
-            xf.ClearXformOpOrder()
             # on the south rim of the top face, west of the cover
-            xf.AddTranslateOp().Set(Gf.Vec3d(-0.070, -0.202, 0.399))
+            _set_translate(run.GetPrim(), (-0.070, -0.202, 0.399))
             run.CreateDisplayColorAttr([Gf.Vec3f(0.05, 0.22, 0.07)])
             self._run_lamps.append(run)
             stream = UsdGeom.Cylinder.Define(stage, f"/World/envs/env_{i}/CM_visual/stream")
@@ -1162,8 +1181,8 @@ class CoffeeServiceScene(BaseScene):
             stream.CreateHeightAttr(length)
             stream.CreateExtentAttr([Gf.Vec3f(-0.004, -0.004, -length / 2),
                                      Gf.Vec3f(0.004, 0.004, length / 2)])
-            _fresh_xf(stream).AddTranslateOp().Set(
-                Gf.Vec3d(c.spout_off[0], c.spout_off[1], c.spout_bot_z - length / 2))
+            _set_translate(stream.GetPrim(),
+                           (c.spout_off[0], c.spout_off[1], c.spout_bot_z - length / 2))
             stream.CreateDisplayColorAttr([Gf.Vec3f(0.24, 0.13, 0.07)])
             UsdGeom.Imageable(stream.GetPrim()).MakeInvisible()
             self._streams.append(stream)

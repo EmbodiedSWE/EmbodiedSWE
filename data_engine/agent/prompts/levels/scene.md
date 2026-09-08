@@ -32,15 +32,14 @@ mechanics (threads, insertion channels), the sim/PhysX settings, and the
 welding/fastening mechanisms — those needed dedicated expert checks the
 session cannot redo.
 
-**Where new objects come from**: run `catalog_assets` — it prints a fresh
-JSON list of every spawnable asset with its measured size in meters, the
-`scale` the spawner needs, and its physics class. Match the spawn to the
-class (`rigid` -> a free object, `static`/`articulation` -> a fixture,
-`visual` -> looks real but nothing collides with it — set dressing only,
-never a graspable "distractor"), respect `has_mass: true` (mass is baked in —
-don't override it), and place things clear of the task using the measured
-size. Assets not in the catalog can be built from simple shapes (a box, a
-cylinder, with a material); do not import asset files from outside.
+**Where new objects come from**: the suite's asset folders are linked under
+`scenes/<scene>/assets/`; read how the start scene spawns its own objects and
+spawn new ones the same way (`rigid` -> a free object, `static`/`articulation`
+-> a fixture, purely visual geometry -> set dressing only, never a graspable
+"distractor"). Place things clear of the task. Objects not in the assets can be
+built from simple shapes (a box, a cylinder, with a material); do not import
+asset files from outside. The robot base and its table are fixed — do not
+propose moving them or changing the table height.
 
 ## The scene and its judge move as a pair
 
@@ -96,17 +95,21 @@ to the scene's reset). To stop a dial from being sampled, set its entry to
 `None`; don't delete the line — the nominal values are applied through the
 same list, so deleting changes the normal world too.
 
-`VISUAL_PARAMS` and `CAMERAS` are REQUIRED deliverables on every scene you
-ship — including `scene_0` if it lacks them. `VISUAL_PARAMS` is the entire
-look axis of the downstream visual multiplication: band the render-only knobs
-the scene actually has (materials, colors, lighting; nominal = today's look;
-never a color the task's semantics or grader depend on, never anything physics
-reads). `CAMERAS` is the scene's own declared viewpoints (there is no
-pipeline-level default view): frame them so the WHOLE workspace is visible —
-robot base, target objects, and everything manipulated. `PHYSICAL_PARAMS`
-remains a judgment call: declare it when the task has meaningful knobs, with
-ranges derived from the scene's nominal values and measured yield — do not
-invent ranges merely to populate the interfaces.
+`PHYSICAL_PARAMS`, `VISUAL_PARAMS` and `CAMERAS` are REQUIRED declarations on
+every scene you ship — including `scene_0`: adding these declarations is the
+one edit you may make to the start scene (nothing else in it may change).
+`PHYSICAL_PARAMS` bands the world physics the task actually has (friction,
+masses, small pose offsets; nominal = today's values; ranges the delivered solve
+still succeeds under — measure, do not guess); without it every env of a wide
+batch is the same world and the dynamics stage has nothing to vary.
+`VISUAL_PARAMS` is the look axis of the visual stage: band the render-only knobs
+the scene has (materials, colors, lighting; nominal = today's look; never a
+color the task's semantics or grader depend on, never anything physics reads).
+`CAMERAS` is the scene's own declared viewpoints (there is no pipeline default):
+frame them so the WHOLE workspace is visible — robot base, target objects and
+everything manipulated — and check a rendered frame; the render probe only
+proves the camera builds, not that it frames anything. Camera heights are
+relative to the scene's `surface_z` as the preset configures it.
 
 ## Verification
 
