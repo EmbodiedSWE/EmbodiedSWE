@@ -147,6 +147,7 @@ class RoboBenchEnv(VecEnv):
                                       weights=r.get("weights"), task_cls=self.reward_cls)
         cur = cfg.get("curriculum", {}) or {}
         self.hover_frac = float(cur.get("hover_start_frac", 0.0))
+        self.early_termination = bool((cfg.get("task") or {}).get("early_termination", True))  # task env's _get_terminated on/off
         self.hover_steps = int(cur.get("hover_steps", 90))
         self.hover_jitter = float(cur.get("hover_jitter", 0.03))
         self._in_preroll = False
@@ -242,7 +243,7 @@ class RoboBenchEnv(VecEnv):
         self.episode_length_buf += 1
         reward, succ, stages = self.reward_fn.compute()
         time_out = self.episode_length_buf >= self.max_episode_length
-        term = self._get_terminated()
+        term = self._get_terminated() if self.early_termination else None
         done = time_out if term is None else (time_out | term.to(self.device))
         self._ep_ret += reward
         self._ep_peak = torch.maximum(self._ep_peak, stages["progress"])
