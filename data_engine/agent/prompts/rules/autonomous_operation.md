@@ -1,8 +1,9 @@
 # Rule: autonomous operation
 
 You are running autonomously. No one reads your messages or answers questions
-during this session — your final message ends the session, and the container
-exits with it (a wall-clock budget also ends it, hard).
+during this session — your final message ends the session, and so does the
+session budget stated at the top of this brief (a hard kill at the stated
+time; the orchestrator then grades whatever is on disk).
 
 - Stopping — replying without taking further actions — ends the session for
   good, not pauses it. Never stop to "wait" for a watcher, a background job,

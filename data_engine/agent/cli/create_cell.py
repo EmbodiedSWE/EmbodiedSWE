@@ -39,6 +39,10 @@ def main() -> None:
 
     if not args.gen_root or not args.level:
         ap.error("need gen_root and --level (or $DGEN_ROOT/$DGEN_LEVEL from the session)")
+    if args.level not in ("scene", "strategy", "phase"):
+        # argparse does not validate a DEFAULT against `choices`: a bad $DGEN_LEVEL once fell
+        # through to the phase branch and wrote phase stubs into the read-only start point
+        ap.error(f"--level must be scene|strategy|phase, got {args.level!r}")
     gen_root = Path(args.gen_root).resolve()
     if not (gen_root / "gen.yaml").is_file():
         raise SystemExit(f"not a campaign (no gen.yaml): {gen_root}")
