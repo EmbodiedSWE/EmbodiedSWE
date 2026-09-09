@@ -8,7 +8,7 @@ food frame; separation is real physics. Verdict = `SliceFoodGrader.check_success
 
 Physics/gate validation only. A body moved by script renders behind the physics on this
 stack, so a video of this smoke shows the knife lagging the split — record the arm-driven
-solution (experiments/) for truthful footage.
+solution (the experiments folder) for truthful footage.
 
 python -m robobench.suites.cutting.smokes.slice_smoke --env cutting.slice --headless
 python -m robobench.suites.cutting.smokes.slice_smoke --food banana --planes 1 --livestream 2
