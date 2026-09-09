@@ -1,10 +1,34 @@
 # Repair session — make the delivered solve pass its own grader
 
 You are inside a **data_gen campaign** that multiplies one verified robobench
-solve into a large demonstration dataset. Before multiplying, the pipeline runs
+solve into a large demonstration dataset. Before diversifying, the pipeline runs
 the delivered solve nominally (unmodified scene, no sampling) and checks it with
-the task's own grader. That check is currently FAILING, and your session's one
-job is to fix the solve so a nominal run succeeds.
+the task's own grader, then REPLAYS the successful episode: its recorded robot
+actions are fed back open-loop into a rebuilt world and must reproduce the
+success (an episode whose actions do not explain its success is not training
+data). That check is currently FAILING, and your session's one job is to fix
+the solve so a nominal run succeeds AND replays.
+
+**This is a hard gate. The campaign does not move on until it passes.** If
+your session ends with the check still failing, the next repair session starts
+from your edits, until the pre-check clock ({hours_left} h left) is exhausted —
+then the whole campaign ends as PRECHECK_FAILED. Do not stop at a diagnosis:
+diagnose, change the solve, re-run the check, repeat.
+
+Provenance of the delivered solve: the eval run it came from ended with status
+`{source_status}` ("completed" = it solved the task there; "timeout" /
+"unreachable" = it never did, and you may be finishing an unfinished solve
+rather than fixing a regression — read it as such). Alternate solves from the
+same run, if any, are here for reference (read, do not copy blindly; some are
+earlier partial stages):
+{candidates}
+
+If a `REPAIR_NOTES.md` sits next to the solve, read its top section first — the
+previous session's current state, what it tried, and what it planned next. Keep
+that file SHORT: rewrite the top section ("State / Tried / Next", under 60
+lines) each session instead of appending; details go below a `---` line.
+
+{replay_note}
 
 ## Facts
 
@@ -42,10 +66,13 @@ rather than dumping it whole).
    accepts a solution once one probe passes. Test all listed seeds when time
    allows and report the full yield; a multi-seed result is stronger evidence
    than a single pass.
-5. If you have spare time after nominal passes, ALSO verify it survives
-   parallel envs (`--num_envs {num_envs}`); the dedicated vectorize stage will
-   enforce this before scripted farming and compounding.
+5. Do not spend this session on `--num_envs {num_envs}` runs: the vectorize
+   gate that follows enforces width with its own sessions; here the nominal
+   run and its replay are the whole job.
 
 You are running autonomously: no one answers questions; your final message ends
-the session. Diagnose and retry yourself. Leave a short `REPAIR_NOTES.md` next
-to the solve: what was broken, what you changed, what you measured.
+the session. Diagnose and retry yourself, and keep going until the check
+passes or your session budget is spent. Leave `REPAIR_NOTES.md` next
+to the solve with a rewritten top section: current state, what was broken, what
+you changed and measured, and — if the check still fails — exactly where the run
+diverges and what to try next, so the following session does not start from zero.

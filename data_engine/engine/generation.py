@@ -72,6 +72,51 @@ def _load(name: str, path: Path):
     return mod
 
 
+def _local_scene_cfg(scene_cls, preset_scene_cfg, overrides: dict | None):
+    """THE scene-cfg construction — one path for generation AND replay.
+
+    Always an instance of the LOCAL scene's own cfg class: preset-registered values
+    migrate field-by-field where the names match, fields the local scene ADDED keep
+    their local defaults, and `overrides` (replay's visual draw) win last — through
+    the constructor, not setattr, so `__post_init__` derivations (a table preset
+    filling its usd/height) see them.
+
+    This is what makes a scene edit safe end-to-end: pen_holder's v28 wave died at
+    every render because the preset registry handed the edited scene a cfg INSTANCE
+    predating the edit — generation happened to build without one and passed, replay
+    did not. There must be no build path on which the scene meets a cfg type other
+    than its own.
+
+    Only init=True fields migrate through the constructor: derived fields
+    (dataclass init=False, filled by __post_init__ — coffee's cup_outer_r) re-derive
+    from the migrated inputs, which is their meaning; passing them to the
+    constructor is a TypeError (measured on the first Modal prelim, 2026-09-01).
+    Overrides that name a non-init field (a visual band on a live attribute) are
+    applied by setattr AFTER construction, once __post_init__ has run."""
+    import dataclasses
+
+    local_type = type(scene_cls().cfg)
+    local_fields = {f.name: f for f in dataclasses.fields(local_type)}
+    values: dict = {}
+    if preset_scene_cfg is not None:
+        if dataclasses.is_dataclass(preset_scene_cfg):
+            src = {f.name for f in dataclasses.fields(preset_scene_cfg) if f.init}
+        else:
+            src = set(vars(preset_scene_cfg))
+        values = {n: getattr(preset_scene_cfg, n) for n in src
+                  if n in local_fields and local_fields[n].init}
+    post: dict = {}
+    for name, value in (overrides or {}).items():
+        if name in local_fields and local_fields[name].init:
+            values[name] = value
+        else:
+            post[name] = value
+    cfg = local_type(**values)
+    for name, value in post.items():
+        setattr(cfg, name, value)
+    return cfg
+
+
 def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
               env_draw: int = 0, nominal: bool = False, solo_draw: bool = False,
               phys_nominal: bool = False,
@@ -86,9 +131,8 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
     (slot 0 = {}; both empty when nominal or band-less). A bad band fails here — before
     the expensive build.
 
-    `scene_overrides` (replay's visual draw) constructs the scene cfg WITH those field
-    values — through the constructor, not setattr, so `__post_init__` derivations (a
-    table preset filling its usd/height) see them — and the build consumes them."""
+    The scene cfg is ALWAYS materialized as the local scene's own cfg type (see
+    `_local_scene_cfg`); `scene_overrides` is replay's visual draw."""
     import dataclasses
 
     import robobench
@@ -113,12 +157,12 @@ def build_env(scene_dir: Path, num_envs: int, device: str, seed: int,
         slot_drawn = [sample(bands, env_draw + e) for e in range(num_envs)]
     else:
         slot_drawn = [{}] + [sample(bands, env_draw + e) for e in range(num_envs - 1)]
-    cfg = dataclasses.replace(ENVS.get(gen["preset"])(), scene=scene_name)
+    preset_cfg = ENVS.get(gen["preset"])()
+    cfg = dataclasses.replace(preset_cfg, scene=scene_name)
     # env_spacing: None keeps the preset's grid; replay overrides it (recorded states
     # shift onto whatever grid the replay builds, so spacing is free there)
     extra = {} if env_spacing is None else {"env_spacing": env_spacing}
-    if scene_overrides:
-        extra["scene_cfg"] = type(scene_cls().cfg)(**scene_overrides)
+    extra["scene_cfg"] = _local_scene_cfg(scene_cls, preset_cfg.scene_cfg, scene_overrides)
     env = cfg.build(num_envs=num_envs, device=device, seed=seed, **extra)
     if slot_drawn:
         c = env.scene.cfg  # nominal source for slot 0
@@ -197,7 +241,9 @@ def _controller_info(robot) -> dict:
                         for k, v in vars(cfg).items()
                         if isinstance(v, (int, float, bool, str, tuple, list, torch.Tensor))
                         or (_dc.is_dataclass(v) and not isinstance(v, type))}
-        for name in ("_kp", "_kd"):  # task-space gains live on the instance, not the cfg
+        # task-space gains AND the nullspace posture live on the instance, not the cfg; the
+        # replay restores all three (bulb's solve points `_q_default` at the home pose)
+        for name in ("_kp", "_kd", "_q_default"):
             v = getattr(c, name, None)
             if isinstance(v, torch.Tensor):
                 d[name.lstrip("_")] = v.tolist()
@@ -269,8 +315,8 @@ class Recorder:
     noise_scale * noise` is what executes. Labels structurally never contain the
     noise — there is no code path from the perturbation into self.actions. The
     solve decides where and how much (its phase knowledge); the pipeline decides
-    IF, through noise_scale (0 = probes/farm run noise-free even if the solve
-    offers noise; compound enables it). Every perturbation is also recorded
+    IF, through noise_scale (0 = probes/base set run noise-free even if the solve
+    offers noise; the dynamics harvest enables it). Every perturbation is also recorded
     verbatim (self.noises) so downstream consumers can reconstruct the clean
     command in any derived space (e.g. joint targets, which the controller
     computes from the EXECUTED action).
@@ -280,7 +326,10 @@ class Recorder:
     each env's earliest SUSTAINED-success step so replay/export can drop the
     padded station-keeping tail that wide batches append to every finished env."""
 
-    CTRL_CHECK = 25  # latches between law checks (phases last hundreds; cost ~0.5 ms/check)
+    # 1, not 25: the replay re-applies each recorded change AT its stamped step, so a change
+    # detected up to 24 steps late replayed 24 steps late — enough to break a solve that toggles
+    # kp_null at every phase boundary (pc_motherboard: 126 toggles per episode). ~0.5 ms/check.
+    CTRL_CHECK = 1
     PROBE_EVERY = 30  # latches between grader success samples (~2 s at 15 Hz control)
 
     def __init__(self, env, raw_env, num_envs: int, noise_scale: float = 0.0,
@@ -507,7 +556,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         # VACUOUS-SUCCESS GUARD: an env the grader already judges successful AT
         # THE ENTRY STATE can never yield a valid episode — there is no
         # transition to learn. Without this, a scene whose success() holds at
-        # reset plus a solve that exits immediately farms unlimited "successes"
+        # reset plus a solve that exits immediately harvests unlimited "successes"
         # (pc_motherboard shipped 1-step score-1.0 episodes for two days).
         entry_success = [bool(v["success"]) for v in grader.verdict()]
         if any(entry_success):
@@ -518,7 +567,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                   flush=True)
         # Two independent, label-clean noise mechanisms:
         # - the solve-authored channel (env.step(action, noise=...)), scaled by
-        #   noise_scale — the pipeline DEFAULT (0 = inert; compound runs it hot);
+        #   noise_scale — the pipeline DEFAULT (0 = inert; the harvest runs it hot);
         # - the scripted uniform wrapper (NoisyActionEnv), opt-in through the
         #   --sigma/--prob/--duration/--dims/--gate-z flags. It perturbs BELOW
         #   the recorder, so recorded actions stay the clean commands either way.
@@ -597,8 +646,16 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
             ep = rnd * num_envs + e
             ep_dir = out / f"ep_{ep:04d}"
             ep_dir.mkdir(parents=True, exist_ok=True)
+            # A finished env is parked while the batch's slowest env works, and every
+            # row of that tail was recorded (pen_holder: success at step 1170 of a
+            # 15,995-step episode). Keep one success-probe interval past the earliest
+            # SUSTAINED-success sample (the grader still passes at the cut, and replay,
+            # render and storage stop paying ~10x for a robot standing still).
+            keep = T
+            if success_steps[e] is not None:
+                keep = min(T, int(success_steps[e]) + rec.PROBE_EVERY)
             np.savez_compressed(ep_dir / "traj.npz",
-                                **{k: v[:, e] for k, v in arrays.items()})
+                                **{k: v[:keep, e] for k, v in arrays.items()})
             meta = {
                 "episode": ep, "rollout": rnd, "env_index": e,
                 "success": verdicts[e]["success"], "score": verdicts[e]["score"],
@@ -607,9 +664,9 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                                "solve": solve_drawn},
                 "reset": reset_name, "reset_fn": (fn_of_env[e] if fn_of_env else None),
                 "entry": entry,
-                "seed": seed + rnd, "steps": T,
-                # earliest sustained-success step (None = failed / never sampled):
-                # replay + export may trim the padded post-success tail here
+                "seed": seed + rnd, "steps": keep, "batch_steps": T,
+                # earliest sustained-success step (None = failed / never sampled);
+                # the saved trajectory ends PROBE_EVERY rows after it
                 "success_step": success_steps[e],
                 "sim_dt": env.dt, "decimation": env.robot.control_period,
                 "controller": ctrl_info,
@@ -632,11 +689,14 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
               f"{T} steps", flush=True)
 
     n_ok = sum(v["success"] for v in verdicts_all)
+    from .contract import cell_fingerprint
     (out / "meta.json").write_text(json.dumps({
         "batch": batch, "cell": cell,
+        # identity of the code that produced these episodes (see contract.cell_fingerprint)
+        "cell_fingerprint": cell_fingerprint(real_root, cell),
         "preset": gen["preset"], "num_envs": num_envs, "seed": seed,
         # measured noise coverage — the orchestrator's mandatory-noise gate reads
-        # this (an agent that ships zero effective noise cannot pass compound)
+        # this (an agent that ships zero effective noise cannot pass certification)
         "noise": ({"scale": noise_scale,
                    "perturbed_row_frac": round(noise_rows_perturbed / max(1, noise_rows), 4),
                    "mean_abs": round(noise_abs_sum / max(1, noise_elems), 6),

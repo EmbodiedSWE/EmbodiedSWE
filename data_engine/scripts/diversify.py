@@ -85,9 +85,10 @@ def assemble(session: Path, gen_root: Path, cfg: dict, repo_as: Path, gen_as: Pa
         (gen_root / "gen.yaml").read_text().rstrip(),
         "```",
     ]
+    # cells only — scenes/<suite> are the bake's suite symlinks, not cells
     metas = [f"- {m.parent.relative_to(gen_root)}: {m.read_text().strip()}"
-             for m in sorted(gen_root.glob("scenes/*/meta.json"))
-             + sorted(gen_root.glob("scenes/*/strategies/*/meta.json"))]
+             for m in sorted(gen_root.glob("scenes/scene_*/meta.json"))
+             + sorted(gen_root.glob("scenes/scene_*/strategies/strategy_*/meta.json"))]
     if metas:
         parts += ["\n### current yields (baselines)\n"] + metas
 

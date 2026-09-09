@@ -82,6 +82,13 @@ parser.add_argument("--workers", default="1",
 parser.add_argument("--filter-idle", action="store_true", dest="filter_idle",
                     help="drop dead ticks (robot AND objects static AND no command intent); "
                          "presses and active settling are kept — see filters.py")
+parser.add_argument("--cam-alias", nargs="*", default=[], dest="cam_alias",
+                    help="pack a view under another key, view=key (e.g. front_draw1=front "
+                         "wrist_draw1=wrist): the data_gen visual stage re-renders every episode "
+                         "under extra looks as views named <cam>_drawN; with --cams selecting one "
+                         "look and this aliasing it back to the camera name, each look bakes to a "
+                         "dataset with the SAME keys, and the looks merge into one dataset of "
+                         "episodes x looks (aggregate_datasets) instead of one dataset with a key per look")
 args = parser.parse_args()
 
 import imageio.v2 as imageio  # noqa: E402
@@ -129,11 +136,17 @@ def _law(c: dict | None) -> dict | None:
     after that date describing the same law must compare equal."""
     if not c:
         return c
-    return {**c, "leaves": [{k: v for k, v in l.items() if k != "control_dt"}
+    # `q_default` (the nullspace posture) is recorded only since 2026-09-07; episodes stamped
+    # before that carry the same law without the field, so it is not part of the identity either.
+    return {**c, "leaves": [{k: v for k, v in l.items() if k not in ("control_dt", "q_default")}
                             for l in c.get("leaves", [])]}
 
 
 eps = [read_sim_episode(d, args.cams) for d in ep_dirs()]
+alias = dict(a.split("=", 1) for a in args.cam_alias)
+if alias:
+    for e in eps:
+        e.videos = {alias.get(v, v): p for v, p in e.videos.items()}
 if not args.include_failures:
     skipped = sum(not e.success for e in eps)
     eps = [e for e in eps if e.success]
@@ -323,7 +336,10 @@ def fit_video_file_size_mb(ds: LeRobotDataset, first_ep_seconds: float, max_seco
     if not rates:
         return None
     mb = int(max(1, min(ds.meta.video_files_size_in_mb, max_seconds * max(rates))))
-    ds.meta.info.video_files_size_in_mb = mb
+    if isinstance(ds.meta.info, dict):     # lerobot 0.4.x: `meta.info` is the info.json dict
+        ds.meta.info["video_files_size_in_mb"] = mb
+    else:                                  # newer lerobot: an attribute object
+        ds.meta.info.video_files_size_in_mb = mb
     return mb
 
 

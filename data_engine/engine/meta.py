@@ -26,12 +26,16 @@ def refresh_metas(gen_root: str | Path) -> None:
         eps = sum(m["episodes"] for m in sel)
         ok = sum(m["successes"] for m in sel)
         try:
-            (level_dir / "meta.json").write_text(json.dumps({
+            # atomic: concurrent refreshes (parallel batches both finishing) must
+            # never leave a half-written cache for a reader to json-crash on
+            tmp = level_dir / "meta.json.tmp"
+            tmp.write_text(json.dumps({
                 "episodes": eps, "successes": ok,
                 "success_rate": round(ok / eps, 4) if eps else None,
                 "batches": [m["batch"] for m in sel],
                 "refreshed": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             }, indent=2) + "\n")
+            tmp.replace(level_dir / "meta.json")
         except OSError:
             pass  # a fenced session's read-only base cell: its meta stays stale; the pool is truth
 
