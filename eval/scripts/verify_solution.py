@@ -104,6 +104,10 @@ def main() -> None:
         finish(verdict)
 
     try:
+        try:  # pink_ik presets need pinocchio imported BEFORE AppLauncher (robobench/controllers/pink_ik.py)
+            import pinocchio  # noqa: F401, PLC0415
+        except ImportError:
+            pass
         from isaaclab.app import AppLauncher  # noqa: PLC0415
 
         AppLauncher(headless=True)  # must precede the isaaclab imports below

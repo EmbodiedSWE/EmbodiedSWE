@@ -40,6 +40,10 @@ def boot_preset(tree: Path, preset: str, seed: int = 0) -> str:
     stage which of its references are missing and raise MissingAssets with them.
     """
     code = f"""
+try:  # pink_ik presets need pinocchio imported BEFORE AppLauncher (robobench/controllers/pink_ik.py)
+    import pinocchio  # noqa: F401
+except ImportError as exc:
+    print('[validate] pinocchio not importable (' + str(exc) + '): a pink_ik preset will fail to boot', flush=True)
 from isaaclab.app import AppLauncher
 app = AppLauncher(headless=True).app
 import os

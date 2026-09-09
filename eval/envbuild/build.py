@@ -80,7 +80,8 @@ def build_experiment(
         # an asset the extractor could not see, supply it and boot again — asset
         # detection is a heuristic, so the prover is also what repairs it. The boot runs
         # at the build seed, so describe.md harvests the same initial condition grading uses.
-        for _ in range(4):
+        for _ in range(8):  # each boot reveals ONE missing reference; a scene reaching several
+            # assets through constants/cfg fields (cutting: food, knife, island, board) needs a few
             try:
                 describe_text = validate.boot_preset(bench, preset, seed=seed)
                 break
