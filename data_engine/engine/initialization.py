@@ -107,6 +107,17 @@ def resolve_suite(preset: str) -> dict:
     nominal batch's job to catch (and init warns if the stage bench disagrees).
     """
     suite, scene = preset.split(".")[0:2]
+    # a cfg-only variant preset (EnvCfg.variant, e.g. cutting.slice_banana.*) names the real
+    # scene in its registered EnvCfg — the name segment alone is not a SCENES key
+    try:
+        import robobench
+
+        robobench.discover()  # app-free
+        from robobench.core.registries import ENVS
+
+        scene = ENVS.get(preset)().scene
+    except Exception as exc:  # unregistered preset: fall back to the name segment
+        print(f"[init] preset '{preset}' not resolvable through ENVS ({exc}); using scene '{scene}'")
     scenes_dir = REPO_ROOT / "robobench" / "suites" / suite / "scenes"
     scene_path = scene_cls = None
     for p in sorted(scenes_dir.glob("*.py")):
@@ -219,10 +230,11 @@ def init(run_dir: str | Path, name: str | None = None, force: bool = False) -> P
     # assets through cfg indirection (syringe's medical_cart -> FileNotFoundError at build).
     suite_assets = suite["scene_path"].parents[1] / "assets"
     if suite_assets.is_dir():
-        for sub_dir in sorted(p for p in suite_assets.iterdir() if p.is_dir()):
+        for sub in sorted(suite_assets.iterdir()):  # subdirs AND single files (cutting's
+            # kitchen_island.usd / chopping_board.usd sit straight under assets/)
             (scene0 / "assets").mkdir(exist_ok=True)
-            (scene0 / "assets" / sub_dir.name).symlink_to(
-                os.path.relpath(sub_dir, scene0 / "assets"), target_is_directory=True)
+            (scene0 / "assets" / sub.name).symlink_to(
+                os.path.relpath(sub, scene0 / "assets"), target_is_directory=sub.is_dir())
     # Cross-suite asset borrowing (the chair-assembly convention): scenes reach sibling
     # suites' assets as `Path(cfg.asset_dir).parents[1] / "<suite>/assets/..."`, which from
     # the campaign copy resolves to `<gen>/scenes/<suite>/...` — so link every sibling suite
