@@ -17,8 +17,14 @@ and where to start.
   have neither mount; the campaign's `gen.yaml` records the solve's
   provenance instead.)
 - Your **start point** inside the campaign is read-only by contract — copy it
-  with `create_cell`, never edit it in place.
-- A GPU is available; `python` has Isaac Sim + Isaac Lab.
+  with `create_cell`, never edit its behaviour in place. The ONE permitted edit
+  to the start scene (`scenes/scene_0/scene/scene.py`) is adding the
+  declarations every shipped scene must carry — `PHYSICAL_PARAMS`,
+  `VISUAL_PARAMS`, `CAMERAS` — when it lacks them; nothing else.
+- A GPU is available; `python` has Isaac Sim + Isaac Lab. It is ONE 24 GB GPU
+  and ~60 GB of RAM shared with the orchestrator's own runs: run at most TWO
+  Isaac processes of your own at a time (a third slows every run 3x and a
+  512-env run near 20k steps is killed by the OOM killer at save time).
 
 ## The campaign
 
@@ -41,21 +47,43 @@ and where to start.
   have ideas.
 - `generate --headless . --scene <s> [--strategy <t>] [--phase <p>]
   --num_envs <N> --seed 0` — test-launch a cell: batched rollouts, every episode
-  graded, yield written to the batch meta under `data/`.
+  graded, yield written to the batch meta under `data/`. The batch's `meta.json`
+  (and every episode's) is written only when the whole batch finishes; a batch
+  directory without `meta.json` is still running or died.
 
-Choose test width deliberately. Use parallel environments when the solve
-supports them and the experiment benefits from multiple independent verdicts;
-sequential exploration is also valid while developing a new idea. If
-`DGEN_NUM_ENVS` is set, it is the downstream scripted-stage width and is the
-right final compatibility test.
+Probe your cells at a SMALL width — `--num_envs 8` to `32`. The gate verifies
+episodes by replaying their whole batch, and Isaac's cost is per step whatever
+the width: a 512-env batch costs the same hour to generate and another hour to
+replay whether the gate needs 3 episodes from it or 300. The orchestrator runs
+the wide (`DGEN_NUM_ENVS`) batches itself.
 
 Solves may author DART-style disturbances through the recorder's noise
 channel — `env.step(action, noise=perturbation)` — which executes
 `action + NOISE_SCALE * perturbation` while recording the clean `action` as
 the label. `NOISE_SCALE` is pipeline-controlled (`generate --noise_scale`,
-default 0), so authored noise is inert in normal testing. You also have a
-`view` tool that attaches video frames or images to the conversation — use it
-whenever judging motion from a rendered episode beats reading logs.
+default 0), so authored noise is inert in normal testing.
+
+## The replay rule (every episode, mechanically enforced)
+
+An episode is training data only if the robot's RECORDED ACTIONS cause its
+success: the orchestrator rebuilds the episode's batch, feeds the recorded
+actions back open-loop, and the grader must pass again. Episodes that do not
+replay are discarded, and an episode counts only while the code of its cell is
+unchanged since it was recorded — after your last edit, re-run the cell.
+Contact-rich behaviour (threading, insertion, pushing) replays far less often
+at width than at 1 env; a strategy whose successes only replay alone is worth
+little here — prefer motions whose outcome does not hinge on a millimetre. So a solve may act on the world ONLY through the robot —
+through `env.step(action)`. Writing scene drive inputs (`scene.*_drive`),
+external forces, or sim state (`write_root_state*`, `set_states`, teleports)
+from a solve produces episodes whose actions do not explain their success; the
+pre-check rejects such a solve before anything is farmed from it.
+
+Controller and articulation parameters a solve sets — gains (`_kp`/`_kd`,
+`kp_null`/`kd_null`), `control_period`, `rot_scale`/`pos_scale`, the nullspace
+posture, gripper joint stiffness/damping — are recorded into every episode
+(`controller` in its meta, plus `controller_changes` for anything changed
+mid-solve) and re-applied by the replay before the actions are fed back. Tune
+them as the task needs; they are part of what the episode carries.
 
 ## How you work
 
@@ -74,10 +102,14 @@ whenever judging motion from a rendered episode beats reading logs.
 
 ## Practical notes
 
-Generation boots Isaac and rolls out full episodes. Author independent ideas
-before waiting on one test, and keep working while batches run. If the session
-ends before a cell is tested, mark it `UNTESTED` in `SUMMARY.md`; never imply
-that an untested cell is proven.
+Generation boots Isaac (~3 min) and rolls out full episodes. Author independent
+ideas before waiting on one test, and keep working while batches run — but never
+end your turn to "wait" for a job: everything you started is killed when the
+session ends, and the session ends when your budget (top of this brief) runs
+out or you stop. Poll running jobs from the foreground with a single `sleep`
+loop, not one tool call per minute. If the session ends before a cell is
+tested, mark it `UNTESTED` in `SUMMARY.md`; never imply an untested cell is
+proven, and never leave a cell whose tests never yielded — delete it.
 
 ## Leave behind
 
