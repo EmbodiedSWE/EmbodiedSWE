@@ -134,7 +134,7 @@ class SliceFoodScene(BaseScene):
     }
 
     CAMERAS: ClassVar[dict] = {
-        "front": {"eye": (0.42, -0.50, 1.28), "target": (0.0, -0.02, 1.04), "focal": 22.0},
+        "front": {"eye": (0.42, -0.50, 0.402), "target": (0.0, -0.02, 0.162), "focal": 22.0},  # surface-relative (the render/eval contract adds cfg.surface_z = board top 0.878): was declared absolute (z 1.28/1.04) -> camera saw only the floor (2026-09-09)
     }
 
     def __init__(self, cfg: SliceFoodSceneCfg | None = None) -> None:
