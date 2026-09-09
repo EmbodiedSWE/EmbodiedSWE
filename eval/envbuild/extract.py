@@ -33,7 +33,9 @@ ROBOT_ASSET_ALIASES = {
 LEAK_RE = re.compile(
     r"experiments/|solve[-_ ]?(verified|calibrated)|BUILD_LOG|SESSION_TRACE|solve_four", re.I
 )
-ASSET_REF_RE = re.compile(r'assets"?\s*/\s*"([A-Za-z0-9_\-]+)"')
+# `assets / "name"` (or `ASSETS / "name"`): a subtree (assets/<sub>/) or one file straight under
+# assets/ (assets/<file>.usd)
+ASSET_REF_RE = re.compile(r'assets"?\s*/\s*"([A-Za-z0-9_\-.]+)"', re.I)
 
 
 def minimal_tree(dst: Path, suite: str, scene: str, robot: str, keep_smokes: bool = False) -> list[str]:
@@ -61,17 +63,32 @@ def minimal_tree(dst: Path, suite: str, scene: str, robot: str, keep_smokes: boo
         scene_files = [_stage_simgen_scene(dst, scene)]
     else:
         scene_files = list((dst / "robobench" / "suites" / suite / "scenes").glob(f"*{scene}*.py"))
+        if not scene_files:  # a cfg-only variant name (EnvCfg.variant): glob its real scene's file
+            real = _scene_of_variant(suite, scene)
+            scene_files = list((dst / "robobench" / "suites" / suite / "scenes").glob(f"*{real}*.py"))
     if not scene_files:
         raise SystemExit(f"no scene file matching '*{scene}*.py' in suite '{suite}'")
     scene_assets: set[str] = set()
+    suite_assets = SRC / "suites" / suite / "assets"
+    entries = [e.name for e in suite_assets.iterdir()] if suite_assets.is_dir() else []
     for f in scene_files:
-        scene_assets |= set(ASSET_REF_RE.findall(f.read_text()))
+        text = f.read_text()
+        scene_assets |= set(ASSET_REF_RE.findall(text))
+        # a name reached through a constant or cfg field (`ASSETS / self.KNIFE`, `assets / cfg.food`)
+        # still appears as a string literal somewhere in the scene file: any quoted literal that is an
+        # entry of the suite's assets/ counts (a small over-approximation beats a boot per miss)
+        scene_assets |= {e for e in entries if re.search(rf'["\']{re.escape(e)}["\']', text)}
 
     copied = []
     for sub in sorted(scene_assets):
         src = SRC / "suites" / suite / "assets" / sub
+        out = dst / "robobench" / "suites" / suite / "assets" / sub
         if src.is_dir():
-            shutil.copytree(src, dst / "robobench" / "suites" / suite / "assets" / sub)
+            shutil.copytree(src, out)
+            copied.append(f"suites/{suite}/assets/{sub}")
+        elif src.is_file():
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, out)
             copied.append(f"suites/{suite}/assets/{sub}")
     for r in sorted(set(ROBOT_ASSET_ALIASES.get(robot, [robot]))):
         src = SRC / "robots" / "assets" / r
@@ -83,6 +100,22 @@ def minimal_tree(dst: Path, suite: str, scene: str, robot: str, keep_smokes: boo
     if (dst / "sim_gen").is_dir():
         _scrub_comments(dst / "sim_gen")
     return copied
+
+
+def _scene_of_variant(suite: str, name: str) -> str:
+    """The SCENES name behind a preset's scene segment `name` — identical unless the segment is a
+    cfg-only variant (`EnvCfg.variant`, e.g. `slice_banana` -> `slice`), read off the registered
+    EnvCfg itself so the mapping can never drift from the convention."""
+    import robobench
+
+    robobench.discover()  # app-free
+    from robobench.core.registries import ENVS
+
+    for env_name in ENVS.list():
+        parts = env_name.split(".")
+        if parts[0] == suite and parts[1] == name:
+            return ENVS.get(env_name)().scene
+    raise SystemExit(f"no registered env under '{suite}.{name}' — nothing to extract a scene for")
 
 
 def _stage_simgen_scene(dst: Path, scene: str) -> Path:
@@ -153,10 +186,14 @@ def copy_missing(dst: Path, paths: list[str]) -> list[str]:
         if out.exists():
             print(f"[extract] {sub} is already here yet {Path(p).name} is not — check the source")
             continue
-        if not src.is_dir():
+        if src.is_dir():
+            shutil.copytree(src, out)
+        elif src.is_file():  # a single file straight under assets/ (e.g. cutting's kitchen_island.usd)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, out)
+        else:
             print(f"[extract] no source for {sub} in {SRC}")
             continue
-        shutil.copytree(src, out)
         added.append(str(sub.relative_to("robobench")))
     return added
 

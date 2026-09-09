@@ -9,9 +9,9 @@ with the Franka HIGH_PD gains, stiffness 400 / damping 80), not here. Wraps Isaa
 on the sim device — the throughput swap `pink_ik`'s per-env QP loop points at (this solves ONE chain
 per action; multi-frame tasks stay with pink).
 
-The command shaping is the recipe PROVEN in the joint-space bulb port (`experiments/bulb_ik/solve.py`,
-verified seated on two seeds; chronicle in its README) — a stiff position-PD arm needs its command
-stream tamed or phase-boundary target jumps become PD torque spikes:
+The command shaping is the recipe PROVEN in the joint-space bulb port (verified seated on two
+seeds) — a stiff position-PD arm needs its command stream tamed or phase-boundary target jumps
+become PD torque spikes:
   - DLS damping `ik_lambda = 0.05` (the bulb/dough/tshirt/latte joint experiments' value; Isaac's
     default 0.01 is livelier but less robust near singularities),
   - a PERSISTENT rate-limited command integrator (`max_dq` per control tick): the emitted target
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 class DiffIKControllerCfg(BaseControllerCfg):
     """Config for `DiffIKController`: the chain + EE frame (robot-supplied structure) and the solver /
     command-shaping knobs. Action scales default to the `task_space` values so the two mode families
-    share an action vocabulary; the shaping defaults are the `experiments/bulb_ik` proven set."""
+    share an action vocabulary; the shaping defaults are the joint-space bulb port's proven set."""
 
     ee_body: str = ""  # end-effector frame (a body name); "" -> the articulation's last body
     arm_joint_names: tuple[str, ...] | None = None  # driven joints; None -> all of the robot's joints

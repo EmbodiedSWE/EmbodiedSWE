@@ -178,8 +178,12 @@ def main() -> None:
     from robobench.core import GradedEnv
     from robobench.core.registries import ENVS
 
-    grader_cls = load_graders(GRADERS_DIR)[args.scene]
-    env = ENVS.get(args.preset)().build(num_envs=args.num_envs, seed=args.seed)
+    env_cfg = ENVS.get(args.preset)()
+    graders = load_graders(GRADERS_DIR)
+    # the preset's scene segment may be a cfg-only variant (EnvCfg.variant: "slice_banana"); the
+    # grader belongs to the real scene the cfg names
+    grader_cls = graders[args.scene] if args.scene in graders else graders[env_cfg.scene]
+    env = env_cfg.build(num_envs=args.num_envs, seed=args.seed)
     flush = start_renderer(env, out) if args.render else None  # re-parses sim: before the graded reset
     env.reset(seed=args.seed)
     grader = grader_cls(env)  # one grader instance = this rollout (per-trajectory inside)
