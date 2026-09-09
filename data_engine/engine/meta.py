@@ -39,7 +39,11 @@ def refresh_metas(gen_root: str | Path) -> None:
         except OSError:
             pass  # a fenced session's read-only base cell: its meta stays stale; the pool is truth
 
-    for scene_dir in sorted(gen_root.glob("scenes/*")):
+    for scene_dir in sorted(gen_root.glob("scenes/scene_*")):
+        # only cells: init also links every sibling suite under scenes/<suite> (cross-suite asset
+        # borrowing) and a glob("scenes/*") wrote meta.json caches INTO the live repo suites
+        if scene_dir.is_symlink() or not scene_dir.is_dir():
+            continue
         s = scene_dir.name
         write(scene_dir, lambda c, s=s: c[:1] == [s])
         for strat_dir in sorted(scene_dir.glob("strategies/*")):
