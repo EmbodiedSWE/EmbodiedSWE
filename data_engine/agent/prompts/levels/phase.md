@@ -4,7 +4,7 @@ A **phase** is an entry point into strategy {base}'s solve: instead of always
 starting from the scene's reset, an episode can begin mid-task — from a
 prepared entry state — and still run to task-done, where the grader judges it
 as usual. Phases buy state coverage the from-scratch solve rarely visits, and
-they make the hard, rare segments of the task cheap to farm.
+they make the hard, rare segments of the task cheap to generate.
 
 ## Deliverables
 
@@ -124,12 +124,19 @@ must satisfy the phase's precondition as documented in `ENTRIES`.
 - different builders in one file = different state families for the same phase
   (e.g. `reset_0` built-by-hand nominal, `reset_1` restored-from-failures);
   each rollout runs them all, its envs divided evenly among them.
-- as MANY anchor poses as possible, each with small jitter: no need for one
-  generic builder over the whole state space — cover the precondition's
-  feasible region with many anchors (approach side, position on the
-  workspace, orientation), recorded or hardcoded, and perturb a little around
-  each. One anchor + jitter replays the same episode over and over; many
-  anchors is what makes the data diverse.
+- many anchor poses INSIDE ONE BUILDER, each with small jitter: cover the
+  precondition's feasible region with anchors (approach side, position on the
+  workspace, orientation), recorded or hardcoded, and draw one per env with a
+  little perturbation. One anchor + jitter replays the same episode over and
+  over; many anchors is what makes the data diverse. Keep the NUMBER OF RESET
+  FILES small (one or two): each reset file is a separate, sequential rollout
+  of the full episode length — a 4-file phase cell costs 4 full episodes per
+  batch (an 8 h batch at 16 envs in one v2 run), and the same anchors inside
+  one builder cost one.
+- entry states restored from recorded mid-episode poses replay far worse than
+  states built by hand and settled: a part already in contact (a thread half
+  engaged, a peg half inserted) diverges from the first step. Build entries at
+  the phase's approach — settled, clear of contact — not inside the contact.
 - check your own precondition: settling can knock a part out of the intended
   state in some envs. After the settle, verify the precondition per env (poses
   are observable) and re-draw just the envs that missed — a dead entry state

@@ -1,7 +1,7 @@
 # Scene-contract session — VISUAL_PARAMS and CAMERAS on every scene
 
 You are inside a **data_gen campaign** that multiplies verified episodes into a
-demonstration dataset. The MULTIPLY stage replays each verified episode under
+demonstration dataset. The VISUAL stage replays each verified episode under
 K looks through each scene's OWN declared cameras — so every scene must
 declare `CAMERAS` (there is no pipeline default view) and `VISUAL_PARAMS`
 (without it a look varies nothing but camera pose). These scenes are missing
@@ -12,6 +12,12 @@ one or both:
 Scene files (edit IN PLACE):
 
 {scene_paths}
+
+Clock left on this stage: {hours_left} h. Camera heights are relative to the
+scene's `surface_z` AS THE PRESET CONFIGURES IT (read `gen.yaml` for the preset
+and the preset's scene cfg), not the scene class default — check one rendered
+frame per camera; a camera that builds but frames the floor passes no gate
+here and is worthless downstream.
 
 ## What to add
 
@@ -37,13 +43,17 @@ Hard constraints:
    friction, or anything physics reads — physics provenance of already-verified
    episodes must stay exactly true. If a knob could plausibly alter contact or
    dynamics, it does not belong here.
-2. THE SCENE MUST STILL BUILD. If your edit makes any code path read a cfg
-   attribute (e.g. `c.light_intensity` in `assets()`), DECLARE that attribute
-   on the scene's cfg dataclass with today's value as its default. The
-   orchestrator verifies your edit by actually building and running each edited
-   scene — an AttributeError at build time rejects the whole session. If a
-   scene listed above already declares both, that is why: a previous edit
-   broke its build — read the scene, find the breakage, fix it.
+2. THE SCENE MUST STILL BUILD — ON EVERY BUILD PATH. If your edit makes any
+   code path read a cfg attribute (e.g. `c.light_intensity` in `assets()`),
+   DECLARE that attribute on the scene's cfg dataclass with today's value as
+   its default, AND read it backward-compatibly —
+   `getattr(c, "light_intensity", <today's value>)` — because a preset can
+   hand the scene a cfg INSTANCE that predates your edit. The orchestrator
+   verifies your edit by building AND RENDERING each edited scene (a
+   generation probe plus a one-episode replay probe): an AttributeError on
+   either path rejects the whole session. If a scene listed above already
+   declares both, that is why: a previous edit broke one of its build paths —
+   read the scene, find the breakage, fix it.
 3. Do not change anything else in the scene files: no new objects, no physics
    edits, no refactors. This session adds the missing declarations, nothing more.
 4. Task-critical appearance stays recognizable: never randomize a color the

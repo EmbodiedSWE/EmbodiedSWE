@@ -232,9 +232,15 @@ def build_replay_env(scene_dir: Path, num_envs: int, device: str,
     from robobench.core.registries import ENVS, ROBOTS
 
     scene_cls = SCENES.get(scene_name)
-    surface_z = float(getattr(scene_cls().cfg, "surface_z", 0.0) or 0.0)
     gen = yaml.safe_load((scene_dir.parents[1] / "gen.yaml").read_text())
-    robot_cls = ROBOTS.get(ENVS.get(gen["preset"])().robot)
+    preset_cfg = ENVS.get(gen["preset"])()
+    # the PRESET's scene cfg — the one the world is built with (generation._local_scene_cfg)
+    # — not the scene class default: the coffee franka preset puts the counter at 0.55 while
+    # the class default is 0.994, so every declared camera rendered 0.444 m too high
+    from .generation import _local_scene_cfg
+    surface_z = float(getattr(_local_scene_cfg(scene_cls, preset_cfg.scene_cfg, None),
+                              "surface_z", 0.0) or 0.0)
+    robot_cls = ROBOTS.get(preset_cfg.robot)
     views = resolve_views(scene_cls, robot_cls, cams, adhoc)
     if pose_jitter and any(pose_jitter):
         # Per-episode pose jitter for DRAW passes, expressed through the native
@@ -381,6 +387,10 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
     import torch
 
     scene_dir = gen_root / "scenes" / scene
+    # Never build more envs than episodes: idle slots are padded duplicates that
+    # still get stepped and tile-rendered every frame (a 2-episode shard at
+    # num_envs=16 cost ~8x on Newton cloth).
+    num_envs = max(1, min(num_envs, len(eps)))
     if num_envs > 1 and env_spacing <= _FAR_CLIP:
         print(f"[replay] WARNING: env_spacing {env_spacing} <= far clip {_FAR_CLIP} — "
               f"neighbor envs will appear in frames", flush=True)
