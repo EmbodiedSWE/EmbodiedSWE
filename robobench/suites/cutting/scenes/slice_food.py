@@ -133,8 +133,15 @@ class SliceFoodScene(BaseScene):
         "board_friction": {"dist": "uniform", "lo": 0.6, "hi": 0.9},
     }
 
+    #: External view for visual replay (BaseScene.CAMERAS): eye/target are env-origin-relative ON THE
+    #: WORK SURFACE (the renderer adds `surface_z` = the board top, 0.882 m) — NOT world heights. The
+    #: 3/4 view from the +x/-y corner frames the board, the knife rest and the arm; bands wiggle the
+    #: eye a centimetre per episode.
     CAMERAS: ClassVar[dict] = {
-        "front": {"eye": (0.42, -0.50, 0.402), "target": (0.0, -0.02, 0.162), "focal": 22.0},  # surface-relative (the render/eval contract adds cfg.surface_z = board top 0.878): was declared absolute (z 1.28/1.04) -> camera saw only the floor (2026-09-09)
+        "front": {"eye": (0.42, -0.50, 0.40), "target": (0.0, -0.02, 0.16), "focal": 22.0,
+                  "bands": {"eye_x": {"dist": "uniform", "lo": 0.41, "hi": 0.43},
+                            "eye_y": {"dist": "uniform", "lo": -0.51, "hi": -0.49},
+                            "eye_z": {"dist": "uniform", "lo": 0.39, "hi": 0.41}}},
     }
 
     def __init__(self, cfg: SliceFoodSceneCfg | None = None) -> None:
