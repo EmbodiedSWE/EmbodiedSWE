@@ -1,4 +1,5 @@
-# Slice food (carrot), Franka, JOINT preset (the only registered Franka mode for cutting): take the
+# Slice food (carrot), Franka, JOINT preset (raw joint targets; osc/impedance/diff_ik/pink_ik are
+# registered too): take the
 # knife off its stand, cut the welded piece chain plane by plane, keep pieces on the board. Joint
 # mode = raw joint position targets at 50 Hz, so the 7 arm dims map [-1,1] onto the joint limits.
 # dt 1/240. A `ppo:` block here overrides base.yaml.

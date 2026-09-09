@@ -68,6 +68,10 @@ class EnvCfg:
     """
 
     scene: str  # SCENES name
+    # A cfg-only variant of the scene (another food, layout, ...) that deserves its own registered
+    # name: "" -> none; "banana" -> the scene segment of the name becomes "<scene>_banana". The scene
+    # class is untouched — the variant is carried entirely by `scene_cfg`.
+    variant: str = ""
     robot: str = "null"  # ROBOTS name
     control_mode: str = ""  # applied to the robot cfg ("" -> the robot's first mode)
     scene_cfg: Any = None  # a scene BaseCfg instance, or None -> the scene's default
@@ -83,11 +87,13 @@ class EnvCfg:
 
     def qualified_name(self, suite: str) -> str:
         """The canonical `ENVS` name under `suite`, by the convention
-        ``suite.scene[.robot[.control_mode]]`` — segments dropped from the RIGHT when default/absent
-        (no robot, or the robot's default mode). So `assembly` + (scene=ikea_table, robot=null)
-        -> ``assembly.ikea_table``; + (ikea_table, g1, joint) -> ``assembly.ikea_table.g1.joint``.
+        ``suite.scene[_variant][.robot[.control_mode]]`` — segments dropped from the RIGHT when
+        default/absent (no robot, or the robot's default mode). So `assembly` + (scene=ikea_table,
+        robot=null) -> ``assembly.ikea_table``; + (ikea_table, g1, joint) ->
+        ``assembly.ikea_table.g1.joint``; a cfg-only variant joins the scene segment:
+        (scene=slice, variant=banana, franka, osc) -> ``cutting.slice_banana.franka.osc``.
         General -> specific, so a sorted listing groups by suite -> scene -> robot."""
-        parts = [suite, self.scene]
+        parts = [suite, f"{self.scene}_{self.variant}" if self.variant else self.scene]
         if self.robot and self.robot != "null":
             parts.append(self.robot)
             if self.control_mode:
@@ -96,7 +102,8 @@ class EnvCfg:
 
     def describe(self) -> str:
         mode = self.control_mode or "(default)"
-        return f"EnvCfg(scene='{self.scene}', robot='{self.robot}', control_mode='{mode}', num_envs={self.num_envs})"
+        var = f", variant='{self.variant}'" if self.variant else ""
+        return f"EnvCfg(scene='{self.scene}'{var}, robot='{self.robot}', control_mode='{mode}', num_envs={self.num_envs})"
 
     def build(self, **overrides: Any) -> BaseEnv:
         """Construct the live `BaseEnv` (needs AppLauncher already running). `overrides` patch fields
