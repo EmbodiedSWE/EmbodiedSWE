@@ -36,6 +36,7 @@ from robobench.suites.assembly.scenes import (
     PcGpuAssemblySceneCfg,
     PcGpuRamAssemblySceneCfg,
     PcMotherboardAssemblySceneCfg,
+    PcMotherboardGpuRamAssemblySceneCfg,
     PcRamAssemblySceneCfg,
 )
 
@@ -992,5 +993,56 @@ for _mode in ("joint", "pink_ik"):
                 robot_cfg=GR1T2RobotCfg(base_pos=(0.0, -0.55, 0.95), base_rot=(0.7071, 0.0, 0.0, 0.7071)),
                 env_spacing=3,
             )
+        ),
+    )
+
+
+# ============================== pc_motherboard_gpu_ram (the complete build) =======================
+# The COMPLETE PC install in one episode: the same gaming-PC case with ALL THREE work sites open
+# at once — 7 case-mount bolts staged hand-started in the motherboard's holes (one allen key
+# beside the case drives them), two empty DIMM slots with two loose RAM sticks, and the empty
+# PCIe x16 slot (+ rear cutout) with a loose graphics card. Assembly order: fasten the board
+# down, seat the dual-channel stick pair, then install the card through the rear cutout.
+# Physics-only binding (no arm), for scene work and placement checks.
+# -> "assembly.pc_motherboard_gpu_ram"
+register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard_gpu_ram", robot="null", env_spacing=2))
+
+# Franka arm at the complete build — the pc_motherboard.franka work cell: base west of the case
+# at (0.07, 0) facing +x, the table slid 40 mm east (`workbench_pos` = `case_xy` = (0.54, 0)).
+# The allen key stands tip-down in its four-wall stand, and the card and both sticks stand
+# upright in foam holders, all staged on the table's south-west side. Deterministic spawn (no
+# jitter): the stands are static geometry authored at the spawn points. sim dt 1/240.
+#   - "assembly.pc_motherboard_gpu_ram.franka.osc"       — operational-space control (default)
+#   - "assembly.pc_motherboard_gpu_ram.franka.impedance" — Jacobian-transpose task-space impedance
+#   - "assembly.pc_motherboard_gpu_ram.franka.joint"     — direct joint position targets
+for _mode in ("osc", "impedance", "joint"):
+    register_env(
+        SUITE,
+        lambda mode=_mode: EnvCfg(
+            scene="pc_motherboard_gpu_ram",
+            scene_cfg=PcMotherboardGpuRamAssemblySceneCfg(
+                workbench_pos=(0.54, 0.0),
+                case_xy=(0.54, 0.0),  # case at the table anchor — the motherboard cell layout
+                key_init_xy=(-0.18, -0.30),  # table-rel -> world (0.36, -0.30)
+                key_init_z=0.007,  # tip 1 mm above the stand's 6 mm floor pad
+                key_init_quat=(1.0, 0.0, 0.0, 0.0),  # standing tip-down in the stand
+                key_stand=True,
+                card_init_xy=(-0.54, -0.44),  # table-rel -> world (0.00, -0.44): a second row
+                # south-west of the stick holders
+                card_init_z=0.030,  # tab-bottom plane = the holder's floor top
+                card_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated heading (length along x)
+                ram_init_xy=((-0.41, -0.335), (-0.325, -0.335)),  # table-rel -> world
+                # (0.13/0.215, -0.335): the south-west staging strip, west of the key stand
+                ram_init_quat=(1.0, 0.0, 0.0, 0.0),  # upright, the seated orientation
+                ram_init_z=0.030,  # blade-bottom plane = the holders' floor top
+                reset_pos_jitter=0.0,
+                card_stand=True,
+                ram_stand=True,
+            ),
+            robot="franka",
+            robot_cfg=FrankaRobotCfg(base_pos=(0.07, 0.0, 0.0)),
+            control_mode=mode,
+            env_spacing=2,
+            sim_overrides={"dt": 1.0 / 240.0},
         ),
     )
