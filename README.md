@@ -91,14 +91,14 @@ Any script that builds a `pink_ik` env must also `import pinocchio` **before** `
 
 ## Task catalog
 
-Six suites, 28 tasks — the same table as the paper's Appendix B. A task is one registered scene;
+Six suites, 29 tasks — the paper's Appendix B table plus `pc_motherboard_gpu_ram`. A task is one registered scene;
 its runnable presets are `suite.scene[.robot[.control_mode]]` (list them with
 `python -m robobench.scripts.smoke --list`). Where the code name differs from the paper's it is
 given in parentheses.
 
 | Suite | Scenes (code name) |
 |---|---|
-| `assembly` | `allen_bolt`, `bulb`, `ikea_table`, `so101` (paper: SO_101), `nut_thread`, `pc_gpu`, `pc_gpu_ram`, `pc_motherboard`, `pc_ram` |
+| `assembly` | `allen_bolt`, `bulb`, `ikea_table`, `so101` (paper: SO_101), `nut_thread`, `pc_gpu`, `pc_gpu_ram`, `pc_motherboard`, `pc_motherboard_gpu_ram`, `pc_ram` |
 | `packing` | `pen_holder`, `tool_packing`, `egg_carton`, `clear_organic_objects` |
 | `puzzle` | `coffee`, `spatula`, `syringe`, `push_shapes`, `classify_objects`, `stack_blocks` |
 | `deformable` | `tshirt`, `latte`, `dumpling`, `knot` (paper: shoe_knot) — Newton backend, see below |
