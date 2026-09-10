@@ -1,8 +1,7 @@
 """Grader for the pc_motherboard_gpu_ram scene: the complete build — 7 bolts, 2 sticks, 1 card.
 
-Ten parts in three families, each graded exactly as its own single-task grader grades it — so a
-run of this task scores its motherboard phase like `pc_motherboard` and its memory/card phase like
-`pc_gpu_ram`. Each family climbs the ladder its own mate allows:
+Ten parts in three families, each graded as its own single-task grader grades it, so this task
+scores its motherboard phase like `pc_motherboard` and its memory/card phase like `pc_gpu_ram`:
     key_grasped                the allen key ever taken in the weld-on-closure grip
                                (`scene.grasp_held` column 0, site order [key, card, ram0, ram1]);
                                a milestone, latched, and implied by a finished build. Under an
@@ -11,9 +10,8 @@ run of this task scores its motherboard phase like `pc_motherboard` and its memo
     driven                     the mean over the 7 bolts of a linear ramp of tip depth from the
                                start register (`stage_depth`, the hand-started spawn) to
                                `bolt_seat_depth`, counted only while the bolt passes the scene's
-                               xy + tilt gates at its nearest hole. A bolt has no free-flight
-                               phase of its own — it is threaded in place — so the bolts carry
-                               one rung, not three
+                               xy + tilt gates at its nearest hole. A bolt is threaded in place and
+                               never flies free, so the bolts carry one rung, not three
     ram_grasped / ram_aligned / ram_seated    and
     gpu_grasped / gpu_aligned / gpu_seated    the loose parts, which ARE carried: grasped ->
                                aligned (origin within `*_align_xy` of the seated point, up axis
@@ -26,13 +24,6 @@ The rungs nest (seated => aligned => grasped), so progress reaches 1.0 exactly w
 are seated, for a grader built after the picks as well as one that watched them. Success is the
 scene's own `success()` (every bolt, both sticks and the card seated), read when the delivery
 finishes.
-
-Weights are inherited from the two parent graders unchanged, which makes a carried part worth more
-than a threaded one: a bolt is 1 unit (its single `driven` rung, as in `pc_motherboard`) while a
-stick or the card is 3 (grasped/aligned/seated, as in `pc_gpu_ram`). That is deliberate — a bolt
-spawns hand-started in its hole and is only driven, where a stick must be picked, carried over the
-case rim, lined up and pressed. The bolts are still 8/17 of the score together, and they are 85 %
-of the episode.
 """
 
 from __future__ import annotations
@@ -49,16 +40,16 @@ class PcMotherboardGpuRamAssemblyGrader(BaseGrader):
     Ladder (total weight 17): the key's milestone 1/17; the 7 bolts' `driven` fraction 7/17 at
     full depth; the sticks' three rungs 2/17 apiece (6/17 once both are seated); the card's three
     rungs 1/17 apiece (3/17 seated). So the assembly order the scene stages reads
-    motherboard fastened = 0.471, memory installed = 0.824, card home = 1.000.
-    Verified against a full oracle run: the 11 milestone states score
-    0.000 / 0.118 / 0.176 / 0.235 / 0.294 / 0.353 / 0.412 / 0.471 / 0.647 / 0.824 / 1.000.
+    motherboard fastened = 0.471, memory installed = 0.824, card home = 1.000. A carried part is
+    worth more than a threaded one — a bolt is 1 unit, a stick or the card 3 — because a bolt
+    spawns hand-started in its hole and is only driven, where a stick is picked, carried over the
+    case rim, lined up and pressed.
     """
 
     SCENE = PcMotherboardGpuRamAssemblyScene
     # `driven` is a k/7 fraction over seven identical bolts, so it weighs 7 (one unit per bolt);
-    # the stick rungs are k/2 fractions over two identical sticks, so they weigh 2 each (one unit
-    # per stick per rung); the card's rungs weigh 1. The key's single milestone weighs 1, as in
-    # pc_motherboard. Total 17 — see the class docstring on why parts are not equally weighted.
+    # the stick rungs are k/2 fractions over two identical sticks, so they weigh 2 each; the card's
+    # rungs weigh 1; the key's single milestone weighs 1, as in pc_motherboard. Total 17.
     RUBRIC = (
         ("key_grasped", 1, "once"), ("driven", 7),
         ("ram_grasped", 2, "once"), ("ram_aligned", 2), ("ram_seated", 2),

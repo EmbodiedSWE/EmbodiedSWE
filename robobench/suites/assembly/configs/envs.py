@@ -1003,7 +1003,7 @@ for _mode in ("joint", "pink_ik"):
 # beside the case drives them), two empty DIMM slots with two loose RAM sticks, and the empty
 # PCIe x16 slot (+ rear cutout) with a loose graphics card. Assembly order: fasten the board
 # down, seat the dual-channel stick pair, then install the card through the rear cutout.
-# Physics-only binding (no arm), for scene work and placement checks.
+# Physics-only binding (no arm).
 # -> "assembly.pc_motherboard_gpu_ram"
 register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard_gpu_ram", robot="null", env_spacing=2))
 
