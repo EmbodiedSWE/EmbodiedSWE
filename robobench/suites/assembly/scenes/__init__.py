@@ -11,6 +11,8 @@ from .nut_thread_assembly import NutThreadAssemblyScene, NutThreadAssemblySceneC
 from .pc_gpu_assembly import PcGpuAssemblyScene, PcGpuAssemblySceneCfg
 from .pc_gpu_ram_assembly import PcGpuRamAssemblyScene, PcGpuRamAssemblySceneCfg
 from .pc_motherboard_assembly import PcMotherboardAssemblyScene, PcMotherboardAssemblySceneCfg
+from .pc_motherboard_gpu_ram_assembly import (PcMotherboardGpuRamAssemblyScene,
+                                              PcMotherboardGpuRamAssemblySceneCfg)
 from .pc_ram_assembly import PcRamAssemblyScene, PcRamAssemblySceneCfg
 from .so101_assembly import SO101AssemblyScene, SO101SceneCfg
 
@@ -29,6 +31,8 @@ __all__ = [
     "PcGpuRamAssemblySceneCfg",
     "PcMotherboardAssemblyScene",
     "PcMotherboardAssemblySceneCfg",
+    "PcMotherboardGpuRamAssemblyScene",
+    "PcMotherboardGpuRamAssemblySceneCfg",
     "PcRamAssemblyScene",
     "PcRamAssemblySceneCfg",
     "SO101AssemblyScene",

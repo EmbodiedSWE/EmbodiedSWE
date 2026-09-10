@@ -24,6 +24,7 @@ from .nut_thread_assembly import NutThreadAssemblyGrader
 from .pc_gpu_assembly import PcGpuAssemblyGrader
 from .pc_gpu_ram_assembly import PcGpuRamAssemblyGrader
 from .pc_motherboard_assembly import PcMotherboardAssemblyGrader
+from .pc_motherboard_gpu_ram_assembly import PcMotherboardGpuRamAssemblyGrader
 from .pc_ram_assembly import PcRamAssemblyGrader
 from .so101_assembly import SO101AssemblyGrader
 
@@ -35,6 +36,7 @@ GRADERS = {
     "pc_gpu": PcGpuAssemblyGrader,
     "pc_gpu_ram": PcGpuRamAssemblyGrader,
     "pc_motherboard": PcMotherboardAssemblyGrader,
+    "pc_motherboard_gpu_ram": PcMotherboardGpuRamAssemblyGrader,
     "pc_ram": PcRamAssemblyGrader,
     "so101": SO101AssemblyGrader,
 }
