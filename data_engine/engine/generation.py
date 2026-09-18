@@ -416,6 +416,16 @@ class Recorder:
                 (len(self.actions), self._success_probe())
             )
         ret = self._env.step(executed, render)
+        # The scripted uniform wrapper (NoisyActionEnv) perturbs BELOW this recorder. Fold
+        # the perturbation it executed into the same `action_noise` channel, so the replay
+        # gate (which replays action + action_noise) and every consumer see what actually
+        # ran; without this a --sigma batch can never pass the gate.
+        w_clean = getattr(self._env, "last_clean", None)
+        w_exec = getattr(self._env, "last_executed", None)
+        if w_clean is not None and w_exec is not None and w_exec is not w_clean:
+            extra = (w_exec - w_clean).detach().cpu().clone()
+            if bool(extra.abs().sum() > 0):
+                self.noises[-1] = extra if self.noises[-1] is None else self.noises[-1] + extra
         # The COMMANDED joint targets that governed this step (written by the controller
         # during it, held by the actuator PD) — controller INTENT, which achieved-state
         # labels flatten: a press/squeeze is a sustained target offset past contact.
@@ -677,7 +687,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                 "noise": ({"scale": noise_scale,
                            "perturbed": bool("action_noise" in arrays
                                              and np.abs(arrays["action_noise"][:, e]).sum() > 0)}
-                          if noise_scale else {}),
+                          if (noise_scale or "action_noise" in arrays) else {}),
                 "preset": gen["preset"],
                 "cell": cell,
                 "git_sha": sha,
@@ -701,7 +711,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
                    "perturbed_row_frac": round(noise_rows_perturbed / max(1, noise_rows), 4),
                    "mean_abs": round(noise_abs_sum / max(1, noise_elems), 6),
                    "max_abs": round(noise_abs_max, 6)}
-                  if noise_scale else {}),
+                  if (noise_scale or noise_rows_perturbed) else {}),
         # the scripted uniform wrapper's config, when enabled (its perturbation
         # happens below the recorder, so it is provenance, not measured coverage)
         "uniform_noise": (noise if noise and noise.get("sigma", 0.0) > 0.0 else {}),
