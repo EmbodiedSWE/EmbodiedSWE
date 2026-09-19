@@ -1,10 +1,13 @@
-"""load_sim — build an eval sim from a preset name, a registered sim, or a bake stamp.
+"""load_sim — build an eval sim from a preset name, a registered sim, a bake stamp, or a
+data-engine cell.
 
-See DESIGN.md. Three sources, one build path: the robobench preset defines the
-world; the spec (hand-written or derived from a dataset's meta/bake.json)
-defines what an action means on top of it; the loader attaches the scene's and
-robot's declared cameras so eval pixels come from the same views as training
-renders. Returns an EvalSim facade: obs = {images, state, success} with
+One build path: the WORLD comes from a robobench preset or from a data-engine cell
+directory (its scene/scene.py + grader/grader.py, the preset from the package's
+gen.yaml, optionally a phase reset file as the start condition — the same functions
+generation and replay-check build with); the spec (hand-written or derived from a
+dataset's meta/bake.json) defines what an action means on top of it; the loader
+attaches the scene's and robot's declared cameras so eval pixels come from the same
+views as training renders. Returns an EvalSim facade: obs = {images, state, success} with
 state = [arm q…, gripper closedness], the exact vla/convert layout.
 
 Module imports are app-free; load_sim() needs a running AppLauncher.
@@ -58,7 +61,17 @@ class SimSpec:
                                                   # label when gripping — achieved-width labels carry no
                                                   # squeeze force (convert README caveat 1); this is the
                                                   # executor-side clamp-force restoration
+    cell: str | None = None                       # world from a data-engine cell dir (<gen_root>/scenes/<scene>):
+                                                  # its scene/scene.py + grader/grader.py; the preset comes from
+                                                  # <gen_root>/gen.yaml and must agree with `preset` when bake-derived
+    phase: str | None = None                      # start condition: a phase RESET FILE (…/phases/phase_0/reset/start.py),
+                                                  # a phase dir holding exactly one reset file, or the shorthand
+                                                  # "<strategy>/<phase>" — resolved against the cell. None = the
+                                                  # scene's own reset. Ignored by init_from_episode (states restored)
     stamp: dict | None = field(default=None, repr=False)  # full bake dict when bake-derived
+    provenance: dict | None = field(default=None, repr=False)  # cell loads: paths + sha256 of every file that
+                                                  # defined the world (scene, grader, reset, gen.yaml) — recorded
+                                                  # by serve.py/replay so two results are comparable only when equal
 
 
 SIMS: dict[str, Callable[[], SimSpec]] = {}
@@ -111,7 +124,27 @@ def _resolve_spec(source: str | Path | SimSpec) -> SimSpec:
         if not Path(s).is_file():
             raise SystemExit(f"bake file not found: {s}")
         return stamp_to_spec(s)
+    if _is_cell_dir(s):  # a bare cell: world from the cell, control law = the preset's (uncalibrated)
+        return SimSpec(preset=_cell_preset(Path(s)), cell=str(Path(s).resolve()))
     return SimSpec(preset=s)  # preset existence is checked against ENVS at build
+
+
+def _is_cell_dir(s: str | Path) -> bool:
+    d = Path(s)
+    return d.is_dir() and (d / "scene" / "scene.py").is_file()
+
+
+def _cell_gen_root(scene_dir: Path) -> Path:
+    gen_root = scene_dir.resolve().parents[1]  # <gen_root>/scenes/<scene>
+    if not (gen_root / "gen.yaml").is_file():
+        raise SystemExit(f"cell {scene_dir}: no gen.yaml at {gen_root} (expected <gen_root>/scenes/<scene>/)")
+    return gen_root
+
+
+def _cell_preset(scene_dir: Path) -> str:
+    import yaml
+
+    return yaml.safe_load((_cell_gen_root(scene_dir) / "gen.yaml").read_text())["preset"]
 
 
 def _joint_sibling(preset: str, envs) -> str:
@@ -162,9 +195,15 @@ def load_sim(source: str | Path | SimSpec, *, num_envs: int = 1, device: str = "
     if name not in ENVS.list():
         raise SystemExit(f"env '{name}' not registered. Known: {ENVS.list()}")
 
-    env_cfg = ENVS.get(name)()
-    scene_cls = SCENES.get(env_cfg.scene)
-    robot_cls = ROBOTS.get(env_cfg.robot)
+    reset_mod = None
+    if spec.cell:
+        env_cfg, scene_cls, robot_cls, grader_cls, reset_mod, spec.provenance = \
+            _resolve_cell(spec, name, ENVS, SCENES, ROBOTS)
+    else:
+        env_cfg = ENVS.get(name)()
+        scene_cls = SCENES.get(env_cfg.scene)
+        robot_cls = ROBOTS.get(env_cfg.robot)
+        grader_cls = _find_grader(name, env_cfg.scene)
     if spec.physical_params:
         # generation's two-moment application: values onto the scene cfg BEFORE the build
         # (build-consumed knobs), the live subset re-applied after (apply_physical_params)
@@ -199,9 +238,84 @@ def load_sim(source: str | Path | SimSpec, *, num_envs: int = 1, device: str = "
         _apply_stamp_controller(env, (spec.stamp or {}).get("controller"))
 
     _write_drives(env, spec, arm_ids, finger_ids)
-    grader_cls = _find_grader(name, env_cfg.scene)
     return EvalSim(env, spec, views, sensors, arm_ids, arm_names, finger_ids, finger_names,
-                   grader_cls=grader_cls)
+                   grader_cls=grader_cls, reset_mod=reset_mod)
+
+
+def _resolve_cell(spec: SimSpec, preset_name: str, ENVS, SCENES, ROBOTS):
+    """The world of a data-engine cell, built the way generation builds it (engine.generation:
+    `_load` the cell's scene.py, the campaign preset from gen.yaml, the scene cfg materialized as
+    the LOCAL scene's own cfg type via `_local_scene_cfg`), judged by the CELL's grader, started by
+    the phase's reset builders when `spec.phase` names one. `preset_name` is the preset load_sim
+    already resolved (the `.joint` sibling for joint conventions) — it must be the cell's own.
+    Returns (env_cfg, scene_cls, robot_cls, grader_cls, reset_module | None, provenance)."""
+    import hashlib
+    import re
+    from dataclasses import replace as _replace
+
+    from engine.generation import _load, _local_scene_cfg, load_grader_cls
+
+    scene_dir = Path(spec.cell).resolve()
+    if not _is_cell_dir(scene_dir):
+        raise SystemExit(f"--cell {scene_dir}: not a cell dir (needs scene/scene.py)")
+    if not (scene_dir / "grader" / "grader.py").is_file():
+        raise SystemExit(f"cell {scene_dir}: no grader/grader.py — a cell judges with its own grader")
+    gen_root = _cell_gen_root(scene_dir)
+    gen_preset = _cell_preset(scene_dir)
+    cell_preset = _joint_sibling(gen_preset, ENVS) if spec.control_space in _JOINT_SPACES else gen_preset
+    if cell_preset != preset_name:
+        raise SystemExit(f"cell {scene_dir.name} was generated on preset '{gen_preset}' but the source "
+                         f"pins '{spec.preset}' — the cell decides the world, the bake the control law, "
+                         f"and they must agree on robot/control mode. Evaluate this bake on a cell of "
+                         f"its own campaign (or pass preset={gen_preset!r} to override knowingly).")
+    scene_py = scene_dir / "scene" / "scene.py"
+    _load("datagen_local_scene", scene_py)  # registers the cell's scene under its own name
+    scene_name = re.search(r'@SCENES\.register\("([\w.]+)"\)', scene_py.read_text()).group(1)
+    scene_cls = SCENES.get(scene_name)
+    preset_cfg = ENVS.get(preset_name)()
+    env_cfg = _replace(preset_cfg, scene=scene_name,
+                       scene_cfg=_local_scene_cfg(scene_cls, preset_cfg.scene_cfg, None))
+    robot_cls = ROBOTS.get(env_cfg.robot)
+    grader_cls = load_grader_cls(scene_dir)
+
+    reset_file, reset_mod = None, None
+    if spec.phase:
+        reset_file = _resolve_phase(scene_dir, spec.phase)
+        reset_mod = _load("datagen_eval_reset", reset_file)
+        builders = sorted(n for n in vars(reset_mod) if re.fullmatch(r"reset_\d+", n))
+        if not builders:
+            raise SystemExit(f"{reset_file}: no reset_<n>(env) builders")
+    files = {"scene": scene_py, "grader": scene_dir / "grader" / "grader.py", "gen": gen_root / "gen.yaml"}
+    if reset_file:
+        files["reset"] = reset_file
+    prov = {"cell": str(scene_dir), "gen_root": str(gen_root), "scene_name": scene_name,
+            "preset": gen_preset, "phase": str(reset_file) if reset_file else None,
+            "sha256": {k: hashlib.sha256(f.read_bytes()).hexdigest() for k, f in files.items()}}
+    print(f"[load_sim] cell {scene_dir.relative_to(gen_root)} (scene '{scene_name}', preset {gen_preset}); "
+          f"grader {grader_cls.__name__}; start = "
+          + (f"phase reset {reset_file.relative_to(scene_dir)} builders {builders}" if reset_mod
+             else "the scene's own reset"), flush=True)
+    return env_cfg, scene_cls, robot_cls, grader_cls, reset_mod, prov
+
+
+def _resolve_phase(scene_dir: Path, phase: str) -> Path:
+    """A reset file, a phase dir (its reset/ holding exactly one file), or "<strategy>/<phase>"."""
+    p = Path(phase)
+    cands = [p] if p.is_absolute() else [scene_dir / p]
+    parts = p.parts
+    if len(parts) == 2 and not p.is_absolute():
+        cands.append(scene_dir / "strategies" / parts[0] / "phases" / parts[1])
+    for c in cands:
+        if c.is_file():
+            return c.resolve()
+        if c.is_dir():
+            rdir = c / "reset" if (c / "reset").is_dir() else c
+            files = sorted(f for f in rdir.glob("*.py") if not f.name.startswith("_"))
+            if len(files) != 1:
+                raise SystemExit(f"--phase {phase}: {rdir} holds {[f.name for f in files]} reset files — "
+                                 f"name ONE (a batch runs one reset file; the episode meta's `reset` = its stem)")
+            return files[0].resolve()
+    raise SystemExit(f"--phase {phase}: not found under {scene_dir} (tried {[str(c) for c in cands]})")
 
 
 def _find_grader(env_name: str, scene: str):
@@ -437,10 +551,12 @@ class EvalSim:
     rendered; obs mirror the bake layout exactly."""
 
     def __init__(self, env, spec: SimSpec, views: dict, sensors: dict,
-                 arm_ids, arm_names, finger_ids, finger_names, grader_cls=None) -> None:
+                 arm_ids, arm_names, finger_ids, finger_names, grader_cls=None, reset_mod=None) -> None:
         import torch
 
         self.env, self.spec, self.views, self.sensors = env, spec, views, sensors
+        self._reset_mod = reset_mod      # phase reset module (cell loads with a phase); None = scene reset
+        self.reset_fn: list[str] | None = None  # builder name per env after the last reset()
         self.arm_ids, self.arm_names = arm_ids, arm_names
         self.finger_ids, self.finger_names = finger_ids, finger_names
         self._grader_cls, self.grader = grader_cls, None
@@ -573,7 +689,17 @@ class EvalSim:
         return obs
 
     def reset(self, seed: int | None = None) -> dict:
+        """The scene's reset — plus, on a cell load with a phase, the phase's reset builders run on
+        the freshly reset env exactly as generation runs them (engine.generation.run_reset_builders:
+        randomness from the global RNGs `env.reset(seed)` just seeded), so the start distribution is
+        the cell's. The grader is constructed AFTER the builders (at the entry state), as in generation."""
         self.env.reset(seed=seed)
+        if self._reset_mod is not None:
+            from engine.generation import run_reset_builders
+
+            self.reset_fn = run_reset_builders(self.env, self._reset_mod, self.env.num_envs)
+            if self.env.robot.controller is not None:
+                self.env.robot.controller.reset(None)
         if self._base_pos is None:
             self._base_pos = self.env.robot.articulation.data.root_pos_w.clone()
         self._setup_grader()
@@ -614,6 +740,7 @@ class EvalSim:
         dirs = [Path(p) for p in (ep_dirs if isinstance(ep_dirs, (list, tuple)) else [ep_dirs])]
         if len(dirs) > self.env.num_envs:
             raise SystemExit(f"{len(dirs)} episodes but only {self.env.num_envs} envs")
+        self._check_episode_lineage(dirs)
         dirs += [dirs[-1]] * (self.env.num_envs - len(dirs))
         if physics:
             draws = []
@@ -649,6 +776,31 @@ class EvalSim:
             self.env.robot.controller.reset(None)
         self._setup_grader()
         return self._warmup()
+
+    def _check_episode_lineage(self, dirs: list[Path]) -> None:
+        """A recorded start only means something in the world it was recorded in: the restored
+        state carries the rigid bodies, not the static fixtures (a cell's moved board / knife rest),
+        so restoring a cell's episode into another world is silently wrong. Loud instead: a cell
+        load refuses episodes of another cell; a suite-scene load warns once when the episodes
+        name a cell (scene_0 cells ARE the suite scene, other cells usually are not)."""
+        cells = set()
+        for d in dirs:
+            m = json.loads((d / "meta.json").read_text()) if (d / "meta.json").is_file() else {}
+            if m.get("cell"):
+                cells.add(str(m["cell"]).split("/")[0])
+        if not cells:
+            return
+        if self.spec.cell:
+            mine = Path(self.spec.cell).name
+            if cells != {mine}:
+                raise SystemExit(f"init_from_episode: episodes recorded in cell(s) {sorted(cells)} but the "
+                                 f"served world is cell {mine} — mixed scenes")
+        elif not getattr(self, "_lineage_warned", False):
+            self._lineage_warned = True
+            print(f"[EvalSim] WARNING: episodes were recorded in data-engine cell(s) {sorted(cells)} but "
+                  f"the served world is the SUITE scene '{self.env.scene.__class__.__name__}' — static "
+                  f"fixtures (board, rests) are NOT restored; pass --cell <gen_root>/scenes/<scene> unless "
+                  f"this cell is the suite scene verbatim", flush=True)
 
     def close(self) -> None:
         self.env.close()

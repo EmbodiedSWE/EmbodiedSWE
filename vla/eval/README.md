@@ -18,7 +18,7 @@ actions, score with the grader. Two workflows on one loader:
     lerobot_env_cosigen/  lerobot plugin (pip install -e into the lerobot venv)
     _out/             default output dir (debug scratch, delete freely)
 
-## load_sim — one call, three sources
+## load_sim — one call, four sources
 
     # caller owns AppLauncher (--enable_cameras); module imports app-free
     load_sim(source, *, num_envs=1, device="cuda:0", **overrides) -> EvalSim
@@ -30,6 +30,19 @@ actions, score with the grader. Two workflows on one loader:
    to any dataset". For probing.
 3. **bake path** — `load_sim(".../datasets/<id>/meta/bake.json")`: ALL settings
    from the one stamp. The default when evaluating a trained policy.
+4. **data-engine cell** — `load_sim(bake, cell="<gen_root>/scenes/scene_59",
+   phase="strategy_0/phase_0")`: the WORLD from a campaign cell (its scene/scene.py
+   + grader/grader.py, the campaign preset from `<gen_root>/gen.yaml`), the control
+   law still from the bake. Built with the data engine's own functions
+   (`engine.generation._load` / `_local_scene_cfg` / `load_grader_cls` /
+   `run_reset_builders`), so the eval world is the generation world, and judged by
+   the cell's grader. `phase` names a phase reset file (or a phase dir holding one,
+   or `<strategy>/<phase>`): its `reset_<n>(env)` builders run on every `reset(seed)`
+   after the scene's own reset, exactly as generation runs them — the start
+   distribution is the cell's. A bare cell dir as the source works for probing
+   (preset control law, uncalibrated). `spec.provenance` records the paths and the
+   sha256 of scene / grader / reset / gen.yaml; serve.py stamps it on the rollouts.
+   One cell per process (the scene registers under its own name once).
 
 All three fill one `SimSpec`:
 
@@ -44,6 +57,7 @@ All three fill one `SimSpec`:
                       force (convert README caveat 1); executor-side restoration
     physical_params   a PHYSICAL_PARAMS draw to re-apply; None/{} = nominal
     cams, size, warmup, stamp (full bake dict when bake-derived)
+    cell, phase       world + start from a data-engine cell (source 4); provenance
 
 `**overrides` win; overrides of bake-derived values are echoed and recorded.
 
@@ -192,8 +206,27 @@ the `raw_command` column at the next bake.
   extend convert + loader together).
 - Stride replay (bake rate below the recorded row rate) not implemented —
   replay at the native rate.
-- The loader builds the SUITE scene: a campaign cell's hand-modified scene.py
-  is deliberately not reproduced.
+- A cell's preset (gen.yaml) must be the bake's `robot_type` (loud otherwise):
+  the cell decides the world, the bake the control law, and they must agree on
+  robot / control mode. Recorded starts (`--init dataset`) are refused across
+  cells and warned about on a suite-scene load — the restored state carries the
+  rigid bodies, not a cell's moved fixtures.
+
+## How to: evaluate on a data-engine cell (test splits)
+
+    # stage 0: the world + its start distribution, no policy (roots per reset)
+    .venv/bin/python vla/eval/check_load.py <bake.json> --cell <pkg>/scenes/scene_59 \
+        --phase strategy_0/phase_0 --resets 4 --headless
+    # certification: the cell's own demos re-drive in the eval build of the cell
+    .venv/bin/python vla/eval/replay_actions.py <bake.json> --cell <pkg>/scenes/scene_59 \
+        --batch <pkg>/data/test_scene_59_j29_b0 --num_envs 4 --no-cameras --headless
+    # policy eval: serve the cell, then lerobot-eval as below (one cell per server)
+    .venv/bin/python vla/eval/serve.py <bake.json> --cell <pkg>/scenes/scene_59 \
+        --phase strategy_0/phase_0 --headless
+
+Cell rotation over a split is the launcher's job (one episode per Slurm job in
+the HPC protocol), not the server's. Two results on a cell are comparable only
+when the `provenance.sha256` block stamped on their rollouts matches.
 
 ## How to: closed-loop lerobot eval
 
@@ -207,6 +240,9 @@ Two processes (lerobot needs py>=3.12, Isaac is 3.11), one contract:
     .venv/bin/python vla/eval/serve.py bulb_jointpd_60hz --headless
         # --init dataset --init-batch <…/data/<batch>>  = start from recorded
         #   states (episode = seed % n); default = scene randomization
+        # --cell <gen_root>/scenes/scene_59 --phase strategy_0/phase_0 = a campaign
+        #   cell's world + its phase start (test splits, friends' splits: any folder
+        #   the data engine generated is evaluable by path; nothing to register)
 
     # terminal 2 (lerobot venv) — declares nothing about the sim
     lerobot-eval --policy.path=<ckpt> --env.type=cosigen \
