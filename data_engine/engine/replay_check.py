@@ -34,10 +34,11 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .generation import build_env, load_grader_cls
+from .generation import _load, build_env, load_grader_cls, run_reset_builders
 
 _NOT_STATE = ("action", "action_noise", "robot/joint_target")
 
@@ -198,6 +199,24 @@ def replay_episodes(gen_root: str | Path, eps: list[Path], device: str = "cuda:0
         trajs = {ep: dict(np.load(ep / "traj.npz")) for ep in r_eps}
         slots = {ep: int(metas[ep]["env_index"]) for ep in r_eps}
         env.reset(seed=int(metas[r_eps[0]]["seed"]))
+        # A PHASE entry is rebuilt, never restored: the episodes' lineage names the reset file
+        # whose builders shaped the entry (deterministic from the seed on a freshly reset sim),
+        # so re-running them here gives generation's exact physics history — while `set_states`
+        # of the recorded numbers onto a fresh sim perturbs the solver's contact state and a
+        # friction-held knife drifts open-loop (measured 2026-09-09: 12/12 generated, 1/12
+        # replayed). The restore below then finds the slots already matching.
+        reset_name = metas[r_eps[0]].get("reset")
+        if reset_name:
+            phase = bmeta["cell"].split("/")[2]
+            strategy_dir = scene_dir / "strategies" / bmeta["cell"].split("/")[1]
+            phase_dir = strategy_dir / "phases" / phase
+            for extra in (phase_dir, strategy_dir):
+                if str(extra) not in sys.path:
+                    sys.path.insert(0, str(extra))
+            cond = _load(f"datagen_reset_{reset_name}", phase_dir / "reset" / f"{reset_name}.py")
+            fn_of_env = run_reset_builders(env, cond, num_envs)
+            print(f"[replay-check {batch_dir.name}] rollout {rollout}: phase entry '{reset_name}' "
+                  f"rebuilt from the seed ({', '.join(sorted(set(fn_of_env)))})", flush=True)
 
         # the law the episodes ran under (one per batch: all its episodes ran the same code);
         # its mid-solve changes are re-applied at their recorded steps in the loop below
