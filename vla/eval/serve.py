@@ -31,7 +31,11 @@ import traceback
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description="serve an eval sim for lerobot-eval")
-parser.add_argument("source", help="registered sim name | ENVS preset | bake.json path")
+parser.add_argument("source", help="registered sim name | ENVS preset | bake.json path | cell dir")
+parser.add_argument("--cell", default="", help="world from a data-engine cell dir (<gen_root>/scenes/<scene>): its "
+                    "scene + grader, the campaign preset from gen.yaml; the bake still pins the control law")
+parser.add_argument("--phase", default="", help="start condition on a --cell: a phase reset file, a phase dir, or "
+                    "'<strategy>/<phase>' (default: the scene's own reset; ignored with --init dataset)")
 parser.add_argument("--host", default="127.0.0.1")
 parser.add_argument("--port", type=int, default=5555)
 parser.add_argument("--num_envs", type=int, default=1, help="v1: the client consumes slot 0")
@@ -71,6 +75,12 @@ import protocol  # noqa: E402
 from sim import _JOINT_SPACES, load_sim  # noqa: E402
 
 overrides = {} if args.grip_margin is None else {"grip_margin": args.grip_margin}
+if args.cell:
+    overrides["cell"] = str(Path(args.cell).resolve())
+if args.phase:
+    if not args.cell and not Path(args.source).is_dir():
+        raise SystemExit("--phase needs --cell (or a cell dir as the source)")
+    overrides["phase"] = args.phase
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 sim = load_sim(args.source, num_envs=args.num_envs, device=device, **overrides)
 action_dim = len(sim.arm_names) + 1 if sim.spec.control_space in _JOINT_SPACES \
@@ -90,7 +100,10 @@ HANDSHAKE = {
     "control_space": sim.spec.control_space, "source": str(args.source),
     "init": args.init, "num_envs": sim.env.num_envs,
     "grip_margin": sim.spec.grip_margin,
+    "cell": sim.spec.cell, "phase": sim.spec.provenance["phase"] if sim.spec.provenance else None,
 }
+if sim.spec.cell and args.record_cell == parser.get_default("record_cell"):
+    args.record_cell = f"{Path(sim.spec.cell).name}/eval"  # render.py resolves the scene part against <gen_root>/scenes/
 
 
 # ----- rollout recorder ---------------------------------------------------------------------------
@@ -112,7 +125,8 @@ class RolloutRecorder:
         (root / "meta.json").write_text(json.dumps({
             "cell": cell, "origin": "vla/eval/serve.py rollouts", "source": str(args.source),
             "control_space": sim.spec.control_space, "rate_hz": sim.rate_hz,
-            "init": args.init, "grip_margin": sim.spec.grip_margin}, indent=2) + "\n")
+            "init": args.init, "grip_margin": sim.spec.grip_margin,
+            "provenance": sim.spec.provenance}, indent=2) + "\n")   # cell loads: paths + sha256 of the world
 
     def start(self, seed, init_ep: Path | None, obs: dict) -> None:
         self.flush(obs=None)
@@ -143,6 +157,7 @@ class RolloutRecorder:
             (d / "meta.json").write_text(json.dumps({
                 "episode": self.n, "env_index": e, "seed": c["seed"], "init_episode": c["init"],
                 "steps": int(len(c["states"])), "success": bool(last["success"][e]),
+                "reset_fn": (sim.reset_fn[e] if sim.reset_fn and c["init"] is None else None),
                 "progress_final": float(last["progress"][e]),
                 "sim_dt": float(sim.env.dt), "decimation": int(decim),
                 "control_space": sim.spec.control_space, "source": str(args.source),
