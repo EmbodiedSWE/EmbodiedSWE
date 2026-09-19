@@ -56,7 +56,9 @@ import sys
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description="re-drive recorded episodes through the eval executor")
-parser.add_argument("source", help="registered sim name | ENVS preset | bake.json path")
+parser.add_argument("source", help="registered sim name | ENVS preset | bake.json path | cell dir")
+parser.add_argument("--cell", default="", help="world from a data-engine cell dir (<gen_root>/scenes/<scene>) — "
+                    "replay a cell's episodes in the cell's own world (the certification of a cell eval)")
 parser.add_argument("--episodes", nargs="*", default=[], help="episode dirs")
 parser.add_argument("--batch", default="", help="batch dir — every ep_* inside")
 parser.add_argument("--matched-controller", dest="matched_controller", action="store_true",
@@ -177,6 +179,8 @@ for e, m in metas.items():
 
 # ----- sim ----------------------------------------------------------------------------------------
 overrides: dict = {}
+if args.cell:
+    overrides["cell"] = str(Path(args.cell).resolve())
 if args.no_cameras:
     overrides["cameras"] = False
 # PHYSICAL_PARAMS: each episode's recorded draw is re-applied to ITS slot per chunk by
