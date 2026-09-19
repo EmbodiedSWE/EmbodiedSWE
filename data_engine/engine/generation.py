@@ -183,6 +183,42 @@ def load_grader_cls(scene_dir: Path):
                 if isinstance(v, type) and issubclass(v, BaseGrader) and v is not BaseGrader)
 
 
+
+
+def run_reset_builders(env, cond, num_envs: int) -> list[str]:
+    """Run a phase reset file's builders on a freshly reset env, exactly as generation does —
+    and exactly as replay must, so a phase entry is REBUILT from the seed rather than restored.
+
+    A phase file holds reset_0(env), reset_1(env), … — ALL of them run, the batch's envs
+    divided evenly among them: each builder shapes (and settles) the whole batch; its settled
+    snapshot supplies its env-slice of the composed entry state, so a later builder's settle
+    never disturbs an earlier builder's envs. Randomness inside uses the global RNGs, already
+    seeded by env.reset(seed=seed+rollout). Returns the builder name per env."""
+    names = sorted((n for n in vars(cond) if re.fullmatch(r"reset_\d+", n)),
+                   key=lambda n: int(n[6:]))
+    if len(names) == 1:
+        getattr(cond, names[0])(env)
+        return [names[0]] * num_envs
+    # even split, remainder to the earliest; fewer envs than builders fills them in order
+    # (later builders get none and are skipped)
+    base, rem = divmod(num_envs, len(names))
+    counts = [base + (1 if i < rem else 0) for i in range(len(names))]
+    composed, fn_of_env, lo = None, [], 0
+    for n, c in zip(names, counts):
+        if c == 0:
+            continue
+        getattr(cond, n)(env)
+        snap = _clone_states(env.get_states())
+        if composed is None:
+            composed = snap
+        else:
+            _slice_assign(composed, snap, slice(lo, lo + c))
+        fn_of_env += [n] * c
+        lo += c
+    env.set_states(composed)
+    return fn_of_env
+
+
 def _clone_states(d: dict) -> dict:
     """Deep-clone a get_states tree so a snapshot survives further sim stepping."""
     return {k: _clone_states(v) if isinstance(v, dict) else v.detach().clone()
@@ -520,36 +556,7 @@ def run_batch(gen_root: str | Path, batch: str | None = None, scene: str = "scen
         if conditions:
             cond = conditions[rnd % len(conditions)]
             reset_name = cond.__name__.removeprefix("datagen_reset_")
-            # a phase file holds reset_0(env), reset_1(env), … — ALL of them run,
-            # the batch's envs divided evenly among them: each builder shapes
-            # (and settles) the whole batch; its settled snapshot supplies its
-            # env-slice of the composed entry state, so a later builder's settle
-            # never disturbs an earlier builder's envs. Randomness inside uses
-            # the global RNGs, already seeded by env.reset(seed=seed+rollout).
-            names = sorted((n for n in vars(cond) if re.fullmatch(r"reset_\d+", n)),
-                           key=lambda n: int(n[6:]))
-            if len(names) == 1:
-                getattr(cond, names[0])(env)
-                fn_of_env = [names[0]] * num_envs
-            else:
-                # even split, remainder to the earliest; fewer envs than
-                # builders fills them in order (later builders get none and
-                # are skipped)
-                base, rem = divmod(num_envs, len(names))
-                counts = [base + (1 if i < rem else 0) for i in range(len(names))]
-                composed, fn_of_env, lo = None, [], 0
-                for n, c in zip(names, counts):
-                    if c == 0:
-                        continue
-                    getattr(cond, n)(env)
-                    snap = _clone_states(env.get_states())
-                    if composed is None:
-                        composed = snap
-                    else:
-                        _slice_assign(composed, snap, slice(lo, lo + c))
-                    fn_of_env += [n] * c
-                    lo += c
-                env.set_states(composed)
+            fn_of_env = run_reset_builders(env, cond, num_envs)
             entry = reset_name if has_port else None  # the file IS the phase
         grader = grader_cls(env)
         grader.setup()  # baselines captured at the entry state
