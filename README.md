@@ -1,312 +1,145 @@
-# CoSiGen
+# EmbodiedSWE: Coding Agents for Long-Horizon Dexterous Robotics
 
-Sim data generation with coding agents — built on **robobench**, a relocatable robot-assembly
-benchmark suite running on **Isaac Lab 5.1 / Isaac Sim** (PhysX 5).
+<p align="center">
+  <img src="docs/media/overview.jpg" width="100%" alt="EmbodiedSWE overview">
+</p>
 
-## Prerequisites
+<p align="center">
+  <a href="https://embodiedswe.github.io"><img src="https://img.shields.io/badge/Project%20Page-4c8eda?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Project page"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Paper-coming%20soon-b31b1b?style=for-the-badge&logo=arxiv&logoColor=white" alt="Paper"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Blog-coming%20soon-6f42c1?style=for-the-badge&logo=rss&logoColor=white" alt="Blog"></a>
+</p>
 
-- Linux + an NVIDIA GPU (CUDA 12.x driver).
-- [`uv`](https://docs.astral.sh/uv/) for env + package management.
-- Isaac Sim 5.1 + Isaac Lab — installed in [Setup](#setup) below.
+EmbodiedSWE studies how frontier coding agents can help robotics. It has four parts:
 
-robobench imports `isaaclab*` / `isaacsim` / `torch` / `pxr` from the venv; it consumes the Isaac
-stack purely as installed packages, so **no Isaac Lab source clone is needed**.
+- **EmbodiedSWE-Bench**, an agent-native benchmark of long-horizon, dexterous everyday tasks, built on Isaac Lab.
+- **Evaluation** of frontier coding agents on these tasks: task performance, completion time, and inference cost.
+- **EmbodiedSWE-Gen**, which diversifies one verified agent solution into a large trajectory dataset for training general robot policies.
+- **Agent improvement**, which generates new tasks from existing ones and improves the coding agent with RL on verified outcomes.
 
-## Setup
+> **Note:** this repository is under active development. Some settings may not exactly match those
+> reported in the paper. We are reorganizing the codebase, and everything, from folder layout to
+> interfaces, may change in the coming weeks.
 
-Everything installs into a project-local venv named **`cosigen`** (Python 3.11), using **uv** for
-the binary stack plus targeted pip workarounds for legacy upstream packages.
+## Installation
 
-The recommended fail-fast installer pins the release-era transitive dependencies that upstream
-Isaac Lab 2.3.2 leaves open (`warp-lang`) and repairs the legacy `flatdict` build on current package
-indexes. It is safe to re-run and reuses an existing valid `.venv`:
+Requirements: Linux, an NVIDIA GPU with a CUDA 12.x driver, and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-./scripts/bootstrap_isaaclab_5_1.sh
+git clone <this repo> && cd <this repo>
+./scripts/bootstrap_isaaclab_5_1.sh      # Isaac Sim 5.1 + Isaac Lab 2.3.2 + robobench into ./.venv
 source .venv/bin/activate
+uv pip install "pin==4.0.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # whole-body IK (pink_ik)
 ```
 
-The manual equivalent is documented below for debugging.
+The `deformable` suite runs on the Newton physics backend and needs a separate venv; see
+[`robobench/suites/deformable/README.md`](robobench/suites/deformable/README.md).
 
-### 1. Create + activate the venv
+## Quick start
 
-From the CoSiGen repo root:
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/media/bulb.gif" width="100%"><br><sub><code>assembly.bulb</code></sub></td>
+    <td align="center"><img src="docs/media/ikea_table.gif" width="100%"><br><sub><code>assembly.ikea_table</code></sub></td>
+    <td align="center"><img src="docs/media/so101.gif" width="100%"><br><sub><code>assembly.so101</code></sub></td>
+    <td align="center"><img src="docs/media/pc_motherboard.gif" width="100%"><br><sub><code>assembly.pc_motherboard</code></sub></td>
+    <td align="center"><img src="docs/media/tool_packing.gif" width="100%"><br><sub><code>packing.tool_packing</code></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/media/egg_carton.gif" width="100%"><br><sub><code>packing.egg_carton</code></sub></td>
+    <td align="center"><img src="docs/media/tshirt.gif" width="100%"><br><sub><code>deformable.tshirt</code></sub></td>
+    <td align="center"><img src="docs/media/latte.gif" width="100%"><br><sub><code>deformable.latte</code></sub></td>
+    <td align="center"><img src="docs/media/slice_banana.gif" width="100%"><br><sub><code>cutting.slice</code></sub></td>
+    <td align="center"><img src="docs/media/fruit_delivery.gif" width="100%"><br><sub><code>locomanip.fruit_delivery</code></sub></td>
+  </tr>
+</table>
+
+Preview a task:
 
 ```bash
-uv venv --python 3.11 --prompt cosigen      # creates ./.venv (gitignored); prompt shows (cosigen)
-source .venv/bin/activate
+python -m robobench.scripts.smoke --list                                          # all registered tasks
+python -m robobench.scripts.smoke --env assembly.bulb.franka.osc --livestream 2   # random actions, live view
 ```
 
-### 2. Install PyTorch + Isaac Sim
+Tasks are named `suite.scene[.robot[.control_mode]]`. The environment API and design are described
+in [`robobench/README.md`](robobench/README.md).
+
+## Solving a task
+
+The easy way: open the repo in a coding agent such as Claude Code or Codex, point it at
+`robobench/README.md`, and ask it to solve a task, e.g. `assembly.bulb.franka.osc`. A solution is a
+Python program exposing `solve(env)`; the contract the agents see is
+[`eval/prompts/_contract.md`](eval/prompts/_contract.md).
+
+For rigorous, large-scale evaluation, `eval/` runs the agent in an isolated Docker container under a
+time budget and grades its solutions afterwards in fresh containers on independently randomized episodes.
 
 ```bash
-uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 \
-  --index-url https://download.pytorch.org/whl/cu128
-uv pip install "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com
+python eval/scripts/build_env.py --name bulb_e2e --stage bulb:franka    # build the world once
+python eval/scripts/run_agent.py experiments/bulb_e2e --agent claude    # one agent run in Docker
+python eval/scripts/run_grade.py experiments/bulb_e2e --run <run>       # grade the delivery
 ```
 
-### 3. Install Isaac Lab (from pip — no clone)
-Install the Isaac Lab pip packages directly into the active `cosigen` venv (**no `git clone`, no
-`isaaclab.sh`**), or follow the official [Isaac Lab Pip Packages guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/isaaclab_pip_installation.html).
-Pin a version compatible with Isaac Sim 5.1 (`isaaclab` 2.3.2 = the v2.3 release that supports
-Isaac Sim 4.5/5.0/5.1):
+Prompt conditions (hints, rules, blocked features) are authored yaml files in `eval/configs/` and
+`eval/prompts/`. Docker images and the container contract are documented in
+[`eval/docker/README.md`](eval/docker/README.md).
+
+## Data engine
+
+Once a task is solved, `data_engine/` turns that one verified solution into a large, diverse,
+per-episode-verified demonstration dataset. Coding agents author the diversity at five independent
+levels: scene, strategy, phase, dynamics, and visual.
+
+A generic launcher then mass-produces batched episodes, the scene's grader stamps a verdict on each
+one, and the verified episodes are rendered and baked into a LeRobot dataset for policy training.
 
 ```bash
-uv pip install pip==25.2 setuptools==81.0.0
-python -m pip install --no-cache-dir --no-build-isolation flatdict==4.0.1
-python -m pip install --no-cache-dir --no-deps warp-lang==1.11.0
-CMAKE_POLICY_VERSION_MINIMUM=3.5 python -m pip install --no-cache-dir \
-  flatdict==4.0.1 warp-lang==1.11.0 click==8.1.7 typing-extensions==4.12.2 \
-  "isaaclab[all]==2.3.2" \
-  --extra-index-url https://pypi.nvidia.com
+python data_engine/scripts/init_gen.py experiments/bulb_e2e/runs/<run>                  # start a campaign from a solved run
+python data_engine/scripts/diversify.py <gen_root> data_engine/configs/scene_default.yaml # agent session that adds diversity
+python data_engine/scripts/generate.py --headless <gen_root> --scene scene_1 --num_envs 8 # generate + verify a batch
+python data_engine/scripts/render.py --headless <gen_root> --batches <batch>              # render episodes to video
+.venv-lerobot/bin/python vla/convert/convert.py <gen_root> --repo-id <name>               # bake a LeRobot dataset
 ```
 
-### 4. Install robobench (this repo)
+Training and closed-loop evaluation of VLA policies live in [`vla/`](vla/README.md).
 
-Back in the CoSiGen repo root, with the venv still active:
-
-```bash
-uv pip install -e .
-```
-
-### 5. Whole-body IK (`pink_ik` control mode)
-
-The humanoid embodiments' `pink_ik` mode wraps Isaac Lab's Pink IK, whose solver stack is **not**
-pulled in by `isaaclab[all]`. Without it every IK solve throws and the controller silently returns
-the joints unchanged — the arms then just sag under gravity instead of tracking, with no error unless
-`show_ik_warnings` is on. Install the three pieces:
-
-```bash
-uv pip install "pin==4.0.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"
-```
-
-`daqp` is the QP solver Pink asks for **by name**, so it is required, not optional. Re-pin `numpy`
-afterwards: `pin`'s resolve pulls numpy 2, which breaks Isaac Sim 5.1's synthetic-data path — every
-`Camera` then dies at annotator attach with `TypeError: Unable to write from unknown dtype, kind=f,
-size=0`, i.e. no rendering and no video. pinocchio/pink/daqp all work fine against numpy 1.26.
-
-Any script that builds a `pink_ik` env must also `import pinocchio` **before** `AppLauncher` and set
-`enable_pinocchio=True` on the launcher args (see `robobench/controllers/pink_ik.py`).
-
-
-## Task catalog
-
-Six suites, 29 tasks — the paper's Appendix B table plus `pc_motherboard_gpu_ram`. A task is one registered scene;
-its runnable presets are `suite.scene[.robot[.control_mode]]` (list them with
-`python -m robobench.scripts.smoke --list`). Where the code name differs from the paper's it is
-given in parentheses.
-
-| Suite | Scenes (code name) |
-|---|---|
-| `assembly` | `allen_bolt`, `bulb`, `ikea_table`, `so101` (paper: SO_101), `nut_thread`, `pc_gpu`, `pc_gpu_ram`, `pc_motherboard`, `pc_motherboard_gpu_ram`, `pc_ram` |
-| `packing` | `pen_holder`, `tool_packing`, `egg_carton`, `clear_organic_objects` |
-| `puzzle` | `coffee`, `spatula`, `syringe`, `push_shapes`, `classify_objects`, `stack_blocks` |
-| `deformable` | `tshirt`, `latte`, `dumpling`, `knot` (paper: shoe_knot) — Newton backend, see below |
-| `cutting` | `slice`, `dice` |
-| `locomanip` | `fruit_delivery`, `box_to_bin`, `wheel_carry` |
-
-The `deformable` presets also answer to their pre-merge names (`folding.tshirt…`,
-`pouring.latte…`, `dough.dumpling`, `shoe_tying.knot`).
-
-## Run
-
-Always `source .venv/bin/activate` first
-
-```bash
-# List every registered env (suite.scene[.robot[.control_mode]])
-python -m robobench.scripts.smoke --list
-
-# Smoke-test one env with random actions
-python -m robobench.scripts.smoke --env assembly.ikea_table.g1.joint
+## Repository layout
 
 ```
-
-## VLA: bake, train, eval (lerobot)
-
-Policy training lives in [`vla/`](vla/README.md): `vla/convert` bakes generated episodes into
-a LeRobot dataset, `vla/eval` drives the same sim closed-loop with a trained policy, and
-[lerobot](https://github.com/huggingface/lerobot) itself is vendored as the submodule
-`vla/lerobot`, pinned to the revision every result was produced with. lerobot needs Python 3.12,
-so it gets its own venv next to the Isaac one:
-
-```bash
-git submodule update --init vla/lerobot     # or clone with --recurse-submodules
-./scripts/bootstrap_lerobot.sh              # -> .venv-lerobot with lerobot[training,pi,smolvla,diffusion] + the eval plugin
+robobench/            EmbodiedSWE-Bench: the benchmark package
+  core/               BaseEnv, BaseScene, BaseRobot, controller and grader contracts, registries
+  suites/             task suites: assembly, packing, puzzle, deformable, cutting, locomanip
+  robots/             embodiments: franka, xarm7, attached (Kinova Gen3 + panda hand), g1, multi (bimanual), ...
+  controllers/        joint, diff_ik, task_space (OSC / impedance), pink_ik, composite, loco_policy
+  scripts/smoke.py    build and step any registered env
+eval/                 dockerized agent evaluation
+data_engine/          EmbodiedSWE-Gen: expands one solution into diverse trajectories
+vla/                  bake episodes into LeRobot datasets, train and evaluate VLA policies
+rl/                   RL baselines (not agent improvement)
+sim_gen/              generates new simulation tasks from seed tasks (agent improvement)
+real_to_sim/          real scenes and objects to sim: splat backgrounds, photos to sim-ready assets
+scripts/              bootstrap installers, record_video.py, asset vendoring
 ```
 
-See `vla/README.md` for the two-venv layout and `vla/convert/README.md` / `vla/eval/README.md`
-for the bake and eval recipes.
+## Citation
 
-For the `packing.egg_carton` contribution, run the evidence-producing validation pipeline from the
-CoSiGen root. It stops at the first failure and writes logs plus recorded frame archives under
-`validation_artifacts/`. With `CoSiGen_Solutions` checked out beside this repo, it also runs the held-out
-G1 reference solution:
+If you use EmbodiedSWE in your research, please cite this repository:
 
-```bash
-./scripts/validate_egg_carton.sh
-
-# Final stability gate after the first run is calibrated:
-./scripts/validate_egg_carton.sh --solution-runs 3
+```bibtex
+@misc{embodiedswe2026,
+  title        = {EmbodiedSWE: Coding Agents for Long-Horizon Dexterous Robotics},
+  author       = {You, Haoxiang and Shen, Zeyu and Liu, Yilang and Zheng, Zhicheng and Zha, Lihan and
+                  Yamazaki, Kashu and Zhang, Mingtong and Huang, Suning and Sun, Jiankai and
+                  Chen, Qianzhong and He, Lucy and Chang, Haoran and Shah, Dhruv and Schwager, Mac and
+                  Fragkiadaki, Katerina and Henderson, Peter and Abraham, Ian and Xu, Canwen},
+  year         = {2026},
+  howpublished = {\url{https://embodiedswe.github.io}},
+}
 ```
 
-An automated pass proves registry wiring, oracle happy/negative paths, recorded rendering, G1 reach,
-and reference actuation. The recorded output must still be watched end to end before the task is
-accepted; agent difficulty is evaluated separately.
+## License
 
-## Newton env (the deformable suite)
+Apache 2.0. See [LICENSE](LICENSE).
 
-The `deformable` suite (`robobench/suites/deformable/` — the four scenes `tshirt`, `latte`, `knot`,
-`dumpling`, formerly the separate `folding` / `pouring` / `shoe_tying` / `dough` suites; the old
-preset names still resolve as aliases) runs on IsaacLab **develop**'s Newton physics
-backend (cloth, liquids, and rods do not exist on the PhysX stack). That branch is not on PyPI,
-so this suite gets its own project-local venv, **`env_newton`** (Python 3.12, isaacsim 6.0,
-torch cu130), with the isaaclab packages installed *editable* from an IsaacLab **develop**
-checkout and one shared Newton engine pin. The assembly suite keeps using `.venv` (isaaclab
-2.3.2 / PhysX); the two venvs coexist — only the interpreter you launch with differs.
-
-Extra prerequisite: the torch cu130 wheels need an NVIDIA driver ≥ r580 (CUDA 13).
-
-### 1. Clone IsaacLab (develop)
-
-Clone anywhere you like — it is only consumed as an editable source tree (do **not** run
-IsaacLab's own installer / `isaaclab.sh`):
-
-```bash
-git clone https://github.com/isaac-sim/IsaacLab.git ~/IsaacLab
-git -C ~/IsaacLab checkout d7d004217c60b4790f721565bf5d40243addcb0e   # tested commit (develop, 2026-06-17)
-```
-
-Newer `develop` may work, but this commit is what the suite is tested against — develop moves
-fast and breaks conventions vs 2.x (e.g. quaternions are **xyzw** there, not wxyz).
-
-### 2. Build env_newton (one-time)
-
-From the CoSiGen repo root, with `SRC` pointing at *your* checkout's `source/` dir:
-
-```bash
-SRC=~/IsaacLab/source                 # <-- adjust to your IsaacLab checkout
-PY=env_newton/bin/python
-# isaacsim deps span pypi.org + pypi.nvidia.com at different versions, and isaacsim pins some
-# pre-release deps, so its installs take these extra flags. Keep NV an ARRAY expanded as
-# "${NV[@]}" (works in bash and zsh) — a scalar NV="..." breaks in zsh, which does not
-# word-split unquoted $NV and passes the whole string as one argument.
-NV=(--extra-index-url https://pypi.nvidia.com --index-strategy unsafe-best-match --prerelease=allow)
-
-uv venv env_newton --python 3.12 --prompt env_newton
-uv pip install --python "$PY" torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu130
-uv pip install --python "$PY" "${NV[@]}" "isaacsim[all,extscache]==6.0.0.1"   # large first download
-uv pip install --python "$PY" "${NV[@]}" \
-  -e "$SRC/isaaclab_newton[all]" -e "$SRC/isaaclab_physx[newton]" \
-  -e "$SRC/isaaclab_ovphysx" -e "$SRC/isaaclab_visualizers[kit]" \
-  -e "$SRC/isaaclab_contrib" -e "$SRC/isaaclab_assets" -e "$SRC/isaaclab"
-uv pip install --python "$PY" imageio imageio-ffmpeg   # for record_video
-uv pip install --python "$PY" -e .                     # robobench itself (declares no other deps)
-
-# Newton engine — the pin ALL deformable scenes (tshirt, latte, knot, dumpling) run and are tested
-# against. It is newer than the commit isaaclab_newton pulls transitively, so install it last:
-uv pip install --python "$PY" \
-  "newton[sim] @ git+https://github.com/newton-physics/newton.git@f420998186ec70bc39323ccc374bcb6c2be1d14f" \
-  "warp-lang>=1.16,<1.17" "newton-usd-schemas>=0.4.1"
-# -> newton 1.6.0.dev0, warp 1.16, mujoco + mujoco-warp 3.11, newton-usd-schemas 0.5
-
-# and apply the small vendored compat patch to the IsaacLab checkout (newton 1.5 renamed a few
-# APIs the pinned develop commit still uses):
-git -C ~/IsaacLab apply scripts/isaaclab_newton16_compat.patch
-```
-
-Notes:
-
-- All seven `-e` packages are required: `isaaclab_ovphysx`/`isaaclab_physx` are hard imports of
-  isaaclab's app launcher, and `isaaclab_visualizers[kit]` drives rendering (the tshirt smoke
-  defaults to the kit visualizer).
-- Optional — only to run IsaacLab's in-tree reference tasks (e.g. `Isaac-Lift-Cloth-Franka-v0`),
-  not needed by the suites:
-  `uv pip install --python "$PY" "${NV[@]}" -e "$SRC/isaaclab_tasks" -e "$SRC/isaaclab_rl" -e "$SRC/isaaclab_ov"`
-
-### 3. tshirt (cloth folding)
-
-The `tshirt` scene (`robobench/suites/deformable/scenes/tshirt.py`) folds a T-shirt (VBD cloth) on the coupled
-MJWarp+VBD substrate. The in-tree smoke is a simulation CAPABILITY CHECK, not a solution: on
-the benchmark env the Franka pinches the shirt with its real fingers and lifts it clear of the
-table (cloth-rise verdict). Any solution for it stays out of the benchmark tree, in the
-gitignored `experiments/` workspace.
-
-```bash
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.deformable.smokes.tshirt_fold_smoke --headless
-```
-
-`OMNI_KIT_ACCEPT_EULA=YES` skips isaacsim 6's first-run EULA prompt in headless runs; on
-isaaclab develop a run is headless unless a kit visualizer is requested (pass `--viz kit`; do
-NOT combine with `--headless`, which force-disables visualizers).
-
-### 4. latte (liquid pouring, same venv)
-
-The `latte` scene (`robobench/suites/deformable/scenes/latte.py`) runs particle liquids (implicit **MPM**)
-coupled with MJWarp rigid dynamics: two dynamic Frankas grasp both vessels and pour milk into
-coffee. ONE registered env on this scene: `deformable.latte.bimanual_franka.joint` (the
-benchmark: dynamic arms + dynamic vessels + auto-weld grasp contract + 1.5-way liquid
-feedback). The in-tree smoke is a simulation CAPABILITY CHECK, not a solution: both Frankas
-grasp the vessels through the scene's auto-weld contract and lift them (rise/upright/spill
-verdicts). Any solution for it stays out of the benchmark tree, in the gitignored
-`experiments/` workspace.
-
-```bash
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
-  -m robobench.suites.deformable.smokes.latte_pour_smoke --headless
-```
-
-Note: do **not** record COUPLED-substrate pouring runs with `scripts/record_video.py` live —
-live rendering corrupts the coupled MPM physics on this stack. Record via `--dump_states`
-(poses + particles to an `.npz`) plus offline replay (a replay renderer last exists at
-`f8c101d`: `scripts/replay_render.py`).
-
-### 5. knot (shoelace tying, same venv)
-
-The `knot` scene (`robobench/suites/deformable/scenes/shoe_knot.py`) TIES a half knot from two initially
-separate shoelaces — Newton *rods* (capsule chains + cable joints, standalone VBD/AVBD) rooted
-at a sneaker's top eyelets — by moving their free ends through the classic four beats: cross
-into a mid-air X (pinched by 20 N spring-finger pins), thread under the junction, cross again,
-pull apart and seat on the tongue. Verdict, slack and pin-free: winding >= 140 deg on the knot
-sections, >= 6 cross-lace contacts, knot z < 155 mm. Rods have no IsaacLab asset type, so the
-scene injects them into the Newton `ModelBuilder` through the manager's per-world builder hooks
-(the in-tree MPM asset's mechanism). ONE registered env on this scene:
-`deformable.knot` (robot-less; roots anchored, the free ends are kinematic handles driven per
-solver substep with closed-loop planning off the measured crossing):
-
-```bash
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
-  -m robobench.suites.deformable.smokes.knot_smoke --headless
-```
-
-Rendering is Kit **RTX**: the smoke spawns a textured visual shoe USD and syncs one visual
-capsule prim per rod segment from `body_q` (the physics rod is prim-less). Record through the
-standard harness:
-
-```bash
-env_newton/bin/python scripts/record_video.py \
-  robobench.suites.deformable.smokes.knot_smoke \
-  --video robobench/suites/deformable/videos/knot_smoke.mp4 \
-  --eye 0.33 -0.31 0.40 --target-at 0.0 0.03 0.10
-```
-
-See `robobench/suites/deformable/docs/shoe_knot.md` for the full recipe and pass criteria.
-
-### 6. dumpling (dough rolling, same venv)
-
-The `dumpling` scene (`robobench/suites/deformable/scenes/dumpling.py`) runs **elastoplastic dough** (implicit MPM with
-finite stiffness + von-Mises yield + full cohesion — Newton's "mud" recipe stiffened for shape
-retention) coupled with MJWarp rigid dynamics. The task: ROLL THE DOUGH OUT — grasp the rolling
-pin through the scene's auto-weld contract and flatten the ball into a thin, wide wrapper with
-low sliding passes (`scene.success()` gates the rolled sheet plus conservation guards; pushing
-is the MPM colliders' one verified dough transport — see `docs/dumpling.md`'s physics findings).
-ONE registered env on this scene: `deformable.dumpling` (robot-less material tuning:
-pure-MPM substrate, kinematic pin). The suite ships the task only — robot bindings and
-solutions live in the gitignored `experiments/` workspace, which builds its own
-`EnvCfg(scene="dumpling", robot=...)` on the coupled substrate.
-
-Same coupled-substrate recording rule as pouring: never record live — dump states during the
-run and replay offline via `scripts/replay_render.py` (local-only, last in-tree at `f8c101d`;
-its latte-specific particle-key mapping needs one generalization for dough dumps: map each MPM
-object's prim leaf, lowercased, to the same-named dump key — `dough`).
-
-See `robobench/suites/deformable/docs/dumpling.md` for the scene, material notes, and pass criteria.
+Built on [Isaac Lab](https://github.com/isaac-sim/IsaacLab), [Newton](https://github.com/newton-physics/newton),
+and [LeRobot](https://github.com/huggingface/lerobot).
