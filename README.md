@@ -37,6 +37,18 @@ The `deformable` suite runs on the Newton physics backend and needs a separate v
 
 ## Quick start
 
+Preview a task:
+
+```bash
+python -m robobench.scripts.smoke --list                                          # all registered tasks
+python -m robobench.scripts.smoke --env assembly.bulb.franka.osc --livestream 2   # random actions, live view
+```
+
+Tasks are named `suite.scene[.robot[.control_mode]]`. The environment API and design are described
+in [`robobench/README.md`](robobench/README.md).
+
+**A few examples from EmbodiedSWE-Bench:**
+
 <table align="center">
   <tr>
     <td align="center"><img src="docs/media/bulb.gif" width="100%"><br><sub><code>assembly.bulb</code></sub></td>
@@ -53,16 +65,6 @@ The `deformable` suite runs on the Newton physics backend and needs a separate v
     <td align="center"><img src="docs/media/fruit_delivery.gif" width="100%"><br><sub><code>locomanip.fruit_delivery</code></sub></td>
   </tr>
 </table>
-
-Preview a task:
-
-```bash
-python -m robobench.scripts.smoke --list                                          # all registered tasks
-python -m robobench.scripts.smoke --env assembly.bulb.franka.osc --livestream 2   # random actions, live view
-```
-
-Tasks are named `suite.scene[.robot[.control_mode]]`. The environment API and design are described
-in [`robobench/README.md`](robobench/README.md).
 
 ## Solving a task
 
