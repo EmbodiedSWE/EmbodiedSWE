@@ -706,6 +706,7 @@ class ClearOrganicObjectsScene(BaseScene):
     PROSE: ClassVar[dict[str, str]] = {
         "lemon_01": "a lemon", "lemon_02": "a small lemon", "lime01": "a lime",
         "lime_a": "a lime", "lime_b": "another lime",
+        "lemon_a": "a lemon", "lemon_b": "another lemon",  # the sort tier's own lemons
         "lime01_01": "a second lime", "orange_01": "an orange", "orange_02": "an orange",
         "pomegranate01": "a pomegranate", "pumpkinlarge": "a pumpkin",
         "pumpkinsmall": "a small pumpkin", "red_onion": "a red onion", "avocado01": "an avocado",
@@ -714,14 +715,18 @@ class ClearOrganicObjectsScene(BaseScene):
         "utilityjug_a03": "a tall utility jug",
     }
 
+    def _prose(self, name: str) -> str:
+        """Human wording for a manifest item; falls back to the item name so describe() can never crash."""
+        return self.PROSE.get(name, name.replace("_", " "))
+
     def describe(self) -> str:
         # Built from the LIVE manifest, so a variant that excludes items describes itself
         # honestly instead of promising produce that is not on the table.
         c = self.cfg
         if c.sort_to_bin or c.sort_to_tray:
             join = lambda xs: (", ".join(xs[:-1]) + (", and " + xs[-1] if len(xs) > 1 else xs[0]))  # noqa: E731
-            to_bin = [self.PROSE[n] for n in c.sort_to_bin]
-            to_tray = [self.PROSE[n] for n in c.sort_to_tray]
+            to_bin = [self._prose(n) for n in c.sort_to_bin]
+            to_tray = [self._prose(n) for n in c.sort_to_tray]
             return (
                 "A work table holds a colourful spread of fruits, vegetables and household "
                 "items, with an open blue plastic crate on one side and a round serving tray "
@@ -733,8 +738,8 @@ class ClearOrganicObjectsScene(BaseScene):
                 "are. The job is done when each listed item rests in its correct "
                 "destination and nothing that is not food has been put in the crate."
             )
-        org = [self.PROSE[n] for n, _k, o, _s, _m in self.cfg.manifest if o]
-        dis = [self.PROSE[n] for n, _k, o, _s, _m in self.cfg.manifest if not o]
+        org = [self._prose(n) for n, _k, o, _s, _m in self.cfg.manifest if o]
+        dis = [self._prose(n) for n, _k, o, _s, _m in self.cfg.manifest if not o]
         join = lambda xs: ", ".join(xs[:-1]) + (", and " + xs[-1] if len(xs) > 1 else xs[0])  # noqa: E731
         bx = self.cfg.bin_bbox[0] * self.cfg.bin_scale[0] * 100
         by = self.cfg.bin_bbox[1] * self.cfg.bin_scale[1] * 100
