@@ -1,0 +1,3 @@
+# Every change needs an approving review from one of the maintainers before it can merge into
+# main (enforced by the repository ruleset "protect-main": required code-owner review).
+*   @HaoxiangYou @YilangLiu @zeyushen-yo
