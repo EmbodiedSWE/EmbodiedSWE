@@ -6,7 +6,6 @@
 
 <p align="center">
   <a href="https://embodiedswe.github.io"><img src="https://img.shields.io/badge/Project%20Page-4c8eda?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Project page"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Paper-coming%20soon-b31b1b?style=for-the-badge&logo=arxiv&logoColor=white" alt="Paper"></a>
   <a href="#"><img src="https://img.shields.io/badge/Blog-coming%20soon-6f42c1?style=for-the-badge&logo=rss&logoColor=white" alt="Blog"></a>
 </p>
 
@@ -17,9 +16,8 @@ EmbodiedSWE studies how frontier coding agents can help robotics. It has four pa
 - **EmbodiedSWE-Gen**, which diversifies one verified agent solution into a large trajectory dataset for training general robot policies.
 - **Agent improvement**, which generates new tasks from existing ones and improves the coding agent with RL on verified outcomes.
 
-> **Note:** this repository is under active development. Some settings may not exactly match those
-> reported in the paper. We are reorganizing the codebase, and everything, from folder layout to
-> interfaces, may change in the coming weeks.
+> **Note:** this repository is under active development. Folder layouts, interfaces, and settings
+> may change as the codebase evolves.
 
 ## Installation
 
@@ -30,13 +28,22 @@ git clone <this repo> && cd <this repo>
 ./scripts/bootstrap_isaaclab_5_1.sh      # Isaac Sim 5.1 + Isaac Lab 2.3.2 + robobench into ./.venv
 source .venv/bin/activate
 export OMNI_KIT_ACCEPT_EULA=YES               # Isaac Sim asks interactively otherwise (hangs headless runs)
-python -m robobench.scripts.fetch_assets  # ~1.5 GB of USD / textures from Hugging Face (CoSiGen/robobench-assets)
+# Optional: prefetch every task and room (~3.4 GB); otherwise env.build() fetches what it needs.
+python -m robobench.scripts.fetch_assets
 uv pip install "pin==2.7.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # whole-body IK (pink_ik)
 ```
 
-Large binary assets are not in git: `fetch_assets` drops them at their exact repo paths and verifies
-them against `robobench/assets_manifest.json`. A fresh checkout pulls one tar bundle per asset directory;
-after pulling asset changes, re-run it and only the changed files are downloaded (`--check` only verifies).
+Task assets and shared rooms live in the Hugging Face dataset `CoSiGen/robobench-assets`.
+Building an environment automatically downloads its required asset groups and verifies their SHA-256
+checksums against `robobench/assets_manifest.json`. Verified local copies are reused, including offline.
+Listing tasks does not download anything. `fetch_assets --check` verifies the whole local collection.
+
+Every built-in registered task configuration declares its default room in its suite's
+`configs/envs.py`, including alternate robots and control modes. Shared loading code lives in
+`robobench/core/rooms.py`; downloaded rooms live in the ignored `robobench/assets/rooms/` directory.
+Use `--room none` with the smoke launcher or `cfg.build(room=None)` to disable scenery explicitly.
+Set `COSIGEN_ASSET_DIR` before starting Python to use a writable cache outside the checkout.
+See [task rooms and asset downloads](docs/rooms.md) for the room assignments and maintainer commands.
 
 The `deformable` suite runs on the Newton physics backend and needs a separate venv; see
 [`robobench/suites/deformable/README.md`](robobench/suites/deformable/README.md).

@@ -27,6 +27,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -125,7 +126,7 @@ class SliceFoodScene(BaseScene):
     """Transverse slicing (carrot / banana / ...). Env name: cutting.slice"""
 
     cfg: SliceFoodSceneCfg
-    ASSETS: ClassVar[Path] = Path(__file__).resolve().parents[1] / "assets"
+    ASSETS: ClassVar[Path] = asset_path(Path(__file__).resolve().parents[1] / "assets")
     KNIFE: ClassVar[str] = "knife22r"
 
     PHYSICAL_PARAMS: ClassVar[dict] = {

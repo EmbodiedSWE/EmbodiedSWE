@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -116,7 +117,7 @@ class WheelCarrySceneCfg(BaseCfg):
     place_table_usd: str = ""
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parents[2] / "assembly" / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[2] / "assembly" / "assets")
         self.asset_dir = self.asset_dir or str(assets)
         d = Path(self.asset_dir)
         self.wheel_usd = self.wheel_usd or str(d / "steering_wheel" / "steering_wheel.usd")

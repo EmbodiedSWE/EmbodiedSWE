@@ -13,6 +13,8 @@ derivations the harness or agent can make — nothing here is locked.
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
     AlohaCfg,
@@ -40,27 +42,94 @@ from robobench.suites.assembly.scenes import (
     PcRamAssemblySceneCfg,
 )
 
+
+# Default room settings belong to these task configurations.
+
+_PC_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': -0.7696,
+          'anchor': [-0.37, 0.1],
+          'yaw': 0.0,
+          'floor_world_z': -0.7686,
+          'id': 'simple_room'},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Table.*'],
+ 'camera': [[1.22, -1.2, 1.08], [0.3, -0.02, 0.2]]}
+
+_BULB_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.72,
+          'anchor': [0.0, 2.0],
+          'yaw': 0.0,
+          'floor_world_z': -1.05,
+          'id': 'factory'},
+ 'hide': ['/World/ground.*'],
+ 'camera': [[1.1, -0.72, 0.85], [0.36, 0.05, 0.2]]}
+
+_IKEA_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.11,
+          'anchor': [0.0, 8.0],
+          'yaw': 90.0,
+          'floor_world_z': 0.0,
+          'id': 'factory001'},
+ 'hide': ['/World/ground.*'],
+ 'camera': [[-0.35, -1.9, 1.75], [-0.4, 0.0, 1.05]]}
+
+_ARM_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.11,
+          'anchor': [0.0, 8.0],
+          'yaw': 90.0,
+          'floor_world_z': 0.0,
+          'id': 'factory001'},
+ 'hide': ['/World/ground.*'],
+ 'camera': [[1.15, 1.1, 1.65], [0.4, -0.1, 1.0]]}
+
+def _pc_room(cfg, scene, robot):
+    spec = deepcopy(_PC_ROOM)
+    dz = scene.cfg.surface_z
+    spec["room"]["floor_world_z"] += dz
+    spec["camera"] = [[x, y, z + dz] for x, y, z in spec["camera"]]
+    return spec
+
+
+def _bench_room(cfg, scene, robot):
+    spec = deepcopy(_BULB_ROOM)
+    c = scene.cfg
+    spec["room"]["floor_world_z"] = c.surface_z - c.TABLES[c.table]["height"]
+    spec["camera"] = [[x, y, z + c.surface_z] for x, y, z in spec["camera"]]
+    return spec
+
+
+def _ikea_room(cfg, scene, robot):
+    spec = deepcopy(_IKEA_ROOM)
+    spec["room"]["floor_world_z"] = scene.cfg.surface_z - .994
+    return spec
+
+
+def _arm_room(cfg, scene, robot):
+    spec = deepcopy(_ARM_ROOM)
+    c = scene.cfg
+    spec["room"]["floor_world_z"] = c.surface_z - c.TABLES[c.table]["height"]
+    return spec
+
 SUITE = "assembly"
 
-register_env(SUITE, lambda: EnvCfg(scene="ikea_table", robot="null", env_spacing=3))  # scene physics only
+register_env(SUITE, lambda: EnvCfg(room=_ikea_room, scene="ikea_table", robot="null", env_spacing=3))  # scene physics only
 
 # Fixed-bolt + loose-nut threading scene, scene physics only for now (a robot is added later).
 # -> "assembly.nut_thread"
-register_env(SUITE, lambda: EnvCfg(scene="nut_thread", robot="null", env_spacing=2))
+register_env(SUITE, lambda: EnvCfg(room=_bench_room, scene="nut_thread", robot="null", env_spacing=2))
 
 # Fixed lamp-socket + loose light-bulb screw-in scene, scene physics only for now.
 # -> "assembly.bulb"
-register_env(SUITE, lambda: EnvCfg(scene="bulb", robot="null", env_spacing=2))
+register_env(SUITE, lambda: EnvCfg(room=_bench_room, scene="bulb", robot="null", env_spacing=2))
 
 # Fixed threaded platform + a loose allen bolt + an allen key that drives the bolt down into the
 # platform's threaded hole, scene physics only for now.
 # -> "assembly.allen_bolt"
-register_env(SUITE, lambda: EnvCfg(scene="allen_bolt", robot="null", env_spacing=2))
+register_env(SUITE, lambda: EnvCfg(room=_bench_room, scene="allen_bolt", robot="null", env_spacing=2))
 
 # PC case lying on its side, motherboard up: 7 threaded case-mount holes, 7 loose allen bolts, and
 # one allen key that drives each bolt down into its hole, scene physics only for now.
 # -> "assembly.pc_motherboard"
-register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard", robot="null", env_spacing=2))
+register_env(SUITE, lambda: EnvCfg(room=_pc_room, scene="pc_motherboard", robot="null", env_spacing=2))
 
 # Franka arm at the pc-motherboard scene: one key fastens all 7 board bolts. The base stands
 # WEST of the case at (0.07, 0), facing +x, and the whole table (case included) slides 40 mm
@@ -85,6 +154,7 @@ for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_pc_room,
             scene="pc_motherboard",
             scene_cfg=PcMotherboardAssemblySceneCfg(
                 workbench_pos=(0.54, 0.0),
@@ -122,6 +192,7 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_pc_room,
             scene="pc_motherboard",
             scene_cfg=PcMotherboardAssemblySceneCfg(**_PC_MB_SCENE_KW),
             robot="gen3n7_panda",
@@ -140,6 +211,7 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_pc_room,
             scene="pc_motherboard",
             scene_cfg=PcMotherboardAssemblySceneCfg(**_PC_MB_SCENE_KW),
             robot="xarm7",
@@ -159,18 +231,18 @@ for _mode in ("osc", "impedance", "joint"):
 # The same PC case with its primary PCIe x16 slot empty and a loose graphics card beside it, to be
 # stood upright and pressed straight down into the slot, scene physics only for now.
 # -> "assembly.pc_gpu"
-register_env(SUITE, lambda: EnvCfg(scene="pc_gpu", robot="null", env_spacing=2))
+register_env(SUITE, lambda: EnvCfg(room=_pc_room, scene="pc_gpu", robot="null", env_spacing=2))
 
 # PC case lying on its side, motherboard up: two empty DIMM slots (invisible grip channels) and
 # two loose RAM sticks to press in, scene physics only for now.
 # -> "assembly.pc_ram"
-register_env(SUITE, lambda: EnvCfg(scene="pc_ram", robot="null", env_spacing=2))
+register_env(SUITE, lambda: EnvCfg(room=_pc_room, scene="pc_ram", robot="null", env_spacing=2))
 
 # The full build: the same case with BOTH work sites open — the empty PCIe x16 slot (+ rear
 # cutout) and the two empty DIMM slots — a loose graphics card and two loose RAM sticks beside
 # it, scene physics only for now.
 # -> "assembly.pc_gpu_ram"
-register_env(SUITE, lambda: EnvCfg(scene="pc_gpu_ram", robot="null", env_spacing=2))
+register_env(SUITE, lambda: EnvCfg(room=_pc_room, scene="pc_gpu_ram", robot="null", env_spacing=2))
 
 # Franka arm at the combined gpu+ram scene: the card goes into the PCIe x16 slot FIRST (placed
 # inside the case, slid rearward through the I/O cutout, pressed to seat), then the two sticks
@@ -198,6 +270,7 @@ for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_pc_room,
             scene="pc_gpu_ram",
             scene_cfg=PcGpuRamAssemblySceneCfg(
                 case_xy=(0.55, 0.04),  # case 40 mm north of the table anchor: stretches the
@@ -261,6 +334,7 @@ for _robot, _cfg_cls, _kw in _PC_GPU_RAM_ARMS:
         register_env(
             SUITE,
             lambda robot=_robot, cfg_cls=_cfg_cls, kw=_kw, mode=_mode: EnvCfg(
+                room=_pc_room,
                 scene="pc_gpu_ram",
                 scene_cfg=PcGpuRamAssemblySceneCfg(
                     case_xy=(0.55, 0.04),
@@ -301,6 +375,7 @@ for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_pc_room,
             scene="pc_ram",
             scene_cfg=PcRamAssemblySceneCfg(
                 ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
@@ -354,6 +429,7 @@ for _robot in ("z1_lite6g", "rizon4_panda", "gen3n7_panda", "sawyer_egk25", "fes
         register_env(
             SUITE,
             lambda robot=_robot, mode=_mode: EnvCfg(
+                room=_pc_room,
                 scene="pc_ram",
                 scene_cfg=PcRamAssemblySceneCfg(
                     ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
@@ -384,6 +460,7 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_pc_room,
             scene="pc_ram",
             scene_cfg=PcRamAssemblySceneCfg(
                 ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
@@ -428,6 +505,7 @@ for _name, _cfg_cls, _kw in _PC_RAM_PCGPU_ARMS:
         register_env(
             SUITE,
             lambda name=_name, cfg_cls=_cfg_cls, kw=_kw, mode=_mode: EnvCfg(
+                room=_pc_room,
                 scene="pc_ram",
                 scene_cfg=PcRamAssemblySceneCfg(
                     ram_init_xy=((-0.25, -0.36), (-0.13, -0.36)),  # table-rel -> world (0.30/0.42, -0.36)
@@ -466,6 +544,7 @@ for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_bench_room,
             scene="allen_bolt",
             scene_cfg=AllenBoltAssemblySceneCfg(
                 platform_slots=((-0.08, 0.0),),
@@ -506,6 +585,7 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_bench_room,
             scene="allen_bolt",
             scene_cfg=AllenBoltAssemblySceneCfg(**_ALLEN_SCENE_KW),
             robot="gen3n7_panda",
@@ -518,6 +598,7 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_bench_room,
             scene="allen_bolt",
             scene_cfg=AllenBoltAssemblySceneCfg(**_ALLEN_SCENE_KW),
             robot="xarm7",
@@ -532,7 +613,7 @@ for _mode in ("osc", "impedance", "joint"):
 # SO101 full-arm assembly (seat + screw the elbow servo, clip + screw the forearm fork onto its
 # horn) on a workbench, scene physics only.
 # -> "assembly.so101"
-register_env(SUITE, lambda: EnvCfg(scene="so101", robot="null", env_spacing=2))
+register_env(SUITE, lambda: EnvCfg(room=_arm_room, scene="so101", robot="null", env_spacing=2))
 
 # Franka arm at the nut-thread scene (base at the origin, reaching the bolt on the table at +x).
 # Baked in (measured at the natural flat layout — base at the table plane, no sink):
@@ -553,6 +634,7 @@ for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_bench_room,
             scene="nut_thread",
             scene_cfg=NutThreadAssemblySceneCfg(
                 nut_init_xy=((-0.12, 0.0),),
@@ -582,6 +664,7 @@ for _robot in ("gen3n7_panda",):
         register_env(
             SUITE,
             lambda robot=_robot, mode=_mode: EnvCfg(
+                room=_bench_room,
                 scene="nut_thread",
                 scene_cfg=NutThreadAssemblySceneCfg(**_NUT_SCENE_BY_ROBOT.get(robot, _NUT_SCENE)),
                 robot=robot,
@@ -595,6 +678,7 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_bench_room,
             scene="nut_thread",
             scene_cfg=NutThreadAssemblySceneCfg(**_NUT_SCENE),
             robot="xarm7",
@@ -621,6 +705,7 @@ for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_bench_room,
             scene="bulb",
             scene_cfg=BulbAssemblySceneCfg(
                 socket_slots=((-0.09, 0.0),),
@@ -651,6 +736,7 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_bench_room,
             scene="bulb",
             scene_cfg=BulbAssemblySceneCfg(
                 socket_slots=((-0.09, 0.0),),
@@ -695,6 +781,7 @@ for _robot in ("rizon4_panda", "gen3n7_panda", "festo_panda", "sawyer_panda"):
         register_env(
             SUITE,
             lambda robot=_robot, mode=_mode: EnvCfg(
+                room=_bench_room,
                 scene="bulb",
                 scene_cfg=BulbAssemblySceneCfg(
                     socket_slots=((-0.09, 0.0),),
@@ -735,6 +822,7 @@ for _mode in ("osc", "impedance", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_pc_room,
             scene="pc_gpu",
             scene_cfg=PcGpuAssemblySceneCfg(
                 card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36): the pick band
@@ -796,6 +884,7 @@ for _robot, _cfg_cls in (
         register_env(
             SUITE,
             lambda robot=_robot, cfg_cls=_cfg_cls, mode=_mode: EnvCfg(
+                room=_pc_room,
                 scene="pc_gpu",
                 scene_cfg=PcGpuAssemblySceneCfg(
                     card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36)
@@ -835,6 +924,7 @@ for _robot in ("rizon4_panda", "gen3n7_panda", "festo_panda"):
         register_env(
             SUITE,
             lambda robot=_robot, mode=_mode: EnvCfg(
+                room=_pc_room,
                 scene="pc_gpu",
                 scene_cfg=PcGpuAssemblySceneCfg(
                     card_init_xy=(-0.22, -0.36),  # table-relative -> world (0.28, -0.36)
@@ -868,6 +958,7 @@ for _mode in ("osc", "impedance", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_arm_room,
                 scene="so101",
                 robot="bimanual_franka",
                 control_mode=mode,
@@ -905,6 +996,7 @@ for _mode in ("joint", "osc", "impedance"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_ikea_room,
                 scene="ikea_table",
                 robot="aloha",
                 control_mode=mode,
@@ -920,6 +1012,7 @@ for _mode in ("joint", "osc", "impedance"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_ikea_room,
                 scene="ikea_table",
                 robot="bimanual_piper",
                 control_mode=mode,
@@ -935,6 +1028,7 @@ for _mode in ("joint", "osc", "impedance"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_ikea_room,
                 scene="ikea_table",
                 # Leg spawn baked: no reset jitter (deterministic) and the explicit row that
                 # keeps every grip in the right arm's 0.31-0.43 m pick band.
@@ -968,6 +1062,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_ikea_room,
                 scene="ikea_table",
                 scene_cfg=IkeaTableAssemblySceneCfg(surface_z=0.7),
                 robot="g1",
@@ -986,6 +1081,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_ikea_room,
                 scene="ikea_table",
                 scene_cfg=IkeaTableAssemblySceneCfg(surface_z=0.7),
                 robot="gr1t2",
@@ -1005,7 +1101,7 @@ for _mode in ("joint", "pink_ik"):
 # down, seat the dual-channel stick pair, then install the card through the rear cutout.
 # Physics-only binding (no arm).
 # -> "assembly.pc_motherboard_gpu_ram"
-register_env(SUITE, lambda: EnvCfg(scene="pc_motherboard_gpu_ram", robot="null", env_spacing=2))
+register_env(SUITE, lambda: EnvCfg(room=_pc_room, scene="pc_motherboard_gpu_ram", robot="null", env_spacing=2))
 
 # Franka arm at the complete build — the pc_motherboard.franka work cell: base west of the case
 # at (0.07, 0) facing +x, the table slid 40 mm east (`workbench_pos` = `case_xy` = (0.54, 0)).
@@ -1019,6 +1115,7 @@ for _mode in ("osc", "impedance", "joint"):
     register_env(
         SUITE,
         lambda mode=_mode: EnvCfg(
+            room=_pc_room,
             scene="pc_motherboard_gpu_ram",
             scene_cfg=PcMotherboardGpuRamAssemblySceneCfg(
                 workbench_pos=(0.54, 0.0),

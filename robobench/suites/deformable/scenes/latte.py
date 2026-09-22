@@ -32,6 +32,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -226,7 +227,7 @@ class LatteSceneCfg(BaseCfg):
     # reads as liquid. Keep scaled width < cup_wall or particles bulge through the cup exterior.
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.mug_usd = self.mug_usd or str(assets / "BlackCeramicMug" / "mug_black_zup.usd")
         self.pitcher_usd = self.pitcher_usd or str(assets / "Pitcher" / "pitcher_zup.usd")
 

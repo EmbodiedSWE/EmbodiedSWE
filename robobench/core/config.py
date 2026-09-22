@@ -76,6 +76,8 @@ class EnvCfg:
     control_mode: str = ""  # applied to the robot cfg ("" -> the robot's first mode)
     scene_cfg: Any = None  # a scene BaseCfg instance, or None -> the scene's default
     robot_cfg: Any = None  # a BaseRobotCfg instance, or None -> the robot's default
+    # Suite configs own room settings; a factory can align scenery to scene/robot overrides.
+    room: dict[str, Any] | Callable[[Any, Any, Any], dict[str, Any]] | None = None
     num_envs: int = 1
     env_spacing: float = 2.0
     device: str = "cuda:0"
@@ -113,7 +115,11 @@ class EnvCfg:
         from .env import BaseEnv
         from .registries import ROBOTS, SCENES
 
+        from .assets import ensure_assets, scene_asset_groups
+        from .rooms import prepare_room
+
         scene_cls = SCENES.get(cfg.scene)
+        ensure_assets(scene_asset_groups(scene_cls))
         scene = scene_cls(cfg.scene_cfg) if cfg.scene_cfg is not None else scene_cls()
 
         robot_cls = ROBOTS.get(cfg.robot)
@@ -123,6 +129,8 @@ class EnvCfg:
         if rcfg is not None and cfg.control_mode and hasattr(rcfg, "control_mode"):
             rcfg.control_mode = cfg.control_mode
         robot = robot_cls(rcfg) if rcfg is not None else robot_cls()
+
+        room, spacing = prepare_room(cfg, scene, robot)
 
         # Sim from the scene, patched by this binding's overrides (merge PhysX kwargs, don't replace).
         sim = scene.sim_cfg()
@@ -139,7 +147,8 @@ class EnvCfg:
             robot,
             sim_cfg,
             num_envs=cfg.num_envs,
-            env_spacing=cfg.env_spacing,
+            env_spacing=spacing,
+            room=room,
             device=cfg.device,
             seed=cfg.seed,
         )

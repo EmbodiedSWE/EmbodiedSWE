@@ -27,6 +27,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -144,7 +145,7 @@ class EggCartonSceneCfg(BaseCfg):
     }
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         task_assets = assets / "egg_carton"
         self.asset_dir = self.asset_dir or str(assets)
         # The scan has visual dividers but its authored collision is a coarse convex shell.  The

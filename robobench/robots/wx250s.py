@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -66,7 +67,7 @@ class Wx250sRobotCfg(BaseRobotCfg):
     wx250s_usd: str = ""  # "" -> the vendored assets/wx250s/wx250s_newton.usda overlay
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parent / "assets" / "wx250s"
+        assets = asset_path(Path(__file__).resolve().parent / "assets") / "wx250s"
         self.wx250s_usd = self.wx250s_usd or str(assets / "wx250s_newton.usda")
 
 

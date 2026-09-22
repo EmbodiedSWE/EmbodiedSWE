@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -79,7 +80,7 @@ class Jaco2N7RobotCfg(BaseRobotCfg):
     jaco2_usd: str = ""  # "" -> the vendored robots/assets/jaco2_n7/j2n7s300_instanceable.usd
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parent / "assets" / "jaco2_n7"
+        assets = asset_path(Path(__file__).resolve().parent / "assets") / "jaco2_n7"
         self.jaco2_usd = self.jaco2_usd or str(assets / "j2n7s300_instanceable.usd")
 
 

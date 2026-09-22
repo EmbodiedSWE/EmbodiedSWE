@@ -13,6 +13,8 @@ Four scenes, scene-physics-only first (NullRobot smoke/oracle), embodiments afte
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
     AttachedArmRobotCfg,
@@ -31,9 +33,100 @@ from robobench.suites.puzzle.scenes import (
     SyringeDosingSceneCfg,
 )
 
+
+# Default room settings belong to these task configurations.
+
+_SYRINGE_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.0,
+          'anchor': [-3.07, 0.0],
+          'yaw': 90.0,
+          'floor_world_z': -0.03080000000000005,
+          'id': 'chemistry_lab'},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Cart', '/World/envs/env_\\d+/Side_table'],
+ 'clear_zones': [[[-2.1, -1.15, 0.6], [0.75, 0.3, 1.7]]],
+ 'clear_depth': 3,
+ 'pedestals': [{'pos': [-0.28, 0.461], 'size': [0.18, 0.18], 'top': 0.71},
+               {'pos': [0.28, 0.461], 'size': [0.18, 0.18], 'top': 0.71}],
+ 'camera': [[-1.45, -0.3, 1.5], [0.05, 0.2, 1.0]]}
+
+_SPATULA_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.0,
+          'hide': ['Kitchen_Disk002',
+                   'Kitchen_Orange001',
+                   'Kitchen_Orange001_01',
+                   'Kitchen_Orange001_02',
+                   'Kitchen_Orange001_03',
+                   'Kitchen_Orange002',
+                   'Kitchen_Orange002_01',
+                   'Kitchen_Flowers001',
+                   'Plane'],
+          'attrs': [['DomeLight_01', 'inputs:texture:file', ''],
+                    ['DomeLight_01', 'inputs:intensity', 1200.0]],
+          'anchor': [0.215, 0.225],
+          'yaw': 0.0,
+          'floor_world_z': -0.858,
+          'id': 'kitchen'},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Table'],
+ 'camera': [[1.3, -1.5, 1.1], [-0.15, 0, 0.15]]}
+
+_SORTING_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.11,
+          'anchor': [0.0, 8.0],
+          'yaw': 90.0,
+          'floor_world_z': -0.444,
+          'id': 'factory001'},
+ 'hide': ['/World/ground.*'],
+ 'camera': [[-1.2, -1.05, 1.2], [0.1, 0.05, 0.75]]}
+
+def _syringe_room(cfg, scene, robot):
+    spec = deepcopy(_SYRINGE_ROOM)
+    if cfg.robot == "franka":
+        base = robot.cfg.base_pos
+        spec["pedestals"] = [{"pos": [base[0], base[1]+.041], "top": base[2], "size": [.18,.18]}]
+    elif cfg.robot != "bimanual_franka":
+        spec.pop("pedestals", None)
+    return spec
+
+
+def _spatula_room(cfg, scene, robot):
+    spec = deepcopy(_SPATULA_ROOM)
+    c = scene.cfg
+    wx, wy = c.workbench_pos
+    spec["room"]["floor_world_z"] = c.surface_z - .858
+    spec["room"]["anchor"] = [.215-wx, .225-wy]
+    spec["camera"] = [[x+wx, y+wy, z+c.surface_z] for x, y, z in spec["camera"]]
+    if cfg.robot not in ("null", "g1", "gr1t2"):
+        base = robot.cfg.base_pos
+        spec["pedestals"] = [{"pos": [base[0]-.041, base[1]], "top": base[2], "size": [.18,.18]}]
+    return spec
+
+
+def _coffee_room(cfg, scene, robot):
+    # Keep the task workbench; the kitchen provides surrounding scenery.
+    spec = deepcopy(_SPATULA_ROOM)
+    c = scene.cfg
+    wx, wy = c.workbench_pos
+    spec["room"]["floor_world_z"] = c.surface_z - c.TABLES[c.table]["height"]
+    spec["room"]["anchor"] = [.215-wx, .225-wy]
+    spec["room"]["hide"].append("Kitchen_InsularShelf_01")
+    spec["hide"] = [r"/World/ground.*"]
+    spec["camera"] = [[wx+1.5, wy-1.7, c.surface_z+1.0], [wx, wy, c.surface_z+.1]]
+    return spec
+
+
+def _sorting_room(cfg, scene, robot):
+    spec = deepcopy(_SORTING_ROOM)
+    c = scene.cfg
+    height = c.TABLES[c.table]["height"] if hasattr(c, "TABLES") else .994
+    spec["room"]["floor_world_z"] = c.surface_z - height
+    wx, wy = c.workbench_pos
+    spec["camera"] = [[wx+1.5, wy-1.8, c.surface_z+1.1], [wx, wy, c.surface_z+.1]]
+    return spec
+
 SUITE = "puzzle"
 
 _FRANKA_ROT = (0.7071068, 0.0, 0.0, 0.7071068)
+_FACE_SOUTH = (0.7071068, 0.0, 0.0, -0.7071068)  # yaw -90: franka +x -> world -y
 
 
 # ============================== push_shapes ======================================
@@ -42,13 +135,14 @@ _FRANKA_ROT = (0.7071068, 0.0, 0.0, 0.7071068)
 # is a goal rather than a disturbance. The packing-bench front face is near y=-0.45; the
 # 15 cm chassis clearance keeps G1's shins out of it. NullRobot for the recorded oracle,
 # the two G1 modes as the embodiment bindings.
-register_env(SUITE, lambda: EnvCfg(scene="push_shapes", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_sorting_room, scene="push_shapes", robot="null", env_spacing=3))
 
 for _mode in ("joint", "pink_ik"):
     register_env(
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_sorting_room,
                 scene="push_shapes",
                 scene_cfg=PushShapesSceneCfg(),
                 robot="g1",
@@ -62,7 +156,7 @@ for _mode in ("joint", "pink_ik"):
 
 # ================================ syringe ========================================
 # Scene physics only (NullRobot). -> "puzzle.syringe"
-register_env(SUITE, lambda: EnvCfg(scene="syringe", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_syringe_room, scene="syringe", robot="null", env_spacing=3))
 
 
 def _syringe_humanoid_cfg() -> SyringeDosingSceneCfg:
@@ -79,6 +173,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_syringe_room,
                 scene="syringe",
                 scene_cfg=_syringe_humanoid_cfg(),
                 robot="gr1t2",
@@ -95,6 +190,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_syringe_room,
                 scene="syringe",
                 scene_cfg=_syringe_humanoid_cfg(),
                 robot="g1",
@@ -105,16 +201,20 @@ for _mode in ("joint", "pink_ik"):
         ),
     )
 
-# -> "puzzle.syringe.franka.{osc,joint}" — ground-level layout in front of the base.
+# Single Franka on the existing north side table, facing south across the medical cart.
+# The table top is z=.71; the cart shelf is z=.7492. The former ground-level base at
+# z=0 predated this cart layout and put the arm below the work surface.
+# -> "puzzle.syringe.franka.{osc,diff_ik,pink_ik,joint}"
 for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_syringe_room,
                 scene="syringe",
                 robot="franka",
                 control_mode=mode,
-                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.42, 0.0), base_rot=_FRANKA_ROT),
+                robot_cfg=FrankaRobotCfg(base_pos=(0.0, 0.42, 0.71), base_rot=_FACE_SOUTH),
                 env_spacing=3,
             )
         ),
@@ -128,6 +228,7 @@ for _mode in ("osc", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_syringe_room,
                 scene="syringe",
                 robot="piper",
                 control_mode=mode,
@@ -140,6 +241,7 @@ for _mode in ("osc", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_syringe_room,
                 scene="syringe",
                 robot="wxai",
                 control_mode=mode,
@@ -154,12 +256,12 @@ for _mode in ("osc", "joint"):
 # shelf), spread 0.56 m apart on its cart-side edge and facing south over the north
 # guard rail: left arm west (rack/syringe side), right arm east.
 # NOT yet reach-verified on the cart layout (2026-08-09).
-_FACE_SOUTH = (0.7071068, 0.0, 0.0, -0.7071068)  # yaw -90: franka +x -> world -y
 for _mode in ("osc", "joint"):
     register_env(
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_syringe_room,
                 scene="syringe",
                 robot="bimanual_franka",
                 control_mode=mode,
@@ -181,7 +283,7 @@ for _mode in ("osc", "joint"):
 # G1 binds for curriculum; franka trivially holds the handle (the brief's ablation).
 # No `multi` binding: one hand works the spatula, the other has nothing load-bearing
 # to do. -> "puzzle.spatula"
-register_env(SUITE, lambda: EnvCfg(scene="spatula", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_spatula_room, scene="spatula", robot="null", env_spacing=3))
 
 
 # Placements are STARTING guesses copied from the pen-holder measured
@@ -233,6 +335,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_spatula_room,
                 scene="spatula",
                 scene_cfg=_spatula_gr1t2_cfg(),
                 robot="gr1t2",
@@ -247,6 +350,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_spatula_room,
                 scene="spatula",
                 scene_cfg=_spatula_g1_cfg(),
                 robot="g1",
@@ -268,6 +372,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_spatula_room,
                 scene="spatula",
                 scene_cfg=_spatula_franka_cfg(),
                 robot="franka",
@@ -295,6 +400,7 @@ for _mode in ("osc", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_spatula_room,
                 scene="spatula",
                 scene_cfg=_spatula_franka_cfg(),
                 robot="gen3n7_panda",
@@ -313,6 +419,7 @@ for _mode in ("osc", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_spatula_room,
                 scene="spatula",
                 scene_cfg=_spatula_franka_cfg(),
                 robot="xarm7",
@@ -334,7 +441,7 @@ for _mode in ("osc", "joint"):
 # ---- capsule coffee service (appliance state machine; the microwave task's
 # Franka-native successor, user directive 2026-08-09) ----
 # Scene physics only (NullRobot oracle/smoke). -> "puzzle.coffee"
-register_env(SUITE, lambda: EnvCfg(scene="coffee", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_coffee_room, scene="coffee", robot="null", env_spacing=3))
 
 
 # Robot bindings. The machine has NO swinging door — every embodiment stands
@@ -406,6 +513,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_coffee_room,
                 scene="coffee",
                 scene_cfg=_coffee_g1_cfg(),
                 robot="g1",
@@ -419,6 +527,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_coffee_room,
                 scene="coffee",
                 scene_cfg=_coffee_gr1t2_cfg(),
                 robot="gr1t2",
@@ -436,6 +545,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_coffee_room,
                 scene="coffee",
                 scene_cfg=_coffee_franka_cfg(),
                 robot="franka",
@@ -451,14 +561,13 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
 
 
 # ==== stack_blocks (long-horizon humanoid tower building) ======================================
-# Contributed in #75 under the packing suite; filed under puzzle here to match the paper's
-# catalog (block sorting / stacking are puzzle-style tasks). Scene-physics-only first (NullRobot oracle/smoke),
+# Block sorting and stacking belong to the puzzle suite. Scene-physics-only first (NullRobot oracle/smoke),
 # humanoid bindings after. Placements mirror the reach-tuned pen_holder G1/GR1-T2 layout at the
 # same 0.7 m bench (re-verify with robot_binding_smoke before any agent run).
 from robobench.suites.puzzle.scenes import StackBlocksSceneCfg  # noqa: E402
 
 # Scene physics only (NullRobot oracle/smoke). -> "puzzle.stack_blocks"
-register_env(SUITE, lambda: EnvCfg(scene="stack_blocks", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_sorting_room, scene="stack_blocks", robot="null", env_spacing=3))
 
 
 def _stack_blocks_g1_cfg() -> StackBlocksSceneCfg:
@@ -493,6 +602,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_sorting_room,
                 scene="stack_blocks",
                 scene_cfg=_stack_blocks_g1_cfg(),
                 robot="g1",
@@ -507,6 +617,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_sorting_room,
                 scene="stack_blocks",
                 scene_cfg=_stack_blocks_gr1t2_cfg(),
                 robot="gr1t2",
@@ -520,14 +631,13 @@ for _mode in ("joint", "pink_ik"):
 
 
 # ==== classify_objects (long-horizon humanoid colour-sorting) ==================================
-# Contributed in #75 under the packing suite; filed under puzzle here to match the paper's
-# catalog. Null preset first, then humanoid bindings.
+# Object classification belongs to the puzzle suite. Null preset first, then humanoid bindings.
 # Layout placed inside the MEASURED G1 right-wrist reach envelope (pink_probe.py): usable band
 # y in [-0.31,-0.10], x in [-0.15,0.15] (x>=0 strongest; the left/-x side degrades toward the
 # front). Zones sit front (biased x>=-0.08), blocks scatter behind where reach is best.
 from robobench.suites.puzzle.scenes import ClassifyObjectsSceneCfg  # noqa: E402
 
-register_env(SUITE, lambda: EnvCfg(scene="classify_objects", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_sorting_room, scene="classify_objects", robot="null", env_spacing=3))
 
 
 def _classify_objects_g1_cfg() -> ClassifyObjectsSceneCfg:
@@ -559,6 +669,7 @@ for _mode in ("joint", "pink_ik"):
     register_env(
         SUITE,
         (lambda mode=_mode: EnvCfg(
+            room=_sorting_room,
             scene="classify_objects", scene_cfg=_classify_objects_g1_cfg(),
             robot="g1", control_mode=mode,
             # base clear of the table's near edge at -0.572 (see the cfg note)
@@ -567,6 +678,7 @@ for _mode in ("joint", "pink_ik"):
     register_env(
         SUITE,
         (lambda mode=_mode: EnvCfg(
+            room=_sorting_room,
             scene="classify_objects", scene_cfg=_classify_objects_gr1t2_cfg(),
             robot="gr1t2", control_mode=mode,
             robot_cfg=GR1T2RobotCfg(base_pos=(0.0, -0.48, 0.95),

@@ -20,11 +20,40 @@ Nothing here is locked — a variant is a cheap cfg copy.
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 import math
 
 from robobench.core import EnvCfg, register_env
 from robobench.robots import FrankaRobotCfg
 from robobench.suites.cutting.scenes import DiceFoodSceneCfg, SliceFoodSceneCfg
+
+
+# Default room settings belong to these task configurations.
+
+_CUTTING_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.0,
+          'hide': ['Kitchen_Disk002',
+                   'Kitchen_Orange001',
+                   'Kitchen_Orange001_01',
+                   'Kitchen_Orange001_02',
+                   'Kitchen_Orange001_03',
+                   'Kitchen_Orange002',
+                   'Kitchen_Orange002_01',
+                   'Kitchen_Flowers001',
+                   'Plane'],
+          'attrs': [['DomeLight_01', 'inputs:texture:file', ''],
+                    ['DomeLight_01', 'inputs:intensity', 1200.0]],
+          'anchor': [0.215, 0.225],
+          'yaw': 0.0,
+          'floor_world_z': 0.0,
+          'id': 'kitchen'},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Island'],
+ 'camera': [[0.72, -0.62, 1.25], [-0.08, 0.08, 0.95]]}
+
+def _cutting_room(cfg, scene, robot):
+    # Slice and dice share the island and cutting-board layout for every food variant.
+    return deepcopy(_CUTTING_ROOM)
 
 SUITE = "cutting"
 # Sliceable foods = `assets/<food>/` dirs (baked welded piece chains). Several scans of one
@@ -76,9 +105,11 @@ def _franka() -> FrankaRobotCfg:
 for _scene, _variant, _scene_cfg in FOODS:
     # scene physics only -> "cutting.slice", "cutting.slice_<food>", "cutting.dice", "cutting.dice_potato"
     register_env(SUITE, lambda scene=_scene, variant=_variant, sc=_scene_cfg: EnvCfg(
+        room=_cutting_room,
         scene=scene, variant=variant, scene_cfg=sc(), robot="null", env_spacing=3))
     # the Franka binding in every control mode -> "cutting.<scene>[_<food>].franka.<mode>"
     for _mode in FRANKA_MODES:
         register_env(SUITE, lambda scene=_scene, variant=_variant, sc=_scene_cfg, mode=_mode: EnvCfg(
+            room=_cutting_room,
             scene=scene, variant=variant, scene_cfg=sc(), robot="franka", control_mode=mode,
             env_spacing=3, robot_cfg=_franka()))

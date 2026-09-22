@@ -57,6 +57,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -168,7 +169,7 @@ class PenHolderSceneCfg(BaseCfg):
     manifest: tuple = field(default=None, init=False)  # ((name, fam_idx, pen_r, barrel_l), ...)
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets / "pen_holder")
         self.holder_usd = self.holder_usd or str(Path(self.asset_dir) / "pen_holder.usd")
         self.pencil_usd = self.pencil_usd or str(Path(self.asset_dir) / "pencil.usd")

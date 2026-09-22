@@ -14,12 +14,13 @@ Run (plain interpreter, no app):
 from __future__ import annotations
 
 from pathlib import Path
+from robobench.core.assets import asset_path
 
 import numpy as np
 
 from robobench.suites.deformable.scenes.shoe_knot import load_shoe_visual
 
-OUT = Path(__file__).resolve().parents[1] / "assets" / "shoe_right_visual.usda"
+OUT = asset_path(Path(__file__).resolve().parents[1] / "assets") / "shoe_right_visual.usda"
 TEXTURE_REL = "./shoes/0/shoes_baseColor.jpg"
 
 

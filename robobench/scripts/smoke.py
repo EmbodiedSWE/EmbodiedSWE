@@ -56,6 +56,8 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=300)
     parser.add_argument("--action_scale", type=float, default=0.3, help="random action ~ U(-s, s) per dim")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--room", choices=("default", "none"), default="default",
+                        help="use the task configuration room (default), or disable scenery")
     parser.add_argument("--list", action="store_true", help="list everything registered, then exit")
 
     # pink_ik needs pinocchio imported BEFORE AppLauncher (its eigenpy STL converters must register in a
@@ -102,7 +104,8 @@ def main() -> None:
         import torch
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        env = cfg.build(num_envs=args.num_envs, device=device, seed=args.seed)
+        room_override = {"room": None} if args.room == "none" else {}
+        env = cfg.build(num_envs=args.num_envs, device=device, seed=args.seed, **room_override)
         robot = env.robot
         n, dim = env.num_envs, robot.action_dim
 
