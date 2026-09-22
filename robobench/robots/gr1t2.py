@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -63,7 +64,7 @@ class GR1T2RobotCfg(BaseRobotCfg):
     gr1t2_urdf: str = ""  # "" -> the vendored kinematics URDF (used by the pink_ik control mode)
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parent / "assets" / "gr1t2"
+        assets = asset_path(Path(__file__).resolve().parent / "assets") / "gr1t2"
         self.gr1t2_usd = self.gr1t2_usd or str(assets / "GR1T2_fourier_hand_6dof.usd")
         self.gr1t2_urdf = self.gr1t2_urdf or str(assets / "GR1T2_fourier_hand_6dof_kinematics.urdf")
 

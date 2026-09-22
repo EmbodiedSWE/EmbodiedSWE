@@ -6,31 +6,19 @@ build-backend = "setuptools.build_meta"
 name = "cosigen"
 version = "0.1.0"
 description = ""
-# fetch_assets pulls the binary assets from Hugging Face (>=0.23: local_dir writes real files, no symlinks)
-dependencies = ["huggingface_hub>=0.23"]
+# Assets are fetched from Hugging Face and materialized under a process-safe file lock.
+dependencies = ["huggingface_hub>=0.23", "filelock>=3.12"]
 
 # robobench/ — the relocatable benchmark ENV suite (the focus): core + robots + suites/<flavor>.
 [tool.setuptools.packages.find]
 include = ["robobench*"]
 
-# Curated USD assets shipped with suites (editable installs work without this; wheels need it).
+# Binary assets are fetched from HF. Include the manifest and source text dependencies in wheels.
 [tool.setuptools.package-data]
-"robobench.suites.deformable" = [
-    "assets/**/*.usd",
-    "assets/**/*.usda",
-    "assets/**/*.usdc",
-    "assets/**/*.png",
-    "assets/**/*.jpg",
-    "assets/**/*.json",
-]
-"robobench.suites.packing" = [
-    "assets/**/*.usd",
-    "assets/**/*.usdc",
-    "assets/**/*.png",
-    "assets/**/*.jpg",
-    "assets/**/*.md",
-]
-"robobench.suites.puzzle" = ["assets/**/*.usd", "assets/**/*.usda", "assets/**/*.usdc", "assets/**/*.png", "assets/**/*.jpg", "assets/**/*.json", "assets/**/*.md"]
+"robobench" = ["assets_manifest.json", "backdrops/presets.json", "**/assets/**/*.usda", "**/assets/**/*.mdl", "**/assets/**/*.urdf", "**/assets/**/*.xml", "**/assets/**/*.json", "**/assets/**/*.md"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.usd", "*.usdc", "*.png", "*.jpg", "*.jpeg", "*.pt", "*.mp4", "*.hdr", "*.exr", "backdrops/assets/**/*"]
 
 [tool.pyright]
 reportPrivateUsage = "none"

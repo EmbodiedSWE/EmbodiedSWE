@@ -84,6 +84,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -228,7 +229,7 @@ class SpatulaFlipServeSceneCfg(BaseCfg):
 
     def __post_init__(self) -> None:
         assert self.goal in GOALS, f"goal must be one of {GOALS}, got {self.goal!r}"
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets / "kitchen")
         self.spatula_usd = self.spatula_usd or str(Path(self.asset_dir) / "spatula.usd")
         self.bread_usd = self.bread_usd or str(Path(self.asset_dir) / "bread.usd")
@@ -240,7 +241,7 @@ class SpatulaFlipServeSceneCfg(BaseCfg):
         if self.workbench_pos is None:
             self.workbench_pos = preset["pos"]
         # the vendored table props are shared from the assembly suite's assets
-        props = Path(__file__).resolve().parents[2] / "assembly" / "assets" / "props"
+        props = asset_path(Path(__file__).resolve().parents[2] / "assembly" / "assets") / "props"
         self.workbench_usd = self.workbench_usd or str(
             props / preset["usd"][0] / preset["usd"][1])
         self.pan_floor_z = round(self.surface_z + self.pan_floor_top, 4)

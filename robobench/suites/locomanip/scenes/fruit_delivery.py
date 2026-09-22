@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import ClassVar
 
 from robobench.core import SCENES
@@ -124,7 +125,7 @@ class FruitDeliverySceneCfg(FruitsOnPlateSceneCfg):
 
     def __post_init__(self) -> None:
         # The kitchen table is suite-local (authored by scripts/author_fruit_delivery_table.py).
-        table_usd = (Path(__file__).resolve().parents[1] / "assets" / "fruit_delivery"
+        table_usd = (asset_path(Path(__file__).resolve().parents[1] / "assets") / "fruit_delivery"
                      / "kitchen_table" / "main.usda")
         self.TABLES = dict(self.TABLES)
         self.TABLES["kitchen"] = {

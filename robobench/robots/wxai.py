@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -82,7 +83,7 @@ class WxaiRobotCfg(BaseRobotCfg):
     wxai_usd: str = ""  # "" -> the vendored assets/wxai/wxai_follower.usd (or the newton overlay, see above)
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parent / "assets" / "wxai"
+        assets = asset_path(Path(__file__).resolve().parent / "assets") / "wxai"
         default = "wxai_follower_newton.usda" if self.actuate_right_carriage else "wxai_follower.usd"
         self.wxai_usd = self.wxai_usd or str(assets / default)
 

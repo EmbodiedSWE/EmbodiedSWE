@@ -34,6 +34,7 @@ from robobench.suites.puzzle.scenes import (
 SUITE = "puzzle"
 
 _FRANKA_ROT = (0.7071068, 0.0, 0.0, 0.7071068)
+_FACE_SOUTH = (0.7071068, 0.0, 0.0, -0.7071068)  # yaw -90: franka +x -> world -y
 
 
 # ============================== push_shapes ======================================
@@ -105,7 +106,10 @@ for _mode in ("joint", "pink_ik"):
         ),
     )
 
-# -> "puzzle.syringe.franka.{osc,joint}" — ground-level layout in front of the base.
+# Single Franka on the existing north side table, facing south across the medical cart.
+# The table top is z=.71; the cart shelf is z=.7492. The former ground-level base at
+# z=0 predated this cart layout and put the arm below the work surface.
+# -> "puzzle.syringe.franka.{osc,diff_ik,pink_ik,joint}"
 for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
     register_env(
         SUITE,
@@ -114,7 +118,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
                 scene="syringe",
                 robot="franka",
                 control_mode=mode,
-                robot_cfg=FrankaRobotCfg(base_pos=(0.0, -0.42, 0.0), base_rot=_FRANKA_ROT),
+                robot_cfg=FrankaRobotCfg(base_pos=(0.0, 0.42, 0.71), base_rot=_FACE_SOUTH),
                 env_spacing=3,
             )
         ),
@@ -154,7 +158,6 @@ for _mode in ("osc", "joint"):
 # shelf), spread 0.56 m apart on its cart-side edge and facing south over the north
 # guard rail: left arm west (rack/syringe side), right arm east.
 # NOT yet reach-verified on the cart layout (2026-08-09).
-_FACE_SOUTH = (0.7071068, 0.0, 0.0, -0.7071068)  # yaw -90: franka +x -> world -y
 for _mode in ("osc", "joint"):
     register_env(
         SUITE,

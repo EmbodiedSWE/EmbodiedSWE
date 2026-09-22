@@ -46,6 +46,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -170,7 +171,7 @@ class ToolPackingSceneCfg(BaseCfg):
     item_usds: dict = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets)
         cab = self.CABINETS[self.cabinet]
         for f in ("manifest", "drawers", "tray_center", "tray_half", "drawer_travel",

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -121,7 +122,7 @@ class _AttachedArmRobot(BaseRobot):
         cfg = cfg or AttachedArmRobotCfg()
         if not cfg.usd:
             cfg.usd = str(
-                Path(__file__).resolve().parent / "assets" / "composites" / self.NAME / f"{self.NAME}.usd"
+                asset_path(Path(__file__).resolve().parent / "assets") / "composites" / self.NAME / f"{self.NAME}.usd"
             )
         super().__init__(cfg)
 
@@ -353,7 +354,7 @@ class SawyerPandaRobot(_AttachedArmRobot):
     def __init__(self, cfg: AttachedArmRobotCfg | None = None) -> None:
         cfg = cfg or AttachedArmRobotCfg()
         if not cfg.usd:  # baked as .usda (see assets/gripper/make_composites.py)
-            cfg.usd = str(Path(__file__).resolve().parent / "assets" / "composites"
+            cfg.usd = str(asset_path(Path(__file__).resolve().parent / "assets") / "composites"
                           / self.NAME / f"{self.NAME}.usda")
         super().__init__(cfg)
 

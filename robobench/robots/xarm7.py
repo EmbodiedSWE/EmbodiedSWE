@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -191,7 +192,7 @@ class XArm7Robot(BaseRobot):
         # gripper choice's baked composite (written by assets/gripper/make_composites.py).
         # Resolved here at spawn time, never stored on the cfg — an eagerly-stored path would
         # survive `dataclasses.replace(cfg, gripper=...)` and silently spawn the old gripper.
-        assets_dir = Path(__file__).resolve().parent / "assets"
+        assets_dir = asset_path(Path(__file__).resolve().parent / "assets")
         usd = c.xarm7_usd or (
             str(assets_dir / "xarm7" / "xarm7.usd") if c.gripper == "xarm"
             else str(assets_dir / "composites" / f"xarm7_{c.gripper}" / f"xarm7_{c.gripper}.usda"))

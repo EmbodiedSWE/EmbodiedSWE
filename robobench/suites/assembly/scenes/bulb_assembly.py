@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -96,7 +97,7 @@ class BulbAssemblySceneCfg(BaseCfg):
     def __post_init__(self) -> None:
         if not self.bulb_init_xy:  # default: bulbs lying in a row to the +x side of the sockets
             self.bulb_init_xy = tuple((self.bulb_row_x0 + k * self.bulb_spacing, self.bulb_row_y) for k in range(self.num_pairs))
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets / "bulb")
         self.bulb_usd = self.bulb_usd or str(Path(self.asset_dir) / "bulb.usd")
         self.socket_usd = self.socket_usd or str(Path(self.asset_dir) / "bulb_socket.usd")
@@ -169,7 +170,7 @@ class BulbAssemblyScene(BaseScene):
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
                 spawn=sim_utils.GroundPlaneCfg(usd_path=str(
-                    Path(__file__).resolve().parents[1] / "assets" / "props" / "ground" / "default_ground.usd")),
+                    asset_path(Path(__file__).resolve().parents[1] / "assets") / "props" / "ground" / "default_ground.usd")),
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, ground_z)),
             ),
             "light": AssetBaseCfg(

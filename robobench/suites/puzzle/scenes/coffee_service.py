@@ -55,6 +55,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -618,10 +619,10 @@ class CoffeeServiceSceneCfg(BaseCfg):
             self.surface_z = preset["surface_z"]
         if self.workbench_pos is None:
             self.workbench_pos = preset["pos"]
-        props = Path(__file__).resolve().parents[2] / "assembly" / "assets" / "props"
+        props = asset_path(Path(__file__).resolve().parents[2] / "assembly" / "assets") / "props"
         self.workbench_usd = self.workbench_usd or str(
             props / preset["usd"][0] / preset["usd"][1])
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets)
         cm = Path(self.asset_dir) / "coffee_machine"
         self.cm_body_usd = self.cm_body_usd or str(cm / "cm_body.usda")

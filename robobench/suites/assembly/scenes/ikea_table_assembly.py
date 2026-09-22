@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -91,7 +92,7 @@ class IkeaTableAssemblySceneCfg(BaseCfg):
     def __post_init__(self) -> None:
         if not self.leg_init_xy:  # default: legs lying in a row, leg0 at the centre, going outward (+x)
             self.leg_init_xy = tuple((self.leg_row_x0 + k * self.leg_spacing, self.leg_row_y) for k in range(self.num_legs))
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets / "ikea_table")
         self.leg_usd = self.leg_usd or str(Path(self.asset_dir) / "leg.usd")
         self.table_usd = self.table_usd or str(Path(self.asset_dir) / "table.usd")
@@ -125,7 +126,7 @@ class IkeaTableAssemblyScene(BaseScene):
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
                 spawn=sim_utils.GroundPlaneCfg(usd_path=str(
-                    Path(__file__).resolve().parents[1] / "assets" / "props" / "ground" / "default_ground.usd")),
+                    asset_path(Path(__file__).resolve().parents[1] / "assets") / "props" / "ground" / "default_ground.usd")),
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
             ),
             "light": AssetBaseCfg(

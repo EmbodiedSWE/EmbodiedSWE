@@ -25,6 +25,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -113,7 +114,7 @@ class PushShapesSceneCfg(BaseCfg):
     workbench_usd: str = ""
 
     def __post_init__(self) -> None:
-        suite_assets = Path(__file__).resolve().parents[1] / "assets"
+        suite_assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         shapes = suite_assets / "push_shapes"
         self.asset_dir = self.asset_dir or str(shapes)
         # The T BLOCK stays the vendored RoboDojo mesh; X and L are authored beside it.
@@ -187,8 +188,8 @@ class PushShapesScene(BaseScene):
                 prim_path="/World/ground",
                 spawn=sim_utils.GroundPlaneCfg(
                     usd_path=str(
-                        Path(__file__).resolve().parents[2]
-                        / "assembly" / "assets" / "props" / "ground" / "default_ground.usd"
+                        asset_path(Path(__file__).resolve().parents[2]
+                        / "assembly" / "assets") / "props" / "ground" / "default_ground.usd"
                     )
                 ),
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, ground_z)),

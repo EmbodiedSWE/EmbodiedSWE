@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 from robobench.core import SCENES, BaseCfg, BaseScene
@@ -93,7 +94,7 @@ class TshirtFoldingSceneCfg(BaseCfg):
     pad_friction: float = 1.5  # pad face friction (the table's shape_mu class)
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parents[1] / "assets" / "tshirt"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets") / "tshirt"
         self.shirt_usd = self.shirt_usd or str(assets / "tshirt.usd")
 
 

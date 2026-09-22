@@ -260,3 +260,11 @@ robobench/**/assets/**/*.jpeg
 robobench/**/assets/**/*.mp4
 robobench/**/assets/**/*.pt
 robobench/**/assets/**/*.exr
+
+# Prepared backdrop bundles and additional texture formats live on Hugging Face.
+robobench/backdrops/assets/
+robobench/**/assets/**/*.hdr
+robobench/**/assets/**/*.tif
+robobench/**/assets/**/*.tiff
+robobench/**/assets/**/*.dds
+robobench/**/assets/**/*.ktx

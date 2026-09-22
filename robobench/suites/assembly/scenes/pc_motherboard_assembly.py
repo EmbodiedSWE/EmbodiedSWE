@@ -21,6 +21,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -130,7 +131,7 @@ class PcMotherboardAssemblySceneCfg(BaseCfg):
             self.bolt_init_xy = tuple(
                 (self.bolt_row_x, self.bolt_row_y0 + k * self.bolt_spacing) for k in range(self.num_holes)
             )
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets)
         self.case_usd = self.case_usd or str(Path(self.asset_dir) / "pc" / "pc_case_assembly_mb.usd")
         self.bolt_usd = self.bolt_usd or str(Path(self.asset_dir) / "allen_bolt" / "allen_bolt_m8.usd")
@@ -176,7 +177,7 @@ class PcMotherboardAssemblyScene(BaseScene):
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
                 spawn=sim_utils.GroundPlaneCfg(usd_path=str(
-                    Path(__file__).resolve().parents[1] / "assets" / "props" / "ground" / "default_ground.usd")),
+                    asset_path(Path(__file__).resolve().parents[1] / "assets") / "props" / "ground" / "default_ground.usd")),
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, ground_z)),
             ),
             "light": AssetBaseCfg(

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -47,7 +48,7 @@ if TYPE_CHECKING:
 
     from robobench.core import BaseEnv
 
-_ASSETS = Path(__file__).resolve().parents[1] / "assets"
+_ASSETS = asset_path(Path(__file__).resolve().parents[1] / "assets")
 USD_PATH = str(_ASSETS / "shoes" / "scene.usdc")
 SHOE_PRIM = "/scene/Meshes/Sketchfab_model/shoes_FBX_FBX/RootNode/shoes/shoes_shoes_0/shoes_shoes_0"
 

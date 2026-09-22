@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -89,7 +90,7 @@ class NutThreadAssemblySceneCfg(BaseCfg):
     def __post_init__(self) -> None:
         if not self.nut_init_xy:  # default: nuts resting in a row to the +x side of the bolts
             self.nut_init_xy = tuple((self.nut_row_x0 + k * self.nut_spacing, self.nut_row_y) for k in range(self.num_pairs))
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets / "factory")
         self.bolt_usd = self.bolt_usd or str(Path(self.asset_dir) / "factory_bolt_m16.usd")
         self.nut_usd = self.nut_usd or str(Path(self.asset_dir) / "factory_nut_m16.usd")
@@ -132,7 +133,7 @@ class NutThreadAssemblyScene(BaseScene):
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
                 spawn=sim_utils.GroundPlaneCfg(usd_path=str(
-                    Path(__file__).resolve().parents[1] / "assets" / "props" / "ground" / "default_ground.usd")),
+                    asset_path(Path(__file__).resolve().parents[1] / "assets") / "props" / "ground" / "default_ground.usd")),
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, ground_z)),
             ),
             "light": AssetBaseCfg(

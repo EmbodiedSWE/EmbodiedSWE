@@ -32,6 +32,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -176,7 +177,7 @@ class PcMotherboardGpuRamAssemblySceneCfg(BaseCfg):
             self.bolt_init_xy = tuple(
                 (self.bolt_row_x, self.bolt_row_y0 + k * self.bolt_spacing) for k in range(self.num_holes)
             )
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets)
         # The gpu_ram case USD composes ALL the fixtures over the same shifted board: the 7
         # threaded holes (from the base case), both DIMM channels, and the PCIe channel + rear
@@ -257,7 +258,7 @@ class PcMotherboardGpuRamAssemblyScene(BaseScene):
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
                 spawn=sim_utils.GroundPlaneCfg(usd_path=str(
-                    Path(__file__).resolve().parents[1] / "assets" / "props" / "ground" / "default_ground.usd")),
+                    asset_path(Path(__file__).resolve().parents[1] / "assets") / "props" / "ground" / "default_ground.usd")),
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, ground_z)),
             ),
             "light": AssetBaseCfg(

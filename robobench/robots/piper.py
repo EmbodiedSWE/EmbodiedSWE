@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -72,7 +73,7 @@ class PiperRobotCfg(BaseRobotCfg):
     piper_usd: str = ""  # "" -> the vendored assets/piper/ wrapper USD
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parent / "assets" / "piper"
+        assets = asset_path(Path(__file__).resolve().parent / "assets") / "piper"
         self.piper_usd = self.piper_usd or str(assets / "piper_description_v100_realsense_camera_v2.usd")
 
 

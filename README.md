@@ -30,13 +30,21 @@ git clone <this repo> && cd <this repo>
 ./scripts/bootstrap_isaaclab_5_1.sh      # Isaac Sim 5.1 + Isaac Lab 2.3.2 + robobench into ./.venv
 source .venv/bin/activate
 export OMNI_KIT_ACCEPT_EULA=YES               # Isaac Sim asks interactively otherwise (hangs headless runs)
-python -m robobench.scripts.fetch_assets  # ~1.5 GB of USD / textures from Hugging Face (CoSiGen/robobench-assets)
+# Optional: prefetch every task and backdrop (~3.4 GB); otherwise env.build() fetches what it needs.
+python -m robobench.scripts.fetch_assets
 uv pip install "pin==2.7.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # whole-body IK (pink_ik)
 ```
 
-Large binary assets are not in git: `fetch_assets` drops them at their exact repo paths and verifies
-them against `robobench/assets_manifest.json`. A fresh checkout pulls one tar bundle per asset directory;
-after pulling asset changes, re-run it and only the changed files are downloaded (`--check` only verifies).
+Task assets and room backdrops live in the Hugging Face dataset `CoSiGen/robobench-assets`.
+Building an environment automatically downloads its required asset groups and verifies their SHA-256
+checksums against `robobench/assets_manifest.json`. Verified local copies are reused, including offline.
+Listing tasks does not download anything. `fetch_assets --check` verifies the whole local collection.
+
+The pictured Figure 2 embodiments, all five Franka PC assembly scenes, and Franka spatula select
+their room backdrops by default. Use `--backdrop none` with
+the smoke launcher or `cfg.build(backdrop=None)` for a bare scene. Set `COSIGEN_ASSET_DIR` before
+starting Python to use a writable asset cache outside the checkout; its layout includes `robobench/`.
+See [backdrops and asset downloads](robobench/backdrops/README.md) for presets and maintainer commands.
 
 The `deformable` suite runs on the Newton physics backend and needs a separate venv; see
 [`robobench/suites/deformable/README.md`](robobench/suites/deformable/README.md).

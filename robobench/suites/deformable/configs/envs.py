@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from pathlib import Path
+from robobench.core.assets import asset_path
 
 from robobench.core import EnvCfg, register_env
 from robobench.robots import AlohaCfg, FrankaRobotCfg
@@ -181,7 +182,7 @@ _register(lambda: EnvCfg(scene="knot", robot="null", env_spacing=2.0))
 # suite's assets/; copy it under deformable/assets/props/ if this binding ever ships through
 # eval/envbuild/extract.py, which only carries the target suite's tree).
 _LAB_TABLE_USD = str(
-    Path(__file__).resolve().parents[3] / "suites" / "assembly" / "assets" / "props" / "lab_table" / "table_instanceable.usd"
+    asset_path(Path(__file__).resolve().parents[3] / "suites" / "assembly" / "assets") / "props" / "lab_table" / "table_instanceable.usd"
 )
 
 # Bimanual WidowX 250 6DOF (the classic Interbotix ALOHA arms; official menagerie model

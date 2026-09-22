@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
+from robobench.core.assets import asset_path
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -128,7 +129,7 @@ class SyringeDosingSceneCfg(BaseCfg):
 
         self.barrel_home_h = 0.045
         self.asset_dir = self.asset_dir or str(
-            Path(__file__).resolve().parents[1] / "assets")
+            asset_path(Path(__file__).resolve().parents[1] / "assets"))
         if self.workbench == "medical_cart" and self.surface_z == 0.0:
             self.surface_z = self.cart_shelf_z
 
@@ -786,4 +787,3 @@ class SyringeDosingScene(BaseScene):
 
     def success(self) -> torch.Tensor:
         return self.drawn() & self.doses_ok() & self.parked()
-

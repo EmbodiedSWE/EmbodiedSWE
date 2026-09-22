@@ -52,6 +52,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -122,7 +123,7 @@ class G1RobotCfg(BaseRobotCfg):
     loco_policy: str = ""
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parent / "assets" / "g1"
+        assets = asset_path(Path(__file__).resolve().parent / "assets") / "g1"
         self.g1_usd = self.g1_usd or str(assets / "g1.usd")
         self.g1_urdf = self.g1_urdf or str(assets / "g1_29dof_with_hand_only_kinematics.urdf")
         self.loco_policy = self.loco_policy or str(assets / "policies" / "agile_locomotion.pt")

@@ -8,6 +8,7 @@ the physics is proven.
 from __future__ import annotations
 
 from pathlib import Path
+from robobench.core.assets import asset_path
 
 from robobench.core import EnvCfg, register_env
 from robobench.robots import (
@@ -28,7 +29,7 @@ from robobench.suites.packing.scenes import (
 
 SUITE = "packing"
 _EGG_CARTON_G1_USD = str(
-    Path(__file__).resolve().parents[1] / "assets" / "egg_carton" / "g1_rubber_fingers.usda"
+    asset_path(Path(__file__).resolve().parents[1] / "assets") / "egg_carton" / "g1_rubber_fingers.usda"
 )
 
 

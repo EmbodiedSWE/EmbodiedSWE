@@ -52,6 +52,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from robobench.core.assets import asset_path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -243,7 +244,7 @@ class SO101SceneCfg(BaseCfg):
     drill_usd: str = ""
 
     def __post_init__(self) -> None:
-        assets = Path(__file__).resolve().parents[1] / "assets"
+        assets = asset_path(Path(__file__).resolve().parents[1] / "assets")
         self.asset_dir = self.asset_dir or str(assets / "so101")
         a = Path(self.asset_dir)
         self.proximal_usd = self.proximal_usd or str(a / "so101_proximal.usd")
@@ -323,7 +324,7 @@ class SO101AssemblyScene(BaseScene):
             "ground": AssetBaseCfg(
                 prim_path="/World/ground",
                 spawn=sim_utils.GroundPlaneCfg(usd_path=str(
-                    Path(__file__).resolve().parents[1] / "assets" / "props" / "ground" / "default_ground.usd")),
+                    asset_path(Path(__file__).resolve().parents[1] / "assets") / "props" / "ground" / "default_ground.usd")),
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, ground_z))),
             "light": AssetBaseCfg(
                 prim_path="/World/light",
