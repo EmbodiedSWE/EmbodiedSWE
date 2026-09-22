@@ -169,7 +169,8 @@ if torch.cuda.is_available():
     print(f"[bootstrap] gpu={torch.cuda.get_device_name(0)}")
 PY
 
-"$PYTHON_BIN" -c 'import isaaclab, warp; print(f"[bootstrap] imports OK; warp={warp.__version__}")'
+# Isaac Sim's first import shows an interactive EULA prompt; accept it for this check (documented in the README).
+OMNI_KIT_ACCEPT_EULA=YES "$PYTHON_BIN" -c 'import isaaclab, warp; print(f"[bootstrap] imports OK; warp={warp.__version__}")'
 
 echo
 echo "[bootstrap] COMPLETE"
