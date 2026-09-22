@@ -29,8 +29,9 @@ Requirements: Linux, an NVIDIA GPU with a CUDA 12.x driver, and [`uv`](https://d
 git clone <this repo> && cd <this repo>
 ./scripts/bootstrap_isaaclab_5_1.sh      # Isaac Sim 5.1 + Isaac Lab 2.3.2 + robobench into ./.venv
 source .venv/bin/activate
+export OMNI_KIT_ACCEPT_EULA=YES               # Isaac Sim asks interactively otherwise (hangs headless runs)
 python -m robobench.scripts.fetch_assets  # ~1.5 GB of USD / textures from Hugging Face (CoSiGen/robobench-assets)
-uv pip install "pin==4.0.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # whole-body IK (pink_ik)
+uv pip install "pin==2.7.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # whole-body IK (pink_ik)
 ```
 
 Large binary assets are not in git: `fetch_assets` drops them at their exact repo paths and verifies
