@@ -34,7 +34,8 @@ uv pip install "pin==4.0.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # 
 ```
 
 Large binary assets are not in git: `fetch_assets` drops them at their exact repo paths and verifies
-them against `robobench/assets_manifest.json` (re-run it after pulling asset changes; `--check` only verifies).
+them against `robobench/assets_manifest.json`. A fresh checkout pulls one tar bundle per asset directory;
+after pulling asset changes, re-run it and only the changed files are downloaded (`--check` only verifies).
 
 The `deformable` suite runs on the Newton physics backend and needs a separate venv; see
 [`robobench/suites/deformable/README.md`](robobench/suites/deformable/README.md).
