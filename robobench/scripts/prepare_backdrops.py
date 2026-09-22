@@ -1,4 +1,4 @@
-"""Prepare Figure 2 room bundles from an existing asset checkout (requires pxr).
+"""Prepare shared room bundles from an existing asset checkout (requires pxr).
 
 python -m robobench.scripts.prepare_backdrops --source /path/to/original/CoSiGen
 Only the destination is modified. Run fetch_assets --update-manifest afterwards.
@@ -100,7 +100,7 @@ def prepare(source: Path, destination: Path):
             raise ValueError(f"{name}: unresolved={missing}, external dependencies={outside}")
         (dst / "PROVENANCE.json").write_text(json.dumps({
             "source_layout": relative, "entry": entry,
-            "preparation": "Copied Figure 2 asset; local references repaired; visual layer strips all physics schemas.",
+            "preparation": "Copied room asset; local references repaired; visual layer strips all physics schemas.",
             "built_in_materials": unresolved,
         }, indent=2)+"\n")
         print(f"Prepared {name}: {len(layers)} USD layers, {len(assets)} assets, zero physics prims", flush=True)

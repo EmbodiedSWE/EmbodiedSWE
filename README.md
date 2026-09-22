@@ -6,7 +6,6 @@
 
 <p align="center">
   <a href="https://embodiedswe.github.io"><img src="https://img.shields.io/badge/Project%20Page-4c8eda?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Project page"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Paper-coming%20soon-b31b1b?style=for-the-badge&logo=arxiv&logoColor=white" alt="Paper"></a>
   <a href="#"><img src="https://img.shields.io/badge/Blog-coming%20soon-6f42c1?style=for-the-badge&logo=rss&logoColor=white" alt="Blog"></a>
 </p>
 
@@ -17,9 +16,8 @@ EmbodiedSWE studies how frontier coding agents can help robotics. It has four pa
 - **EmbodiedSWE-Gen**, which diversifies one verified agent solution into a large trajectory dataset for training general robot policies.
 - **Agent improvement**, which generates new tasks from existing ones and improves the coding agent with RL on verified outcomes.
 
-> **Note:** this repository is under active development. Some settings may not exactly match those
-> reported in the paper. We are reorganizing the codebase, and everything, from folder layout to
-> interfaces, may change in the coming weeks.
+> **Note:** this repository is under active development. Folder layouts, interfaces, and settings
+> may change as the codebase evolves.
 
 ## Installation
 
@@ -40,8 +38,8 @@ Building an environment automatically downloads its required asset groups and ve
 checksums against `robobench/assets_manifest.json`. Verified local copies are reused, including offline.
 Listing tasks does not download anything. `fetch_assets --check` verifies the whole local collection.
 
-The pictured Figure 2 embodiments, all five Franka PC assembly scenes, and Franka spatula select
-their room backdrops by default. Use `--backdrop none` with
+Supported task and robot combinations select room backdrops by default, including all five
+Franka PC assembly scenes and Franka spatula. Use `--backdrop none` with
 the smoke launcher or `cfg.build(backdrop=None)` for a bare scene. Set `COSIGEN_ASSET_DIR` before
 starting Python to use a writable asset cache outside the checkout; its layout includes `robobench/`.
 See [backdrops and asset downloads](robobench/backdrops/README.md) for presets and maintainer commands.

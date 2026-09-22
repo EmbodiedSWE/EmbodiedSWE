@@ -1,7 +1,14 @@
 # Backdrops and asset downloads
 
-`EnvCfg.build()` selects Figure 2 scenery and the additional PC/spatula defaults for these
-scene/robot pairs (all their control modes):
+This package manages shared room scenery across task suites. `__init__.py` selects and places
+rooms, while `presets.json` stores room assignments, transforms, cameras, and visibility settings.
+Keeping this shared code here lets multiple tasks reuse a room without duplicating scene logic.
+
+The local `assets/` directory holds downloaded room models, materials, and textures. It is ignored
+by Git and excluded from wheels; these files come from Hugging Face. With `COSIGEN_ASSET_DIR`,
+they instead live under that cache root at `robobench/backdrops/assets/`.
+
+`EnvCfg.build()` selects default room scenery for these scene/robot pairs (all their control modes):
 
 | Scene | Robot | Room |
 | --- | --- | --- |
@@ -18,7 +25,7 @@ scene/robot pairs (all their control modes):
 | `syringe` | Franka, bimanual Franka | Chemistry lab |
 
 Other scene/robot pairs keep their existing presentation. Explicit presets use the keys in
-`presets.json`; measured placements are intended for the corresponding Figure 2 layouts.
+`presets.json`; each placement is aligned to its corresponding task and robot layout.
 T-shirt and latte still require the Newton environment. Latte remains single-environment only,
 as required by its existing MPM solver.
 
@@ -76,7 +83,7 @@ python -m robobench.scripts.fetch_assets --check                       # verify 
 
 ## Preparing and publishing assets
 
-Run preparation with USD Python bindings available. It copies the original collected Figure 2
+Run preparation with USD Python bindings available. It copies collected room
 assets into the destination, repairs external references where a local equivalent exists, clears
 the known missing metadata/texture references, and authors a layer that removes all physics schemas.
 The source checkout is read only. The complete dependency tree is audited before bundling.

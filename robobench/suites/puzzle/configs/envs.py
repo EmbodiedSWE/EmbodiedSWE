@@ -454,8 +454,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
 
 
 # ==== stack_blocks (long-horizon humanoid tower building) ======================================
-# Contributed in #75 under the packing suite; filed under puzzle here to match the paper's
-# catalog (block sorting / stacking are puzzle-style tasks). Scene-physics-only first (NullRobot oracle/smoke),
+# Block sorting and stacking belong to the puzzle suite. Scene-physics-only first (NullRobot oracle/smoke),
 # humanoid bindings after. Placements mirror the reach-tuned pen_holder G1/GR1-T2 layout at the
 # same 0.7 m bench (re-verify with robot_binding_smoke before any agent run).
 from robobench.suites.puzzle.scenes import StackBlocksSceneCfg  # noqa: E402
@@ -523,8 +522,7 @@ for _mode in ("joint", "pink_ik"):
 
 
 # ==== classify_objects (long-horizon humanoid colour-sorting) ==================================
-# Contributed in #75 under the packing suite; filed under puzzle here to match the paper's
-# catalog. Null preset first, then humanoid bindings.
+# Object classification belongs to the puzzle suite. Null preset first, then humanoid bindings.
 # Layout placed inside the MEASURED G1 right-wrist reach envelope (pink_probe.py): usable band
 # y in [-0.31,-0.10], x in [-0.15,0.15] (x>=0 strongest; the left/-x side degrades toward the
 # front). Zones sit front (biased x>=-0.08), blocks scatter behind where reach is best.

@@ -76,7 +76,7 @@ class EnvCfg:
     control_mode: str = ""  # applied to the robot cfg ("" -> the robot's first mode)
     scene_cfg: Any = None  # a scene BaseCfg instance, or None -> the scene's default
     robot_cfg: Any = None  # a BaseRobotCfg instance, or None -> the robot's default
-    backdrop: str | None = "auto"  # auto selects a Figure 2 preset; None disables scenery
+    backdrop: str | None = "auto"  # auto selects a task/robot room preset; None disables scenery
     num_envs: int = 1
     env_spacing: float = 2.0
     device: str = "cuda:0"

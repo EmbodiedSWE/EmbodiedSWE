@@ -56,7 +56,7 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=300)
     parser.add_argument("--action_scale", type=float, default=0.3, help="random action ~ U(-s, s) per dim")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--backdrop", default="auto", help="room preset, auto (Figure 2 defaults), or none")
+    parser.add_argument("--backdrop", default="auto", help="room preset, auto (task/robot defaults), or none")
     parser.add_argument("--list", action="store_true", help="list everything registered, then exit")
 
     # pink_ik needs pinocchio imported BEFORE AppLauncher (its eigenpy STL converters must register in a

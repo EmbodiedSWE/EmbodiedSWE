@@ -10,7 +10,7 @@ from pathlib import Path
 
 from robobench.core.assets import asset_path, ensure_assets
 
-# Figure 2 placements, plus matching PC variants and the spatula kitchen layout.
+# Default room placements for supported task and robot combinations.
 # Other bindings keep their existing presentation; named presets remain explicit overrides.
 DEFAULTS = {
     ("bulb", "franka"): "bulb",

@@ -29,8 +29,8 @@
    "bytes": 4906
   },
   "robobench/backdrops/assets/chemistry_lab/PROVENANCE.json": {
-   "sha256": "891033a5e00809d973e02553be0157fdf6732f39f848b78fded5d94d81e471f8",
-   "bytes": 269
+   "sha256": "3cdc8387efe6993569579570feb3184bdb16e4db3204e07620e4eb245a849d38",
+   "bytes": 265
   },
   "robobench/backdrops/assets/chemistry_lab/chemistry/chemistry.usd": {
    "sha256": "fdad5e0f905775e90bd9c6f74906843e8f7a133d445f1948ef36880fb025f71a",
@@ -169,8 +169,8 @@
    "bytes": 161192
   },
   "robobench/backdrops/assets/factory/PROVENANCE.json": {
-   "sha256": "b7f52b0cef38903edebe168f767b13b3ca0fe5f52ae5493bd58a3a856dfa3dcd",
-   "bytes": 230
+   "sha256": "5f7bb036387fa0b9bd4f384c3aed8b5ede70618597d249f3e888fa6f772df4af",
+   "bytes": 226
   },
   "robobench/backdrops/assets/factory/model_factory_0.usd": {
    "sha256": "05a33d0fcfcdf958628f26dc5ba2fdc0142e8df8dd2f15ff099d0f1a6bb0cfd6",
@@ -245,8 +245,8 @@
    "bytes": 28763
   },
   "robobench/backdrops/assets/factory001/PROVENANCE.json": {
-   "sha256": "1dfa6b7fbdf3b1f8af4cde47c2e93fff6c2f72dff7fbd6ae9b8d567392dff134",
-   "bytes": 231
+   "sha256": "fa90309c495d7258ab81ccd63c755772da3eb03cf9fe9cd2aba1d4e672a1e4d6",
+   "bytes": 227
   },
   "robobench/backdrops/assets/factory001/model_factory.usd": {
    "sha256": "a47b006b68bd260340fae758e1c963aee50b8a318e65924c290481366e464176",
@@ -949,8 +949,8 @@
    "bytes": 297288
   },
   "robobench/backdrops/assets/kitchen/PROVENANCE.json": {
-   "sha256": "56a35472fe1d738d16feb1037b0a5c01512141f6746a037aa58cd0a8ffec5312",
-   "bytes": 268
+   "sha256": "fe8f93f384ddbc91f282b48fbd9c2ccf894b0aad9c65497e81a923f4091928f0",
+   "bytes": 264
   },
   "robobench/backdrops/assets/kitchen/Pot057/Pot057.usd": {
    "sha256": "4d36ce9bde33830f2df13632dffcdd56eded1188edfcf3c7229f1f9e846a753f",
@@ -1269,8 +1269,8 @@
    "bytes": 2853
   },
   "robobench/backdrops/assets/simple_room/PROVENANCE.json": {
-   "sha256": "52661ebd3d732891e5d61f8f10570dc0b5258e5eb6e347c852ca4f020a5aa7b6",
-   "bytes": 283
+   "sha256": "6323f79c5707c6e1d003c861d9a387a3f0f3f9173f21400b032b29802a25d61e",
+   "bytes": 279
   },
   "robobench/backdrops/assets/simple_room/Props/SM_SkySphere.usd": {
    "sha256": "abe83ba86cdcc0177d175b07fda332ddf9c096a90830f02cdc486cb6c8c6cec0",
@@ -4864,31 +4864,31 @@
  "bundles": {
   "robobench/backdrops/assets/chemistry_lab": {
    "path": "bundles/robobench__backdrops__assets__chemistry_lab.tar",
-   "sha256": "2f5ebc79e3082ba8517e57d2517df9184fca43a2f738a908873d1d5aad7feb24",
+   "sha256": "20fc12298d9b1e28766ed2cbab0294256341ca1feaebc93c2c0b0e070b1aac0c",
    "bytes": 338298880,
    "files": 42
   },
   "robobench/backdrops/assets/factory": {
    "path": "bundles/robobench__backdrops__assets__factory.tar",
-   "sha256": "3c065bb5a71964f00d870e9eedce9b3251627cdadbe2bd131d19a68d8ce3d9ba",
+   "sha256": "aee051f449726c543ee5657a451f9f855cc82fb975aec732e21eee56522f08d1",
    "bytes": 24483840,
    "files": 19
   },
   "robobench/backdrops/assets/factory001": {
    "path": "bundles/robobench__backdrops__assets__factory001.tar",
-   "sha256": "cdbc8400c1b706140db930b241d6f7de88a560f6c1f4d9a1e11d2db312fbbcc9",
+   "sha256": "44a182a3fd79e65624ffda62acfede3eec1a76152935a38a4298ef9edec8e3f1",
    "bytes": 7833600,
    "files": 8
   },
   "robobench/backdrops/assets/kitchen": {
    "path": "bundles/robobench__backdrops__assets__kitchen.tar",
-   "sha256": "8ff938a45122bbaa1e419bac10c599f1d3259f9d5c75ed9b4fcdeb3c1a9e7941",
+   "sha256": "826517faf46e37a701c45fdbeba694528f5d80d725cf87c7bc4001fb4bc7b9a9",
    "bytes": 1535447040,
    "files": 216
   },
   "robobench/backdrops/assets/simple_room": {
    "path": "bundles/robobench__backdrops__assets__simple_room.tar",
-   "sha256": "22545ef99537c23da78768cd25e1a10feee965b12f4f8ebb5e6e1303192d9d62",
+   "sha256": "36a44b3b8b7b5fd616ff98045717d8e70169a82bf14c109dce83a14f0ce86a3a",
    "bytes": 116111360,
    "files": 91
   },
@@ -4941,5 +4941,5 @@
    "files": 90
   }
  },
- "revision": "137505fc65b6315c1c99b1a20edb271b1910262a"
+ "revision": "62fab5b70ccb0103c60c4ca39236abae2cc8e900"
 }
