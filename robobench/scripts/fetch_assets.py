@@ -2,13 +2,15 @@
 
 The git repo keeps code and task text layers (`*.usda`, `*.mdl`, provenance json/md). Every
 `*.usd`/`*.usdc`, texture, policy and reference video under `robobench/**/assets/` (and the deformable
-`videos/`) lives in the dataset repo `CoSiGen/robobench-assets`, mirrored at the SAME relative path, so
-after a fetch the tree is byte-identical to a checkout that vendored them. Prepared backdrop groups
-also keep their text layers on the hub so each room is a complete, independently downloadable tree.
+`videos/`) lives in the dataset repo `CoSiGen/robobench-assets`. Task paths mirror the checkout;
+room paths use the manifest mappings below. Shared room groups also keep their text layers on
+the hub so each room is a complete, independently downloadable tree.
 
 `robobench/assets_manifest.json` is the contract:
   {"revision": hub_commit, "files": {path: {sha256, bytes}},
-   "bundles": {asset_root: {path, sha256, bytes, files}}}
+   "bundles": {asset_root: {path, sha256, bytes, files}},
+   "path_mappings": {local_prefix: remote_prefix}}
+Room assets live locally under robobench/assets/rooms; prefix mappings preserve published hub paths.
 Every remote file is listed individually (incremental fetches download just what changed). Each asset
 root (e.g. `robobench/suites/cutting/assets`) is ALSO published as one tar bundle, so a fresh checkout
 costs ~8 downloads instead of ~800 (the hub rate-limits API requests per 5 minutes).
@@ -75,7 +77,7 @@ def _git_blob_id(path: Path) -> str:
 
 def _is_remote_asset(rel: str) -> bool:
     p = Path(rel)
-    if rel.startswith("robobench/backdrops/assets/"):
+    if rel.startswith("robobench/assets/rooms/"):
         return not any(part.startswith(".") for part in p.parts) and p.suffix != ".py"
     return p.suffix.lower() in BINARY_EXT and any(d in p.parts[:-1] for d in ASSET_DIRS)
 
@@ -83,8 +85,18 @@ def _is_remote_asset(rel: str) -> bool:
 def _asset_root(rel: str) -> str:
     """`robobench/suites/cutting/assets/banana/piece_0.usd` -> `robobench/suites/cutting/assets`."""
     parts = Path(rel).parts
+    if rel.startswith("robobench/assets/rooms/"):
+        return "/".join(parts[:4])
     i = next(k for k, part in enumerate(parts[:-1]) if part in ASSET_DIRS)
-    return "/".join(parts[: i + (2 if rel.startswith("robobench/backdrops/assets/") else 1)])
+    return "/".join(parts[:i + 1])
+
+
+def remote_path(rel: str, mappings: dict[str, str]) -> str:
+    """Translate a local manifest path to its stable hub path (also used for tar members)."""
+    for local, remote in sorted(mappings.items(), key=lambda item: len(item[0]), reverse=True):
+        if rel == local or rel.startswith(local + "/"):
+            return remote + rel[len(local):]
+    return rel
 
 
 def _bundle_name(root: str) -> str:
@@ -97,10 +109,14 @@ def load_manifest() -> dict:
     if "files" not in m:  # first (flat) manifest format
         m = {"files": m, "bundles": {}}
     m.setdefault("bundles", {})
-    for rel in m["files"]:
+    m.setdefault("path_mappings", {})
+    for rel in [*m["files"], *m["path_mappings"], *m["path_mappings"].values()]:
         p = Path(rel)
         if p.is_absolute() or ".." in p.parts or not p.parts or p.parts[0] != "robobench":
             raise ValueError(f"Unsafe asset path in manifest: {rel}")
+    remote_files = [remote_path(rel, m["path_mappings"]) for rel in m["files"]]
+    if len(set(remote_files)) != len(remote_files):
+        raise ValueError("Asset path mappings resolve multiple files to the same remote path")
     return m
 
 
@@ -148,16 +164,18 @@ def _atomic_copy(src, rel: str, meta: dict) -> None:
         Path(tmp).unlink(missing_ok=True)
 
 
-def _extract_bundle(tar_path: Path, files: dict[str, dict], wanted: set[str]) -> int:
+def _extract_bundle(tar_path: Path, files: dict[str, dict], wanted: set[str], mappings=None) -> int:
     n = 0
+    destinations = {remote_path(rel, mappings or {}): rel for rel in wanted}
     with tarfile.open(tar_path, "r:") as tar:
         for member in tar:
-            if member.name not in wanted or not member.isfile():
+            rel = destinations.get(member.name)
+            if rel is None or not member.isfile():
                 continue
             src = tar.extractfile(member)
             assert src is not None
             with src:
-                _atomic_copy(src, member.name, files[member.name])
+                _atomic_copy(src, rel, files[rel])
             n += 1
     return n
 
@@ -214,10 +232,11 @@ def fetch(revision: str | None = None, prefixes=None) -> int:
                     f"downloading {bundle['path']}"))
                 if _sha256(local) != bundle["sha256"]:
                     raise ValueError(f"Bundle checksum mismatch: {bundle['path']}")
-                _extract_bundle(local, files, set(rels))
+                _extract_bundle(local, files, set(rels), man["path_mappings"])
             for rel in _missing(files):
                 local = _with_rate_limit_retry(
-                    lambda: hf_hub_download(REPO_ID, rel, repo_type=REPO_TYPE, revision=revision),
+                    lambda: hf_hub_download(REPO_ID, remote_path(rel, man["path_mappings"]),
+                                            repo_type=REPO_TYPE, revision=revision),
                     f"downloading {rel}")
                 with open(local, "rb") as src:
                     _atomic_copy(src, rel, files[rel])
@@ -244,11 +263,12 @@ def check() -> int:
 def _build_bundle(root: str, rels: list[str]) -> Path:
     """Deterministic tar (sorted members, zeroed mtime/owner) so an unchanged root re-hashes identically."""
     BUNDLE_DIR.mkdir(parents=True, exist_ok=True)
-    out = BUNDLE_DIR / Path(_bundle_name(root)).name
+    mappings = load_manifest()["path_mappings"]
+    out = BUNDLE_DIR / Path(_bundle_name(remote_path(root, mappings))).name
     with tarfile.open(out, "w:", format=tarfile.PAX_FORMAT) as tar:
         for rel in sorted(rels):
             p = ROOT / rel
-            info = tar.gettarinfo(str(p), arcname=rel)
+            info = tar.gettarinfo(str(p), arcname=remote_path(rel, mappings))
             info.mtime = 0
             info.uid = info.gid = 0
             info.uname = info.gname = ""
@@ -279,7 +299,7 @@ def update_manifest() -> int:
         if absent:
             raise FileNotFoundError(f"Cannot rebuild {root}; fetch its existing assets first: {absent[:3]}")
         out = _build_bundle(root, rels)
-        bundles[root] = {"path": _bundle_name(root), "sha256": _sha256(out), "bytes": out.stat().st_size,
+        bundles[root] = {"path": _bundle_name(remote_path(root, previous["path_mappings"])), "sha256": _sha256(out), "bytes": out.stat().st_size,
                          "files": len(rels)}
         print(f"  bundle {bundles[root]['path']}: {len(rels)} files, {out.stat().st_size / 2**20:.0f} MB")
     with open(MANIFEST, "w") as f:
@@ -310,11 +330,13 @@ def upload(batch: int) -> int:
         lfs_sha = getattr(getattr(f, "lfs", None), "sha256", None)
         return lfs_sha == sha256 if lfs_sha else local.is_file() and f.blob_id == _git_blob_id(local)
 
-    todo = [rel for rel, meta in sorted(files.items()) if not _same(rel, ROOT / rel, meta["sha256"])]
+    todo = [rel for rel, meta in sorted(files.items())
+            if not _same(remote_path(rel, man["path_mappings"]), ROOT / rel, meta["sha256"])]
     print(f"{len(files) - len(todo)} files already on the hub, uploading {len(todo)} in batches of {batch}")
     for i in range(0, len(todo), batch):
         chunk = todo[i:i + batch]
-        ops = [CommitOperationAdd(path_in_repo=rel, path_or_fileobj=str(ROOT / rel)) for rel in chunk]
+        ops = [CommitOperationAdd(path_in_repo=remote_path(rel, man["path_mappings"]),
+                                  path_or_fileobj=str(ROOT / rel)) for rel in chunk]
         api.create_commit(REPO_ID, repo_type=REPO_TYPE, operations=ops,
                           commit_message=f"assets batch {i // batch + 1}: {chunk[0]} .. {chunk[-1]}")
         print(f"  committed {i + len(chunk)} / {len(todo)}", flush=True)
@@ -338,7 +360,8 @@ def upload(batch: int) -> int:
         api.create_commit(REPO_ID, repo_type=REPO_TYPE, operations=ops,
                           commit_message=f"bundles: {', '.join(Path(o.path_in_repo).name for o in ops)}")
     print(f"{len(bundles) - len(ops)} bundles already on the hub, uploaded {len(ops)}")
-    stale = sorted(set(info) - set(files) - {b["path"] for b in bundles.values()} - {".gitattributes"})
+    stale = sorted(set(info) - {remote_path(rel, man["path_mappings"]) for rel in files}
+                   - {b["path"] for b in bundles.values()} - {".gitattributes"})
     if stale:
         print(f"note: {len(stale)} files on the hub are not in the manifest (left in place): {stale[:5]}")
     man["revision"] = api.repo_info(REPO_ID, repo_type=REPO_TYPE).sha

@@ -1,1506 +1,1506 @@
 {
  "files": {
-  "robobench/backdrops/assets/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Emissives/Light_5000K.mdl": {
+  "robobench/assets/rooms/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Emissives/Light_5000K.mdl": {
    "sha256": "3f15fba36d9c5acb8d62d01e4a99bb9d5f761291080dcf5a96a4b3a825efa69c",
    "bytes": 1328
   },
-  "robobench/backdrops/assets/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Glass/Clear_Glass.mdl": {
+  "robobench/assets/rooms/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Glass/Clear_Glass.mdl": {
    "sha256": "5454a44463d100c648eeec2ae1c2e12ef9d16f0d4caebf675ff65e8427a6b40a",
    "bytes": 1177
   },
-  "robobench/backdrops/assets/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Glass/Clear_Glass_1.mdl": {
+  "robobench/assets/rooms/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Glass/Clear_Glass_1.mdl": {
    "sha256": "5454a44463d100c648eeec2ae1c2e12ef9d16f0d4caebf675ff65e8427a6b40a",
    "bytes": 1177
   },
-  "robobench/backdrops/assets/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Glass/Glazed_Glass.mdl": {
+  "robobench/assets/rooms/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Glass/Glazed_Glass.mdl": {
    "sha256": "51c64c6a467c05a1a56e2ee22fa11154f2fe2b3954d9f060d5d23264b8954e14",
    "bytes": 566
   },
-  "robobench/backdrops/assets/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Glass/Tinted_Glass.mdl": {
+  "robobench/assets/rooms/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Glass/Tinted_Glass.mdl": {
    "sha256": "8c5476de1b798dab6e9f942943033c664f0b4dd462721e6a2674335ec6a6f5ff",
    "bytes": 572
   },
-  "robobench/backdrops/assets/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Templates/GlassUtils.mdl": {
+  "robobench/assets/rooms/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Templates/GlassUtils.mdl": {
    "sha256": "18baaa8cd508d85075148b80097c56c4924212928bb196f2d9ee2352d5c618a4",
    "bytes": 2417
   },
-  "robobench/backdrops/assets/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Templates/GlassWithVolume.mdl": {
+  "robobench/assets/rooms/chemistry_lab/Isaac Sim 4.5/isaac-sim-assets/Materials/2023_2_1/Base/Templates/GlassWithVolume.mdl": {
    "sha256": "54f4f99e1bd8c6cde022dd246a954b9efe9b251a169854f49f582501a9bdf089",
    "bytes": 4906
   },
-  "robobench/backdrops/assets/chemistry_lab/PROVENANCE.json": {
+  "robobench/assets/rooms/chemistry_lab/PROVENANCE.json": {
    "sha256": "3cdc8387efe6993569579570feb3184bdb16e4db3204e07620e4eb245a849d38",
    "bytes": 265
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry/chemistry.usd": {
+  "robobench/assets/rooms/chemistry_lab/chemistry/chemistry.usd": {
    "sha256": "fdad5e0f905775e90bd9c6f74906843e8f7a133d445f1948ef36880fb025f71a",
    "bytes": 136521738
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry/chemistry_01.fbm/0101.jpg": {
+  "robobench/assets/rooms/chemistry_lab/chemistry/chemistry_01.fbm/0101.jpg": {
    "sha256": "2513930448ed5400c32341b7f6a3ace11e0e1962dd4d9f27224d3f8ed6cdb85c",
    "bytes": 142611
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry/chemistry_01.fbm/Equipment_001_Base_Color.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry/chemistry_01.fbm/Equipment_001_Base_Color.png": {
    "sha256": "a9b126f067bdf1661fa9f100ad7ac86ed1e30ae312da6a7bdd77f3fcc926bdae",
    "bytes": 1896534
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory.usd": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory.usd": {
    "sha256": "3c99aaa58fcb0a62c12ccce0b7b9ad66df33caf9d0fc4011ed0ebfd096da667e",
    "bytes": 40978571
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/model_chemistry_laboratory.usd": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/model_chemistry_laboratory.usd": {
    "sha256": "750c36db0786759d9b964691ea59bd8a60828f5db06161a8e6993995bb3dea97",
    "bytes": 6433507
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/0718b72953e2f32316da1ddc26106452.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/0718b72953e2f32316da1ddc26106452.png": {
    "sha256": "cddc713a10a2700382437d0297ba832ce88ca8f2cd202789d3b677a6834aa741",
    "bytes": 12469
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/07e9c763af4a990ce8d6a42b8e4a7907.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/07e9c763af4a990ce8d6a42b8e4a7907.png": {
    "sha256": "a2cc42adee2b7e6a630f85ddbb886f02f4ac96d3db17130d2f63ae650f5edc41",
    "bytes": 360052
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/08c481af0fd8ca54053d24bf518fa873.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/08c481af0fd8ca54053d24bf518fa873.png": {
    "sha256": "f20ccb9c637311d646bd2dbac9b4212c3a53958f1c04f770e1709d42003d3dcb",
    "bytes": 1657109
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/386f49de53ccfc4f7a102d24630427e6.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/386f49de53ccfc4f7a102d24630427e6.png": {
    "sha256": "22c6441f304312fb705865de05c068561f0842c015126ed7bc252d8c9fc5aec4",
    "bytes": 104167
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/39a40ee38318e0a3bb5d6cacb604da00.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/39a40ee38318e0a3bb5d6cacb604da00.png": {
    "sha256": "870f932d2417e1b3e013f2091b5c02194a00e900d696bb3cfbbba249c9c64c0d",
    "bytes": 264839
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/3e7328a0eb1e10027b829a9e97539719.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/3e7328a0eb1e10027b829a9e97539719.png": {
    "sha256": "2cfb4dbb8e6c658828a6aaa0662895f994718f7a79850a6a431574787fb967f2",
    "bytes": 130697
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/4b4845d0244eeebe0303ac9c7e6c801c.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/4b4845d0244eeebe0303ac9c7e6c801c.png": {
    "sha256": "2513930448ed5400c32341b7f6a3ace11e0e1962dd4d9f27224d3f8ed6cdb85c",
    "bytes": 142611
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/4f6b2dc0a6b5b97432207aa08fc08961.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/4f6b2dc0a6b5b97432207aa08fc08961.png": {
    "sha256": "912231432475a83200abaf1410db39afb704a7b2f59d02f8f5564899bcce1cb6",
    "bytes": 259586
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/5724ae5ecff9725c0d305b68d9b1edaf.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/5724ae5ecff9725c0d305b68d9b1edaf.png": {
    "sha256": "013f9cd4fc3978d36bd552640fc4c17dda785aa7cece95a1b90097fcc795c338",
    "bytes": 16343208
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/5f3ff65e6d5abc392aa5543a190127c5.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/5f3ff65e6d5abc392aa5543a190127c5.png": {
    "sha256": "2987102316d82310d161820d2bdb1cd3200e1f4ee088040489e3a6dc53548f7d",
    "bytes": 2813640
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/70ebbfb7ffa7eb821081b2d332784024.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/70ebbfb7ffa7eb821081b2d332784024.png": {
    "sha256": "d4b15964fa6e2cdb877a5cb191778f1c5d593c40b52a16ae7b28677ee2b67735",
    "bytes": 62774
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/73f32b75cc60d8b05e043ff5b0a56b5e.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/73f32b75cc60d8b05e043ff5b0a56b5e.png": {
    "sha256": "f8d9d6ffa8da4a5eb9a0199d023b274ae61029e8c15911bbfb3f27b12eb10c9e",
    "bytes": 510786
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/76e2dbc0b40bdc134220714058ba763b.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/76e2dbc0b40bdc134220714058ba763b.png": {
    "sha256": "58a53fa35797bd65723b73985fa28bc4a76436ed4b29654bf49bd267c109b57c",
    "bytes": 529255
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/d867706e79802f44d5ee067274338c72.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/d867706e79802f44d5ee067274338c72.png": {
    "sha256": "a74a2c0703f857b3c835f0efe34f27e97a352c9d8234d0dadb87683a47cd5a78",
    "bytes": 1869693
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/e71dac07d8155a475460c7db1984f472.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/e71dac07d8155a475460c7db1984f472.png": {
    "sha256": "dc0c7398a6585488f1e6cd0489ef4a3269ee8ec1d173f7e6f42659222ac4e303",
    "bytes": 4683725
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/e7dcc991f781bc4989d1f0fa9f27b973.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/e7dcc991f781bc4989d1f0fa9f27b973.png": {
    "sha256": "256e164751085e9f107fbde76ff0caeaa0b65f93c78255d5cb13e5aeca09d8b0",
    "bytes": 376382
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/f462df2a4ba728cc45bbb947eac013ab.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/f462df2a4ba728cc45bbb947eac013ab.png": {
    "sha256": "913ad4a12900ac10ec1f68233d933c051ccb76a59995a675d9b6326ab25d4349",
    "bytes": 297548
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/fa491af361b4843fa6a7b1e683d1e895.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/fa491af361b4843fa6a7b1e683d1e895.png": {
    "sha256": "714a8351c5951e85e35bd790b5ff9531b96375fc04abfc9e673c3bda0481d155",
    "bytes": 591614
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/img/fad0ee1771266a6770fb1cc60e59e720.png": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/img/fad0ee1771266a6770fb1cc60e59e720.png": {
    "sha256": "83e94f40a7f385489d6e010b556d68ca324d2aeaf936d0b21f16f70e3794e0e8",
    "bytes": 1199218
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/material.usd": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/material.usd": {
    "sha256": "3676b470fcb991a18eadf2d7328c5075a77b821e40a5af05b8cc86822ed2e857",
    "bytes": 14329
   },
-  "robobench/backdrops/assets/chemistry_lab/chemistry_laboratory/resource/v_69323/link_0_0.usd": {
+  "robobench/assets/rooms/chemistry_lab/chemistry_laboratory/resource/v_69323/link_0_0.usd": {
    "sha256": "1055b7459436a951a0a17482b675f3dcdcfd994d2a950c90ffe571fa93e770da",
    "bytes": 111812806
   },
-  "robobench/backdrops/assets/chemistry_lab/door/model_door.usd": {
+  "robobench/assets/rooms/chemistry_lab/door/model_door.usd": {
    "sha256": "25311dccbf7e89d8d52bb7b3bffad2c603a0da1df9af04fd577fb8d4e1f07176",
    "bytes": 5753814
   },
-  "robobench/backdrops/assets/chemistry_lab/door/resource/material.usd": {
+  "robobench/assets/rooms/chemistry_lab/door/resource/material.usd": {
    "sha256": "77eeda9eea779c330ee19b3a0e7b823c95003e2a7c5a6180732cfd02edbb86a3",
    "bytes": 2416
   },
-  "robobench/backdrops/assets/chemistry_lab/door/resource/v_69323/link_0_0.usd": {
+  "robobench/assets/rooms/chemistry_lab/door/resource/v_69323/link_0_0.usd": {
    "sha256": "41f44cdb9b792c97451a605cada87f3b12c163f62f69f68ebc4d29f28fede77a",
    "bytes": 1044635
   },
-  "robobench/backdrops/assets/chemistry_lab/scene_visual.usd": {
+  "robobench/assets/rooms/chemistry_lab/scene_visual.usd": {
    "sha256": "c5f05ed277d3486339512ba05d6a4f8e9d82a89799b37f4239d0ca803eb748e3",
    "bytes": 5068
   },
-  "robobench/backdrops/assets/chemistry_lab/test_tube/model_test_tube.usd": {
+  "robobench/assets/rooms/chemistry_lab/test_tube/model_test_tube.usd": {
    "sha256": "33548408897d1ab7c2c59254d2b76aff18d7b09aefcdc3f4f20036ce4c74f21c",
    "bytes": 859104
   },
-  "robobench/backdrops/assets/chemistry_lab/test_tube/resource/img/75a5a79f3e6de402a2c77e008de63aac.png": {
+  "robobench/assets/rooms/chemistry_lab/test_tube/resource/img/75a5a79f3e6de402a2c77e008de63aac.png": {
    "sha256": "b053b69bdb5fa3ebd9a4746462a07a946c34417a683968532a2f988a394a5f4c",
    "bytes": 378765
   },
-  "robobench/backdrops/assets/chemistry_lab/test_tube/resource/material.usd": {
+  "robobench/assets/rooms/chemistry_lab/test_tube/resource/material.usd": {
    "sha256": "c9d7240b4449b3f2e4ea1c73edcf4bfdc42c65cbd531a128f702dcfa911d318b",
    "bytes": 2498
   },
-  "robobench/backdrops/assets/chemistry_lab/test_tube/resource/v_69323/link_0_0.usd": {
+  "robobench/assets/rooms/chemistry_lab/test_tube/resource/v_69323/link_0_0.usd": {
    "sha256": "31d5156f28453dbed52411a7c58ad712e52ace6e4a157f4cec252a7f0b79a3e1",
    "bytes": 161192
   },
-  "robobench/backdrops/assets/factory/PROVENANCE.json": {
+  "robobench/assets/rooms/factory/PROVENANCE.json": {
    "sha256": "5f7bb036387fa0b9bd4f384c3aed8b5ede70618597d249f3e888fa6f772df4af",
    "bytes": 226
   },
-  "robobench/backdrops/assets/factory/model_factory_0.usd": {
+  "robobench/assets/rooms/factory/model_factory_0.usd": {
    "sha256": "05a33d0fcfcdf958628f26dc5ba2fdc0142e8df8dd2f15ff099d0f1a6bb0cfd6",
    "bytes": 81721
   },
-  "robobench/backdrops/assets/factory/resource/img/24a7cbd6fec62a2c6aa15bbf474bf956.png": {
+  "robobench/assets/rooms/factory/resource/img/24a7cbd6fec62a2c6aa15bbf474bf956.png": {
    "sha256": "fb871fbbc698939e4c1cce94bcafcafa4ef6dfcd3ddc8bcc25871ea1f1800bbe",
    "bytes": 40902
   },
-  "robobench/backdrops/assets/factory/resource/img/25fa1f63f5f43c16657391b7397f799e.png": {
+  "robobench/assets/rooms/factory/resource/img/25fa1f63f5f43c16657391b7397f799e.png": {
    "sha256": "aaa9fd943f741538672d885139fc1cbda189aaaaf8e5816f11e623fc3119afea",
    "bytes": 53600
   },
-  "robobench/backdrops/assets/factory/resource/img/2b6738cc4ffa4293c9c21b5fe66252ba.png": {
+  "robobench/assets/rooms/factory/resource/img/2b6738cc4ffa4293c9c21b5fe66252ba.png": {
    "sha256": "43306bc74859a00c7cedf1e369738ab498ed1ef63b0d19b02e70d8335965c72f",
    "bytes": 12951
   },
-  "robobench/backdrops/assets/factory/resource/img/3172024d815f9de3a63b80a8fe77a5f0.png": {
+  "robobench/assets/rooms/factory/resource/img/3172024d815f9de3a63b80a8fe77a5f0.png": {
    "sha256": "e5f2ad5b34e1cc8a1963df07b237a28e8f45b657ab266b33931b451977407feb",
    "bytes": 41201
   },
-  "robobench/backdrops/assets/factory/resource/img/53ded73a087cf5f819fc4b49f1c05807.png": {
+  "robobench/assets/rooms/factory/resource/img/53ded73a087cf5f819fc4b49f1c05807.png": {
    "sha256": "73a159b57416b1ff52a34f55f0734c1d711273d0975073c38078a4c91ea0b627",
    "bytes": 1239985
   },
-  "robobench/backdrops/assets/factory/resource/img/64651bf2749f43987ded909528d56a8a.png": {
+  "robobench/assets/rooms/factory/resource/img/64651bf2749f43987ded909528d56a8a.png": {
    "sha256": "8a392ccd9bc3c12f7537084ed4a5827263f6558adf1d3eecefc9b9d5fc60fcb2",
    "bytes": 45062
   },
-  "robobench/backdrops/assets/factory/resource/img/6f16a31ec68f2258fdabfabdc2fef796.png": {
+  "robobench/assets/rooms/factory/resource/img/6f16a31ec68f2258fdabfabdc2fef796.png": {
    "sha256": "224b1928ac0596bb3c9ba4f15ec056ad61c06d9d049e96d075c26fb006729a13",
    "bytes": 179766
   },
-  "robobench/backdrops/assets/factory/resource/img/7a74edb6c39968d8972b6d4308f2fd71.png": {
+  "robobench/assets/rooms/factory/resource/img/7a74edb6c39968d8972b6d4308f2fd71.png": {
    "sha256": "412893eaff0f5bfeabf3959d96d3df5936713a9ec60f3861efc9ebd4d09dedb1",
    "bytes": 44843
   },
-  "robobench/backdrops/assets/factory/resource/img/90267ef6722a1cc28aa6afca78406d88.png": {
+  "robobench/assets/rooms/factory/resource/img/90267ef6722a1cc28aa6afca78406d88.png": {
    "sha256": "29c4dd3c2eb63058214f3a20a5dfb16eb4182f7e754c1d2ec4686796ef4c5580",
    "bytes": 251750
   },
-  "robobench/backdrops/assets/factory/resource/img/9a51516c253e2b8b2794bea4f5ef729c.png": {
+  "robobench/assets/rooms/factory/resource/img/9a51516c253e2b8b2794bea4f5ef729c.png": {
    "sha256": "f74ed322a9cf3c53adabdc823b643711ae721ccc7ec17f7af1570f791fea1ba3",
    "bytes": 196170
   },
-  "robobench/backdrops/assets/factory/resource/img/bb7113a6188530b72c8d6976de655d94.png": {
+  "robobench/assets/rooms/factory/resource/img/bb7113a6188530b72c8d6976de655d94.png": {
    "sha256": "212e9ae1b1dce68709da116dec54ced3a3b62a35e67539e464e1f9b899cdf51d",
    "bytes": 8893524
   },
-  "robobench/backdrops/assets/factory/resource/img/e0cb10b2072aabd4c9957aa060c1fe78.png": {
+  "robobench/assets/rooms/factory/resource/img/e0cb10b2072aabd4c9957aa060c1fe78.png": {
    "sha256": "4205defb7c874fd679a88035c7154d08a0e6d4d270d3944d4907de07f2459fc8",
    "bytes": 15109
   },
-  "robobench/backdrops/assets/factory/resource/material.usd": {
+  "robobench/assets/rooms/factory/resource/material.usd": {
    "sha256": "b29a99126eaab5b68c85ef6cc3530aa9b5e1dc55faca8b7e3159d4451eebb634",
    "bytes": 7112
   },
-  "robobench/backdrops/assets/factory/resource/v_0/element_path.json": {
+  "robobench/assets/rooms/factory/resource/v_0/element_path.json": {
    "sha256": "33ebf431d7749d1abdfb875122c8547a6936903ec91d27cb5d51669e24c81c44",
    "bytes": 25372
   },
-  "robobench/backdrops/assets/factory/resource/v_0/geometry_0.usd": {
+  "robobench/assets/rooms/factory/resource/v_0/geometry_0.usd": {
    "sha256": "dafabc0e1044e3ab4f4be9bfc31fa90d948e128c2a76d470808994a5336d9b63",
    "bytes": 13139723
   },
-  "robobench/backdrops/assets/factory/resource/v_0/link_0.usd": {
+  "robobench/assets/rooms/factory/resource/v_0/link_0.usd": {
    "sha256": "a47ec76365bf58be2bdcfe3804c233ce7e96ee1b8410a2efd34311072efea2ff",
    "bytes": 170196
   },
-  "robobench/backdrops/assets/factory/scene_visual.usd": {
+  "robobench/assets/rooms/factory/scene_visual.usd": {
    "sha256": "5e3e3d4ef47c6541df81cd364e3c7497de53f7593a82676baa0115414295ba66",
    "bytes": 28763
   },
-  "robobench/backdrops/assets/factory001/PROVENANCE.json": {
+  "robobench/assets/rooms/factory001/PROVENANCE.json": {
    "sha256": "fa90309c495d7258ab81ccd63c755772da3eb03cf9fe9cd2aba1d4e672a1e4d6",
    "bytes": 227
   },
-  "robobench/backdrops/assets/factory001/model_factory.usd": {
+  "robobench/assets/rooms/factory001/model_factory.usd": {
    "sha256": "a47b006b68bd260340fae758e1c963aee50b8a318e65924c290481366e464176",
    "bytes": 18059
   },
-  "robobench/backdrops/assets/factory001/resource/img/3d45e75051ec7d51d1850f256c939061.png": {
+  "robobench/assets/rooms/factory001/resource/img/3d45e75051ec7d51d1850f256c939061.png": {
    "sha256": "10a6d124ea4fba23506b9cc523609c283ebf237de8f9f8b1b52aa0fd9aebee87",
    "bytes": 326265
   },
-  "robobench/backdrops/assets/factory001/resource/img/df5c15cb4e88988f5f6d24e083d23933.png": {
+  "robobench/assets/rooms/factory001/resource/img/df5c15cb4e88988f5f6d24e083d23933.png": {
    "sha256": "b42b6f7fc3d948812af58e19daa197fc1bc4d3673681a5f7f0d1b2bd8ab8b410",
    "bytes": 48225
   },
-  "robobench/backdrops/assets/factory001/resource/material.usd": {
+  "robobench/assets/rooms/factory001/resource/material.usd": {
    "sha256": "21763ca0ea41c166c6415a77eb7047dc727e4d1fbef3a3e6c61ad34d5c1d75fa",
    "bytes": 2485
   },
-  "robobench/backdrops/assets/factory001/resource/v_0/element_path.json": {
+  "robobench/assets/rooms/factory001/resource/v_0/element_path.json": {
    "sha256": "2cc44a9a99e447106b9a8a93cf27263d23f4020f97b14573fdcfac780cb76520",
    "bytes": 3775
   },
-  "robobench/backdrops/assets/factory001/resource/v_0/link_0.usd": {
+  "robobench/assets/rooms/factory001/resource/v_0/link_0.usd": {
    "sha256": "e96693cc5fb82faff0b0fdead72e01d7f1464d7db85787d218d311eb45f0b712",
    "bytes": 7414578
   },
-  "robobench/backdrops/assets/factory001/scene_visual.usd": {
+  "robobench/assets/rooms/factory001/scene_visual.usd": {
    "sha256": "c968ac876fab081589fc83aaf2ef4b5db2c19a3d96f30d6644585ed866ace157",
    "bytes": 4164
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/cloth_demo_001.usd": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/cloth_demo_001.usd": {
    "sha256": "ef771ba90ed4f44f62eab5704a8b10734c54ea698450fab6109f570fb51e8868",
    "bytes": 23620640
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/sim_cloth.obj": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/sim_cloth.obj": {
    "sha256": "88d17bf2d247a6be20a244d3d130770388be4383b76a31d35f13d209e96823ac",
    "bytes": 66335272
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/cloth/base_color.png": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/cloth/base_color.png": {
    "sha256": "11fb9dc93dc46447844cd7a60ee1b26cbe40286cb17ac04126de89c60bfc79d5",
    "bytes": 73898
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/cloth/normal.png": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/cloth/normal.png": {
    "sha256": "9d328f9187dd7efcd1204b136a80cf39b7e07aa3abcf4c860ad8861b065106ca",
    "bytes": 5987390
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/cloth/roughness.png": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/cloth/roughness.png": {
    "sha256": "c517c8e2f2d676351e6af8ee9beda3897f29ab8cf29ef76d09cce82aa8936de7",
    "bytes": 3321797
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_BaseColor.jpg": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_BaseColor.jpg": {
    "sha256": "f08ca37bf89ec297f743dbefb0c159326ce6fbecd9c13869a4a8f97fc5ee8b4b",
    "bytes": 1995183
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Cavity.jpg": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Cavity.jpg": {
    "sha256": "c4303a88aba30852c374f76d1ce5c2a9e1d1db6648411b5c8290081434491eb5",
    "bytes": 461347
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Gloss.jpg": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Gloss.jpg": {
    "sha256": "de3e7dca1a58461569b5c2f988d1ad13b8f28419ebcf13ac237f6422806acd52",
    "bytes": 1074040
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Normal.jpg": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Normal.jpg": {
    "sha256": "5032bb74cd99d5f7887b0a6260dca7389571cf319422e9e989eddc45e8b067b4",
    "bytes": 515739
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Roughness.jpg": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Roughness.jpg": {
    "sha256": "325a62834fbaf19f89ec834d228873bdfdc8b37e3f08f8a7ed51caefe18e6d11",
    "bytes": 1074340
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Specular.jpg": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/table/Poplar_Veneer_teqbcizc_2K_Specular.jpg": {
    "sha256": "1000745c45402f4b401eaad530914c0189d7dec0a9ba9c723299a1130afabfd1",
    "bytes": 391850
   },
-  "robobench/backdrops/assets/kitchen/ClothDemo_002/texture/table/teqbcizc.json": {
+  "robobench/assets/rooms/kitchen/ClothDemo_002/texture/table/teqbcizc.json": {
    "sha256": "d5bb6b2200bffd834eb762dcc6e9c5d01de0d54ed32083af45a19ff3da8b922f",
    "bytes": 10770
   },
-  "robobench/backdrops/assets/kitchen/CoffeeMachine006/CoffeeMachine006.usd": {
+  "robobench/assets/rooms/kitchen/CoffeeMachine006/CoffeeMachine006.usd": {
    "sha256": "ba2873af48ed780b701cc287824b10773897f26e26ddb3f11b7738fcdbc113d4",
    "bytes": 129657431
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/Kitchen_InsularShelf.usd": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/Kitchen_InsularShelf.usd": {
    "sha256": "343073572964cd097351c8746765c108e5af41ac9e0fa758f2394dce10d70ce3",
    "bytes": 19376087
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/Kitchen_InsularShelf_BC001.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/Kitchen_InsularShelf_BC001.jpg": {
    "sha256": "a4052bbd23b52d2344b15340f00b8f5c8cbcc181e7f21f7a80f936738e5a022d",
    "bytes": 416584
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/Kitchen_InsularShelf_R001.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/Kitchen_InsularShelf_R001.jpg": {
    "sha256": "22c23c729d09fc43f1509d384564a9316bf0ed9c680d1f6749bef19b193620b4",
    "bytes": 146295
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfhofbfc_4K_Albedo.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfhofbfc_4K_Albedo.jpg": {
    "sha256": "2128f31bdbafd3ae7ee8b44af1ae43fc8cb5201097a00adf0f5381357f6bb54d",
    "bytes": 6904986
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfhofbfc_4K_Normal.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfhofbfc_4K_Normal.jpg": {
    "sha256": "c489572dc591c05fc396465c41cc8dc41eaefbe5a0e7afee210f107204a0a65d",
    "bytes": 1772245
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfhofbfc_4K_Roughness.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfhofbfc_4K_Roughness.jpg": {
    "sha256": "6fc42075481d05046c2a011830d294a2761016afb6303d11e7ddcb9d6477a9cc",
    "bytes": 4498366
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfjbderc_4K_Albedo.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfjbderc_4K_Albedo.jpg": {
    "sha256": "4c5c35fe2a26305c101a0baf66786d05ba599d1c23230d8ce5c364ea541f8e0e",
    "bytes": 4467167
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfjbderc_4K_Albedo_lv.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfjbderc_4K_Albedo_lv.jpg": {
    "sha256": "a9b9d6333a1b8afa45674d58c9a14af1533bd51e71ebc36fbbd03cf3b4cb9f11",
    "bytes": 4762922
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfjbderc_4K_Normal.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfjbderc_4K_Normal.jpg": {
    "sha256": "8635be1638792304491bbe43c8e4f064e118c09621eef0c03de10e7342f92d54",
    "bytes": 1055561
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfjbderc_4K_Roughness.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Collected_KitchenRoom/Collected_KitchenRoom/Kitchen_InsularShelf/texture/tfjbderc_4K_Roughness.jpg": {
    "sha256": "d55fcae6b82e76e6d1e96a7ea6876cebb33ce96e70edb27b641fba3e3fca5fed",
    "bytes": 3539501
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/100SKUdata/r0048/r0048_1/texture/r0048a_N001.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/100SKUdata/r0048/r0048_1/texture/r0048a_N001.jpg": {
    "sha256": "2815891b00698e485526a7462f3e39a359d765abb1250d679b12761087285fb8",
    "bytes": 599766
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/T_Bottle014_BC001.png": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/T_Bottle014_BC001.png": {
    "sha256": "8b7b7f2bb70c43d8a84ad2acd34252ab3b5fad6ca41eeeaa8e525eb16354dd38",
    "bytes": 78325
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/texture/r0048a_BC001.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/texture/r0048a_BC001.jpg": {
    "sha256": "a20d96bd448b43d1b14fdc4c611fc4db9bdc7eb8363f18ec7432249f9cf3caf9",
    "bytes": 572683
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/texture/r0048a_N001.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/texture/r0048a_N001.jpg": {
    "sha256": "2815891b00698e485526a7462f3e39a359d765abb1250d679b12761087285fb8",
    "bytes": 599766
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/texture/r0048a_OP001.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/texture/r0048a_OP001.jpg": {
    "sha256": "25efac51b7e46ad247239232cc2d521a428afd13a6a7356b704fc285866cc8f3",
    "bytes": 41447
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/texture/r0048a_R001.jpg": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/D/RSS/texture/texture/r0048a_R001.jpg": {
    "sha256": "26d411f67e319f8cdec01738575687a8da919a5768673de0c3de1face576cf49",
    "bytes": 576018
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/Ground.usd": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/Ground.usd": {
    "sha256": "daf62000dfc7a4283bc4385233d39f10457e920b96aa7d12cb542e93da71cf59",
    "bytes": 446688
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/emptyenv.usd": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/emptyenv.usd": {
    "sha256": "5afcc69ed0847dbdc08d4f6edd210f6d1453aadb9fded14e94f87c4e9ab8d7d9",
    "bytes": 2802
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/HDRI002.hdr": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/HDRI002.hdr": {
    "sha256": "0b3a5c76f84bfc309c03835ba977ac5af520f3b715cde25eaec4aa2c4dfa9c67",
    "bytes": 25587111
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/Scene_BC001.png": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/Scene_BC001.png": {
    "sha256": "cdacec37dc9499b0640e1fcd97a296f1684105b938e590a47e942ef0e98efd71",
    "bytes": 757016
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/Scene_M001.png": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/Scene_M001.png": {
    "sha256": "99f760fae5632af9512a1aeaed72f42bafb6f169c13e07077f4d7ede044c22f8",
    "bytes": 195376
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/Scene_N001.png": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/Scene_N001.png": {
    "sha256": "68249b9570799cf584a07615775448253f59a66cba401bc061866be05a4d1e6f",
    "bytes": 708006
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/Scene_R001.png": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/D/RSS/Collected_waterbottle_4/Isaac project/strawberry/Collected_emptyenv/texture/Scene_R001.png": {
    "sha256": "bad973326e8cd07a56a71d0aa476d199d52e566a12b23fd74d483f32281aff3f",
    "bytes": 3028934
   },
-  "robobench/backdrops/assets/kitchen/Collected_waterbottle_7/waterbottle_7.usd": {
+  "robobench/assets/rooms/kitchen/Collected_waterbottle_7/waterbottle_7.usd": {
    "sha256": "29ef938d10138cfbdeb1bfc482d9963b8e82f6635a69721619b6b64e1a263f08",
    "bytes": 16314994
   },
-  "robobench/backdrops/assets/kitchen/Dishwasher054/Dishwasher054.usd": {
+  "robobench/assets/rooms/kitchen/Dishwasher054/Dishwasher054.usd": {
    "sha256": "ea4d914d14c1397300b7ccb6e931c7e742cb45ae00c1b58132db69cf251a31ed",
    "bytes": 19953909
   },
-  "robobench/backdrops/assets/kitchen/Dishwasher054/textures/T_Dishwasher054_BC001.png": {
+  "robobench/assets/rooms/kitchen/Dishwasher054/textures/T_Dishwasher054_BC001.png": {
    "sha256": "72ac714b3fda8ec53badfb8f22b3de772beaf816380b8ed015c0c0695b2b73f9",
    "bytes": 24907
   },
-  "robobench/backdrops/assets/kitchen/Door012/Door012.usd": {
+  "robobench/assets/rooms/kitchen/Door012/Door012.usd": {
    "sha256": "90998e1824677d2db3b8231abd99547036f91e2cb62822a3ef18b57e2cac9fe4",
    "bytes": 4847621
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-24.jpg": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-24.jpg": {
    "sha256": "98781c58f12c493c7b6fb72d05e7c25cbd740ea2a118fda3c37d8ce5fbbf3666",
    "bytes": 1992330
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-42.jpg": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-42.jpg": {
    "sha256": "ba75bb47f43750e30cca46348ad78640bcb5e810945ac010110f46b04f42def9",
    "bytes": 481788
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-43.jpg": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-43.jpg": {
    "sha256": "8c9b522d5ff3f796a08624faca73520d4dabd640e2a7e48895dc2936994a61d1",
    "bytes": 631660
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-7.jpg": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-7.jpg": {
    "sha256": "b810886b7363729e5a8e5ba4c50839086902f46b9566ba6fd2261c6a18bbe6e5",
    "bytes": 753400
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-8.jpg": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/Materials/Textures/7443619-files-8.jpg": {
    "sha256": "cef86c6050c85c2df05b9bb53ea978ef0d425e14414c5482e24f4be0fe1ac611",
    "bytes": 915812
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/SM_P_Choppingboard_01.usd": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/Props/SM_P_Choppingboard_01.usd": {
    "sha256": "ad4875bdf3b91571be2d210782e72cddee3ca832c678f92678f032fa9c9fe3b5",
    "bytes": 1659405
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/SM_P_Choppingboard_01.usd": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Choppingboard_01/Collected_SM_P_Choppingboard_01/SM_P_Choppingboard_01.usd": {
    "sha256": "15ae2570b5e947a71b7001dd064d9cd88927c1104023afdd8c4bd550d6e50325",
    "bytes": 310485
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/652765_28_1649.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/652765_28_1649.mdl": {
    "sha256": "4fce0705044782687ecd2e179bd4b3bd583ae893f65c8d78984cd8dd71eacb63",
    "bytes": 2321
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_065_Cover.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_065_Cover.mdl": {
    "sha256": "6bedf044cee5b2c4d803161bec2e1815db76bfdf99500c78e6c65efa5ff3e642",
    "bytes": 2279
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_065_Label.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_065_Label.mdl": {
    "sha256": "b4e5d89480543d7a426c7263d8d74d47ff64368287d82ea3da285484a04a26ae",
    "bytes": 2297
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Cover.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Cover.mdl": {
    "sha256": "4a7488374a7a71808d8b9c20bc005d6b95a46225f6de0ea32dcd85fd921f75ac",
    "bytes": 2288
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Material__741.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Material__741.mdl": {
    "sha256": "42ee11ce3e8f36461ee9165cea9b0bc3994f62798ea9f79e23892cf452af6c2c",
    "bytes": 2304
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Material__742.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Material__742.mdl": {
    "sha256": "a43a93f243eeeb3721ac12939c6ac23421b0f26858f04684c0f2f809a9fe278b",
    "bytes": 2320
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Paint.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Paint.mdl": {
    "sha256": "5250e104ea39076c0b87cd05abf2e10a925e493c2cf8eb82b99b74609d2f1f78",
    "bytes": 2258
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Wire.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/AM134_14_Wire.mdl": {
    "sha256": "f668825a401a32468d050997ad12289cdbd83e835125ce266b77c905370c28ba",
    "bytes": 2252
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/_652765_23_8823.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/_652765_23_8823.mdl": {
    "sha256": "84be8cd20d5fe296fffb6e1174f14cf77062525219a09a7e6f8798aa15ea314e",
    "bytes": 5363
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/_652765_26_931.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/_652765_26_931.mdl": {
    "sha256": "a7d6b1ce1af6fdc1434d7e4efb72e6017b0f62877c6b1c5003414003587cf511",
    "bytes": 3645
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/templates/ad_3dsmax_maps.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/templates/ad_3dsmax_maps.mdl": {
    "sha256": "beff8927efa4ebfc894b8f5191a7ed39b1545511d196ed8cd1b8da84397e45c8",
    "bytes": 120385
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/templates/ad_3dsmax_materials.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/templates/ad_3dsmax_materials.mdl": {
    "sha256": "41dc39b1a5c11bc85fe20a44a5e0e7e6534583704f5c0c2a85b8afe91a95ba6f",
    "bytes": 19881
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/templates/vray_maps.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/templates/vray_maps.mdl": {
    "sha256": "361219a26f7790cc51a094ae1668fca40a8cb59117f3d972cab4406ac17d9b27",
    "bytes": 26708
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/templates/vray_materials.mdl": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/Materials/templates/vray_materials.mdl": {
    "sha256": "263a73b1ec2aa26b3777ea6b980f000e4233f892cff07e15977875ca5cc13d94",
    "bytes": 51331
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Flavour_02.usd": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Flavour_02.usd": {
    "sha256": "08b8017332509b11abde8788f88fb1e673e92fa029502c0bf5f1622711b85497",
    "bytes": 2057219
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Flavour_03.usd": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Flavour_03.usd": {
    "sha256": "8d2f6314817392ca4096ebf328f3ef66b66f1b4ca523978bfe8272f316e95d7c",
    "bytes": 253144
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Flavour_03_Cover.usd": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Flavour_03_Cover.usd": {
    "sha256": "96c270a39bb1c2318d5af2ac861ad727793260329af76fb7294161c3e8567e34",
    "bytes": 263474
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Flavour_04.usd": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Flavour_04.usd": {
    "sha256": "d43c86f7e815656b145761fa04a24296f684196e0146f80b6effa77229c828c2",
    "bytes": 933142
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Jar_01.usd": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Jar_01.usd": {
    "sha256": "918ee6cfbfb5b6c54651da0f9295ad5e3b41f914c66ef8fc016fe56e59a011fd",
    "bytes": 978750
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Tray_01.usd": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/Props/SM_P_Tray_01.usd": {
    "sha256": "4f0716281b45e2ed411632073cd1624216a2afe227cfac19c99254f7cc5cf6b8",
    "bytes": 202276
   },
-  "robobench/backdrops/assets/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/SM_P_Flavour_02.usd": {
+  "robobench/assets/rooms/kitchen/InteractiveAsset/SM_P_Flavour_02/Collected_SM_P_Flavour_02/SM_P_Flavour_02.usd": {
    "sha256": "9e52d10c4d1e77f13cd1eab95516bf35dd4e38d6b73231cab7694e3a4b6443bb",
    "bytes": 16755280
   },
-  "robobench/backdrops/assets/kitchen/KitchenRoom.usd": {
+  "robobench/assets/rooms/kitchen/KitchenRoom.usd": {
    "sha256": "a7d811946d9b2c029ea74c31b8bb97465752a292206dfdcee8d142b2ef0cc92d",
    "bytes": 177415318
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Cabinet001/Kitchen_Cabinet001.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Cabinet001/Kitchen_Cabinet001.usd": {
    "sha256": "d56d7b62682d19e591058c350ab5bed93dd3634994c20f3e6b5368d4655b58f6",
    "bytes": 42138147
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Cabinet001/texture/Kitchen_Cabinet001_BC001.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Cabinet001/texture/Kitchen_Cabinet001_BC001.jpg": {
    "sha256": "011ff0109b2db67b1a93a1a9908f48a6fff8008aac08e631c4006c0e1c8e9ecf",
    "bytes": 1141068
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Cabinet001/texture/Kitchen_Cabinet001_R001.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Cabinet001/texture/Kitchen_Cabinet001_R001.jpg": {
    "sha256": "73f967ad10cb7bb28abd5b1bedcaa80d1136a70344d5c4d438df4e0671ffaccd",
    "bytes": 427073
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Cabinet002/Kitchen_Cabinet002.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Cabinet002/Kitchen_Cabinet002.usd": {
    "sha256": "7f4b736e6392cff56afa357b3ecfffc230c98bc496c49e7b80b5e61312f00ace",
    "bytes": 37055058
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/Kitchen_InsularShelf.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/Kitchen_InsularShelf.usd": {
    "sha256": "343073572964cd097351c8746765c108e5af41ac9e0fa758f2394dce10d70ce3",
    "bytes": 19376087
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/texture/Kitchen_InsularShelf_BC001.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/texture/Kitchen_InsularShelf_BC001.jpg": {
    "sha256": "a4052bbd23b52d2344b15340f00b8f5c8cbcc181e7f21f7a80f936738e5a022d",
    "bytes": 416584
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/texture/Kitchen_InsularShelf_R001.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/texture/Kitchen_InsularShelf_R001.jpg": {
    "sha256": "22c23c729d09fc43f1509d384564a9316bf0ed9c680d1f6749bef19b193620b4",
    "bytes": 146295
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/texture/tfhofbfc_4K_Albedo.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/texture/tfhofbfc_4K_Albedo.jpg": {
    "sha256": "2128f31bdbafd3ae7ee8b44af1ae43fc8cb5201097a00adf0f5381357f6bb54d",
    "bytes": 6904986
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/texture/tfhofbfc_4K_Normal.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/texture/tfhofbfc_4K_Normal.jpg": {
    "sha256": "c489572dc591c05fc396465c41cc8dc41eaefbe5a0e7afee210f107204a0a65d",
    "bytes": 1772245
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/texture/tfhofbfc_4K_Roughness.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/texture/tfhofbfc_4K_Roughness.jpg": {
    "sha256": "6fc42075481d05046c2a011830d294a2761016afb6303d11e7ddcb9d6477a9cc",
    "bytes": 4498366
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/texture/tfjbderc_4K_Albedo.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/texture/tfjbderc_4K_Albedo.jpg": {
    "sha256": "4c5c35fe2a26305c101a0baf66786d05ba599d1c23230d8ce5c364ea541f8e0e",
    "bytes": 4467167
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/texture/tfjbderc_4K_Albedo_lv.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/texture/tfjbderc_4K_Albedo_lv.jpg": {
    "sha256": "a9b9d6333a1b8afa45674d58c9a14af1533bd51e71ebc36fbbd03cf3b4cb9f11",
    "bytes": 4762922
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/texture/tfjbderc_4K_Normal.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/texture/tfjbderc_4K_Normal.jpg": {
    "sha256": "8635be1638792304491bbe43c8e4f064e118c09621eef0c03de10e7342f92d54",
    "bytes": 1055561
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_InsularShelf/texture/tfjbderc_4K_Roughness.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_InsularShelf/texture/tfjbderc_4K_Roughness.jpg": {
    "sha256": "d55fcae6b82e76e6d1e96a7ea6876cebb33ce96e70edb27b641fba3e3fca5fed",
    "bytes": 3539501
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Basket.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Basket.usd": {
    "sha256": "0e719a5c8d8013694ce9509732a4bc3f3fc72e5bf71f72e731cef66fa1b5331a",
    "bytes": 40294263
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Bottle.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Bottle.usd": {
    "sha256": "c5574d1abaa041db07b2e70656f0ddd1abb614ed764bc3fef74b5ceecbb7298f",
    "bytes": 8838210
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Bottle005.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Bottle005.usd": {
    "sha256": "2642722cb84da99dffb9ce93a2d481194fd91dbdb8a956725e83f0a4070032b6",
    "bytes": 1043235
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Bottle006.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Bottle006.usd": {
    "sha256": "0796f6b9143ba15eaf9b41c25cb945a002d6413bed4cf084d05a7904c3168caf",
    "bytes": 1043122
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Bottle007.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Bottle007.usd": {
    "sha256": "8ae20cc39ed06e90917ee7860915143c2b2f3afdedc14cbd70745b8e37e1ad3a",
    "bytes": 1043114
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Box.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Box.usd": {
    "sha256": "ce5a4b97655734c45878347600b3b6ca9fd6685e71e7947ca3192e4925c93cd1",
    "bytes": 4243318
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Box02.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Box02.usd": {
    "sha256": "1ae918431879c70f9a60ac5bac36b1d3bdc7f4422dc45d8974e331a86a5f62d2",
    "bytes": 9866701
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Box07.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Box07.usd": {
    "sha256": "09542dc7d3a9c4a34a0559e205500f97f70b1625b94744555bdbc885c4a4771a",
    "bytes": 12178440
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Disk001.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Disk001.usd": {
    "sha256": "822e16fe883f869398c75bde326ba06485c428d113c7891553a00ba32d6d6915",
    "bytes": 298195
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Disk002.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Disk002.usd": {
    "sha256": "a873ffa057631641ea71b538a394402f25422eb91e1f534a837d2d52dbd1fdac",
    "bytes": 9435467
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Flowers001.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Flowers001.usd": {
    "sha256": "f7a16997447ac20f545ec8dadad11e6a1edfec2a0b86d1436982afa0d04e08a3",
    "bytes": 282849824
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Flowers002.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Flowers002.usd": {
    "sha256": "4cb0e9795e7960b92035b20bd97809ab78f4dcb11acdb06fb0d22f285f9cccbe",
    "bytes": 17573332
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Hookrack001.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Hookrack001.usd": {
    "sha256": "fea699e512095cd3933cf216da16a7ec89c78cb27c8293a1f7ac80e7f73981a1",
    "bytes": 17803411
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_KnifeHolders001.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_KnifeHolders001.usd": {
    "sha256": "87b57b23a7d09c6f2e0760ca94389542db02e3cbbc3b0a3f278e56737b710b8c",
    "bytes": 95904
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Orange001.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Orange001.usd": {
    "sha256": "cfdf805bbcbb7d4f087553f962a73bb7d2b7b4a6775fb836c88afc0261d7b0da",
    "bytes": 12858592
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Orange002.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Orange002.usd": {
    "sha256": "fe38e3b82d2d9ff4433bbda747df974b5fa81fbe150936926a6036c120b67885",
    "bytes": 8344965
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Paper.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Paper.usd": {
    "sha256": "24aba28cdd1c3bdd2bc82465b9a54d69cbddacd97e5600f05e6949f8f9bc4d83",
    "bytes": 5278480
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_Shelf001.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_Shelf001.usd": {
    "sha256": "e4ce17b2dfd366e17a01f12973c131d5e98b1069207b1437182218f6853f0ee1",
    "bytes": 1950816
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_bottle002.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_bottle002.usd": {
    "sha256": "61a377fb4661cb5d2be71d642cd9802358576cb9a4b2df5439a96f51ec6370f4",
    "bytes": 471629
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_bottle003.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_bottle003.usd": {
    "sha256": "cc0595f9fd1a7470ec36e5e1a61f190e5d7686441a0525e7c7630ddcd9153fb4",
    "bytes": 1960433
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/Kitchen_bottle004.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/Kitchen_bottle004.usd": {
    "sha256": "4043143d015c0c2426dca2a996e6bfb1e0e5dbb8cdb0eb918caf736388ed952b",
    "bytes": 1968323
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/1.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/1.jpg": {
    "sha256": "ba75bb47f43750e30cca46348ad78640bcb5e810945ac010110f46b04f42def9",
    "bytes": 481788
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/20412140-files-013.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/20412140-files-013.jpg": {
    "sha256": "b810886b7363729e5a8e5ba4c50839086902f46b9566ba6fd2261c6a18bbe6e5",
    "bytes": 753400
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/20412140-files-014.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/20412140-files-014.jpg": {
    "sha256": "8c9b522d5ff3f796a08624faca73520d4dabd640e2a7e48895dc2936994a61d1",
    "bytes": 631660
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/20412140-files-015.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/20412140-files-015.jpg": {
    "sha256": "cef86c6050c85c2df05b9bb53ea978ef0d425e14414c5482e24f4be0fe1ac611",
    "bytes": 915812
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/20412140-files-016.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/20412140-files-016.jpg": {
    "sha256": "96b797a75632bb0ef6baac3284c2071b4003c814aa91c40d145b7ae2c384c26b",
    "bytes": 136184
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/20412140-files-017.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/20412140-files-017.jpg": {
    "sha256": "70618593aae86843346338a7baf9a00efd7e59ac8cf53b6ed9ddfa31c33155d6",
    "bytes": 74570
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/20412140-files-018.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/20412140-files-018.jpg": {
    "sha256": "c5feb38072bcafe032ace559508c1b2c8f3a99b2868954174ba5ac28dc194927",
    "bytes": 89484
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/20412140-files-019.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/20412140-files-019.jpg": {
    "sha256": "0f1459d44c1f9c7e9a3018d218375e88e2ac6d3d7e6dd400b77999cd2cd94169",
    "bytes": 113696
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/20412140-files-020.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/20412140-files-020.jpg": {
    "sha256": "eaad4d25165d7e384b33f35db5b253d5e021676cbebfafd33eb4510d03813008",
    "bytes": 230632
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-125.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-125.jpg": {
    "sha256": "8d2e9c1ed6d4f13f229e800ba1fcd0c2d7c440609e755f5a35048571986471c0",
    "bytes": 446968
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-138.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-138.jpg": {
    "sha256": "e2d666330d68e5e73b5b0b0c3b7a410b1274ea8389fc977474471394c4131362",
    "bytes": 1108396
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-139.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-139.jpg": {
    "sha256": "24d934a5ca676f94cbd515701760382b5194d1132e392d6553ed2cb5ddd4da36",
    "bytes": 944508
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-140.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-140.jpg": {
    "sha256": "f29c25dcc5caf44e5f86b94be70d8b6199c9e1fb23e8f359d745dd7d2a9f47ee",
    "bytes": 1048715
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-151.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-151.jpg": {
    "sha256": "ba7469fd676cd30a9372893b3fe8953147e835d7fd5ceb584e349f8c0a69dd3a",
    "bytes": 264357
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-152.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-152.jpg": {
    "sha256": "114c4e7e893b7d289c2939d2c17955006a55c6c416425b933dbb039dcdc9b37a",
    "bytes": 206595
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-22.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-22.jpg": {
    "sha256": "1871909ee79518480dd5ca81ca8be0706bb8552199357749f747c49f4382bf83",
    "bytes": 109854
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-25.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-25.jpg": {
    "sha256": "63a4fb769fe2de323b614e9aa5d60ccc1c1519a4c7f4c0f702899b2e205cdcef",
    "bytes": 143431
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-26.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-26.jpg": {
    "sha256": "93d03f3743c97129f606d23b3ef55d313a4a331a2d74fb74d70f676f4cb240a5",
    "bytes": 182449
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-27.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-27.jpg": {
    "sha256": "940298eb576844c1225d0b4b4387606e7f3f569c3c4ca7c3a875e183b06d0bba",
    "bytes": 1755561
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-69.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-69.jpg": {
    "sha256": "e9395101493890235e0faccb5228075017327f026bb7883fcdd1cb51b9bf14df",
    "bytes": 51005
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-70.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-70.jpg": {
    "sha256": "82abf246d9f9c17803a65340cadeac4bc469325442851c1d3d6013d381998d6c",
    "bytes": 14578
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-71.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-71.jpg": {
    "sha256": "8dd48d62461cd0b52bc6f1bef855d91fcaa73b3ffd09052667424e95cee2bcfc",
    "bytes": 23872
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-72.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-72.jpg": {
    "sha256": "92b90e70fac6fb2506ad21f23c2aced481d0264816d5edb2eb67c65c7f63542a",
    "bytes": 137985
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-73.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-73.jpg": {
    "sha256": "15c476387f91f2b67af93b3f723068ad162cc276564bed02812dbe9aa5f6f673",
    "bytes": 23006
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-91.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-91.jpg": {
    "sha256": "cae671593da5ff92b27379d7d9bbf40e297c664762523567c40c5e0d8991b727",
    "bytes": 659054
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-92.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-92.jpg": {
    "sha256": "c1040b5272938a2400f367b64d3c985af0591089cf332c213ba8eaf139ba08d1",
    "bytes": 117875
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/8670919-files-93.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/8670919-files-93.jpg": {
    "sha256": "55e2f01bd674b4e267fd480c01a0a89306c28cf6dcdbdc9ab1b755f1d8c0bac0",
    "bytes": 654742
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/texture/T_knifeHolders001_BC.png": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/texture/T_knifeHolders001_BC.png": {
    "sha256": "a523c1f2a9aa9475a3b16698c45944f5e9eac4bc56e52b7d9979a4aab7bedba7",
    "bytes": 852147
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-022.JPG": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-022.JPG": {
    "sha256": "448bf147a565197715de47667e150543f5df526074d4de78cc6b1e720e57ddc0",
    "bytes": 1780688
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-023.JPG": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-023.JPG": {
    "sha256": "f992cac7d704e7417bc262b6216203eb0495c24cbc4aedf1675b82b2b16fc6b4",
    "bytes": 1389301
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-024.JPG": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-024.JPG": {
    "sha256": "0e17295d4b0da031ca9991d2bd1067693f1cc50405b3ce7dfd4e38e11e415f38",
    "bytes": 1826740
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-025.JPG": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-025.JPG": {
    "sha256": "eed6201ab206378455e30b844654920ae2a52444f3f9a9ff994c1c2c4737e630",
    "bytes": 5187893
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-046.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-046.jpg": {
    "sha256": "79407d82e08f357d13e759bfd7d67ef1cccc316300b50e39be3ef829db76345b",
    "bytes": 1146766
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-047.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-047.jpg": {
    "sha256": "55b55414e470a505ae19cd9b3c70b7d4c18e6a3b623c44471b880ddb610079a4",
    "bytes": 490823
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-050.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-050.jpg": {
    "sha256": "341de6272fd0b3a51b6e53e55860af13525d40e0f8f5caa3ef5dcae1624199d6",
    "bytes": 26882
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-051.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-051.jpg": {
    "sha256": "a52ac83884804c42c6b67111882a82d47f5ffe4abdd1187d57897f9e207de7c1",
    "bytes": 473070
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-052.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-052.jpg": {
    "sha256": "7804735c64b0d98cd0a8071406235c5b0c7dbf48149d79dc87b5484f6d7d4493",
    "bytes": 2982670
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-053.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-053.jpg": {
    "sha256": "25dca6bf08fb54429cab40bda75020f96a37b09b89d1528981ff78bb8c733b1d",
    "bytes": 2504287
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-054.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-054.jpg": {
    "sha256": "4fed9956be5dd387621ede893c1e67251da8da7bbf00b3fe741b99277285bf50",
    "bytes": 6004150
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-055.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-055.jpg": {
    "sha256": "8eb0f6d0d5683b8dee91be3ecdd56411b544e1703aa75057e111cb20b64a7126",
    "bytes": 6606941
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-056.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-056.jpg": {
    "sha256": "d7e2b4a4556ea3191ece11f07de28963b803195e4e47f4622db4ce6b762529a7",
    "bytes": 4746005
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-057.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-057.jpg": {
    "sha256": "4392ab0e9787893d2a16c7ba135ddffe17841967ba09990232517e6b9802efb0",
    "bytes": 12624430
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-058.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-058.jpg": {
    "sha256": "e29742370f4ca45fed71cbd6b1325c4fce04f7a90454db69ed9f162da88d69d5",
    "bytes": 414429
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-059.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-059.jpg": {
    "sha256": "d82b53cc364238da26fa77c0351df7cd3b48ccd55720a6a0004c469e0a3c7f38",
    "bytes": 328278
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-060.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-060.jpg": {
    "sha256": "30a5c0c6b76e009a9e5dab22ca86ae44fba79db5d8cd633e48cc865ef86f292a",
    "bytes": 2266372
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-061.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-061.jpg": {
    "sha256": "534d018398cfd4a3bd7d6ef3eb39b1b50c89ada983b14907c3b902bb2002fec5",
    "bytes": 1658715
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-062.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-062.jpg": {
    "sha256": "d1b3a43100057eb2f03e37192d1129681c616f82ae3b613775454faaf1fea326",
    "bytes": 4422804
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-063.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-063.jpg": {
    "sha256": "eb2cf8fcf113f9e549350c6927cbc1ec4659abe5302d0236142ea5151c19132d",
    "bytes": 244899
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-065.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-065.jpg": {
    "sha256": "75ea311beb01fd05391f13becdaed4011b93e2d711bc45c7e929fa68280820a6",
    "bytes": 170852
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-125.JPG": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-125.JPG": {
    "sha256": "c2c73b1a23ab2c3c32c8081fc34c30a6f93bd9ec68aec278bca41e4826200ed4",
    "bytes": 100491
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-128.JPG": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-128.JPG": {
    "sha256": "4074a8606cd8dbb9aa78c64992ea9c1192fb51776b9f79cc5504f1a4b20f1ba3",
    "bytes": 17794
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-131.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-131.jpg": {
    "sha256": "e8f4fb7ff0489e4da3f7165e2418d13c6b464ad565fa54ef8c09c559731685ca",
    "bytes": 45900
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-155.JPG": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-155.JPG": {
    "sha256": "cf441fd7af7bfe155d4a19b15181ebb0ed03c2fcc47d0d750f083fee87d3009c",
    "bytes": 586932
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-156.JPG": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-156.JPG": {
    "sha256": "f8bfffcdc9f193e18f3a0342d4f2233bdb35ac702a1612f9c595521a8dc1bf58",
    "bytes": 1907942
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-157.JPG": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-157.JPG": {
    "sha256": "f9ca312c5a05ae78b4412e943b4b5495678346ed733e406b1d6432686d0b1a5d",
    "bytes": 1907544
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-168.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-168.jpg": {
    "sha256": "7eb035e79b25796536e08db847621bce301dfe020d3f480932e26f57a7ba0021",
    "bytes": 255487
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-169.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-169.jpg": {
    "sha256": "c81f35e4123e3d46fc1553eee2988179768e4dc33b7af53d7a6211784051ea9d",
    "bytes": 376218
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-170.jpg": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-170.jpg": {
    "sha256": "c827ad68c638ba55ed607e9648c7fd51f30ce1b0ae75113a85ca222e0df952b7",
    "bytes": 80613
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Other/textures/19913701-files-183.png": {
+  "robobench/assets/rooms/kitchen/Kitchen_Other/textures/19913701-files-183.png": {
    "sha256": "fbd9a6190ff04919a25db166ef65b586a010c52de4e6fde7d94c70cccd7c7d0d",
    "bytes": 2102358
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_TopCabinet/Kitchen_TopCabinet.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_TopCabinet/Kitchen_TopCabinet.usd": {
    "sha256": "d521bf4addf725d1dfdb6a2219f05c4d6ddddf2ca562782adb2b7453d92b985f",
    "bytes": 25225893
   },
-  "robobench/backdrops/assets/kitchen/Kitchen_Wall001.usd": {
+  "robobench/assets/rooms/kitchen/Kitchen_Wall001.usd": {
    "sha256": "81842d44034edd278e4851a81171ee0dcb69c24f74f79247f90f818457dbbd0d",
    "bytes": 13364
   },
-  "robobench/backdrops/assets/kitchen/Microwave017/Microwave017.usd": {
+  "robobench/assets/rooms/kitchen/Microwave017/Microwave017.usd": {
    "sha256": "a6645c97c6d8d30f91d4e8bd627059e1bbeeb1f170ccd22da8ad37d6ca10b3b0",
    "bytes": 38715987
   },
-  "robobench/backdrops/assets/kitchen/Microwave017/Tex/T_Microwave170001.jpg": {
+  "robobench/assets/rooms/kitchen/Microwave017/Tex/T_Microwave170001.jpg": {
    "sha256": "28daf8f2aeae081b0c7ed91c627bfbf36efe5d65647ca2ad97777a3b811adf09",
    "bytes": 345471
   },
-  "robobench/backdrops/assets/kitchen/Microwave017/Tex/T_Microwave170002.jpg": {
+  "robobench/assets/rooms/kitchen/Microwave017/Tex/T_Microwave170002.jpg": {
    "sha256": "bab71b7a63c28e530d35de1d97fe4de0f000a912edf61b55095975dc1ad07b88",
    "bytes": 297288
   },
-  "robobench/backdrops/assets/kitchen/PROVENANCE.json": {
+  "robobench/assets/rooms/kitchen/PROVENANCE.json": {
    "sha256": "fe8f93f384ddbc91f282b48fbd9c2ccf894b0aad9c65497e81a923f4091928f0",
    "bytes": 264
   },
-  "robobench/backdrops/assets/kitchen/Pot057/Pot057.usd": {
+  "robobench/assets/rooms/kitchen/Pot057/Pot057.usd": {
    "sha256": "4d36ce9bde33830f2df13632dffcdd56eded1188edfcf3c7229f1f9e846a753f",
    "bytes": 3031470
   },
-  "robobench/backdrops/assets/kitchen/Pot057/textures/T_Pot057_BC001.png": {
+  "robobench/assets/rooms/kitchen/Pot057/textures/T_Pot057_BC001.png": {
    "sha256": "c2f46626129f3cc62a75f804f34bfc3c88f2b2dd3b248df21c46a3f54ce4d118",
    "bytes": 7052
   },
-  "robobench/backdrops/assets/kitchen/RangeHood015/RangeHood015.usd": {
+  "robobench/assets/rooms/kitchen/RangeHood015/RangeHood015.usd": {
    "sha256": "acf43be175ab4d1c4e660807edecddc6da23bc8d4cd290590fe562919995b9d4",
    "bytes": 10430574
   },
-  "robobench/backdrops/assets/kitchen/RangeHood015/textures/T_RangeHood015_BC001.png": {
+  "robobench/assets/rooms/kitchen/RangeHood015/textures/T_RangeHood015_BC001.png": {
    "sha256": "d798ca1f393c795d43476dc41b60e64442803d69a2007b09a0975da6d0fb895e",
    "bytes": 360670
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/Refrigerator001.usd": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/Refrigerator001.usd": {
    "sha256": "90c33da5593bb916797bb0f19f7a865635a92b17e22b50641a81e019c177c554",
    "bytes": 80401177
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0000.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0000.jpg": {
    "sha256": "a69ae2a0448f5c3f9c83d433357dca95e228c47a118e625d310d22ab187c1726",
    "bytes": 36707
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0002.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0002.jpg": {
    "sha256": "5f57665ce5af8b6d9a6b0b34d8b55af751237667e70caf94f3ba0b826b5e308e",
    "bytes": 39328
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0003.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0003.jpg": {
    "sha256": "40555f5142443f7063ced3396767bdaa0b4924765e5770e26a1d07ee4c8ba1e5",
    "bytes": 19688
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0004.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0004.jpg": {
    "sha256": "2d287b80f5040e313dbe79015128a2fa95124d61ebb8b9bae0fc7826d709efac",
    "bytes": 28980
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0006.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0006.jpg": {
    "sha256": "a0bd5c6f32a14da9ef77fd6e163f1ef7cdce0192bd6be3e243396fab67915570",
    "bytes": 35510
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0008.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0008.jpg": {
    "sha256": "4ac393db01cea15a1eb62699625a147ee680a037f11d51fe0c9babf5e7bd572b",
    "bytes": 40686
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0009.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0009.jpg": {
    "sha256": "2c4a5c908ee4b20cab1ef177eff5520c906de1280671ecf94d350cfeb2cab376",
    "bytes": 44683
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0011.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0011.jpg": {
    "sha256": "fa9cade799e5f394e213b9eac56906c42e83dc60dfa18cb57a64b89f2238edec",
    "bytes": 56573
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0013.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0013.jpg": {
    "sha256": "bfc827fc2308a49e0d4bf0e04c59b4cd75e7beb7f783728e6dbef5a1046039bb",
    "bytes": 27967
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0014.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0014.jpg": {
    "sha256": "c5c20e641a39ba33b2983518121134205cd5cc53edd14c93bd1182aaf269c3ff",
    "bytes": 190859
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0016.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0016.jpg": {
    "sha256": "8ce2b00ba08bc1892a10f81f413fbe3feaeb4f69fbd548f55ab5ecab5444e20e",
    "bytes": 74042
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0019.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0019.jpg": {
    "sha256": "dc6266a465cd5fc082295fc1fe3e7ddf7d0b22d07bcfd1bdf729dcde618765d3",
    "bytes": 30768
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0020.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0020.jpg": {
    "sha256": "7fc1b727866b0ae2adf5617e910bb9764a141a84121e5c2b41801c5ab0e241c5",
    "bytes": 51465
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0022.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0022.jpg": {
    "sha256": "548378c5bfb91a0b3552b74e24135751282d422d30703eded43b4f372c8b9a68",
    "bytes": 55041
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0024.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0024.jpg": {
    "sha256": "e312ede85cbef5df0786ec0fda3c5a34979d9ad8ad2cbf6ad4023e4ef04b853a",
    "bytes": 37648
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0025.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0025.jpg": {
    "sha256": "b0415c13c7218190ad38e16c23990d90b21c2f5cbbaa3f0520c706cabe4a7836",
    "bytes": 10551
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0027.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0027.jpg": {
    "sha256": "0ffa13b1bcf0552816bb4fa29f6a71335290eb6e9d38d5a39a3cdc425577382e",
    "bytes": 6428
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0029.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0029.jpg": {
    "sha256": "b604e54c196fe5b22273f45808f45ee824fc5dd0bf4674d6e505f024f72b6fb7",
    "bytes": 6428
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0030.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0030.jpg": {
    "sha256": "d6bb68e34a7d996ed93ca65fbf59fcaf902d99a4ca2b56312fdbe122570d8d54",
    "bytes": 36031
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0032.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0032.jpg": {
    "sha256": "9dafe1a82a15744f0526d226f87c2322f1a997c2c20f875df9fe2922a8a9ce26",
    "bytes": 18894
   },
-  "robobench/backdrops/assets/kitchen/Refrigerator001/texture/T_Refrigerator1_0034.jpg": {
+  "robobench/assets/rooms/kitchen/Refrigerator001/texture/T_Refrigerator1_0034.jpg": {
    "sha256": "009ba5f54f24e3f8817482844d17adc42a1cb9de906eed6a705d7f26124e226b",
    "bytes": 29637
   },
-  "robobench/backdrops/assets/kitchen/Sink054/Sink054.usd": {
+  "robobench/assets/rooms/kitchen/Sink054/Sink054.usd": {
    "sha256": "b7aa2abd53ebe9e2687c3c58151b3f5a09359be86d2a4cbc9b60d2785e134eec",
    "bytes": 28830231
   },
-  "robobench/backdrops/assets/kitchen/Sink054/texutre/T_Sink054_BC001.png": {
+  "robobench/assets/rooms/kitchen/Sink054/texutre/T_Sink054_BC001.png": {
    "sha256": "aca8b3e2d672ce53124cc79611b6657dfac943b83708b21060381ea22e2a4dc5",
    "bytes": 9742
   },
-  "robobench/backdrops/assets/kitchen/Stovetop012/Stovetop012.usd": {
+  "robobench/assets/rooms/kitchen/Stovetop012/Stovetop012.usd": {
    "sha256": "4a711c6654fe5f54bc1c0740e9c85213a56fc6e97c0bee85f75d11f6371f212c",
    "bytes": 2693647
   },
-  "robobench/backdrops/assets/kitchen/Stovetop012/texture/T_Stovetop012_BC001.png": {
+  "robobench/assets/rooms/kitchen/Stovetop012/texture/T_Stovetop012_BC001.png": {
    "sha256": "e9842aba69961220c38c3409b124af8159ee62460ca0787a97fd20c785e2cf5a",
    "bytes": 203652
   },
-  "robobench/backdrops/assets/kitchen/Table049/Table049.usd": {
+  "robobench/assets/rooms/kitchen/Table049/Table049.usd": {
    "sha256": "33e9fca333ebafc72b991f7052168867d35f22d488df7d0c0d2fd3a9ae754341",
    "bytes": 6656126
   },
-  "robobench/backdrops/assets/kitchen/Table049/texture/T_Table049_BC001.png": {
+  "robobench/assets/rooms/kitchen/Table049/texture/T_Table049_BC001.png": {
    "sha256": "e843eb35830a208dbeaa41f96ee8678fd3eae1202a0debae705292e1ded5b76a",
    "bytes": 2944998
   },
-  "robobench/backdrops/assets/kitchen/Table049/texture/T_Table049_N001.png": {
+  "robobench/assets/rooms/kitchen/Table049/texture/T_Table049_N001.png": {
    "sha256": "9352232ce2beb23d8959985adac6ba835e3254b66a9e14c933a55b51777a8bd6",
    "bytes": 2506580
   },
-  "robobench/backdrops/assets/kitchen/Table049/texture/T_Table049_ORM001.png": {
+  "robobench/assets/rooms/kitchen/Table049/texture/T_Table049_ORM001.png": {
    "sha256": "1181ba8139ebe6b3f34e1545c941ac5572bb41444e61b3ba9c650897314de323",
    "bytes": 5168358
   },
-  "robobench/backdrops/assets/kitchen/Toaster003/Toaster003.usd": {
+  "robobench/assets/rooms/kitchen/Toaster003/Toaster003.usd": {
    "sha256": "b08d66168def455c974d8d1b806e4c39f5221588b7c91da53c8c0ef9f65435d2",
    "bytes": 1866700
   },
-  "robobench/backdrops/assets/kitchen/Toaster003/textures/T_Toaster003_BC001.png": {
+  "robobench/assets/rooms/kitchen/Toaster003/textures/T_Toaster003_BC001.png": {
    "sha256": "2925f10460bd3911b2efe5632d782935b0f010ca41280868f270c7d024a998ca",
    "bytes": 624306
   },
-  "robobench/backdrops/assets/kitchen/WallStackOven004/WallStackOven004.usd": {
+  "robobench/assets/rooms/kitchen/WallStackOven004/WallStackOven004.usd": {
    "sha256": "0c32a1811e506daabe048d55622fe7b5dcae604f4a6712fd08fcd74b5d153386",
    "bytes": 15561614
   },
-  "robobench/backdrops/assets/kitchen/WallStackOven004/texture/T_WallStackOven004_BC001.png": {
+  "robobench/assets/rooms/kitchen/WallStackOven004/texture/T_WallStackOven004_BC001.png": {
    "sha256": "ca07bcabba3dbec94f93d24e8308875028076cf2bfd0ad716267f128f3d20387",
    "bytes": 294961
   },
-  "robobench/backdrops/assets/kitchen/omniverse-content-production.s3.us-west-2.amazonaws.com/Assets/Extensions/Samples/Paint/cube.usd": {
+  "robobench/assets/rooms/kitchen/omniverse-content-production.s3.us-west-2.amazonaws.com/Assets/Extensions/Samples/Paint/cube.usd": {
    "sha256": "1f8d657db45da241d17a6c80ba848b67b7d5fd141e57bfa7860e27a48c9ba6f5",
    "bytes": 1581
   },
-  "robobench/backdrops/assets/kitchen/scene_visual.usd": {
+  "robobench/assets/rooms/kitchen/scene_visual.usd": {
    "sha256": "ab87ce69290353d60d61de900626b7b49df38941e73d412ade5ceca922dc4f34",
    "bytes": 13664
   },
-  "robobench/backdrops/assets/kitchen/texture/Kitchen_Ground_BC.jpg": {
+  "robobench/assets/rooms/kitchen/texture/Kitchen_Ground_BC.jpg": {
    "sha256": "9f7f41d248faf4e983cbe62c0896fd1b253c86a63748089b14f3c65b5ed5bd52",
    "bytes": 7500085
   },
-  "robobench/backdrops/assets/kitchen/texture/Kitchen_Ground_N.jpg": {
+  "robobench/assets/rooms/kitchen/texture/Kitchen_Ground_N.jpg": {
    "sha256": "7b83ea7a6ee405b3801d4440dd2f12291920971b0efcf5329f29a0ec915fb021",
    "bytes": 1651236
   },
-  "robobench/backdrops/assets/kitchen/texture/Kitchen_Ground_R.jpg": {
+  "robobench/assets/rooms/kitchen/texture/Kitchen_Ground_R.jpg": {
    "sha256": "6bd6b58bc8c07c27b02fd447a97b81c66fb0ea3f1e88cce1b1be0c6bf071e990",
    "bytes": 3783961
   },
-  "robobench/backdrops/assets/kitchen/texture/Kitchen_Wall_BC002.jpg": {
+  "robobench/assets/rooms/kitchen/texture/Kitchen_Wall_BC002.jpg": {
    "sha256": "a20837398e5cf2f3a4269d1e3a377847420ad2b05b6b1709311598aa733ff3e7",
    "bytes": 12961412
   },
-  "robobench/backdrops/assets/kitchen/texture/Kitchen_Wall_N002.jpg": {
+  "robobench/assets/rooms/kitchen/texture/Kitchen_Wall_N002.jpg": {
    "sha256": "cd29015c6a13d33f2478684511220340acdbf6d046af10210cf3bf870898035a",
    "bytes": 3316572
   },
-  "robobench/backdrops/assets/kitchen/texture/Kitchen_Wall_R002.jpg": {
+  "robobench/assets/rooms/kitchen/texture/Kitchen_Wall_R002.jpg": {
    "sha256": "5879835727980ce79b61ad25bad901186dc2d3c606e76a822c0972b174a1fe11",
    "bytes": 1910012
   },
-  "robobench/backdrops/assets/kitchen/texture/chive 7000x3500.hdr": {
+  "robobench/assets/rooms/kitchen/texture/chive 7000x3500.hdr": {
    "sha256": "c59a6e3a38518541d1c99f8fdb622f0aecd1e5a2d917f2364af47f2ec2ff1ccc",
    "bytes": 71376022
   },
-  "robobench/backdrops/assets/simple_room/Materials/DefaultMaterial.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/DefaultMaterial.mdl": {
    "sha256": "835f07a1da29b3f30010a7b6b317d216efa96184a4ae7ade4f2f470b5f0aff74",
    "bytes": 2851
   },
-  "robobench/backdrops/assets/simple_room/Materials/MI_Parquet_Floor.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/MI_Parquet_Floor.mdl": {
    "sha256": "ea0cb3434afa4975744158c89cca3de0e7f74257a40e7ce39502132f567e9446",
    "bytes": 2283
   },
-  "robobench/backdrops/assets/simple_room/Materials/MI_Table.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/MI_Table.mdl": {
    "sha256": "761114022d945ee6fae32174fe47d8fa100b33443d75488bf3458469b7d3c931",
    "bytes": 2329
   },
-  "robobench/backdrops/assets/simple_room/Materials/MI_WhitePlastic.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/MI_WhitePlastic.mdl": {
    "sha256": "609cefba9e722e612c17953e8170d5b8a95276af14e068d9c06758fd67ca9c67",
    "bytes": 3199
   },
-  "robobench/backdrops/assets/simple_room/Materials/MI_WhitePlastic2.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/MI_WhitePlastic2.mdl": {
    "sha256": "e38a395077f99c992daa4c2aa61343cb7a11eb1ef01ed730405b920913513872",
    "bytes": 3199
   },
-  "robobench/backdrops/assets/simple_room/Materials/MI_WoodWall.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/MI_WoodWall.mdl": {
    "sha256": "adf0a41e0b3b458fc5a1d4c15b0b4b705c4e359d657e43c0bcb94b3687a64101",
    "bytes": 2174
   },
-  "robobench/backdrops/assets/simple_room/Materials/M_Emissive_Light.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/M_Emissive_Light.mdl": {
    "sha256": "b3b2ba6d9baa069db286b12cd15db59fa3d33c63316e07ec91cd3c67123aaae8",
    "bytes": 1227
   },
-  "robobench/backdrops/assets/simple_room/Materials/M_Glass.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/M_Glass.mdl": {
    "sha256": "853a82183b0e4480d6af1b364715e8ae9f16aac0c12ba7c2f0fccfc8eb272572",
    "bytes": 1532
   },
-  "robobench/backdrops/assets/simple_room/Materials/M_Sky_Panning_Clouds2.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/M_Sky_Panning_Clouds2.mdl": {
    "sha256": "bb50432283024c16254d34074b5de59c66f129777b923f6515f521008bc0c093",
    "bytes": 5566
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/DefaultMaterial_Base_Color.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/DefaultMaterial_Base_Color.png": {
    "sha256": "49a93f3124cc628d579ac7ad39708ef1692c642668fd9ae784264dd728069bfd",
    "bytes": 309606
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/DefaultMaterial_Mixed_AO.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/DefaultMaterial_Mixed_AO.png": {
    "sha256": "1a53593fa84590c8339714c247a7b5b71bd578ce72fc0168b1e335efb0a17cd5",
    "bytes": 1110839
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/DefaultMaterial_Normal_DirectX.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/DefaultMaterial_Normal_DirectX.png": {
    "sha256": "12aec50406cf9ba8f5c32cb27d35dd1af367433a7cd91de5d191fe0ddec57009",
    "bytes": 2052839
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/DefaultMaterial_Roughness.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/DefaultMaterial_Roughness.png": {
    "sha256": "0ab8364b5adfab4bd74ac4df359eb271595b3f0593eaf7e50ffd539b6155ad7c",
    "bytes": 87313
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/OmniUe4Base.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/OmniUe4Base.mdl": {
    "sha256": "505961c8fc04f949f6cd02d99b878d2eaed050873ec6af8987d2656167878373",
    "bytes": 8443
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/OmniUe4Function.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/OmniUe4Function.mdl": {
    "sha256": "4afd5f8cbee83e8f9a4520409917b2b72fcb5cbc48ade66580b8453c4a2c1726",
    "bytes": 46370
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/OmniUe4Translucent.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/OmniUe4Translucent.mdl": {
    "sha256": "a3a9ebf29ab9752f6fa91c68de85d8be8cce88a9fb5ce9fa5132562dc132ed0b",
    "bytes": 8088
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/Parquet_AO.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/Parquet_AO.png": {
    "sha256": "8917fc3f37e3e5985823f01339d5009eb2094ba3156f6f1326cd3ada0e9836c3",
    "bytes": 100361
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/Parquet_Color.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/Parquet_Color.png": {
    "sha256": "c67a4b0c0d77134cbe667af01b81861b5c157a738d7659fb3d348dabc204fe2f",
    "bytes": 17770200
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/Parquet_Normal.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/Parquet_Normal.png": {
    "sha256": "ef2d766ab27ff02e3b519a9438746d94264dc130bdc23f6ddddd89fed57e8c81",
    "bytes": 9157075
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/Parquet_Rough.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/Parquet_Rough.png": {
    "sha256": "dd7abcbf1627299aaddc730f4399683a51dbae4dca8180e683d71e4533d67b96",
    "bytes": 7945746
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/T_Default_Material_Grid_M.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/T_Default_Material_Grid_M.png": {
    "sha256": "9311e9d988b3fe8d40b672b80423877892a75fac45e12dd829cd8c58cc3fbc2f",
    "bytes": 239549
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/T_Default_Material_Grid_N.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/T_Default_Material_Grid_N.png": {
    "sha256": "0bc4af8129e4903b101ad10870f3036943668e96656b4eb60b4393557eea8b27",
    "bytes": 5059
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/T_Sky_Blue.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/T_Sky_Blue.png": {
    "sha256": "ceec1505a409b50b4b28ee6aaec027bcbd7ad05613dffb03b529325adc924c21",
    "bytes": 17235134
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/T_Sky_Clouds_M.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/T_Sky_Clouds_M.png": {
    "sha256": "8b702356fefb468719b7855dbac493674bba2572b1568ffabd680173c3e16f43",
    "bytes": 2810867
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/T_Sky_Stars.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/T_Sky_Stars.png": {
    "sha256": "f488c9b086a5cd1989aacbf631474c1bf0b3b96b62b0b0abd1a16cbd4e99822b",
    "bytes": 43597
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/WallWood_Color.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/WallWood_Color.png": {
    "sha256": "5890ba4255bf7ce41465c5ec8131d02aa04853480ceafa99dbee2106bdc15906",
    "bytes": 22115990
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/WallWood_Normal.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/WallWood_Normal.png": {
    "sha256": "9082f2f18db24a5e9d92282aab6b01c930d9d1d1d97825540e7cb7465f561b94",
    "bytes": 11588550
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/WallWood_Rough.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/WallWood_Rough.png": {
    "sha256": "52246dd49107cec33307654ae1021b88cd65af53069b9e235f703aa34f90be7b",
    "bytes": 7578363
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/WhitePlastic_Color.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/WhitePlastic_Color.png": {
    "sha256": "f1705e778fe56e1b22f86d7e4fb8e12def7e5e0a1c053be46db5100fec093861",
    "bytes": 4639472
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/WhitePlastic_Normal.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/WhitePlastic_Normal.png": {
    "sha256": "67eac4ffbea3538fcf40a44c63abfa432517c78895c5537396dea7b87cca7f7c",
    "bytes": 304449
   },
-  "robobench/backdrops/assets/simple_room/Materials/Textures/WhitePlastic_Rough.png": {
+  "robobench/assets/rooms/simple_room/Materials/Textures/WhitePlastic_Rough.png": {
    "sha256": "9f94f83edcfb93a03f79df531db6f5237fceb20eacee46c0cb8c07c1ed66c86e",
    "bytes": 8055045
   },
-  "robobench/backdrops/assets/simple_room/Materials/WorldGridMaterial.mdl": {
+  "robobench/assets/rooms/simple_room/Materials/WorldGridMaterial.mdl": {
    "sha256": "052fa93c3dbab98fab623e559210cb11371759e87960ea269c44995c678616d6",
    "bytes": 2853
   },
-  "robobench/backdrops/assets/simple_room/PROVENANCE.json": {
+  "robobench/assets/rooms/simple_room/PROVENANCE.json": {
    "sha256": "6323f79c5707c6e1d003c861d9a387a3f0f3f9173f21400b032b29802a25d61e",
    "bytes": 279
   },
-  "robobench/backdrops/assets/simple_room/Props/SM_SkySphere.usd": {
+  "robobench/assets/rooms/simple_room/Props/SM_SkySphere.usd": {
    "sha256": "abe83ba86cdcc0177d175b07fda332ddf9c096a90830f02cdc486cb6c8c6cec0",
    "bytes": 115944
   },
-  "robobench/backdrops/assets/simple_room/Props/SM_Template_Map_Floor.usd": {
+  "robobench/assets/rooms/simple_room/Props/SM_Template_Map_Floor.usd": {
    "sha256": "b8d3270214b18310c3c435a729008f9bb35f48044a0a1b0dfe2c7ecdf62fa867",
    "bytes": 6736
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_bottom.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_bottom.usd": {
    "sha256": "ce3040786d1f8857a451017ebe76d9a238b51748466f2fdad5d7c78ced1ccb7e",
    "bytes": 26249
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_back.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_back.usd": {
    "sha256": "b3b4b229068e9013c2c51cceac6dd4e1c84263c2d262a51f19f92910895581bf",
    "bytes": 8948
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_back001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_back001.usd": {
    "sha256": "999a8b261edbfe4bf8ba589aa3205e0e4b50668a63e8e789bb2548e65613e869",
    "bytes": 8967
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_corner.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_corner.usd": {
    "sha256": "11fe9c1a0d73be0d6cf25d1d22203e5b4842cc487e76a1d2eb58b5c19d9f3d0e",
    "bytes": 16679
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_corner001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_corner001.usd": {
    "sha256": "59f8979fb9fb22918af767b52719724550f8958052bddd41dc83ba6f76f61c59",
    "bytes": 16716
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_corner002.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_corner002.usd": {
    "sha256": "5d752d746d7f9f1d9a4b12aec4dd8400032715054b8dfd20829fe1fba54c33ae",
    "bytes": 16700
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_corner003.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_corner003.usd": {
    "sha256": "6ed68c8eb896024178ac7984189a20da3fb0e99dad1e2938f5e017dbf03c0f4c",
    "bytes": 16716
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_corner004.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_corner004.usd": {
    "sha256": "298951d67ac6a9775af7c171fe978285d1df508f9cda8ece63904ea7ff3cf2c8",
    "bytes": 16700
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_corner005.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_corner005.usd": {
    "sha256": "733dbb01657cbbca74727d0e9bbdf3d4d045f68cd6e96b75054150c00a8bc11c",
    "bytes": 16700
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_corner006.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_corner006.usd": {
    "sha256": "31b7b607d62d1f42dffe5c3c0058acc6ff045fda5b55c051cd1e7b1eceb980cb",
    "bytes": 16708
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_corner007.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_corner007.usd": {
    "sha256": "8879af8e3cbcb25986a64a5d85ee9e19bd34a07975ae96cee8d0f48bab25649c",
    "bytes": 16700
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_front_center.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_front_center.usd": {
    "sha256": "3d35dfcd9784bddc6132c678eda53af1175d268f48d44e074791d73160f8eb80",
    "bytes": 8795
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_front_center001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_front_center001.usd": {
    "sha256": "9e71ac54120e878fdc34ad92a47fa9f288058cef1deb406ae6aaa92d6f3d5d84",
    "bytes": 8782
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_front_center_side.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_front_center_side.usd": {
    "sha256": "9da6f7bb40357cceaea8ec016d98fa57484e5d6b9a4ad3e2b022e4fe89a9451c",
    "bytes": 8880
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_front_center_side001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_front_center_side001.usd": {
    "sha256": "764b36d6a9c67152e08f626eddc589dccc48702ac9f2d60a722e908b04840e67",
    "bytes": 8972
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_front_center_side002.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_front_center_side002.usd": {
    "sha256": "ea25bcc8069843346003d58b15b84c1423ee80bd620ad6ea1697534d62c51a58",
    "bytes": 8883
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_front_center_side003.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_front_center_side003.usd": {
    "sha256": "0e0d549c9886f0aa1cf52ff9679baf27aa46de74fa581227cc1d119022105e9f",
    "bytes": 8867
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_side.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_side.usd": {
    "sha256": "8409dbf19a28b2906dd21bf69489aed82e5d6be8a4937089c7727bf715e5686d",
    "bytes": 8956
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_side001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_side001.usd": {
    "sha256": "13702666e354a8b12838b68fb1081678bb8d27895a04e613fc6c53d0794935d3",
    "bytes": 8967
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_side002.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_side002.usd": {
    "sha256": "33898a0a24cb2bf5a629dc38ae45d9d06f18fba622feb9367d640da0e422de63",
    "bytes": 8975
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_rim_side003.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_rim_side003.usd": {
    "sha256": "6ad97b3d8bb8dfecfe13ba68ea266cfacb94c5c31139020db018fd31b7955ff5",
    "bytes": 8959
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_floor_top.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_floor_top.usd": {
    "sha256": "caedc7085099d471ca49a493caa2a72c5a29d0927c474735a701407784083dfb",
    "bytes": 26246
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_florr_edge.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_florr_edge.usd": {
    "sha256": "e57aa49c550180f1ff4e3f7e7b9f730a89e6448c51cd8c61865f0cdb6526d612",
    "bytes": 56001
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_florr_edge001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_florr_edge001.usd": {
    "sha256": "31f7baea39c4bd756d74cfd5bff7987c171f046ae9fa320646afe4ad8e40b937",
    "bytes": 55884
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_lamp.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_lamp.usd": {
    "sha256": "503097e56f3e6a77a3486abc7f7fbc2a599d2f7db62fa385b31d2f1b54afd90a",
    "bytes": 22161
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_lamp_frame.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_lamp_frame.usd": {
    "sha256": "9122ba9284819e6f9a1bcd00156052e6df9051b2ba1cc9afd4a72d5885aaf9e4",
    "bytes": 68027
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wall_back.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wall_back.usd": {
    "sha256": "8b58adb916996fbbe133b1f7f7251003731d8ceeb72beae517a21db2c0b220d8",
    "bytes": 22962
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wall_back001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wall_back001.usd": {
    "sha256": "ded79cc3e3a486025c877aa50c44ff5b0d6e6cfe2ec892ed131dea9c36affd8b",
    "bytes": 22934
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wall_corner.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wall_corner.usd": {
    "sha256": "c64d5ad8d6768809534274ab2e25f950d297407cdb8061deb76af592edee3a30",
    "bytes": 29116
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wall_corner001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wall_corner001.usd": {
    "sha256": "847f83fc78eb643c338f504fe34eed6394803bc8dadcf37c591609937b832aae",
    "bytes": 29184
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wall_corner002.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wall_corner002.usd": {
    "sha256": "37f1ceeb3131222db6b977778f3398113b8e386ea0f144495d55ef54cb52d1a1",
    "bytes": 29159
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wall_corner003.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wall_corner003.usd": {
    "sha256": "2e1b699e9092a71d2371a0c7157e508fefc40e4478ad496f48f107db06226b86",
    "bytes": 29159
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wall_side.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wall_side.usd": {
    "sha256": "4b1fdee552ef2648e4ee1e655073827b74dabbbbdc094d3043350197f68c037b",
    "bytes": 22382
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wall_side001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wall_side001.usd": {
    "sha256": "28f8fe5a708c43436d343c02bfe4b92bef3ef06dc8171eaef7dfe5c328b2809b",
    "bytes": 22393
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window.usd": {
    "sha256": "a06c0bc385bd7db6ad0fd170a55d128e1aa4e315cc0e4f8885e8fb3c25fb72bb",
    "bytes": 1721
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window1.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window1.usd": {
    "sha256": "d6e716d454f91afb7767dc533ecefaf3e3374749685e817bc86765edb7ca380b",
    "bytes": 1729
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window_frame_bottom001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window_frame_bottom001.usd": {
    "sha256": "63d2cb4a5e1ce45a2e17231ee8198f69c5bf45a298fe3dc0784f449935157e52",
    "bytes": 15067
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window_frame_bottom002.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window_frame_bottom002.usd": {
    "sha256": "88adedfb2e3eb9c05cb39d5d4af1b9f239503bde024da9fc58ce37f0c56c444e",
    "bytes": 15075
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window_frame_corner002.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window_frame_corner002.usd": {
    "sha256": "80c4dbd002404ffd68fcfec9de3d543946272fba3469c28e3e84787468753cd2",
    "bytes": 31362
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window_frame_corner004.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window_frame_corner004.usd": {
    "sha256": "8a85144c2d9187c869cbb0ee2d6e9d97f879635368a4ffa2f0ec0c74e5b621d9",
    "bytes": 31450
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window_frame_corner005.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window_frame_corner005.usd": {
    "sha256": "723180754edc131dae15b9d5cae17ef3ba38c126acb502d196308ff3130c8bb6",
    "bytes": 31362
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window_frame_corner006.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window_frame_corner006.usd": {
    "sha256": "cdd9dd8e71d69183b88e3873fe08a5b9192945d79b0bb5721a0a74637416cf21",
    "bytes": 31450
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window_frame_side001.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window_frame_side001.usd": {
    "sha256": "abdc91d02c0725d791fd2be9ae577cd08bf9a0cd435c794eb9cf541b01067f85",
    "bytes": 15428
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_window_frame_side002.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_window_frame_side002.usd": {
    "sha256": "c690893f18e6fb3c44330e844ef2dea5317b559d61cbb14448ebbebd010ac33f",
    "bytes": 15484
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wood_wall_008.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wood_wall_008.usd": {
    "sha256": "0271ad2bb5d5b02f18ebf2e2cb8253c6d736268ca23a5d61207617cd7ab1b099",
    "bytes": 3717
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wood_wall_009.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wood_wall_009.usd": {
    "sha256": "4f8b6153dd9aaae6304af6beedee0a1dd6374fe030ec2cb74e1bfd346e623fe1",
    "bytes": 3717
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wood_wall_1.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wood_wall_1.usd": {
    "sha256": "07163f6f447fcf2246957741952c208fa583315661d84f41cebc7df30dd60c7d",
    "bytes": 3915
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wood_wall_2.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wood_wall_2.usd": {
    "sha256": "08f07cb39f2edb66dca88398b1d24362303769be15de8887a987ef73b7f64b94",
    "bytes": 3915
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wood_wall_3.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wood_wall_3.usd": {
    "sha256": "5a08e8d53266777187fd6896043af08c646c9dd1ce04e88563c25328657b004f",
    "bytes": 3915
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wood_wall_4.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wood_wall_4.usd": {
    "sha256": "881dd5b1f45927e649effc4198992012bd71855db5a838ffaf96637e71c4a756",
    "bytes": 3915
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wood_wall_5.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wood_wall_5.usd": {
    "sha256": "843cd959fed49113e64a88d40b8cd275f077973dd7b7d7838bd11d9907924bb8",
    "bytes": 3915
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wood_wall_6.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wood_wall_6.usd": {
    "sha256": "bdc3fff675b8b7b88280fa62e6d07edc694f193c654aee88e49bf23de97418b9",
    "bytes": 3723
   },
-  "robobench/backdrops/assets/simple_room/Props/Towel_Room01_wood_wall_7.usd": {
+  "robobench/assets/rooms/simple_room/Props/Towel_Room01_wood_wall_7.usd": {
    "sha256": "624dc2c473c759830d6fcc9ccc7e6fc766b25a42868972def5bac0c0504489b2",
    "bytes": 3723
   },
-  "robobench/backdrops/assets/simple_room/Props/table_low.usd": {
+  "robobench/assets/rooms/simple_room/Props/table_low.usd": {
    "sha256": "9843b47c308706a3e17543910285d75d841fa095571e1096ea5c1324e42702bc",
    "bytes": 105767
   },
-  "robobench/backdrops/assets/simple_room/scene_visual.usd": {
+  "robobench/assets/rooms/simple_room/scene_visual.usd": {
    "sha256": "1e07778f0e85c2a142a14f25ab659c08585174723472d669bf2af17beacb4057",
    "bytes": 3651
   },
-  "robobench/backdrops/assets/simple_room/simple_room.usd": {
+  "robobench/assets/rooms/simple_room/simple_room.usd": {
    "sha256": "98b629f8f20ef804104b834bb088957750410aeed5a912ef9d415d4c6d24a273",
    "bytes": 1631936
   },
@@ -4862,31 +4862,31 @@
   }
  },
  "bundles": {
-  "robobench/backdrops/assets/chemistry_lab": {
+  "robobench/assets/rooms/chemistry_lab": {
    "path": "bundles/robobench__backdrops__assets__chemistry_lab.tar",
    "sha256": "20fc12298d9b1e28766ed2cbab0294256341ca1feaebc93c2c0b0e070b1aac0c",
    "bytes": 338298880,
    "files": 42
   },
-  "robobench/backdrops/assets/factory": {
+  "robobench/assets/rooms/factory": {
    "path": "bundles/robobench__backdrops__assets__factory.tar",
    "sha256": "aee051f449726c543ee5657a451f9f855cc82fb975aec732e21eee56522f08d1",
    "bytes": 24483840,
    "files": 19
   },
-  "robobench/backdrops/assets/factory001": {
+  "robobench/assets/rooms/factory001": {
    "path": "bundles/robobench__backdrops__assets__factory001.tar",
    "sha256": "44a182a3fd79e65624ffda62acfede3eec1a76152935a38a4298ef9edec8e3f1",
    "bytes": 7833600,
    "files": 8
   },
-  "robobench/backdrops/assets/kitchen": {
+  "robobench/assets/rooms/kitchen": {
    "path": "bundles/robobench__backdrops__assets__kitchen.tar",
    "sha256": "826517faf46e37a701c45fdbeba694528f5d80d725cf87c7bc4001fb4bc7b9a9",
    "bytes": 1535447040,
    "files": 216
   },
-  "robobench/backdrops/assets/simple_room": {
+  "robobench/assets/rooms/simple_room": {
    "path": "bundles/robobench__backdrops__assets__simple_room.tar",
    "sha256": "36a44b3b8b7b5fd616ff98045717d8e70169a82bf14c109dce83a14f0ce86a3a",
    "bytes": 116111360,
@@ -4941,5 +4941,8 @@
    "files": 90
   }
  },
- "revision": "62fab5b70ccb0103c60c4ca39236abae2cc8e900"
+ "revision": "62fab5b70ccb0103c60c4ca39236abae2cc8e900",
+ "path_mappings": {
+  "robobench/assets/rooms": "robobench/backdrops/assets"
+ }
 }

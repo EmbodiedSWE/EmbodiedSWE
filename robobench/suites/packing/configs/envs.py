@@ -7,6 +7,8 @@ the physics is proven.
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from pathlib import Path
 from robobench.core.assets import asset_path
 
@@ -27,6 +29,92 @@ from robobench.suites.packing.scenes import (
     ToolPackingSceneCfg,
 )
 
+
+# Default room settings belong to these task configurations.
+
+_TOOL_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.11,
+          'anchor': [0.0, 8.0],
+          'yaw': 90.0,
+          'floor_world_z': -0.444,
+          'id': 'factory001'},
+ 'hide': ['/World/ground.*'],
+ 'camera': [[-1.2, -1.05, 1.2], [0.1, 0.05, 0.75]]}
+
+_EGG_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.0,
+          'hide': ['Kitchen_Disk002',
+                   'Kitchen_Orange001',
+                   'Kitchen_Orange001_01',
+                   'Kitchen_Orange001_02',
+                   'Kitchen_Orange001_03',
+                   'Kitchen_Orange002',
+                   'Kitchen_Orange002_01',
+                   'Kitchen_Flowers001',
+                   'Plane'],
+          'attrs': [['DomeLight_01', 'inputs:texture:file', ''],
+                    ['DomeLight_01', 'inputs:intensity', 1200.0]],
+          'anchor': [0.215, 0.41000000000000003],
+          'yaw': 0.0,
+          'floor_world_z': -0.15800000000000003,
+          'id': 'kitchen'},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Table'],
+ 'pedestals': [{'pos': [0.0, -0.8], 'size': [0.5, 0.5], 'top': 0.0}],
+ 'camera': [[1.25, 0.15, 1.35], [0.0, -0.42, 0.78]]}
+
+_KITCHEN_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.0,
+          'hide': ['Kitchen_Disk002',
+                   'Kitchen_Orange001',
+                   'Kitchen_Orange001_01',
+                   'Kitchen_Orange001_02',
+                   'Kitchen_Orange001_03',
+                   'Kitchen_Orange002',
+                   'Kitchen_Orange002_01',
+                   'Kitchen_Flowers001',
+                   'Plane'],
+          'attrs': [['DomeLight_01', 'inputs:texture:file', ''],
+                    ['DomeLight_01', 'inputs:intensity', 1200.0]],
+          'anchor': [0.215, 0.225],
+          'yaw': 0.0,
+          'floor_world_z': 0.0,
+          'id': 'kitchen'},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Island'],
+ 'camera': [[0.72, -0.62, 1.25], [-0.08, 0.08, 0.95]]}
+
+def _tool_room(cfg, scene, robot):
+    spec = deepcopy(_TOOL_ROOM)
+    c = scene.cfg
+    spec["room"]["floor_world_z"] = c.surface_z - c.TABLES[c.table]["height"]
+    spec["camera"] = [[x, y, z + c.surface_z - .55] for x, y, z in spec["camera"]]
+    return spec
+
+
+def _egg_room(cfg, scene, robot):
+    spec = deepcopy(_EGG_ROOM)
+    spec["room"]["floor_world_z"] = scene.cfg.surface_z - .858
+    spec["camera"] = [[x, y, z + scene.cfg.surface_z - .7] for x, y, z in spec["camera"]]
+    if cfg.robot == "null":
+        spec.pop("pedestals", None)
+    return spec
+
+
+def _produce_room(cfg, scene, robot):
+    # Retain the task's own table and remove the decorative island from the room.
+    spec = deepcopy(_KITCHEN_ROOM)
+    c = scene.cfg
+    wx, wy = c.workbench_pos
+    spec["room"]["hide"].append("Kitchen_InsularShelf_01")
+    spec["hide"] = [r"/World/ground.*"]
+    table = c.TABLES[c.table]
+    floor = c.surface_z - table["height"]
+    if cfg.scene == "fruits_on_plate" and table["top_offset"] == table["height"]:
+        floor = 0.0
+    spec["room"]["floor_world_z"] = floor
+    spec["room"]["anchor"] = [.215-wx, .225-wy]
+    spec["camera"] = [[wx+1.4, wy-1.7, c.surface_z+1.0], [wx, wy, c.surface_z+.1]]
+    return spec
+
 SUITE = "packing"
 _EGG_CARTON_G1_USD = str(
     asset_path(Path(__file__).resolve().parents[1] / "assets") / "egg_carton" / "g1_rubber_fingers.usda"
@@ -35,7 +123,7 @@ _EGG_CARTON_G1_USD = str(
 
 # ---- Clear organic objects (RoboLab port: identify the produce, clear it into the bin) --------
 # Scene physics only (NullRobot oracle/smoke, full 11-organic set). -> "packing.clear_organic_objects"
-register_env(SUITE, lambda: EnvCfg(scene="clear_organic_objects", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_produce_room, scene="clear_organic_objects", robot="null", env_spacing=3))
 
 
 # Robot bindings. Placements are STARTING guesses on the shared packing bench — re-verify reach
@@ -89,6 +177,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_produce_room,
                 scene="clear_organic_objects",
                 scene_cfg=_clear_organic_objects_franka_cfg(),
                 robot="franka",
@@ -332,6 +421,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_produce_room,
                 scene="clear_organic_objects",
                 scene_cfg=_clear_organic_objects_g1_cfg(),
                 robot="g1",
@@ -396,12 +486,12 @@ for _mode in ("joint", "pink_ik"):
 
 # ---- RoboDojo fill-pen-holder (difficulty-floor tier, bimanual-friendly) ----------------------
 # Scene physics only (NullRobot oracle/smoke). -> "packing.pen_holder"
-register_env(SUITE, lambda: EnvCfg(scene="pen_holder", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_tool_room, scene="pen_holder", robot="null", env_spacing=3))
 
 
 # ---- RoboDojo fill-egg-holder (long-horizon humanoid tier) ------------------------------------
 # Scene physics only (NullRobot oracle/smoke). -> "packing.egg_carton"
-register_env(SUITE, lambda: EnvCfg(scene="egg_carton", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_egg_room, scene="egg_carton", robot="null", env_spacing=3))
 
 
 def _egg_carton_g1_cfg() -> EggCartonSceneCfg:
@@ -437,6 +527,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_egg_room,
                 scene="egg_carton",
                 scene_cfg=_egg_carton_g1_cfg(),
                 robot="g1",
@@ -522,7 +613,7 @@ def _pen_holder_multi_cfg() -> PenHolderSceneCfg:
 
 # ---- Tool packing (articulated toolbox: 2 doors + 3 drawers, real scanned assets) -------------
 # Scene physics only (NullRobot oracle/smoke). -> "packing.tool_packing"
-register_env(SUITE, lambda: EnvCfg(scene="tool_packing", robot="null", env_spacing=3))
+register_env(SUITE, lambda: EnvCfg(room=_tool_room, scene="tool_packing", robot="null", env_spacing=3))
 
 
 # Franka binding: a STARTING-guess placement mirroring the pc_motherboard band analysis (base
@@ -556,6 +647,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_tool_room,
                 scene="tool_packing",
                 scene_cfg=_tool_packing_franka_cfg(),
                 robot="franka",
@@ -593,6 +685,7 @@ for _mode in ("osc", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_tool_room,
                 scene="tool_packing",
                 scene_cfg=_tool_packing_franka_cfg(),
                 robot="gen3n7_panda",
@@ -616,6 +709,7 @@ for _mode in ("osc", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_tool_room,
                 scene="tool_packing",
                 scene_cfg=_tool_packing_xarm7_cfg(),
                 robot="xarm7",
@@ -642,6 +736,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_tool_room,
                 scene="pen_holder",
                 scene_cfg=_pen_holder_g1_cfg(),
                 robot="g1",
@@ -655,6 +750,7 @@ for _mode in ("joint", "pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_tool_room,
                 scene="pen_holder",
                 scene_cfg=_pen_holder_gr1t2_cfg(),
                 robot="gr1t2",
@@ -675,6 +771,7 @@ for _mode in ("osc", "diff_ik", "pink_ik", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_tool_room,
                 scene="pen_holder",
                 scene_cfg=_pen_holder_franka_cfg(),
                 robot="franka",
@@ -694,6 +791,7 @@ for _mode in ("osc", "joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_tool_room,
                 scene="pen_holder",
                 scene_cfg=_pen_holder_multi_cfg(),
                 robot="multi",
@@ -708,3 +806,7 @@ for _mode in ("osc", "joint"):
             )
         ),
     )
+
+
+# Scene-only entry for the reusable fruit sorting task.
+register_env(SUITE, lambda: EnvCfg(scene="fruits_on_plate", room=_produce_room, env_spacing=3))

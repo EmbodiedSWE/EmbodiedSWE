@@ -106,7 +106,7 @@ def main():
     parser.add_argument("--texture-source", type=Path, help="Kitchen tree containing the five source textures")
     args = parser.parse_args()
     root = args.asset_root.resolve()
-    source = (args.texture_source or root / "robobench/backdrops/assets/kitchen").resolve()
+    source = (args.texture_source or root / "robobench/assets/rooms/kitchen").resolve()
     repair_board(root, source)
     repair_shelf(root)
 

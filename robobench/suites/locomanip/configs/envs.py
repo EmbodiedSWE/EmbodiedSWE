@@ -12,6 +12,8 @@ derivations the harness or agent can make — nothing here is locked.
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from robobench.core import EnvCfg, register_env
 from robobench.robots import G1RobotCfg
 from robobench.suites.locomanip.scenes import (
@@ -19,6 +21,40 @@ from robobench.suites.locomanip.scenes import (
     FruitDeliverySceneCfg,
     WheelCarrySceneCfg,
 )
+
+
+# Default room settings belong to these task configurations.
+
+_BOX_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.72,
+          'anchor': [0.0, 2.0],
+          'yaw': 90.0,
+          'floor_world_z': 0.0,
+          'id': 'factory'},
+ 'hide': ['/World/ground.*'],
+ 'camera': [[2.9, -2.7, 1.9], [0.95, 0.2, 0.65]]}
+
+_WHEEL_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.72,
+          'anchor': [0.0, 2.0],
+          'yaw': 90.0,
+          'floor_world_z': 0.0,
+          'id': 'factory'},
+ 'hide': ['/World/ground.*'],
+ 'camera': [[-1.5, -2.5, 1.8], [1.5, 0.3, 0.6]]}
+
+def _box_room(cfg, scene, robot):
+    return deepcopy(_BOX_ROOM)
+
+
+def _wheel_room(cfg, scene, robot):
+    return deepcopy(_WHEEL_ROOM)
+
+
+def _delivery_room(cfg, scene, robot):
+    spec = deepcopy(_WHEEL_ROOM)
+    spec["camera"] = [[3.5, -4.5, 3.0], [0., 0., .7]]
+    return spec
 
 SUITE = "locomanip"
 
@@ -29,7 +65,7 @@ SUITE = "locomanip"
 # `env_spacing` = 8.0 is not the usual "just clear the furniture": the two 2.47 m tables already span
 # about 5.5 m in x, and a walking robot leaves the footprint its scene furniture defines. Neighbouring
 # envs must not be somewhere this robot can walk into.
-register_env(SUITE, lambda: EnvCfg(scene="wheel_carry", robot="null", env_spacing=8.0))
+register_env(SUITE, lambda: EnvCfg(room=_wheel_room, scene="wheel_carry", robot="null", env_spacing=8.0))
 
 # MOBILE G1, one binding per loco control mode. `fixed_base=False` is what makes this a different
 # robot from every other G1 preset in the tree — the pelvis is free and the legs are driven by the
@@ -47,6 +83,7 @@ for _mode in ("loco_pink_ik", "loco_joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_wheel_room,
                 scene="wheel_carry",
                 robot="g1",
                 control_mode=mode,
@@ -63,7 +100,7 @@ for _mode in ("loco_pink_ik", "loco_joint"):
 #
 # `env_spacing` = 8.0 for the same reason as wheel_carry: a walking robot leaves the footprint its
 # furniture defines, and neighbouring envs must not be somewhere this robot can walk into.
-register_env(SUITE, lambda: EnvCfg(scene="box_to_bin", robot="null", env_spacing=8.0))
+register_env(SUITE, lambda: EnvCfg(room=_box_room, scene="box_to_bin", robot="null", env_spacing=8.0))
 
 # MOBILE G1 (see the wheel_carry block above for why `fixed_base=False` is the whole point). No
 # placement override here either: the scene is laid out around `G1RobotCfg`'s default pelvis pose
@@ -76,6 +113,7 @@ for _mode in ("loco_pink_ik", "loco_joint"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_box_room,
                 scene="box_to_bin",
                 robot="g1",
                 control_mode=mode,
@@ -89,7 +127,7 @@ for _mode in ("loco_pink_ik", "loco_joint"):
 
 # ---- Fruit delivery (fruits_on_plate stretched across a table no arm can span) ------------------
 # Scene physics only (NullRobot oracle). -> "locomanip.fruit_delivery"
-register_env(SUITE, lambda: EnvCfg(scene="fruit_delivery", robot="null", env_spacing=6.0))
+register_env(SUITE, lambda: EnvCfg(room=_delivery_room, scene="fruit_delivery", robot="null", env_spacing=6.0))
 
 # MOBILE G1. Same mobile pairing as wheel_carry (fixed_base=False + the frozen loco policy).
 # The pelvis starts at (0, -0.85, 0.75) facing +y: clear of the kitchen table's near edge
@@ -104,6 +142,7 @@ for _mode in ("loco_joint", "loco_pink_ik"):
         SUITE,
         (
             lambda mode=_mode: EnvCfg(
+                room=_delivery_room,
                 scene="fruit_delivery",
                 robot="g1",
                 control_mode=mode,

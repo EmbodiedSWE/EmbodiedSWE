@@ -28,21 +28,22 @@ git clone <this repo> && cd <this repo>
 ./scripts/bootstrap_isaaclab_5_1.sh      # Isaac Sim 5.1 + Isaac Lab 2.3.2 + robobench into ./.venv
 source .venv/bin/activate
 export OMNI_KIT_ACCEPT_EULA=YES               # Isaac Sim asks interactively otherwise (hangs headless runs)
-# Optional: prefetch every task and backdrop (~3.4 GB); otherwise env.build() fetches what it needs.
+# Optional: prefetch every task and room (~3.4 GB); otherwise env.build() fetches what it needs.
 python -m robobench.scripts.fetch_assets
 uv pip install "pin==2.7.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # whole-body IK (pink_ik)
 ```
 
-Task assets and room backdrops live in the Hugging Face dataset `CoSiGen/robobench-assets`.
+Task assets and shared rooms live in the Hugging Face dataset `CoSiGen/robobench-assets`.
 Building an environment automatically downloads its required asset groups and verifies their SHA-256
 checksums against `robobench/assets_manifest.json`. Verified local copies are reused, including offline.
 Listing tasks does not download anything. `fetch_assets --check` verifies the whole local collection.
 
-Supported task and robot combinations select room backdrops by default, including all five
-Franka PC assembly scenes and Franka spatula. Use `--backdrop none` with
-the smoke launcher or `cfg.build(backdrop=None)` for a bare scene. Set `COSIGEN_ASSET_DIR` before
-starting Python to use a writable asset cache outside the checkout; its layout includes `robobench/`.
-See [backdrops and asset downloads](robobench/backdrops/README.md) for presets and maintainer commands.
+Every built-in registered task configuration declares its default room in its suite's
+`configs/envs.py`, including alternate robots and control modes. Shared loading code lives in
+`robobench/core/rooms.py`; downloaded rooms live in the ignored `robobench/assets/rooms/` directory.
+Use `--room none` with the smoke launcher or `cfg.build(room=None)` to disable scenery explicitly.
+Set `COSIGEN_ASSET_DIR` before starting Python to use a writable cache outside the checkout.
+See [task rooms and asset downloads](docs/rooms.md) for the room assignments and maintainer commands.
 
 The `deformable` suite runs on the Newton physics backend and needs a separate venv; see
 [`robobench/suites/deformable/README.md`](robobench/suites/deformable/README.md).

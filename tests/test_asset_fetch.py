@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import tarfile
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -20,7 +21,7 @@ class FetchTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.a = "robobench/suites/example/assets/a.usd"
-        self.b = "robobench/backdrops/assets/room/scene_visual.usd"
+        self.b = "robobench/assets/rooms/room/scene_visual.usd"
         self.remote = self.root / "remote"
         self.remote.write_bytes(b"good asset")
         self.meta = {"bytes": 10, "sha256": hashlib.sha256(b"good asset").hexdigest()}
@@ -113,6 +114,49 @@ class FetchTests(unittest.TestCase):
                     rebuild.assert_not_called()
                     api.create_commit.assert_not_called()
                     self.assertEqual(assets.load_manifest()["revision"], "b"*40)
+
+    def test_room_download_uses_remote_path_but_only_creates_new_local_layout(self):
+        mapping = {"robobench/assets/rooms": "robobench/backdrops/assets"}
+        manifest = {"files": {self.b: self.meta}, "path_mappings": mapping}
+        self.manifest.write_text(json.dumps(manifest))
+        with patch("huggingface_hub.hf_hub_download", return_value=str(self.remote)) as download:
+            assets.fetch(prefixes=["robobench/assets/rooms/room"])
+        self.assertEqual(download.call_args.args[1], "robobench/backdrops/assets/room/scene_visual.usd")
+        self.assertEqual((self.root/self.b).read_bytes(), b"good asset")
+        self.assertFalse((self.root/"robobench/backdrops").exists())
+
+    def test_legacy_bundle_extracts_to_mapped_room_directory_and_rebuilds_remote_members(self):
+        mapping = {"robobench/assets/rooms": "robobench/backdrops/assets"}
+        room = "robobench/assets/rooms/room"
+        files = {f"{room}/asset_{i}.usd": self.meta for i in range(16)}
+        archive = self.root/"legacy.tar"
+        with tarfile.open(archive, "w") as tar:
+            for rel in [*files, "../../escape", "robobench/unlisted.usd"]:
+                member = tarfile.TarInfo(assets.remote_path(rel, mapping))
+                member.size = self.meta["bytes"]
+                tar.addfile(member, io.BytesIO(b"good asset"))
+        self.manifest.write_text(json.dumps({"files": files, "path_mappings": mapping,
+            "bundles": {room: {"path": "bundles/legacy.tar", "sha256": assets._sha256(archive)}}}))
+        with patch("huggingface_hub.hf_hub_download", return_value=str(archive)) as download:
+            assets.fetch(prefixes=[room])
+        self.assertEqual(download.call_count, 1)
+        self.assertEqual(assets.verify(files), [])
+        self.assertFalse((self.root/"robobench/backdrops").exists())
+        self.assertFalse((self.root/"robobench/unlisted.usd").exists())
+        rebuilt = assets._build_bundle(room, list(files))
+        with tarfile.open(rebuilt) as tar:
+            self.assertEqual(set(tar.getnames()), {assets.remote_path(p, mapping) for p in files})
+
+    def test_unsafe_or_ambiguous_remote_mappings_are_rejected(self):
+        for mapping in ({"robobench/assets/rooms": "../escape"},
+                        {"robobench/assets/rooms": "/absolute"}):
+            self.manifest.write_text(json.dumps({"files": {self.b: self.meta}, "path_mappings": mapping}))
+            with self.assertRaisesRegex(ValueError, "Unsafe"):
+                assets.load_manifest()
+        self.manifest.write_text(json.dumps({"files": {self.a: self.meta, self.b: self.meta},
+                                            "path_mappings": {self.b: self.a}}))
+        with self.assertRaisesRegex(ValueError, "multiple files"):
+            assets.load_manifest()
 
 
 if __name__ == "__main__":

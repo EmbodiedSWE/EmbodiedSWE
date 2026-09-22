@@ -15,10 +15,10 @@ include = ["robobench*"]
 
 # Binary assets are fetched from HF. Include the manifest and source text dependencies in wheels.
 [tool.setuptools.package-data]
-"robobench" = ["assets_manifest.json", "backdrops/presets.json", "**/assets/**/*.usda", "**/assets/**/*.mdl", "**/assets/**/*.urdf", "**/assets/**/*.xml", "**/assets/**/*.json", "**/assets/**/*.md"]
+"robobench" = ["assets_manifest.json", "**/assets/**/*.usda", "**/assets/**/*.mdl", "**/assets/**/*.urdf", "**/assets/**/*.xml", "**/assets/**/*.json", "**/assets/**/*.md"]
 
 [tool.setuptools.exclude-package-data]
-"*" = ["*.usd", "*.usdc", "*.png", "*.jpg", "*.jpeg", "*.pt", "*.mp4", "*.hdr", "*.exr", "backdrops/assets/**/*"]
+"*" = ["*.usd", "*.usdc", "*.png", "*.jpg", "*.jpeg", "*.pt", "*.mp4", "*.hdr", "*.exr", "assets/rooms/**/*"]
 
 [tool.pyright]
 reportPrivateUsage = "none"

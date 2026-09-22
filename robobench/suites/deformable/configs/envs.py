@@ -21,6 +21,8 @@ Presets (and the legacy alias each one also answers to — the four scenes were 
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from collections.abc import Callable
 
 from pathlib import Path
@@ -32,6 +34,104 @@ from robobench.robots.wx250s import Wx250sRobotCfg
 from robobench.robots.multi import BimanualFrankaCfg
 from robobench.suites.deformable.scenes import DumplingSceneCfg
 from robobench.suites.deformable.scenes.shoe_knot import ShoeKnotSceneCfg
+
+
+# Default room settings belong to these task configurations.
+
+_TSHIRT_ROOM = {'backend': 'newton',
+ 'room': {'id': 'simple_room',
+          'room_floor_z': -0.7696,
+          'anchor': [-0.5, -0.353],
+          'yaw': -90.0,
+          'floor_world_z': -0.5686},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Table'],
+ 'pedestals': [{'pos': [-0.541, -0.5], 'top': 0.0, 'size': [0.18, 0.18]}],
+ 'camera': [[1.15, -1.05, 0.85], [0.0, -0.5, 0.24]]}
+
+_LATTE_ROOM = {'backend': 'newton',
+ 'room': {'room_floor_z': 0.0,
+          'hide': ['Kitchen_Disk002',
+                   'Kitchen_Orange001',
+                   'Kitchen_Orange001_01',
+                   'Kitchen_Orange001_02',
+                   'Kitchen_Orange001_03',
+                   'Kitchen_Orange002',
+                   'Kitchen_Orange002_01',
+                   'Kitchen_Flowers001',
+                   'Plane'],
+          'attrs': [['DomeLight_01', 'inputs:texture:file', ''],
+                    ['DomeLight_01', 'inputs:intensity', 1200.0]],
+          'anchor': [0.135, 0.09],
+          'yaw': 0.0,
+          'floor_world_z': -0.818,
+          'id': 'kitchen'},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Table', '/World/envs/env_\\d+/Floor'],
+ 'pedestals': [{'pos': [-0.25, -0.461], 'size': [0.18, 0.18], 'top': 0.0},
+               {'pos': [0.25, -0.461], 'size': [0.18, 0.18], 'top': 0.0}],
+ 'camera': [[0.75, 1.25, 0.85], [0.08, -0.08, 0.14]]}
+
+_KITCHEN_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': 0.0,
+          'hide': ['Kitchen_Disk002',
+                   'Kitchen_Orange001',
+                   'Kitchen_Orange001_01',
+                   'Kitchen_Orange001_02',
+                   'Kitchen_Orange001_03',
+                   'Kitchen_Orange002',
+                   'Kitchen_Orange002_01',
+                   'Kitchen_Flowers001',
+                   'Plane'],
+          'attrs': [['DomeLight_01', 'inputs:texture:file', ''],
+                    ['DomeLight_01', 'inputs:intensity', 1200.0]],
+          'anchor': [0.215, 0.225],
+          'yaw': 0.0,
+          'floor_world_z': 0.0,
+          'id': 'kitchen'},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Island'],
+ 'camera': [[0.72, -0.62, 1.25], [-0.08, 0.08, 0.95]]}
+
+_KNOT_ROOM = {'backend': 'physx',
+ 'room': {'room_floor_z': -0.7696,
+          'anchor': [-0.37, 0.1],
+          'yaw': 0.0,
+          'floor_world_z': -0.7686,
+          'id': 'simple_room'},
+ 'hide': ['/World/ground.*', '/World/envs/env_\\d+/Table.*'],
+ 'camera': [[1.22, -1.2, 1.08], [0.3, -0.02, 0.2]]}
+
+def _tshirt_room(cfg, scene, robot):
+    spec = deepcopy(_TSHIRT_ROOM)
+    c = scene.cfg
+    top = c.table_pos[2] + c.table_size[2] / 2
+    spec["room"]["floor_world_z"] = top + .001 - .7696
+    spec["room"]["anchor"] = [c.table_pos[1], -(.353+c.table_pos[0])]
+    if cfg.robot == "null":
+        spec.pop("pedestals", None)
+    return spec
+
+
+def _latte_room(cfg, scene, robot):
+    return deepcopy(_LATTE_ROOM)
+
+
+def _dumpling_room(cfg, scene, robot):
+    spec = deepcopy(_KITCHEN_ROOM)
+    spec["backend"] = "newton"
+    spec["room"]["hide"].append("Kitchen_InsularShelf_01")
+    spec["room"]["floor_world_z"] = -1.05
+    spec["hide"] = [r"/World/ground.*"]
+    spec["camera"] = [[1.1, -1.1, 1.0], [0., 0., scene.cfg.surface_z]]
+    return spec
+
+
+def _knot_room(cfg, scene, robot):
+    spec = deepcopy(_KNOT_ROOM)
+    spec["backend"] = "newton"
+    spec["room"]["hide"] = ["table_low_327"]
+    spec["room"]["floor_world_z"] = scene.cfg.ground_z
+    spec["hide"] = [r"/World/ground.*"]
+    spec["camera"] = [[1.0, -1.2, 1.0], [0., 0., scene.cfg.surface_z]]
+    return spec
 
 SUITE = "deformable"
 
@@ -51,13 +151,14 @@ def _register(factory: Callable[[], EnvCfg]) -> str:
 # T-shirt on the box table, scene physics only (cloth settle / parameter sweeps). No articulation
 # in this binding -> pure VBD solver (the coupled MJWarp manager needs >= 1 joint).
 # -> "deformable.tshirt"
-_register(lambda: EnvCfg(scene="tshirt", robot="null", env_spacing=3, sim_overrides={"coupled": False}))
+_register(lambda: EnvCfg(room=_tshirt_room, scene="tshirt", robot="null", env_spacing=3, sim_overrides={"coupled": False}))
 
 # Franka based 0.5 m to -x/-y of the table center, arm by direct joint position targets — the
 # fold smoke computes those targets with differential IK from its key-pose script.
 # -> "deformable.tshirt.franka.joint"
 _register(
     lambda: EnvCfg(
+        room=_tshirt_room,
         scene="tshirt",
         robot="franka",
         control_mode="joint",
@@ -110,6 +211,7 @@ def _dyn_franka(base_pos: tuple[float, float, float]) -> FrankaRobotCfg:
 
 _register(
     lambda: EnvCfg(
+        room=_latte_room,
         scene="latte",
         robot="bimanual_franka",
         control_mode="joint",
@@ -135,6 +237,7 @@ _register(
 # -> "deformable.dumpling"
 _register(
     lambda: EnvCfg(
+        room=_dumpling_room,
         scene="dumpling",
         robot="null",
         env_spacing=3,
@@ -153,6 +256,7 @@ _register(
 # -> "deformable.dumpling.franka.joint"
 _register(
     lambda: EnvCfg(
+        room=_dumpling_room,
         scene="dumpling",
         robot="franka",
         control_mode="joint",
@@ -175,7 +279,7 @@ _register(
 # Newton manager (no robot in the loop yet), the way the standalone scripts drove them.
 # Robot-less -> standalone VBD manager (cable joints are not MuJoCo-convertible).
 # -> "deformable.knot"
-_register(lambda: EnvCfg(scene="knot", robot="null", env_spacing=2.0))
+_register(lambda: EnvCfg(room=_knot_room, scene="knot", robot="null", env_spacing=2.0))
 
 # The nut-thread task's lab-table workbench, reused as the aloha binding's work surface.
 # MONOREPO-ONLY cross-suite asset reference (73 MB — deliberately not duplicated into this
@@ -204,6 +308,7 @@ _LAB_TABLE_USD = str(
 # -> "deformable.knot.aloha.joint"
 _register(
     lambda: EnvCfg(
+        room=_knot_room,
         scene="knot",
         # free ends dynamic; the tails rest splayed outward on open table
         scene_cfg=ShoeKnotSceneCfg(

@@ -1,6 +1,6 @@
 """Prepare shared room bundles from an existing asset checkout (requires pxr).
 
-python -m robobench.scripts.prepare_backdrops --source /path/to/original/CoSiGen
+python -m robobench.scripts.prepare_rooms --source /path/to/original/CoSiGen
 Only the destination is modified. Run fetch_assets --update-manifest afterwards.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ ROOMS = {
 
 def prepare(source: Path, destination: Path):
     from pxr import Sdf, Usd, UsdGeom, UsdUtils
-    from robobench.backdrops import physics_prims
+    from robobench.core.rooms import physics_prims
 
     repairs = []
     for name, (relative, entry) in ROOMS.items():
@@ -110,7 +110,7 @@ def prepare(source: Path, destination: Path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--destination", type=Path, default=Path(__file__).resolve().parents[1]/"backdrops/assets")
+    parser.add_argument("--destination", type=Path, default=Path(__file__).resolve().parents[1]/"assets/rooms")
     args = parser.parse_args()
     destination = args.destination.resolve()
     repairs = prepare(args.source.resolve(), destination)

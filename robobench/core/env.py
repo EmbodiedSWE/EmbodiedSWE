@@ -45,7 +45,7 @@ class BaseEnv:
         env_spacing: float = 2.0,
         device: str = "cuda:0",
         seed: int | None = None,
-        backdrop: dict | None = None,
+        room: dict | None = None,
     ) -> None:
         from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
         from isaaclab.sim import SimulationContext  # lazy: requires AppLauncher
@@ -70,11 +70,11 @@ class BaseEnv:
         self.scene.bind(self)
         self.robot.bind(self)
         self.reset()
-        self.backdrop = backdrop
-        if backdrop is not None:
-            from robobench.backdrops import spawn_backdrop
+        self.room = room
+        if room is not None:
+            from .rooms import spawn_room
 
-            spawn_backdrop(self, backdrop)
+            spawn_room(self, room)
 
     @property
     def stage(self):
