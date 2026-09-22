@@ -246,3 +246,17 @@ rl/runs/
 
 # lerobot venv (scripts/bootstrap_lerobot.sh) — py3.12, separate from the Isaac .venv
 .venv-lerobot/
+
+# Large binary assets (USD, textures, policies, reference videos) live on Hugging Face
+# (CoSiGen/robobench-assets) and are fetched to these exact paths by
+# `python -m robobench.scripts.fetch_assets`. Text layers (usda, mdl, json, provenance) stay in git; every *.usd goes to HF.
+# See robobench/assets_manifest.json for the authoritative file list.
+robobench/**/assets/**/*.usd
+robobench/**/assets/**/*.usdc
+robobench/**/assets/**/*.png
+robobench/**/assets/**/*.PNG
+robobench/**/assets/**/*.jpg
+robobench/**/assets/**/*.jpeg
+robobench/**/assets/**/*.mp4
+robobench/**/assets/**/*.pt
+robobench/**/assets/**/*.exr

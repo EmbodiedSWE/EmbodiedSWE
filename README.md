@@ -29,8 +29,12 @@ Requirements: Linux, an NVIDIA GPU with a CUDA 12.x driver, and [`uv`](https://d
 git clone <this repo> && cd <this repo>
 ./scripts/bootstrap_isaaclab_5_1.sh      # Isaac Sim 5.1 + Isaac Lab 2.3.2 + robobench into ./.venv
 source .venv/bin/activate
+python -m robobench.scripts.fetch_assets  # ~1.5 GB of USD / textures from Hugging Face (CoSiGen/robobench-assets)
 uv pip install "pin==4.0.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # whole-body IK (pink_ik)
 ```
+
+Large binary assets are not in git: `fetch_assets` drops them at their exact repo paths and verifies
+them against `robobench/assets_manifest.json` (re-run it after pulling asset changes; `--check` only verifies).
 
 The `deformable` suite runs on the Newton physics backend and needs a separate venv; see
 [`robobench/suites/deformable/README.md`](robobench/suites/deformable/README.md).

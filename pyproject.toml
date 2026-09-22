@@ -6,6 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "cosigen"
 version = "0.1.0"
 description = ""
+# fetch_assets pulls the binary assets from Hugging Face (>=0.23: local_dir writes real files, no symlinks)
+dependencies = ["huggingface_hub>=0.23"]
 
 # robobench/ — the relocatable benchmark ENV suite (the focus): core + robots + suites/<flavor>.
 [tool.setuptools.packages.find]
