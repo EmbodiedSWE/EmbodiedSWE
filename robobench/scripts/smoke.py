@@ -58,6 +58,13 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--list", action="store_true", help="list everything registered, then exit")
 
+    # pink_ik needs pinocchio imported BEFORE AppLauncher (its eigenpy STL converters must register in a
+    # clean process; see controllers/pink_ik.py). Optional dependency, so tolerate its absence.
+    try:
+        import pinocchio  # noqa: F401
+    except ImportError:
+        pass
+
     from isaaclab.app import AppLauncher
 
     AppLauncher.add_app_launcher_args(parser)
@@ -87,36 +94,48 @@ def main() -> None:
         cfg = EnvCfg(scene=args.scene, robot=args.robot, control_mode=args.mode)
 
     # --- build needs the app ---------------------------------------------------------------------
+    import os
+    import traceback
+
     app = AppLauncher(args).app
-    import torch
+    try:
+        import torch
 
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    env = cfg.build(num_envs=args.num_envs, device=device, seed=args.seed)
-    robot = env.robot
-    n, dim = env.num_envs, robot.action_dim
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        env = cfg.build(num_envs=args.num_envs, device=device, seed=args.seed)
+        robot = env.robot
+        n, dim = env.num_envs, robot.action_dim
 
-    print(f"BUILT {args.env or '(ad-hoc)'} -> {cfg.describe()}  mode='{robot.control_mode}'")
-    print(f"action_dim={dim}  (random U(-{args.action_scale}, {args.action_scale}))")
-    print(f"describe(): {env.describe()}")
+        print(f"BUILT {args.env or '(ad-hoc)'} -> {cfg.describe()}  mode='{robot.control_mode}'")
+        print(f"action_dim={dim}  (random U(-{args.action_scale}, {args.action_scale}))")
+        print(f"describe(): {env.describe()}")
 
-    env.reset()
-    t0 = time.perf_counter()
-    for _ in range(args.steps):
-        action = (torch.rand(n, dim, device=device) * 2.0 - 1.0) * args.action_scale
-        env.step(action, render=want_render)
-    elapsed = time.perf_counter() - t0
-    fps = args.steps / elapsed  # sim steps/s for a single env (rendering, if on, slows this)
-    print(
-        f"RAN {args.steps} steps, no crash | {fps:.0f} fps/env "
-        f"({n * fps:.0f} env-steps/s total over {n} env{'s' if n != 1 else ''}, {elapsed:.1f}s)"
-    )
+        env.reset()
+        t0 = time.perf_counter()
+        for _ in range(args.steps):
+            action = (torch.rand(n, dim, device=device) * 2.0 - 1.0) * args.action_scale
+            env.step(action, render=want_render)
+        elapsed = time.perf_counter() - t0
+        fps = args.steps / elapsed  # sim steps/s for a single env (rendering, if on, slows this)
+        print(
+            f"RAN {args.steps} steps, no crash | {fps:.0f} fps/env "
+            f"({n * fps:.0f} env-steps/s total over {n} env{'s' if n != 1 else ''}, {elapsed:.1f}s)"
+        )
+    except BaseException:  # noqa: BLE001 — any failure after the app is up must be a non-zero exit
+        # Kit's own shutdown path otherwise turns a crashed smoke into exit code 0 (seen with the pink_ik
+        # pinocchio registration error), which hides failures from automated checks. Report and hard-exit.
+        traceback.print_exc()
+        print("SMOKE FAILED (see traceback above)", flush=True)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)
     # Kit teardown regularly hangs INSIDE env.close()/app.close() (a 100% CPU spin), wedging headless
     # runs — the same hard-exit as `suites/assembly/smokes.close_and_exit`. Everything is printed by
     # now; `os._exit` is looked up at call time so scripts/record_video.py can patch it to flush the
     # mp4 first.
-    import os
     import threading
 
+    sys.stdout.flush()
     watchdog = threading.Timer(10.0, lambda: os._exit(0))
     watchdog.daemon = True
     watchdog.start()
