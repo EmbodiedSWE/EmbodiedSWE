@@ -92,7 +92,7 @@ DEFAULT_IMAGE = "hub.byted.org/arnold/pytorch2.4.1-cuda12.4-cudnn9-devel:1.0.0.9
 # SUBSTRATE: the relay owns the upstream credential (see module docstring), so the operator's
 # own credential is not passed through and not required.
 CRED_VARS = ()
-GATEWAY_KEY = "***REMOVED-SECRET***"
+GATEWAY_KEY = os.environ.get("GATEWAY_API_KEY", "")  # set in the environment; never commit a key
 GATEWAY_BASE = "https://super-relay.byted.org/v1"
 GATEWAY_MODEL = "model_hub/es1_orange_o48"
 # --upstream openrouter: same relay, different upstream. A sandbox CAN reach openrouter.ai and
@@ -104,7 +104,7 @@ GATEWAY_MODEL = "model_hub/es1_orange_o48"
 # the direct path lacks. It also logs the upstream body, so a future 400 is readable instead of
 # being a bare CLI message. The model id travels as-is from --model, so no rewrite is needed.
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-OPENROUTER_KEY = "***REMOVED-SECRET***"
+OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY", "")  # set in the environment; never commit a key
 PSM_L20 = "seed.sandbox.env_manager_ded016ca96e160db.service.wlby"
 CC_VERSION = "2.1.216"       # the version eval/docker pins
 NODE = "v22.11.0"

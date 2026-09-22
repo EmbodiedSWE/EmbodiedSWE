@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import tempfile
 import time
 import traceback
@@ -37,7 +38,7 @@ from pathlib import Path
 # gateway is corp-only and was unreachable from every grading container, so the gate had never
 # once been evaluated.
 JUDGE_URL = "https://seed-code.bytedance.com/v1/responses"
-JUDGE_KEY = "***REMOVED-SECRET***"
+JUDGE_KEY = os.environ.get("VLM_JUDGE_API_KEY", "")  # set in the environment; never commit a key
 MODEL = "model_hub/robo_g56_terra"   # gpt-5.6-terra
 READ_TIMEOUT = 150  # s per attempt (the laptop bridge's proven value)
 MAX_ATTEMPTS = 4  # bounded: transient 5xx / 429 / timeouts retry, then raise
