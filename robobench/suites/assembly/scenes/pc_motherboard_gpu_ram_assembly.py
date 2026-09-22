@@ -329,6 +329,12 @@ class PcMotherboardGpuRamAssemblyScene(BaseScene):
                         contact_offset=c.bolt_contact_offset, rest_offset=0.0
                     ),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                        # The screw mechanic owns the bolts as KINEMATIC bodies. Author that before
+                        # PhysX parses the stage (BaseEnv resets the sim before scene.bind): flipping
+                        # a parsed dynamic body kinematic at bind made PhysX re-parse the bolt's SDF
+                        # thread/head meshes as plain triangle meshes and fall back to convex hulls
+                        # (14 "cannot be a part of a dynamic body" errors per env).
+                        kinematic_enabled=c.screw_mechanic,
                         solver_position_iteration_count=192,
                         solver_velocity_iteration_count=1,
                         max_depenetration_velocity=0.02,

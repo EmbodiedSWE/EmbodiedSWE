@@ -37,8 +37,12 @@ _MJC_DEFAULTS: dict[str, Any] = {
     "cone": "elliptic",
     "iterations": 100,
     "ls_iterations": 20,
-    "njmax": 256,
-    "nconmax": 64,
+    # Contact capacity: seeded random joint actions on deformable.knot.aloha produced up to 133
+    # Newton contacts against the previous nconmax=64 ("exceeded MJWarp limit ... Increase nconmax",
+    # 110 overflow messages per 100 steps; reported 2026-09-22). Sized for supported robot motion
+    # with headroom; njmax (constraint rows) raised with it since elliptic contacts add several rows each.
+    "njmax": 1024,
+    "nconmax": 256,
 }
 
 

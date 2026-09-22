@@ -72,6 +72,23 @@ import torch
 
 from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
 
+
+def _spawn_usd_ccd_off_if_kinematic(prim_path, cfg, translation=None, orientation=None):
+    """`sim_utils.spawn_from_usd`, then clear an asset-authored `physxRigidBody:enableCCD` on every
+    spawned clone when the body is kinematic (PhysX ignores CCD on kinematic bodies and logs it)."""
+    import isaaclab.sim as sim_utils  # app-time import, like the rest of this module
+
+    prim = sim_utils.spawn_from_usd(prim_path, cfg, translation, orientation)
+    if cfg.rigid_props is not None and cfg.rigid_props.kinematic_enabled:
+        from pxr import Usd
+
+        for root in sim_utils.find_matching_prims(prim_path):
+            for p in Usd.PrimRange(root):
+                attr = p.GetAttribute("physxRigidBody:enableCCD")
+                if attr and attr.HasAuthoredValue() and attr.Get():
+                    attr.Set(False)
+    return prim
+
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
 
@@ -352,6 +369,10 @@ class FruitsOnPlateScene(BaseScene):
             "plate": RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Plate",
                 spawn=sim_utils.UsdFileCfg(
+                    # the vendored plate USD authors physxRigidBody:enableCCD=True; PhysX rejects CCD
+                    # on kinematic bodies ("CCD will be ignored" at parse), so drop the flag when
+                    # the plate is kinematic (a dynamic-plate variant keeps it).
+                    func=_spawn_usd_ccd_off_if_kinematic,
                     usd_path=c.plate_usd,
                     scale=(c.plate_scale,) * 3,
                     # keep the AUTHORED mesh collider (concave — the dish); only arm the rigid
