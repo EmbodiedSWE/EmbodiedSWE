@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://embodiedswe.github.io/assets/paper/embodiedswe.pdf"><img src="https://img.shields.io/badge/Paper-PDF-b31b1b?style=for-the-badge&logo=adobeacrobatreader&logoColor=white" alt="Paper"></a>
   <a href="https://embodiedswe.github.io"><img src="https://img.shields.io/badge/Project%20Page-4c8eda?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Project page"></a>
   <a href="#"><img src="https://img.shields.io/badge/Blog-coming%20soon-6f42c1?style=for-the-badge&logo=rss&logoColor=white" alt="Blog"></a>
 </p>
@@ -15,6 +16,8 @@ EmbodiedSWE studies how frontier coding agents can help robotics. It has four pa
 - **Evaluation** of frontier coding agents on these tasks: task performance, completion time, and inference cost.
 - **EmbodiedSWE-Gen**, which diversifies one verified agent solution into a large trajectory dataset for training general robot policies.
 - **Agent improvement**, which generates new tasks from existing ones and improves the coding agent with RL on verified outcomes.
+
+See the [paper](https://embodiedswe.github.io/assets/paper/embodiedswe.pdf) for the full benchmark, evaluation, and data-generation details.
 
 > **Note:** this repository is under active development. Folder layouts, interfaces, and settings
 > may change as the codebase evolves.
@@ -138,7 +141,7 @@ scripts/              bootstrap installers, record_video.py, asset vendoring
 
 ## Citation
 
-If you use EmbodiedSWE in your research, please cite this repository:
+If you use EmbodiedSWE in your research, please cite our [paper](https://embodiedswe.github.io/assets/paper/embodiedswe.pdf):
 
 ```bibtex
 @misc{embodiedswe2026,
@@ -148,7 +151,8 @@ If you use EmbodiedSWE in your research, please cite this repository:
                   Chen, Qianzhong and He, Lucy and Chang, Haoran and Shah, Dhruv and Schwager, Mac and
                   Fragkiadaki, Katerina and Henderson, Peter and Abraham, Ian and Xu, Canwen},
   year         = {2026},
-  howpublished = {\url{https://embodiedswe.github.io}},
+  howpublished = {\url{https://embodiedswe.github.io/assets/paper/embodiedswe.pdf}},
+  note         = {Project page: \url{https://embodiedswe.github.io}},
 }
 ```
 
