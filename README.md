@@ -33,7 +33,7 @@ python -m robobench.scripts.fetch_assets
 uv pip install "pin==2.7.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # whole-body IK (pink_ik)
 ```
 
-Task assets and shared rooms live in the Hugging Face dataset `CoSiGen/robobench-assets`.
+Task assets and shared rooms live in the Hugging Face dataset `EmbodiedSWE/robobench-assets`.
 Building an environment automatically downloads its required asset groups and verifies their SHA-256
 checksums against `robobench/assets_manifest.json`. Verified local copies are reused, including offline.
 Listing tasks does not download anything. `fetch_assets --check` verifies the whole local collection.

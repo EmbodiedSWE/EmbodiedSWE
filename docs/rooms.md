@@ -49,7 +49,7 @@ workbench is visible; task collision geometry is preserved in either case.
 ## Downloads and cache layout
 
 The first build fetches the task suite's asset group, shared tables, its robot models, and its room
-from `CoSiGen/robobench-assets`. Composite robots fetch the robot bundle to include sibling arm and
+from `EmbodiedSWE/robobench-assets`. Composite robots fetch the robot bundle to include sibling arm and
 gripper dependencies. Room groups are approximately 7 MB (corridor), 23 MB (hall), 111 MB (Simple
 Room), 323 MB (lab), or 1.46 GB (Kitchen).
 

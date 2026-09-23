@@ -5,7 +5,7 @@ beside it in Isaac (external + wrist cameras) → rendered as composited videos.
 
 Data (no raw videos needed — the processed scene suffices):
 ```bash
-hf download CoSiGen/real2sim-home-desk --repo-type dataset \
+hf download EmbodiedSWE/real2sim-home-desk --repo-type dataset \
     --include "colmap/*" "runs/*" --local-dir ../../background/data
 ```
 
@@ -32,7 +32,7 @@ Generated real objects (see `../../objects/README.md`) spawn on the desk via
 (RMPflow: hover → descend → close → lift). The worked bottle asset:
 
 ```bash
-hf download CoSiGen/real2sim-home-desk --repo-type dataset \
+hf download EmbodiedSWE/real2sim-home-desk --repo-type dataset \
     --include "objects/bottle/*" --local-dir ../../objects/data
 python calibrate_object.py bottle --diameter 0.08 --mass 0.35 --flip  # optional: bottle.usd ships baked
 python demo_franka_scene.py home_desk_v2 my_pick --object bottle:0.02,0.0,30
