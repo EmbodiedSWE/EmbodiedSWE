@@ -99,11 +99,11 @@ pick the first one (RMPflow). See `../examples/home_desk_franka/README.md`.
 ## Test data
 
 The worked bottle (photos → mesh → USD) lives in the public HF dataset
-[`CoSiGen/real2sim-home-desk`](https://huggingface.co/datasets/CoSiGen/real2sim-home-desk):
+[`EmbodiedSWE/real2sim-home-desk`](https://huggingface.co/datasets/EmbodiedSWE/real2sim-home-desk):
 
 ```bash
 # from real_to_sim/objects — lands in place under data/
-hf download CoSiGen/real2sim-home-desk --repo-type dataset \
+hf download EmbodiedSWE/real2sim-home-desk --repo-type dataset \
     --include "objects/bottle/*" --local-dir data
 ```
 

@@ -2,7 +2,7 @@
 
 The git repo keeps code and task text layers (`*.usda`, `*.mdl`, provenance json/md). Every
 `*.usd`/`*.usdc`, texture, policy and reference video under `robobench/**/assets/` (and the deformable
-`videos/`) lives in the dataset repo `CoSiGen/robobench-assets`. Task paths mirror the checkout;
+`videos/`) lives in the dataset repo `EmbodiedSWE/robobench-assets`. Task paths mirror the checkout;
 room paths use the manifest mappings below. Shared room groups also keep their text layers on
 the hub so each room is a complete, independently downloadable tree.
 
@@ -42,7 +42,7 @@ from pathlib import Path
 
 import robobench
 
-REPO_ID = "CoSiGen/robobench-assets"
+REPO_ID = "EmbodiedSWE/robobench-assets"
 REPO_TYPE = "dataset"
 PKG_DIR = Path(robobench.__file__).resolve().parent
 ROOT = Path(os.environ.get("COSIGEN_ASSET_DIR", str(PKG_DIR.parent))).expanduser().resolve()

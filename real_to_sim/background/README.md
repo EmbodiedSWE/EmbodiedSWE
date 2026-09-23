@@ -36,7 +36,7 @@ data/captures/<name>/
 
 No capture of your own? Use ours (then `<scene>` = `home_desk_v2`):
 ```bash
-hf download CoSiGen/real2sim-home-desk --repo-type dataset --include "captures/*" --local-dir data
+hf download EmbodiedSWE/real2sim-home-desk --repo-type dataset --include "captures/*" --local-dir data
 ```
 
 ```bash
@@ -94,25 +94,25 @@ Concrete: `python ../examples/home_desk_franka/render.py <scene> <run>`
 ## Test data
 
 A complete worked scene lives in the public HF dataset
-[`CoSiGen/real2sim-home-desk`](https://huggingface.co/datasets/CoSiGen/real2sim-home-desk).
+[`EmbodiedSWE/real2sim-home-desk`](https://huggingface.co/datasets/EmbodiedSWE/real2sim-home-desk).
 Download only what your goal needs (paths land in place under `data/`):
 
 **Test THIS pipeline (steps 2–4) — raw captures only:**
 ```bash
-hf download CoSiGen/real2sim-home-desk --repo-type dataset --include "captures/*" --local-dir data
+hf download EmbodiedSWE/real2sim-home-desk --repo-type dataset --include "captures/*" --local-dir data
 python scripts/reconstruct_cam_pose.py data/captures/home_desk_v2 home_desk_v2   # step 2
 bash scripts/train_splat.sh data/colmap/home_desk_v2 home_desk_v2                # step 3
 ```
 
 **Run the example (steps 4–6) — processed scene, no raw videos needed:**
 ```bash
-hf download CoSiGen/real2sim-home-desk --repo-type dataset --include "colmap/*" "runs/*" --local-dir data
+hf download EmbodiedSWE/real2sim-home-desk --repo-type dataset --include "colmap/*" "runs/*" --local-dir data
 # then follow ../examples/home_desk_franka/README.md
 ```
 
 **Reference results** (what your videos should look like):
 ```bash
-hf download CoSiGen/real2sim-home-desk --repo-type dataset --include "reference_outputs/*" --local-dir data
+hf download EmbodiedSWE/real2sim-home-desk --repo-type dataset --include "reference_outputs/*" --local-dir data
 ```
 
 ## Notes

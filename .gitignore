@@ -248,7 +248,7 @@ rl/runs/
 .venv-lerobot/
 
 # Large binary assets (USD, textures, policies, reference videos) live on Hugging Face
-# (CoSiGen/robobench-assets) and are fetched to these exact paths by
+# (EmbodiedSWE/robobench-assets) and are fetched to these exact paths by
 # `python -m robobench.scripts.fetch_assets`. Text layers (usda, mdl, json, provenance) stay in git; every *.usd goes to HF.
 # See robobench/assets_manifest.json for the authoritative file list.
 robobench/**/assets/**/*.usd
