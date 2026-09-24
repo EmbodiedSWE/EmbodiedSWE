@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://embodiedswe.github.io/assets/paper/embodiedswe.pdf"><img src="https://img.shields.io/badge/Paper-PDF-b31b1b?style=for-the-badge&logo=adobeacrobatreader&logoColor=white" alt="Paper"></a>
+  <a href="https://arxiv.org/abs/2609.27308"><img src="https://img.shields.io/badge/arXiv-2609.27308-b31b1b?style=for-the-badge&logo=arxiv&logoColor=white" alt="arXiv"></a>
   <a href="https://embodiedswe.github.io"><img src="https://img.shields.io/badge/Project%20Page-4c8eda?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Project page"></a>
   <a href="#"><img src="https://img.shields.io/badge/Blog-coming%20soon-6f42c1?style=for-the-badge&logo=rss&logoColor=white" alt="Blog"></a>
 </p>
@@ -17,7 +17,7 @@ EmbodiedSWE studies how frontier coding agents can help robotics. It has four pa
 - **EmbodiedSWE-Gen**, which diversifies one verified agent solution into a large trajectory dataset for training general robot policies.
 - **Agent improvement**, which generates new tasks from existing ones and improves the coding agent with RL on verified outcomes.
 
-See the [paper](https://embodiedswe.github.io/assets/paper/embodiedswe.pdf) for the full benchmark, evaluation, and data-generation details.
+See the [paper](https://arxiv.org/abs/2609.27308) for the full benchmark, evaluation, and data-generation details.
 
 > **Note:** this repository is under active development. Folder layouts, interfaces, and settings
 > may change as the codebase evolves.
@@ -141,18 +141,20 @@ scripts/              bootstrap installers, record_video.py, asset vendoring
 
 ## Citation
 
-If you use EmbodiedSWE in your research, please cite our [paper](https://embodiedswe.github.io/assets/paper/embodiedswe.pdf):
+If you use EmbodiedSWE in your research, please cite our [paper](https://arxiv.org/abs/2609.27308):
 
 ```bibtex
 @misc{embodiedswe2026,
-  title        = {EmbodiedSWE: Coding Agents for Long-Horizon Dexterous Robotics},
-  author       = {You, Haoxiang and Shen, Zeyu and Liu, Yilang and Zheng, Zhicheng and Zha, Lihan and
-                  Yamazaki, Kashu and Zhang, Mingtong and Huang, Suning and Sun, Jiankai and
-                  Chen, Qianzhong and He, Lucy and Chang, Haoran and Shah, Dhruv and Schwager, Mac and
-                  Fragkiadaki, Katerina and Henderson, Peter and Abraham, Ian and Xu, Canwen},
-  year         = {2026},
-  howpublished = {\url{https://embodiedswe.github.io/assets/paper/embodiedswe.pdf}},
-  note         = {Project page: \url{https://embodiedswe.github.io}},
+  title         = {EmbodiedSWE: Coding Agents for Long Horizon Dexterous Robotics},
+  author        = {You, Haoxiang and Shen, Zeyu and Liu, Yilang and Zheng, Zhicheng and Zha, Lihan and
+                   Yamazaki, Kashu and Zhang, Mingtong and Huang, Suning and Sun, Jiankai and
+                   Chen, Qianzhong and He, Lucy and Liu, Kaiyuan and Chang, Haoran and Fragkiadaki, Katerina and
+                   Shah, Dhruv and Schwager, Mac and Henderson, Peter and Abraham, Ian and Xu, Canwen},
+  year          = {2026},
+  eprint        = {2609.27308},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url           = {https://arxiv.org/abs/2609.27308},
 }
 ```
 
