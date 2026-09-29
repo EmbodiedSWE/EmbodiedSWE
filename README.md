@@ -146,7 +146,7 @@ If you use EmbodiedSWE in your research, please cite our [paper](https://arxiv.o
 ```bibtex
 @misc{embodiedswe2026,
   title         = {EmbodiedSWE: Coding Agents for Long Horizon Dexterous Robotics},
-  author        = {You, Haoxiang and Shen, Zeyu and Liu, Yilang and Zheng, Zhicheng and Zha, Lihan and
+  author        = {Shen, Zeyu and You, Haoxiang and Liu, Yilang and Zheng, Zhicheng and Zha, Lihan and
                    Yamazaki, Kashu and Zhang, Mingtong and Huang, Suning and Sun, Jiankai and
                    Chen, Qianzhong and He, Lucy and Liu, Kaiyuan and Chang, Haoran and Fragkiadaki, Katerina and
                    Shah, Dhruv and Schwager, Mac and Henderson, Peter and Abraham, Ian and Xu, Canwen},
