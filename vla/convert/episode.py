@@ -15,6 +15,7 @@ FINGER_TRAVEL — guessing a limit would silently corrupt every label built on i
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -58,8 +59,13 @@ class Episode:
 
 
 def _goal_sentence(desc: str) -> str:
-    tail = desc.split("Goal:", 1)
-    return tail[1].strip() if len(tail) == 2 else desc.strip()
+    """The goal sentence from a scene description: everything from the "Goal"
+    marker — "Goal:", "Goal (…):", "Goal —" — to the end. Fall back to the
+    whole description when no marker is present, so a scene that omits the
+    marker still converts instead of crashing."""
+
+    m = re.search(r"Goal(?:\s*\([^)]*\))?\s*[:—]", desc)
+    return desc[m.end():].strip() if m else desc.strip()
 
 
 def _split_gripper(joint_names: list[str], joint_pos: np.ndarray, clip: bool = True):
