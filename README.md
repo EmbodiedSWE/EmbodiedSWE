@@ -51,6 +51,13 @@ See [task rooms and asset downloads](docs/rooms.md) for the room assignments and
 The `deformable` suite runs on the Newton physics backend and needs a separate venv; see
 [`robobench/suites/deformable/README.md`](robobench/suites/deformable/README.md).
 
+**Isaac Sim 6 / Isaac Lab 3.0 support.** The paper's main results are produced on Isaac Sim 5.1 /
+Isaac Lab 2.3.2 (`main`). For users whose NVIDIA driver (r590 and newer) can no longer run Isaac Sim 5.1
+([issue #135](https://github.com/EmbodiedSWE/EmbodiedSWE/issues/135)), we also provide support for
+Isaac Sim 6.2 / Isaac Lab 3.0 on the
+[`isaacsim-6`](https://github.com/EmbodiedSWE/EmbodiedSWE/tree/isaacsim-6) branch, which installs all
+suites into one venv via `scripts/bootstrap_isaaclab_6.sh`.
+
 ## Quick start
 
 Preview a task:
