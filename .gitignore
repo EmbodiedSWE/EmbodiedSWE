@@ -268,3 +268,6 @@ robobench/**/assets/**/*.tif
 robobench/**/assets/**/*.tiff
 robobench/**/assets/**/*.dds
 robobench/**/assets/**/*.ktx
+
+# Isaac Lab 3.0 source checkout cloned by scripts/bootstrap_isaaclab_6.sh (branch isaacsim-6)
+/externals/

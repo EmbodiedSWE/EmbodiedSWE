@@ -24,17 +24,30 @@ See the [paper](https://arxiv.org/abs/2609.27308) for the full benchmark, evalua
 
 ## Installation
 
-Requirements: Linux, an NVIDIA GPU with a CUDA 12.x driver, and [`uv`](https://docs.astral.sh/uv/).
+> **Branch `isaacsim-6`: Isaac Sim 6.2 / Isaac Lab 3.0.** This branch exists for machines whose
+> NVIDIA driver (r590 and newer) can no longer run Isaac Sim 5.1 ([issue #135](https://github.com/HaoxiangYou/CoSiGen/issues/135)).
+> `main` stays on Isaac Sim 5.1 / Isaac Lab 2.3.2, the stack the paper's numbers were produced on;
+> this branch tracks `main` (merged in, never the other way) and re-validates the tasks on the new
+> stack. Every suite, including the Newton-backed `deformable` suite, runs in the ONE venv below —
+> there is no separate `env_newton` here.
+
+Requirements: Linux x86_64, an NVIDIA driver **r580 or newer** (CUDA 13), [`uv`](https://docs.astral.sh/uv/)
+0.8+, git, and ~25 GB of disk for Isaac Sim and its extension cache. uv fetches its own Python 3.12.
 
 ```bash
-git clone <this repo> && cd <this repo>
-./scripts/bootstrap_isaaclab_5_1.sh      # Isaac Sim 5.1 + Isaac Lab 2.3.2 + robobench into ./.venv
+git clone -b isaacsim-6 <this repo> && cd <this repo>
+./scripts/bootstrap_isaaclab_6.sh        # Isaac Sim 6.2 + Isaac Lab 3.0 (release/3.0.0, pinned) + robobench into ./.venv
 source .venv/bin/activate
 export OMNI_KIT_ACCEPT_EULA=YES               # Isaac Sim asks interactively otherwise (hangs headless runs)
 # Optional: prefetch every task and room (~3.4 GB); otherwise env.build() fetches what it needs.
 python -m robobench.scripts.fetch_assets
-uv pip install "pin==2.7.0" "pin-pink==3.1.0" "daqp==0.8.5" "numpy==1.26.0"   # whole-body IK (pink_ik)
 ```
+
+The whole-body IK stack (`pin`, `pin-pink`, `daqp`) comes with Isaac Lab 3.0's lockfile — do not
+install the `pin==2.7.0 ... numpy==1.26.0` pins from `main`'s README, they belong to the 5.1 stack.
+The bootstrap clones Isaac Lab into `externals/IsaacLab` (gitignored) and syncs its lockfile into
+`.venv`; `COSIGEN_ISAACLAB_DIR` / `COSIGEN_VENV_DIR` relocate those. A checkout that already holds
+verified assets can be shared: `export COSIGEN_ASSET_DIR=/path/to/other/checkout`.
 
 Task assets and shared rooms live in the Hugging Face dataset `EmbodiedSWE/robobench-assets`.
 Building an environment automatically downloads its required asset groups and verifies their SHA-256

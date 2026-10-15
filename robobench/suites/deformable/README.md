@@ -1,75 +1,22 @@
 # Deformable suite (Newton backend)
 
-Install + per-scene notes for the `deformable` suite (`tshirt`, `latte`, `knot`, `dumpling`). The rest of the
-benchmark runs on the PhysX venv described in the root README; this suite needs its own `env_newton` venv.
+Install + per-scene notes for the `deformable` suite (`tshirt`, `latte`, `knot`, `dumpling`).
 
-The `deformable` suite (`robobench/suites/deformable/` — the four scenes `tshirt`, `latte`, `knot`,
-`dumpling`, formerly the separate `folding` / `pouring` / `shoe_tying` / `dough` suites; the old
-preset names still resolve as aliases) runs on IsaacLab **develop**'s Newton physics
-backend (cloth, liquids, and rods do not exist on the PhysX stack). That branch is not on PyPI,
-so this suite gets its own project-local venv, **`env_newton`** (Python 3.12, isaacsim 6.0,
-torch cu130), with the isaaclab packages installed *editable* from an IsaacLab **develop**
-checkout and one shared Newton engine pin. The assembly suite keeps using `.venv` (isaaclab
-2.3.2 / PhysX); the two venvs coexist — only the interpreter you launch with differs.
+**On this branch (`isaacsim-6`, Isaac Sim 6.2 / Isaac Lab 3.0) the suite runs in the SAME `.venv`
+as every other suite**: Isaac Lab 3.0 ships the PhysX backend (`isaaclab_physx`) and the Newton
+backend (`isaaclab_newton`, newton 1.6.1) side by side, so the separate `env_newton` interpreter that
+`main` (Isaac Sim 5.1 / Isaac Lab 2.3.2) needs does not exist here. Build the venv with
+`./scripts/bootstrap_isaaclab_6.sh` (root README) and run the smokes below with `.venv/bin/python`.
+No IsaacLab compat patch is needed: the newton 1.6 API renames `main` patches in are upstream in
+Isaac Lab 3.0.
 
-Extra prerequisite: the torch cu130 wheels need an NVIDIA driver ≥ r580 (CUDA 13).
-
-## 1. Clone IsaacLab (develop)
-
-Clone anywhere you like — it is only consumed as an editable source tree (do **not** run
-IsaacLab's own installer / `isaaclab.sh`):
-
-```bash
-git clone https://github.com/isaac-sim/IsaacLab.git ~/IsaacLab
-git -C ~/IsaacLab checkout d7d004217c60b4790f721565bf5d40243addcb0e   # tested commit (develop, 2026-06-17)
-```
-
-Newer `develop` may work, but this commit is what the suite is tested against — develop moves
-fast and breaks conventions vs 2.x (e.g. quaternions are **xyzw** there, not wxyz).
-
-## 2. Build env_newton (one-time)
-
-From the CoSiGen repo root, with `SRC` pointing at *your* checkout's `source/` dir:
-
-```bash
-SRC=~/IsaacLab/source                 # <-- adjust to your IsaacLab checkout
-PY=env_newton/bin/python
-# isaacsim deps span pypi.org + pypi.nvidia.com at different versions, and isaacsim pins some
-# pre-release deps, so its installs take these extra flags. Keep NV an ARRAY expanded as
-# "${NV[@]}" (works in bash and zsh) — a scalar NV="..." breaks in zsh, which does not
-# word-split unquoted $NV and passes the whole string as one argument.
-NV=(--extra-index-url https://pypi.nvidia.com --index-strategy unsafe-best-match --prerelease=allow)
-
-uv venv env_newton --python 3.12 --prompt env_newton
-uv pip install --python "$PY" torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu130
-uv pip install --python "$PY" "${NV[@]}" "isaacsim[all,extscache]==6.0.0.1"   # large first download
-uv pip install --python "$PY" "${NV[@]}" \
-  -e "$SRC/isaaclab_newton[all]" -e "$SRC/isaaclab_physx[newton]" \
-  -e "$SRC/isaaclab_ovphysx" -e "$SRC/isaaclab_visualizers[kit]" \
-  -e "$SRC/isaaclab_contrib" -e "$SRC/isaaclab_assets" -e "$SRC/isaaclab"
-uv pip install --python "$PY" imageio imageio-ffmpeg   # for record_video
-uv pip install --python "$PY" -e .                     # robobench itself (declares no other deps)
-
-# Newton engine — the pin ALL deformable scenes (tshirt, latte, knot, dumpling) run and are tested
-# against. It is newer than the commit isaaclab_newton pulls transitively, so install it last:
-uv pip install --python "$PY" \
-  "newton[sim] @ git+https://github.com/newton-physics/newton.git@f420998186ec70bc39323ccc374bcb6c2be1d14f" \
-  "warp-lang>=1.16,<1.17" "newton-usd-schemas>=0.4.1"
-# -> newton 1.6.0.dev0, warp 1.16, mujoco + mujoco-warp 3.11, newton-usd-schemas 0.5
-
-# and apply the small vendored compat patch to the IsaacLab checkout (newton 1.5 renamed a few
-# APIs the pinned develop commit still uses):
-git -C ~/IsaacLab apply scripts/isaaclab_newton16_compat.patch
-```
-
-Notes:
-
-- All seven `-e` packages are required: `isaaclab_ovphysx`/`isaaclab_physx` are hard imports of
-  isaaclab's app launcher, and `isaaclab_visualizers[kit]` drives rendering (the tshirt smoke
-  defaults to the kit visualizer).
-- Optional — only to run IsaacLab's in-tree reference tasks (e.g. `Isaac-Lift-Cloth-Franka-v0`),
-  not needed by the suites:
-  `uv pip install --python "$PY" "${NV[@]}" -e "$SRC/isaaclab_tasks" -e "$SRC/isaaclab_rl" -e "$SRC/isaaclab_ov"`
+What moved versus the develop snapshot `main`'s `env_newton` was built on: VBD (`VBDSolverCfg`,
+`NewtonVBDManager`) lives in `isaaclab_newton.physics`; the MJWarp+VBD coupling in
+`isaaclab_contrib.custom_coupling`; the old `NewtonModelCfg` soft-contact / shape-material knobs are
+`NewtonCfg.soft_contact_cfg` + `default_shape_cfg` (see `newton/cloth_sim.py`); the Featherstone+VBD
+coupling was dropped upstream (`rigid_solver="mjwarp"` only). Quaternions handed to Isaac Lab are
+xyzw on 3.0 — robobench cfgs stay wxyz and convert at the boundary (`robobench.core.isaaclab_compat`),
+so the robot `base_rot` values in `configs/envs.py` are plain wxyz again.
 
 ## 3. tshirt (cloth folding)
 
@@ -80,7 +27,7 @@ table (cloth-rise verdict). Any solution for it stays out of the benchmark tree,
 gitignored `experiments/` workspace.
 
 ```bash
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python -m robobench.suites.deformable.smokes.tshirt_fold_smoke --headless
+OMNI_KIT_ACCEPT_EULA=YES .venv/bin/python -m robobench.suites.deformable.smokes.tshirt_fold_smoke --headless
 ```
 
 `OMNI_KIT_ACCEPT_EULA=YES` skips isaacsim 6's first-run EULA prompt in headless runs; on
@@ -99,7 +46,7 @@ verdicts). Any solution for it stays out of the benchmark tree, in the gitignore
 `experiments/` workspace.
 
 ```bash
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
+OMNI_KIT_ACCEPT_EULA=YES .venv/bin/python \
   -m robobench.suites.deformable.smokes.latte_pour_smoke --headless
 ```
 
@@ -122,7 +69,7 @@ scene injects them into the Newton `ModelBuilder` through the manager's per-worl
 solver substep with closed-loop planning off the measured crossing):
 
 ```bash
-OMNI_KIT_ACCEPT_EULA=YES env_newton/bin/python \
+OMNI_KIT_ACCEPT_EULA=YES .venv/bin/python \
   -m robobench.suites.deformable.smokes.knot_smoke --headless
 ```
 
@@ -131,7 +78,7 @@ capsule prim per rod segment from `body_q` (the physics rod is prim-less). Recor
 standard harness:
 
 ```bash
-env_newton/bin/python scripts/record_video.py \
+.venv/bin/python scripts/record_video.py \
   robobench.suites.deformable.smokes.knot_smoke \
   --video robobench/suites/deformable/videos/knot_smoke.mp4 \
   --eye 0.33 -0.31 0.40 --target-at 0.0 0.03 0.10
