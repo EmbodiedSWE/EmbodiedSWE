@@ -7,6 +7,7 @@ import re
 import time
 
 from robobench.core.assets import asset_path, ensure_assets, PACKAGE_ROOT
+from robobench.core.isaaclab_compat import to_isaaclab_quat
 
 def room_pose(room):
     yaw = math.radians(room.get("yaw", 0.0))
@@ -74,7 +75,9 @@ def spawn_room(env, spec):
     room = spec["room"]
     pos = room_pose(room)
     half_yaw = math.radians(room.get("yaw", 0.0))/2
-    quat = (0., 0., math.sin(half_yaw), math.cos(half_yaw)) if spec["backend"] == "newton" else (math.cos(half_yaw), 0., 0., math.sin(half_yaw))
+    # wxyz yaw, handed to the spawner in Isaac Lab's own convention (xyzw on 3.0, where it no longer
+    # depends on the physics backend; wxyz on 2.3)
+    quat = to_isaaclab_quat((math.cos(half_yaw), 0., 0., math.sin(half_yaw)))
     origins = env.iscene.env_origins.detach().cpu().tolist()
     for index, origin in enumerate(origins):
         path = f"/World/Rooms/env_{index}"

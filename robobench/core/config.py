@@ -46,13 +46,40 @@ class SimCfg:
     render: dict[str, Any] = field(default_factory=dict)
 
     def to_isaaclab(self, device: str) -> Any:
-        """Build the isaaclab `SimulationCfg` (needs AppLauncher running)."""
+        """Build the isaaclab `SimulationCfg` (needs AppLauncher running).
+
+        Isaac Lab 3.0 (Isaac Sim 6, branch isaacsim-6): the PhysX knobs ride on the backend cfg
+        `physics=isaaclab_physx.physics.PhysxCfg(...)` (None would also mean PhysX; pinned explicitly),
+        and `SimulationCfg` no longer carries `render=` — the RTX globals are carb settings applied
+        once the app is up (`apply_render_settings`). Isaac Lab 2.3 keeps the `physx=` / `render=`
+        shape, so main's Isaac Sim 5.1 stack takes the fallback branch unchanged."""
         import isaaclab.sim as sim_utils
 
-        return sim_utils.SimulationCfg(
-            device=device, dt=self.dt, gravity=self.gravity, physx=sim_utils.PhysxCfg(**self.physx),
-            render=sim_utils.RenderCfg(**self.render),
-        )
+        try:
+            from isaaclab_physx.physics import PhysxCfg  # Isaac Lab >= 3.0
+        except ImportError:  # Isaac Lab 2.3 (Isaac Sim 5.1)
+            return sim_utils.SimulationCfg(
+                device=device, dt=self.dt, gravity=self.gravity, physx=sim_utils.PhysxCfg(**self.physx),
+                render=sim_utils.RenderCfg(**self.render),
+            )
+        apply_render_settings(self.render)
+        return sim_utils.SimulationCfg(device=device, dt=self.dt, gravity=self.gravity, physics=PhysxCfg(**self.physx))
+
+
+def apply_render_settings(render: dict[str, Any]) -> None:
+    """Isaac Lab 3.0: the RTX globals that 2.3 took through `SimulationCfg.render` (`RenderCfg`) are
+    carb settings owned by the Isaac RTX renderer cfg. Apply a scene's `render={...}` dict (same key
+    names: `enable_translucency`, `enable_reflections`, ...) through isaaclab_physx's own mapping, so
+    the knob keeps working. No-op on Isaac Lab 2.3 (RenderCfg already applied them) and for an empty
+    dict. Needs the app up (it is: every caller runs under AppLauncher)."""
+    if not render:
+        return
+    try:
+        from isaaclab_physx.renderers.isaac_rtx_renderer_cfg import IsaacRtxRendererGlobalSettingsCfg
+        from isaaclab_physx.renderers.isaac_rtx_renderer_utils import apply_isaac_rtx_global_settings
+    except ImportError:
+        return
+    apply_isaac_rtx_global_settings(IsaacRtxRendererGlobalSettingsCfg(**render))
 
 
 # ----- EnvCfg: the runnable-env binding ---------------------------------------------------------

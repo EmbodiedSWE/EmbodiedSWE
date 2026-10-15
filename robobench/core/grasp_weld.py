@@ -57,6 +57,7 @@ Import-light: torch/pxr/isaaclab imports live inside the methods (bind/step time
 """
 
 from __future__ import annotations
+from robobench.core.isaaclab_compat import T, env_prim_path, quat_w
 
 from typing import Any, ClassVar
 
@@ -188,8 +189,7 @@ class GraspWeldContract:
         `RigidBodyAPI` prim — the joint must bind the body, or PhysX ignores it."""
         from pxr import Usd, UsdPhysics
 
-        p = obj.cfg.prim_path.replace("{ENV_REGEX_NS}", "/World/envs/env_.*")
-        root = p.replace("env_.*", f"env_{env_i}")
+        root = env_prim_path(obj.cfg.prim_path, env_i)  # 2.3 `env_.*` and 3.0 `env_[^/]+` forms
         prim = self.scene.env.stage.GetPrimAtPath(root)
         if not prim.IsValid():
             raise RuntimeError(f"[grasp-weld] part prim missing: {root}")
@@ -260,21 +260,21 @@ class GraspWeldContract:
         the opening)."""
         import torch
 
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         art = self._gw_art
         ifc = self._gw_if
-        stalled = art.data.joint_vel[:, self._gw_fingers].abs().sum(dim=-1) < ifc["stall_vel"]
+        stalled = T(art.data.joint_vel)[:, self._gw_fingers].abs().sum(dim=-1) < ifc["stall_vel"]
         mode = ifc["closure"][0]
         if mode == "joint_sum":
-            gap = art.data.joint_pos[:, self._gw_fingers].sum(dim=-1)
+            gap = T(art.data.joint_pos)[:, self._gw_fingers].sum(dim=-1)
         elif mode == "aperture":
-            d = art.data.body_pos_w[:, self._gw_pads[0]] - art.data.body_pos_w[:, self._gw_pads[1]]
+            d = T(art.data.body_pos_w)[:, self._gw_pads[0]] - T(art.data.body_pos_w)[:, self._gw_pads[1]]
             axis = torch.tensor(ifc["pinch_axis"], dtype=d.dtype, device=d.device)
             axis_w = quat_apply(hq, axis.expand(d.shape[0], 3))
             gap = ((d * axis_w).sum(dim=-1).abs() - ifc["sep_off"]).clamp_min(0.0)
         else:  # wrap: tip-origin proxy — thumb to finger-pair mid (monotone opening measure)
-            fp = art.data.body_pos_w[:, self._gw_pads]
+            fp = T(art.data.body_pos_w)[:, self._gw_pads]
             gap = (fp[:, 0] - 0.5 * (fp[:, 1] + fp[:, 2])).norm(dim=-1)
         if ifc["stall_src"] == "gap_rate":
             prev = getattr(self, "_gw_prev_gap", None)
@@ -298,16 +298,16 @@ class GraspWeldContract:
             return
         import torch
 
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         art = self._gw_art
         ifc = self._gw_if
-        hp = art.data.body_pos_w[:, self._gw_hand_i]
-        hq = art.data.body_quat_w[:, self._gw_hand_i]
+        hp = T(art.data.body_pos_w)[:, self._gw_hand_i]
+        hq = quat_w(art.data.body_quat_w)[:, self._gw_hand_i]
         gap, stalled = self._gw_closure(hq)
         wins = self._gw_windows()
         if ifc["pinch_src"] == "pads" and self._gw_pads:
-            pinch = art.data.body_pos_w[:, self._gw_pads].mean(dim=1)
+            pinch = T(art.data.body_pos_w)[:, self._gw_pads].mean(dim=1)
         else:
             approach = torch.tensor(ifc["approach"], dtype=hp.dtype, device=hp.device).expand_as(hp)
             pinch = hp + quat_apply(hq, approach * ifc["pinch_offset"])
@@ -315,8 +315,8 @@ class GraspWeldContract:
         mode = ifc["closure"][0]
         if mode == "wrap":
             _w, prox_lo, prox_hi, squeeze_min = ifc["closure"]
-            prox_q = art.data.joint_pos[:, self._gw_prox].amin(dim=-1)
-            cmd = art.data.joint_pos_target[:, self._gw_prox].amax(dim=-1)
+            prox_q = T(art.data.joint_pos)[:, self._gw_prox].amin(dim=-1)
+            cmd = T(art.data.joint_pos_target)[:, self._gw_prox].amax(dim=-1)
             # a free-air curl reaches the command and fails the squeeze margin; only pressing
             # the part stalls the proximals early — the wrap's contact detector
             closed_ok = (prox_q > prox_lo) & (prox_q < prox_hi) & ((cmd - prox_q) > squeeze_min)
@@ -391,17 +391,17 @@ class GraspWeldContract:
         the hand's live pinch axis — the wrap actually encloses the part."""
         import torch
 
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         art = self._gw_art
         ifc = self._gw_if
-        fp = art.data.body_pos_w[:, self._gw_pads]  # (n, 3, 3)
+        fp = T(art.data.body_pos_w)[:, self._gw_pads]  # (n, 3, 3)
         pair_mid = 0.5 * (fp[:, 1] + fp[:, 2])
         axis = torch.tensor(ifc["pinch_axis"], dtype=fp.dtype, device=fp.device)
         axis_w = quat_apply(hq, axis.expand(fp.shape[0], 3))
         out = []
         for _name, obj, p0, p1, _win in self._gw_sites:
-            pp, pq = obj.data.root_pos_w, obj.data.root_quat_w
+            pp, pq = T(obj.data.root_pos_w), quat_w(obj.data.root_quat_w)
             n = pp.shape[0]
             a = pp + quat_apply(pq, torch.tensor(p0, device=pp.device).expand(n, 3))
             b = pp + quat_apply(pq, torch.tensor(p1, device=pp.device).expand(n, 3))
@@ -415,12 +415,12 @@ class GraspWeldContract:
         """Pinch-point distance to every site's live grip band, shape (num_envs, num_sites)."""
         import torch
 
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         n = pinch.shape[0]
         out = []
         for _name, obj, p0, p1, _win in self._gw_sites:
-            pp, pq = obj.data.root_pos_w, obj.data.root_quat_w
+            pp, pq = T(obj.data.root_pos_w), quat_w(obj.data.root_quat_w)
             a = pp + quat_apply(pq, torch.tensor(p0, device=pinch.device).expand(n, 3))
             b = pp + quat_apply(pq, torch.tensor(p1, device=pinch.device).expand(n, 3))
             ab = b - a
@@ -431,11 +431,11 @@ class GraspWeldContract:
 
     def _gw_engage(self, env_i: int, s: int, hp, hq, gap) -> None:
         """Weld (env_i, site s) to the hand at the live relative pose, on a fresh pool joint."""
-        from isaaclab.utils.math import quat_apply_inverse, quat_conjugate, quat_mul
+        from robobench.core.quat import quat_apply_inverse, quat_conjugate, quat_mul
 
         name, obj = self._gw_sites[s][0], self._gw_sites[s][1]
-        rel_p = quat_apply_inverse(hq.unsqueeze(0), (obj.data.root_pos_w[env_i] - hp).unsqueeze(0))[0]
-        rel_q = quat_mul(quat_conjugate(hq.unsqueeze(0)), obj.data.root_quat_w[env_i].unsqueeze(0))[0]
+        rel_p = quat_apply_inverse(hq.unsqueeze(0), (T(obj.data.root_pos_w)[env_i] - hp).unsqueeze(0))[0]
+        rel_q = quat_mul(quat_conjugate(hq.unsqueeze(0)), quat_w(obj.data.root_quat_w)[env_i].unsqueeze(0))[0]
         if not self._gw_set_joint(env_i, s, rel_p, rel_q):
             return
         self._gw_rel_p[env_i, s] = rel_p

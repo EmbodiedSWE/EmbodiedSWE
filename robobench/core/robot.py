@@ -17,6 +17,7 @@ Heavy imports are deferred so this module imports without AppLauncher.
 """
 
 from __future__ import annotations
+from robobench.core.isaaclab_compat import T, state_w, write_root_state
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -113,9 +114,9 @@ class BaseRobot(ABC):
         art = self.articulation
         if art is not None:
             d = art.data
-            state["root"] = d.root_state_w[env_ids].clone()
-            state["joint_pos"] = d.joint_pos[env_ids].clone()
-            state["joint_vel"] = d.joint_vel[env_ids].clone()
+            state["root"] = state_w(d.root_state_w)[env_ids].clone()  # wxyz (robobench convention)
+            state["joint_pos"] = T(d.joint_pos)[env_ids].clone()
+            state["joint_vel"] = T(d.joint_vel)[env_ids].clone()
             state["joint_pos_target"] = d.joint_pos_target[env_ids].clone()
             state["joint_effort_target"] = d.joint_effort_target[env_ids].clone()
         if self.controller is not None:
@@ -128,7 +129,7 @@ class BaseRobot(ABC):
         controller's state."""
         art = self.articulation
         if art is not None:
-            art.write_root_state_to_sim(state["root"], env_ids)
+            write_root_state(art, state["root"], env_ids)
             art.write_joint_state_to_sim(state["joint_pos"], state["joint_vel"], env_ids=env_ids)
             art.set_joint_position_target(state["joint_pos_target"], env_ids=env_ids)
             art.set_joint_effort_target(state["joint_effort_target"], env_ids=env_ids)
