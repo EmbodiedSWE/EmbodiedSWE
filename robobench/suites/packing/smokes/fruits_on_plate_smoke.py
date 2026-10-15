@@ -31,6 +31,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False,
@@ -51,7 +53,7 @@ parser.add_argument("--target_at", type=float, nargs=3, default=(0.05, 0.12, 0.0
                     help="camera target, table-relative (z above the surface)")
 parser.add_argument("--recover_xy", type=float, nargs=2, default=(-0.34, 0.50),
                     help="clear tabletop spot the misplaced non-fruit is returned to")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 if not args.no_video:
     args.enable_cameras = True
@@ -144,7 +146,7 @@ def main() -> None:
     # --- staging -------------------------------------------------------------------------------
     def plate_origin_w() -> torch.Tensor:
         """(n, 3) plate PRIM ORIGIN world position (base, 13/19 mm off the dish centre)."""
-        return scene.plate.data.root_pos_w.clone()
+        return T(scene.plate.data.root_pos_w).clone()
 
     def plate_slots(k: int) -> list[tuple[float, float, float]]:
         """Release points in the plate's BODY frame, measured from the dish CENTRE: one in the
@@ -163,7 +165,7 @@ def main() -> None:
         st = torch.zeros(n, 13, device=device)
         st[:, 0:3] = plate_origin_w() + torch.tensor(slot, device=device)
         st[:, 3] = 1.0
-        scene.items[name].write_root_state_to_sim(st, all_ids)
+        write_root_state(scene.items[name], st, all_ids)
 
     def place_on_table(name: str, dx: float, dy: float) -> None:
         """Put an item back on the table well clear of the plate (for the recovery step)."""
@@ -174,7 +176,7 @@ def main() -> None:
         st[:, 1] = o[:, 1] + wy + dy
         st[:, 2] = o[:, 2] + c.surface_z + 0.08
         st[:, 3] = 1.0
-        scene.items[name].write_root_state_to_sim(st, all_ids)
+        write_root_state(scene.items[name], st, all_ids)
 
     def settle(steps: int = 90) -> None:
         step(steps)

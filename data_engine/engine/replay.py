@@ -62,6 +62,7 @@ CLI splits multi-scene inputs into one subprocess per scene group.
 """
 
 from __future__ import annotations
+from robobench.core.isaaclab_compat import T, rot_cfg
 
 import json
 import math
@@ -124,7 +125,7 @@ def _lookat_quat(eye, target):
     """World-convention (+X fwd, +Z up) look-at orientation as (w, x, y, z)."""
     import torch
 
-    from isaaclab.utils.math import quat_from_matrix
+    from robobench.core.quat import quat_from_matrix
 
     f = torch.tensor([t - e for t, e in zip(target, eye)], dtype=torch.float32)
     f = f / f.norm().clamp_min(1e-9)
@@ -197,7 +198,7 @@ def _camera_cfg(name: str, view: dict, size, surface_z: float):
         width=size[0], height=size[1],
         data_types=["rgb"],
         update_period=0.0,
-        offset=TiledCameraCfg.OffsetCfg(pos=tuple(eye), rot=_lookat_quat(eye, target), convention="world"),
+        offset=TiledCameraCfg.OffsetCfg(pos=tuple(eye), rot=rot_cfg(_lookat_quat(eye, target)), convention="world"),
         spawn=sim_utils.PinholeCameraCfg(focal_length=view["focal"], clipping_range=(0.05, _FAR_CLIP)),
     )
 
@@ -413,7 +414,7 @@ def replay_scene(gen_root: Path, scene: str, eps: list[Path], *, num_envs: int =
         hook.setup(env)
     env.reset(seed=0)
     anchor, root_key, joint_names_stamp = _replay_anchor(env.robot)
-    base_pos = anchor.data.root_pos_w.clone()  # (E, 3) — the shift anchor
+    base_pos = T(anchor.data.root_pos_w).clone()  # (E, 3) — the shift anchor
 
     def render_once():
         """One restored-state frame: post_step BEFORE the render (glow in-frame), then

@@ -56,6 +56,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, from_isaaclab_quat, quat_w, rot_cfg, state_w, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -181,7 +182,7 @@ def _spawn_jointed_part(prim_path: str, cfg: Any, translation=None, orientation=
     if translation is not None:
         xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
     if orientation is not None:
-        w, x, y, z = (float(v) for v in orientation)
+        w, x, y, z = (float(v) for v in from_isaaclab_quat(tuple(orientation)))  # Isaac hands its convention
         xf.AddOrientOp().Set(Gf.Quatf(w, Gf.Vec3f(x, y, z)))
     UsdPhysics.RigidBodyAPI.Apply(root)
     UsdPhysics.MassAPI.Apply(root).CreateMassAttr(float(cfg.mass))
@@ -297,7 +298,7 @@ def _spawn_vessel(prim_path: str, cfg: Any, translation=None, orientation=None):
     if translation is not None:
         xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
     if orientation is not None:
-        w, x, y, z = (float(v) for v in orientation)
+        w, x, y, z = (float(v) for v in from_isaaclab_quat(tuple(orientation)))  # Isaac hands its convention
         xf.AddOrientOp().Set(Gf.Quatf(w, Gf.Vec3f(x, y, z)))
     UsdPhysics.RigidBodyAPI.Apply(root)
     UsdPhysics.MassAPI.Apply(root).CreateMassAttr(float(cfg.mass_props.mass))
@@ -412,7 +413,7 @@ def _spawn_pod(prim_path: str, cfg: Any, translation=None, orientation=None):
     if translation is not None:
         xf.AddTranslateOp().Set(Gf.Vec3d(*[float(v) for v in translation]))
     if orientation is not None:
-        w, x, y, z = (float(v) for v in orientation)
+        w, x, y, z = (float(v) for v in from_isaaclab_quat(tuple(orientation)))  # Isaac hands its convention
         xf.AddOrientOp().Set(Gf.Quatf(w, Gf.Vec3f(x, y, z)))
     UsdPhysics.RigidBodyAPI.Apply(root)
     UsdPhysics.MassAPI.Apply(root).CreateMassAttr(float(cfg.mass_props.mass))
@@ -697,7 +698,7 @@ class CoffeeServiceScene(BaseScene):
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z),
-                                                        rot=preset["orient"]),
+                                                        rot=rot_cfg(preset["orient"])),
                 spawn=table_spawn,
             ),
             "cm_visual": AssetBaseCfg(
@@ -1014,13 +1015,13 @@ class CoffeeServiceScene(BaseScene):
     def _grasp_weld_step(self) -> None:
         if not self._gw_on or not self._gw_sites or not self._gw_resolve_hand():
             return
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         art = self._gw_art
-        hp = art.data.body_pos_w[:, self._gw_hand_i]
-        hq = art.data.body_quat_w[:, self._gw_hand_i]
-        gap = art.data.joint_pos[:, self._gw_fingers].sum(dim=-1)
-        stalled = art.data.joint_vel[:, self._gw_fingers].abs().sum(dim=-1) < self.GRASP_STALL
+        hp = T(art.data.body_pos_w)[:, self._gw_hand_i]
+        hq = quat_w(art.data.body_quat_w)[:, self._gw_hand_i]
+        gap = T(art.data.joint_pos)[:, self._gw_fingers].sum(dim=-1)
+        stalled = T(art.data.joint_vel)[:, self._gw_fingers].abs().sum(dim=-1) < self.GRASP_STALL
         approach = torch.zeros_like(hp)
         approach[:, 2] = self.GRASP_PINCH_OFFSET
         pinch = hp + quat_apply(hq, approach)
@@ -1056,12 +1057,12 @@ class CoffeeServiceScene(BaseScene):
             self._gw_engage(row, s, hp[row], hq[row], gap[row])
 
     def _gw_site_dists(self, pinch: torch.Tensor) -> torch.Tensor:
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         n = pinch.shape[0]
         out = []
         for _name, obj, p0, p1, _win in self._gw_sites:
-            pp = obj.data.root_pos_w
+            pp = T(obj.data.root_pos_w)
             if isinstance(p0, str) and p0 == "circle":
                 r, z = p1
                 rel = pinch - pp
@@ -1069,7 +1070,7 @@ class CoffeeServiceScene(BaseScene):
                 rho = rel[:, :2].norm(dim=-1)
                 out.append(((rho - r).pow(2) + rel_z.pow(2)).sqrt())
                 continue
-            pq = obj.data.root_quat_w
+            pq = quat_w(obj.data.root_quat_w)
             a = pp + quat_apply(pq, torch.tensor(p0, device=pinch.device).expand(n, 3))
             b = pp + quat_apply(pq, torch.tensor(p1, device=pinch.device).expand(n, 3))
             ab = b - a
@@ -1080,13 +1081,13 @@ class CoffeeServiceScene(BaseScene):
 
     def _gw_engage(self, env_i: int, s: int, hp: torch.Tensor, hq: torch.Tensor,
                    gap: torch.Tensor) -> None:
-        from isaaclab.utils.math import quat_apply_inverse, quat_conjugate, quat_mul
+        from robobench.core.quat import quat_apply_inverse, quat_conjugate, quat_mul
 
         name, obj = self._gw_sites[s][0], self._gw_sites[s][1]
         rel_p = quat_apply_inverse(hq.unsqueeze(0),
-                                   (obj.data.root_pos_w[env_i] - hp).unsqueeze(0))[0]
+                                   (T(obj.data.root_pos_w)[env_i] - hp).unsqueeze(0))[0]
         rel_q = quat_mul(quat_conjugate(hq.unsqueeze(0)),
-                         obj.data.root_quat_w[env_i].unsqueeze(0))[0]
+                         quat_w(obj.data.root_quat_w)[env_i].unsqueeze(0))[0]
         if not self._gw_set_joint(env_i, s, rel_p, rel_q):
             return
         self._gw_rel_p[env_i, s] = rel_p
@@ -1242,14 +1243,14 @@ class CoffeeServiceScene(BaseScene):
         m = len(env_ids)
         self._grasp_weld_release_all(env_ids)
         for body in (self.cover, self.button):
-            body.write_root_state_to_sim(self._home_pose(m, env_ids), env_ids)
+            write_root_state(body, self._home_pose(m, env_ids), env_ids)
         tray_st = torch.zeros(m, 13, device=dev)
         tray_st[:, 0] = c.tray_pos[0]
         tray_st[:, 1] = c.tray_pos[1]
         tray_st[:, 2] = c.surface_z
         tray_st[:, 3] = 1.0
         tray_st[:, 0:3] += self.env_origins[env_ids]
-        self.tray.write_root_state_to_sim(tray_st, env_ids)
+        write_root_state(self.tray, tray_st, env_ids)
 
         for obj, slot, h in ((self.cup, c.cup_slot, c.cup_h),
                              (self.pod, c.pod_slot, c.pod_h)):
@@ -1262,7 +1263,7 @@ class CoffeeServiceScene(BaseScene):
             st[:, 3] = torch.cos(half)
             st[:, 6] = torch.sin(half)
             st[:, 0:3] += self.env_origins[env_ids]
-            obj.write_root_state_to_sim(st, env_ids)
+            write_root_state(obj, st, env_ids)
 
         self._running[env_ids] = False
         self._timer[env_ids] = 0
@@ -1278,7 +1279,7 @@ class CoffeeServiceScene(BaseScene):
     # ----- geometry queries -----------------------------------------------------------------------
     def cover_pos(self) -> torch.Tensor:
         """(N,) the cover's slide coordinate (m): 0 = closed, negative = slid south."""
-        return self.cover.data.root_pos_w[:, 1] - self._cover_home_y
+        return T(self.cover.data.root_pos_w)[:, 1] - self._cover_home_y
 
     def cover_closed(self) -> torch.Tensor:
         return self.cover_pos() >= self.cfg.cover_closed_pos
@@ -1288,7 +1289,7 @@ class CoffeeServiceScene(BaseScene):
 
     def button_depth(self) -> torch.Tensor:
         """(N,) key depression depth (m), 0 = fully up."""
-        return (self._btn_home_z - self.button.data.root_pos_w[:, 2]).clamp(min=0.0)
+        return (self._btn_home_z - T(self.button.data.root_pos_w)[:, 2]).clamp(min=0.0)
 
     def _spout_axis_xy(self) -> torch.Tensor:
         c = self.cfg
@@ -1304,7 +1305,7 @@ class CoffeeServiceScene(BaseScene):
         c = self.cfg
         pk = torch.tensor([c.cm_pos[0] + c.pocket_off[0], c.cm_pos[1] + c.pocket_off[1]],
                           device=self.env.device)
-        p = self.pod.data.root_pos_w - self.env_origins
+        p = T(self.pod.data.root_pos_w) - self.env_origins
         xy_ok = (p[:, :2] - pk).abs().max(dim=-1).values < c.pod_xy_tol
         z = p[:, 2] - c.surface_z
         z_ok = (z > c.pocket_floor_z) & (z < c.pocket_wall_top_z)
@@ -1312,38 +1313,38 @@ class CoffeeServiceScene(BaseScene):
 
     def cup_under_spout(self) -> torch.Tensor:
         """(N,) bool: cup standing on the platform, centred under the spout, upright."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         c = self.cfg
         n = self.env.num_envs
-        p = self.cup.data.root_pos_w - self.env_origins
-        near = (self.cup.data.root_pos_w[:, :2] - self._spout_axis_xy()).norm(dim=-1) \
+        p = T(self.cup.data.root_pos_w) - self.env_origins
+        near = (T(self.cup.data.root_pos_w)[:, :2] - self._spout_axis_xy()).norm(dim=-1) \
             < c.cup_r_tol
         bottom = p[:, 2] - c.cup_h / 2 - c.surface_z
         on_z = (bottom - c.platform_top_z).abs() < 0.02
         ez = torch.tensor([0.0, 0.0, 1.0], device=self.env.device).expand(n, 3)
-        up = quat_apply(self.cup.data.root_quat_w, ez)
+        up = quat_apply(quat_w(self.cup.data.root_quat_w), ez)
         upright = up[:, 2].clamp(-1.0, 1.0) >= math.cos(math.radians(c.served_tilt_deg))
         return near & on_z & upright
 
     def cup_on_tray(self) -> torch.Tensor:
         """(N,) bool: cup resting upright on the tray dish."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         c = self.cfg
         n = self.env.num_envs
-        p = self.cup.data.root_pos_w - self.env_origins
+        p = T(self.cup.data.root_pos_w) - self.env_origins
         tp = torch.tensor(c.tray_pos, device=self.env.device)
         on_xy = (p[:, :2] - tp).norm(dim=-1) < c.tray_dish_r - c.cup_outer_r
         ez = torch.tensor([0.0, 0.0, 1.0], device=self.env.device).expand(n, 3)
-        up = quat_apply(self.cup.data.root_quat_w, ez)
+        up = quat_apply(quat_w(self.cup.data.root_quat_w), ez)
         upright = up[:, 2].clamp(-1.0, 1.0) >= math.cos(math.radians(c.served_tilt_deg))
         bottom = p[:, 2] - c.cup_h / 2 - c.surface_z
         on_z = (bottom - c.tray_h).abs() < c.served_z_tol
         return on_xy & upright & on_z
 
     def cup_settled(self) -> torch.Tensor:
-        return self.cup.data.root_lin_vel_w.norm(dim=-1) < self.cfg.settle_speed
+        return T(self.cup.data.root_lin_vel_w).norm(dim=-1) < self.cfg.settle_speed
 
     # ----- appliance mechanics (every substep) ----------------------------------------------------
     def post_step(self) -> None:
@@ -1407,7 +1408,7 @@ class CoffeeServiceScene(BaseScene):
         # Cover: detent spring near closed (pops with a firm pull), light damping
         # elsewhere; external drive for the NullRobot smoke.
         pos = self.cover_pos()
-        vel = self.cover.data.root_lin_vel_w[:, 1]
+        vel = T(self.cover.data.root_lin_vel_w)[:, 1]
         # detent band wide enough that small shoves self-recover (the boot-settle
         # drift lesson): restoring force up to 20 mm of southward drift
         in_detent = pos > -0.020
@@ -1421,7 +1422,7 @@ class CoffeeServiceScene(BaseScene):
         # Key: spring return (+z, toward up) + damping + external press drive (-z)
         # + GRAVITY FEED-FORWARD (this key presses down; without the weight term the
         # bare spring sat the key on its bottom stop, permanently "pressed").
-        v_z = self.button.data.root_lin_vel_w[:, 2]
+        v_z = T(self.button.data.root_lin_vel_w)[:, 2]
         f_z = -self.btn_drive + c.btn_k * depth - c.btn_c * v_z + c.btn_mass * 9.81
         self.button.set_external_force_and_torque(
             f_z.view(n, 1, 1) * ez.view(n, 1, 3), torch.zeros(n, 1, 3, device=dev))
@@ -1431,7 +1432,7 @@ class CoffeeServiceScene(BaseScene):
         bodies = {"cover": self.cover, "btn_start": self.button,
                   "cup": self.cup, "pod": self.pod, "tray": self.tray}
         return {
-            "bodies": {n: b.data.root_state_w[env_ids].clone() for n, b in bodies.items()},
+            "bodies": {n: state_w(b.data.root_state_w)[env_ids].clone() for n, b in bodies.items()},
             "machine": {k: getattr(self, k)[env_ids].clone()
                         for k in ("_running", "_timer", "_filled", "_btn_pressed",
                                   "_flags", "_aborted", "_refusals", "_cycles_done")},
@@ -1442,7 +1443,7 @@ class CoffeeServiceScene(BaseScene):
         bodies = {"cover": self.cover, "btn_start": self.button,
                   "cup": self.cup, "pod": self.pod, "tray": self.tray}
         for n, b in bodies.items():
-            b.write_root_state_to_sim(state["bodies"][n], env_ids)
+            write_root_state(b, state["bodies"][n], env_ids)
         for k, v in state["machine"].items():
             getattr(self, k)[env_ids] = v
         self._grasp_weld_restore(state, env_ids)

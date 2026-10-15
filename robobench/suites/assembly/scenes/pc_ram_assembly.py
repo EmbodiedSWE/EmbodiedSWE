@@ -32,6 +32,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, physx_view, quat_w, rot_cfg, state_w, write_root_pose, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -228,7 +229,7 @@ class PcRamAssemblyScene(BaseScene):
             ),
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=preset["orient"]),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=rot_cfg(preset["orient"])),
                 spawn=table_spawn,
             ),
             # The case: kinematic; the invisible fixture inside it (two DIMM channels + board
@@ -269,7 +270,7 @@ class PcRamAssemblyScene(BaseScene):
                     mass_props=sim_utils.MassPropertiesCfg(mass=c.ram_mass),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(wx + ix, wy + iy, c.surface_z + c.ram_init_z), rot=c.ram_init_quat
+                    pos=(wx + ix, wy + iy, c.surface_z + c.ram_init_z), rot=rot_cfg(c.ram_init_quat)
                 ),
             )
         if c.ram_stand:
@@ -356,9 +357,9 @@ class PcRamAssemblyScene(BaseScene):
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
+        mats = physx_view(asset).get_material_properties()
         mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
+        physx_view(asset).set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def apply_physical_params(self, env: BaseEnv, values: dict[str, list]) -> None:
         """Write a PHYSICAL_PARAMS draw PER ENV through the PhysX views: `values[name]` is one
@@ -369,14 +370,14 @@ class PcRamAssemblyScene(BaseScene):
             col = torch.tensor([float(v) for v in per_env], dtype=torch.float32)  # (n,)
             if name in ("ram_friction", "case_friction"):
                 for asset in (self.rams if name == "ram_friction" else [self.case]):
-                    mats = asset.root_physx_view.get_material_properties()  # (n, shapes, 3), cpu
+                    mats = physx_view(asset).get_material_properties()  # (n, shapes, 3), cpu
                     mats[..., 0:2] = col.view(-1, 1, 1).expand(mats.shape[0], mats.shape[1], 2)
-                    asset.root_physx_view.set_material_properties(mats, ids)
+                    physx_view(asset).set_material_properties(mats, ids)
             elif name == "ram_mass":
                 for ram in self.rams:
-                    masses = ram.root_physx_view.get_masses()  # (n, bodies), cpu
+                    masses = physx_view(ram).get_masses()  # (n, bodies), cpu
                     masses[:] = col.view(-1, 1).expand_as(masses)
-                    ram.root_physx_view.set_masses(masses, ids)
+                    physx_view(ram).set_masses(masses, ids)
             else:
                 raise KeyError(f"{type(self).__name__}.apply_physical_params: unknown knob {name!r}")
 
@@ -396,31 +397,31 @@ class PcRamAssemblyScene(BaseScene):
                 (wx, wy, c.surface_z + c.case_lift), device=dev)
             pose[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.case_jitter_xy
             pose[:, 3] = 1.0
-            self.case.write_root_pose_to_sim(pose, env_ids)
+            write_root_pose(self.case, pose, env_ids)
 
         for ram, (ix, iy) in zip(self.rams, c.ram_init_xy):
             st = torch.zeros(m, 13, device=dev)
             st[:, 0:3] = origin + torch.tensor((wx + ix, wy + iy, c.surface_z + c.ram_init_z), device=dev)
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 3:7] = torch.tensor(c.ram_init_quat, device=dev)
-            ram.write_root_state_to_sim(st, env_ids)
+            write_root_state(ram, st, env_ids)
         self.grasp_weld.release_all(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         """Restorable scene state: world root states (13) of the case and both sticks."""
-        out = {"case": self.case.data.root_state_w[env_ids].clone()}
+        out = {"case": state_w(self.case.data.root_state_w)[env_ids].clone()}
         for k, ram in enumerate(self.rams):
-            out[f"ram_{k}"] = ram.data.root_state_w[env_ids].clone()
+            out[f"ram_{k}"] = state_w(ram.data.root_state_w)[env_ids].clone()
         out.update(self.grasp_weld.state(env_ids))
         return out
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         """Restore what `get_state` returned. A stick's insertion depth is fully captured by its
         root state, so the channel holds it on restore."""
-        self.case.write_root_pose_to_sim(state["case"][:, 0:7], env_ids)
+        write_root_pose(self.case, state["case"][:, 0:7], env_ids)
         for k, ram in enumerate(self.rams):
-            ram.write_root_state_to_sim(state[f"ram_{k}"], env_ids)
+            write_root_state(ram, state[f"ram_{k}"], env_ids)
         self.grasp_weld.restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
@@ -481,12 +482,12 @@ class PcRamAssemblyScene(BaseScene):
     def _ram_offsets_in_case(self) -> torch.Tensor:
         """Each stick origin's offset from its seated point, in the case's local frame, shape
         (num_envs, num_slots, 3). Zero means that stick sits exactly at its seated pose."""
-        from isaaclab.utils.math import quat_apply_inverse
+        from robobench.core.quat import quat_apply_inverse
 
         out = []
         for k, ram in enumerate(self.rams):
             rel = quat_apply_inverse(
-                self.case.data.root_quat_w, ram.data.root_pos_w - self.case.data.root_pos_w
+                quat_w(self.case.data.root_quat_w), T(ram.data.root_pos_w) - T(self.case.data.root_pos_w)
             )
             out.append(rel - torch.tensor(self.cfg.seat_pos[k], device=rel.device))
         return torch.stack(out, dim=1)
@@ -495,15 +496,15 @@ class PcRamAssemblyScene(BaseScene):
         """cos of the angle between each stick's and the case's local `axis` (1=y: heading along
         the slot, 2=z: insertion axis), shape (num_envs, num_slots). Seated orientation = the
         case's own axes."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         e = torch.zeros(3, device=self.env.device)
         e[axis] = 1.0
         e = e.expand(self.env.num_envs, 3)
-        case_ax = quat_apply(self.case.data.root_quat_w, e)
+        case_ax = quat_apply(quat_w(self.case.data.root_quat_w), e)
         cols = []
         for ram in self.rams:
-            ram_ax = quat_apply(ram.data.root_quat_w, e)
+            ram_ax = quat_apply(quat_w(ram.data.root_quat_w), e)
             cols.append((ram_ax * case_ax).sum(dim=-1))
         return torch.stack(cols, dim=1)
 

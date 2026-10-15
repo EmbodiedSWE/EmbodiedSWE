@@ -25,6 +25,8 @@ import math
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--item", type=str, default="red_onion")
 parser.add_argument("--depth_frac", type=float, default=0.25)
@@ -41,12 +43,12 @@ parser.add_argument("--boost", type=float, default=1.0,
                     help="xy_boost during hover/descend (pen_holder solve uses 1.6)")
 parser.add_argument("--scatter", type=float, nargs=2, default=None, metavar=("X", "Y"),
                     help="override scatter_center, to test the reach annulus")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 app = AppLauncher(args).app
 
 import torch  # noqa: E402
-from isaaclab.utils.math import (  # noqa: E402
+from robobench.core.quat import (  # noqa: E402
     axis_angle_from_quat,
     quat_apply,
     quat_conjugate,
@@ -104,17 +106,17 @@ def main() -> None:
         return torch.tensor([float(x), float(y), float(z)], device=dev)
 
     def pose():
-        return art.data.body_pos_w[0, ee], art.data.body_quat_w[0, ee]
+        return T(art.data.body_pos_w)[0, ee], quat_w(art.data.body_quat_w)[0, ee]
 
     def tip():
         p, q = pose()
         return p + FINGER_LEN * quat_apply(q.unsqueeze(0), V3(0, 0, 1).unsqueeze(0))[0]
 
     def width():
-        return 2.0 * art.data.joint_pos[0, fj1].item()
+        return 2.0 * T(art.data.joint_pos)[0, fj1].item()
 
     def item_p():
-        return scene.items[name].data.root_pos_w[0]
+        return T(scene.items[name].data.root_pos_w)[0]
 
     def jaw_quat(az):
         yh = V3(math.cos(az), math.sin(az), 0.0)
@@ -122,7 +124,7 @@ def main() -> None:
         return quat_from_matrix(torch.stack([torch.cross(yh, zh, dim=0), yh, zh], 1).unsqueeze(0))[0]
 
     # narrowest horizontal span of the live OBB
-    q0 = scene.items[name].data.root_quat_w[0]
+    q0 = quat_w(scene.items[name].data.root_quat_w)[0]
     axes = [quat_apply(q0.unsqueeze(0), V3(*e).unsqueeze(0))[0] * (b / 2)
             for e, b in zip(((1., 0., 0.), (0., 1., 0.), (0., 0., 1.)), bb)]
     best = min(((2 * sum(abs(float(torch.dot(a, V3(math.cos(math.pi * i / 36), math.sin(math.pi * i / 36), 0)))) for a in axes), math.pi * i / 36)
@@ -132,9 +134,9 @@ def main() -> None:
     # optional lean-away-from-base for close/low reaches: a strict top-down wrist at ~0.36 m
     # with the base at tabletop height folds q4 onto its limit (see the module docstring)
     if args.near > 0:
-        from isaaclab.utils.math import quat_from_angle_axis
-        base_xy = art.data.root_pos_w[0, :2]
-        tgt_xy = scene.items[name].data.root_pos_w[0, :2]
+        from robobench.core.quat import quat_from_angle_axis
+        base_xy = T(art.data.root_pos_w)[0, :2]
+        tgt_xy = T(scene.items[name].data.root_pos_w)[0, :2]
         d = float((tgt_xy - base_xy).norm())
         if d < args.near:
             tilt = min(args.max_tilt, (args.near - d) * 5.0)
@@ -169,7 +171,7 @@ def main() -> None:
         print(f"[probe] {tag:9s} t={t['n']:4d} hand_z={float(pose()[0][2]):.3f} "
               f"tip_z={float(tp[2]):.3f} item_z={float(ip[2]):.3f} "
               f"w={width()*1000:5.1f}mm dxy={float((ip[:2]-tp[:2]).norm())*1000:5.1f}mm "
-              f"q4={float(art.data.joint_pos[0,3]):.2f}", flush=True)
+              f"q4={float(T(art.data.joint_pos)[0,3]):.2f}", flush=True)
 
     def hold(gp, grip_v, secs, boost=1.0, tag=None, every=None):
         n = max(1, round(secs * hz))

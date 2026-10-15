@@ -32,6 +32,8 @@ import argparse  # noqa: E402
 
 from isaaclab.app import AppLauncher  # noqa: E402
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, state_w # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 # Per-robot wiring: the registered pink_ik env + the USD body names of the two wrists (left, right).
 # The action layout is the same across robots — composite([arm pink_ik over (left, right) frames, hands]) —
 # so only these three strings change per embodiment.
@@ -56,7 +58,7 @@ parser.add_argument("--leg", type=int, default=0, help="which table leg to appro
 parser.add_argument("--steps", type=int, default=400)
 parser.add_argument("--hover", type=float, default=0.08, help="target height above the leg (m)")
 parser.add_argument("--max_step", type=float, default=0.01, help="max wrist-target move per step (m); waypoints so the IK doesn't lunge at a far goal")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -85,9 +87,9 @@ def main() -> None:
     hand_ids = env.robot.controller.controllers[1].joint_ids  # the hand JointController's DOFs
 
     env.reset()
-    a0 = art.data.body_link_state_w[:, ai, :7].clone()  # approach-wrist start pose (hold orientation)
-    h0 = art.data.body_link_state_w[:, hi, :7].clone()  # holding-wrist start pose (held)
-    hands0 = art.data.joint_pos[:, hand_ids].clone()
+    a0 = state_w(art.data.body_link_state_w)[:, ai, :7].clone()  # approach-wrist start pose (hold orientation)
+    h0 = state_w(art.data.body_link_state_w)[:, hi, :7].clone()  # holding-wrist start pose (held)
+    hands0 = T(art.data.joint_pos)[:, hand_ids].clone()
     hold_pos = h0[:, :3] - origins
 
     # Pink-IK frames are ordered (left, right); the action is [left pose, right pose, hands].
@@ -100,7 +102,7 @@ def main() -> None:
 
     cur_tgt = (a0[:, :3] - origins).clone()  # start at the current wrist -> no initial jump
     for _ in range(args.steps):
-        goal = scene.legs[args.leg].data.root_pos_w - origins  # leg in env frame
+        goal = T(scene.legs[args.leg].data.root_pos_w) - origins  # leg in env frame
         goal[:, 2] += args.hover  # hover above the leg
         delta = goal - cur_tgt
         cur_tgt = cur_tgt + delta * (args.max_step / delta.norm(dim=-1, keepdim=True).clamp_min(1e-6)).clamp(max=1.0)

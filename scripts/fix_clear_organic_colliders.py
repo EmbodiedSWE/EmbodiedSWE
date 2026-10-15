@@ -24,9 +24,11 @@ import os
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--root", default="robobench/suites/packing/assets/clear_organic_objects")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args, _unknown = parser.parse_known_args()
 app = AppLauncher(args).app
 

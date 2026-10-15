@@ -29,6 +29,8 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args, quat_w  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 _ap = argparse.ArgumentParser()
 _ap.add_argument("--task-dir", required=True, help="package under sim_gen.tasks")
 _ap.add_argument("--scene", required=True, help="registered scene name")
@@ -41,7 +43,7 @@ _ap.add_argument("--out", default="/home/tiger/workspace/pi05")
 _ap.add_argument("--hdfs", default="")
 _ap.add_argument("--video-every", type=int, default=2)
 _ap.add_argument("--prompt", default="", help="VLA instruction; empty falls back to describe()")
-AppLauncher.add_app_launcher_args(_ap)
+add_app_launcher_args(_ap)
 ARGS = _ap.parse_args()
 ARGS.headless = True
 ARGS.enable_cameras = True
@@ -53,7 +55,7 @@ app = AppLauncher(ARGS).app
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
-from isaaclab.utils.math import axis_angle_from_quat  # noqa: E402
+from robobench.core.quat import axis_angle_from_quat  # noqa: E402
 
 import robobench  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
@@ -110,8 +112,8 @@ class Views:
         """Look down the gripper's approach axis from just behind the hand."""
         art = self.env.robot.articulation
         p = np3(art.data.body_pos_w[0, self.ee])
-        q = art.data.body_quat_w[0, self.ee:self.ee + 1]
-        from isaaclab.utils.math import quat_apply
+        q = quat_w(art.data.body_quat_w)[0, self.ee:self.ee + 1]
+        from robobench.core.quat import quat_apply
         fwd = np3(quat_apply(q, torch.tensor([[0.0, 0.0, 1.0]], device=q.device))[0])
         return self._grab(p - 0.12 * fwd, p + 0.25 * fwd)
 
@@ -153,7 +155,7 @@ def main() -> int:
                 writer.append_data(base)
             if not plan:
                 p = np3(art.data.body_pos_w[0, ee])
-                aa = np3(axis_angle_from_quat(art.data.body_quat_w[0, ee:ee + 1])[0])
+                aa = np3(axis_angle_from_quat(quat_w(art.data.body_quat_w)[0, ee:ee + 1])[0])
                 grip = np3(art.data.joint_pos[0, fj])
                 obs = {"observation/image": base, "observation/wrist_image": wrist,
                        "observation/state": np.concatenate([p, aa, grip]).astype(np.float32),

@@ -30,6 +30,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False,
@@ -39,7 +41,7 @@ parser.add_argument("--no_video", action="store_true", default=False,
 parser.add_argument("--record_every", type=int, default=8)
 parser.add_argument("--out", type=str, default="clear_organic_objects_frames.npz")
 parser.add_argument("--hdfs_dir", type=str, default="")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 if not args.no_video:
     args.enable_cameras = True
@@ -135,7 +137,7 @@ def main() -> None:
     # --- staging ------------------------------------------------------------------------------
     def bin_center_w() -> torch.Tensor:
         """(n, 3) bin root (bottom-centre) world position."""
-        return scene.bin.data.root_pos_w.clone()
+        return T(scene.bin.data.root_pos_w).clone()
 
     # interior packing slots in bin body frame (bin yaw 0): a 3-wide grid, two layers, centres
     # comfortably inside |x|<=0.14, |y|<=0.08, below the rim (~0.29 local).
@@ -156,7 +158,7 @@ def main() -> None:
         st = torch.zeros(n, 13, device=device)
         st[:, 0:3] = bc + torch.tensor(slot, device=device)
         st[:, 3] = 1.0
-        scene.items[name].write_root_state_to_sim(st, all_ids)
+        write_root_state(scene.items[name], st, all_ids)
 
     def place_on_table(name: str, dx: float, dy: float) -> None:
         """Put an item back on the table well clear of the bin (for the recovery step)."""
@@ -167,7 +169,7 @@ def main() -> None:
         st[:, 1] = o[:, 1] + wy + dy
         st[:, 2] = o[:, 2] + c.surface_z + 0.06
         st[:, 3] = 1.0
-        scene.items[name].write_root_state_to_sim(st, all_ids)
+        write_root_state(scene.items[name], st, all_ids)
 
     def settle(steps: int = 90) -> None:
         step(steps)

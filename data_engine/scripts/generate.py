@@ -28,6 +28,8 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 DATA_ENGINE_ROOT = Path(__file__).resolve().parents[1]
 
 parser = argparse.ArgumentParser(description="generate one batch of graded episodes")
@@ -78,7 +80,7 @@ parser.add_argument("--dims", default="", help="noised action dims as a:b (requi
 parser.add_argument("--noise-gate-z", type=float, default=0.0, dest="noise_gate_z",
                     help="height gate (m): noise applies only while the hand is ABOVE this — "
                          "perturb transport, never the low precision phases (0 = ungated)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 
 app = AppLauncher(args).app

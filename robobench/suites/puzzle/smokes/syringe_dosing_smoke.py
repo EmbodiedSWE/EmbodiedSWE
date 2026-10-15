@@ -30,6 +30,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, state_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False,
@@ -39,7 +41,7 @@ parser.add_argument("--record_every", type=int, default=6)
 parser.add_argument("--out", type=str, default="syringe_smoke_frames.npz")
 parser.add_argument("--hdfs_dir", type=str, default="",
                     help="optional HDFS dir to upload the frames npz to ('' = no upload)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
 if not getattr(args, "kit_args", None):
@@ -121,13 +123,13 @@ def main() -> None:
 
     def grab() -> None:
         held.clear()
-        held.append(scene.syringe.data.root_state_w.clone())
+        held.append(state_w(scene.syringe.data.root_state_w).clone())
 
     def hold() -> None:
         if held:
             pin = held[0].clone()
             pin[:, 7:13] = 0.0
-            scene.syringe.write_root_state_to_sim(pin, ids)
+            write_root_state(scene.syringe, pin, ids)
 
     def release() -> None:
         held.clear()
@@ -136,7 +138,7 @@ def main() -> None:
         """Move the syringe so the nozzle TIP lands on tip_target: rigid
         teleport-glide of the articulation root from a pose captured at glide
         start, then HOLD."""
-        ref = scene.syringe.data.root_state_w.clone()
+        ref = state_w(scene.syringe.data.root_state_w).clone()
         off = torch.zeros(1, 3, device=device)
         for g_it in range(400):
             tip = scene.tip_pos()
@@ -148,10 +150,10 @@ def main() -> None:
             pin = ref.clone()
             pin[:, 0:3] += off
             pin[:, 7:13] = 0.0
-            scene.syringe.write_root_state_to_sim(pin, ids)
+            write_root_state(scene.syringe, pin, ids)
             step(1)
             if g_it % 40 == 0:
-                bp = scene.syringe.data.root_pos_w[0]
+                bp = T(scene.syringe.data.root_pos_w)[0]
                 print(f"[dose-smoke]     glide {g_it}: dist={dist * 1000:.1f}mm "
                       f"barrel=({float(bp[0]):+.3f},{float(bp[1]):+.3f},{float(bp[2]):+.3f}) "
                       f"travel={float(scene.travel()[0]) * 1000:+.1f}mm", flush=True)
@@ -161,12 +163,12 @@ def main() -> None:
                   f"(obstructed corridor?)", flush=True)
             # BACK OFF instead of leaving the rig pressed into the obstruction
             up_off = torch.tensor([[0.0, 0.0, 0.10]], device=device)
-            ref2 = scene.syringe.data.root_state_w.clone()
+            ref2 = state_w(scene.syringe.data.root_state_w).clone()
             for s in range(20):
                 pin = ref2.clone()
                 pin[:, 0:3] += up_off * ((s + 1) / 20.0)
                 pin[:, 7:13] = 0.0
-                scene.syringe.write_root_state_to_sim(pin, ids)
+                write_root_state(scene.syringe, pin, ids)
                 step(1)
         grab()
         for _ in range(settle):
@@ -193,7 +195,7 @@ def main() -> None:
         2026-08-11), so the tilt is a rotation about world -y applied on it."""
         import math as _m
 
-        from isaaclab.utils.math import quat_mul as _qm
+        from robobench.core.quat import quat_mul as _qm
 
         lie = torch.tensor([[0.5, -0.5, 0.5, -0.5]], device=device)
         ang = s * (_m.pi / 2)
@@ -203,14 +205,14 @@ def main() -> None:
         st = torch.zeros(n, 13, device=device)
         st[:, 0:3] = center
         st[:, 3:7] = q
-        scene.syringe.write_root_state_to_sim(st, ids)
+        write_root_state(scene.syringe, st, ids)
 
     def erect() -> None:
         """Raise the LYING syringe upright (kinematic, the 'hand' motion): LIFT
         well clear of the shelf FIRST, then rotate upright at altitude (rotating
         at shelf height sweeps the tip through the shelf — kinematic
         interpenetration, measured 2026-08-10)."""
-        base = scene.syringe.data.root_pos_w[0].clone()
+        base = T(scene.syringe.data.root_pos_w)[0].clone()
         clear = c.barrel_l / 2 + c.nozzle_l + 0.06  # tip clears the shelf when tilted
         for i_s in range(31):  # phase 1: straight lift, still lying
             s = i_s / 30.0
@@ -238,7 +240,7 @@ def main() -> None:
         # it tunneled through shelf and floor to z=-0.49 (measured 2026-08-09)
         home = o[0] + torch.tensor(
             [hx, hy, c.surface_z + c.barrel_home_h + 0.015], device=device)
-        start = scene.syringe.data.root_pos_w[0].clone()
+        start = T(scene.syringe.data.root_pos_w)[0].clone()
         for i_s in range(41):
             s = i_s / 40.0
             center = (start + (home - start) * s).view(1, 3)
@@ -251,8 +253,8 @@ def main() -> None:
         for i_r in range(60):
             step(1)
             if i_r % 10 == 0:
-                bp = scene.syringe.data.root_pos_w[0]
-                bv = scene.syringe.data.root_lin_vel_w[0]
+                bp = T(scene.syringe.data.root_pos_w)[0]
+                bv = T(scene.syringe.data.root_lin_vel_w)[0]
                 print(f"[dose-smoke]     lay-settle t={i_r}: z={float(bp[2]):.4f} "
                       f"vz={float(bv[2]):+.3f} xy=({float(bp[0]):+.3f},{float(bp[1]):+.3f})",
                       flush=True)
@@ -289,7 +291,7 @@ def main() -> None:
             err = target_travel - x
             # seat-duty diagnostics (draw-loss forensics, cheap)
             tipv = scene.tip_pos()[0]
-            rp = scene.reservoir.data.root_pos_w[0]
+            rp = T(scene.reservoir.data.root_pos_w)[0]
             lat = float((tipv[:2] - rp[:2]).norm())
             dz = float(tipv[2] - (rp[2] + scene.cfg.res_h / 2))
             seat_hits += int(bool(scene.seated_reservoir()[0]))
@@ -336,10 +338,10 @@ def main() -> None:
             hold()
             step(1)
             if it < 60 or it % 5 == 0:  # first 60 per-step: explosion forensics
-                pv = float(scene.syringe.data.joint_vel[0, 0])
-                bz = float(scene.syringe.data.root_pos_w[0, 2])
+                pv = float(T(scene.syringe.data.joint_vel)[0, 0])
+                bz = float(T(scene.syringe.data.root_pos_w)[0, 2])
                 tip = scene.tip_pos()[0]
-                rr = scene.reservoir.data.root_pos_w[0]
+                rr = T(scene.reservoir.data.root_pos_w)[0]
                 lat = float((tip[:2] - rr[:2]).norm()) * 1000
                 dzz = float(tip[2] - (rr[2] + c.res_h / 2)) * 1000
                 upz = float(scene.barrel_axis()[0, 2])
@@ -351,8 +353,8 @@ def main() -> None:
                       f"seat={int(scene._res_recent[0])} "
                       f"lat={lat:.1f} dz={dzz:+.1f} upz={upz:+.2f}", flush=True)
             if it % 150 == 0:
-                jv = float(scene.syringe.data.joint_vel[0, 0])
-                bz = float(scene.syringe.data.root_pos_w[0, 2])
+                jv = float(T(scene.syringe.data.joint_vel)[0, 0])
+                bz = float(T(scene.syringe.data.root_pos_w)[0, 2])
                 axz = float(scene.barrel_axis()[0, 2])
                 print(f"[dose-smoke]   meter t={it}: x={x * 1000:+.1f}mm drive="
                       f"{float(scene.plunger_drive[0]):+.2f}N joint_v={jv:+.3f} "
@@ -369,7 +371,7 @@ def main() -> None:
 
     def rig_report(tag: str) -> None:
         """Joint-integrity diagnostic: root height + measured joint travel."""
-        bp = scene.syringe.data.root_pos_w[0]
+        bp = T(scene.syringe.data.root_pos_w)[0]
         print(f"[dose-smoke] RIG {tag}: barrel_z={float(bp[2]):.4f} "
               f"travel={float(scene.travel()[0]) * 1000:.1f}mm", flush=True)
 
@@ -433,7 +435,7 @@ def main() -> None:
             step(1)
         check("boot-parked", bool(scene.parked()[0]),
               f"parked={bool(scene.parked()[0])} lying={float(scene.barrel_axis()[0, 2]):.2f} "
-              f"vel={float(scene.syringe.data.root_lin_vel_w[0].norm()):.3f}")
+              f"vel={float(T(scene.syringe.data.root_lin_vel_w)[0].norm()):.3f}")
 
         def drop_probe(tag: str, at: torch.Tensor | None = None) -> None:
             """Contact-liveness probe: kinematically lift the LYING barrel 3 cm
@@ -442,7 +444,7 @@ def main() -> None:
             park-phase failure signature)."""
             grab()
             base_p = (at.clone() if at is not None
-                      else scene.syringe.data.root_pos_w[0].clone())
+                      else T(scene.syringe.data.root_pos_w)[0].clone())
             for i_s in range(13):
                 center = (base_p + torch.tensor(
                     [0.0, 0.0, 0.03 * min(i_s / 8.0, 1.0)], device=device)).view(1, 3)
@@ -452,9 +454,9 @@ def main() -> None:
             for i_r in range(40):
                 step(1)
                 if i_r % 8 == 0:
-                    bp = scene.syringe.data.root_pos_w[0]
+                    bp = T(scene.syringe.data.root_pos_w)[0]
                     print(f"[dose-smoke]     drop[{tag}] t={i_r}: z={float(bp[2]):.4f} "
-                          f"vz={float(scene.syringe.data.root_lin_vel_w[0, 2]):+.3f}",
+                          f"vz={float(T(scene.syringe.data.root_lin_vel_w)[0, 2]):+.3f}",
                           flush=True)
 
         drop_probe("post-boot")
@@ -486,7 +488,7 @@ def main() -> None:
     # 1. draw a full load from the reservoir
     if args.demo:
         erect()
-    res = scene.reservoir.data.root_pos_w.clone()
+    res = T(scene.reservoir.data.root_pos_w).clone()
     res[:, 2] += c.res_h / 2 + 0.004
     move_tip(res)
     check("seated-res", bool(scene.seated_reservoir()[0]))
@@ -508,7 +510,7 @@ def main() -> None:
     print(f"[dose-smoke] post-draw: travel={float(scene.travel()[0]) * 1000:.1f}mm "
           f"liquid={liq:.3f} seated_now={bool(scene.seated_reservoir()[0])} "
           f"tip={[round(v, 4) for v in tip]} "
-          f"res={[round(float(v), 4) for v in scene.reservoir.data.root_pos_w[0]]}",
+          f"res={[round(float(v), 4) for v in T(scene.reservoir.data.root_pos_w)[0]]}",
           flush=True)
     check("draw-full", bool(scene.drawn()[0]) and liq >= c.draw_min,
           f"liquid={liq:.3f} travel={float(scene.travel()[0]) / c.stroke:.3f}")
@@ -562,7 +564,7 @@ def main() -> None:
             [hx, hy, c.surface_z + 0.038], device=device))
     check("parked", bool(scene.parked()[0]),
           f"axis_z={float(scene.barrel_axis()[0, 2]):.2f} "
-          f"z={float(scene.syringe.data.root_pos_w[0, 2]):.3f}")
+          f"z={float(T(scene.syringe.data.root_pos_w)[0, 2]):.3f}")
     check("success", bool(scene.success()[0]),
           f"drawn={bool(scene.drawn()[0])} doses_ok={bool(scene.doses_ok()[0])} "
           f"parked={bool(scene.parked()[0])}")
@@ -582,7 +584,7 @@ def main() -> None:
     env.reset()
     step(40)
     erect()
-    res = scene.reservoir.data.root_pos_w.clone()
+    res = T(scene.reservoir.data.root_pos_w).clone()
     res[:, 2] += c.res_h / 2 + 0.004
     move_tip(res)
     meter(c.stroke * 0.99, 1.0, guard=1500)

@@ -17,13 +17,15 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 DATA_ENGINE_ROOT = Path(__file__).resolve().parents[1]
 
 parser = argparse.ArgumentParser(description="replay-check the whole batch of the given episodes")
 parser.add_argument("gen_root", help="the campaign: …/<run>/data_gen/<gen_name>")
 parser.add_argument("--episodes", nargs="+", required=True,
                     help="episode dirs (relative to gen_root or absolute), all from one batch")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 
 app = AppLauncher(args).app

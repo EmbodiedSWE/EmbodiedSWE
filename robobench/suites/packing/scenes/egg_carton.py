@@ -28,6 +28,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, quat_w, rot_cfg, state_w, write_root_pose, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -227,7 +228,7 @@ class EggCartonScene(BaseScene):
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
                 init_state=AssetBaseCfg.InitialStateCfg(
-                    pos=(wx, wy, table_z), rot=preset["orient"]
+                    pos=(wx, wy, table_z), rot=rot_cfg(preset["orient"])
                 ),
                 spawn=table_spawn,
             ),
@@ -303,7 +304,7 @@ class EggCartonScene(BaseScene):
                         wy + c.basket_pos[1] + sy,
                         c.surface_z + c.egg_spawn_lift,
                     ),
-                    rot=(math.sqrt(0.5), 0.0, math.sqrt(0.5), 0.0),
+                    rot=rot_cfg((math.sqrt(0.5), 0.0, math.sqrt(0.5), 0.0)),
                 ),
             )
         return out
@@ -334,7 +335,7 @@ class EggCartonScene(BaseScene):
         self._lid_j = self.carton.find_joints([self.cfg.lid_joint], preserve_order=True)[0][0]
         # The scanned asset's hinge range is -90..0; widen the lower limit so the lid can rest
         # at the configured open angle.
-        limits = self.carton.data.joint_pos_limits[:, self._lid_j].clone()
+        limits = T(self.carton.data.joint_pos_limits)[:, self._lid_j].clone()
         limits[:, 0] = torch.minimum(limits[:, 0], torch.full_like(limits[:, 0], math.radians(self.cfg.lid_open_deg)))
         self.carton.write_joint_position_limit_to_sim(limits.unsqueeze(1), joint_ids=[self._lid_j])
         self._body_b = self.carton.body_names.index(self.cfg.carton_body)
@@ -362,7 +363,7 @@ class EggCartonScene(BaseScene):
         root[:, 3] = torch.cos(carton_yaw / 2)
         root[:, 6] = torch.sin(carton_yaw / 2)
         root[:, 0:3] += origin
-        self.carton.write_root_pose_to_sim(root[:, 0:7], env_ids)
+        write_root_pose(self.carton, root[:, 0:7], env_ids)
         self.carton.write_root_velocity_to_sim(torch.zeros(m, 6, device=dev), env_ids)
         joint_pos = torch.zeros(m, self.carton.num_joints, device=dev)
         joint_pos[:, self._lid_j] = math.radians(c.lid_open_deg)
@@ -407,27 +408,27 @@ class EggCartonScene(BaseScene):
             st[:, 4] = -torch.sin(half) * c45
             st[:, 5] = torch.cos(half) * c45
             st[:, 6] = torch.sin(half) * c45
-            egg.write_root_state_to_sim(st, env_ids)
+            write_root_state(egg, st, env_ids)
 
     # ----- complete state ----------------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         return {
-            "carton_root": self.carton.data.root_state_w[env_ids].clone(),
-            "carton_joint_pos": self.carton.data.joint_pos[env_ids].clone(),
-            "carton_joint_vel": self.carton.data.joint_vel[env_ids].clone(),
+            "carton_root": state_w(self.carton.data.root_state_w)[env_ids].clone(),
+            "carton_joint_pos": T(self.carton.data.joint_pos)[env_ids].clone(),
+            "carton_joint_vel": T(self.carton.data.joint_vel)[env_ids].clone(),
             "eggs": {
-                name: egg.data.root_state_w[env_ids].clone() for name, egg in self.eggs.items()
+                name: state_w(egg.data.root_state_w)[env_ids].clone() for name, egg in self.eggs.items()
             },
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
-        self.carton.write_root_pose_to_sim(state["carton_root"][:, 0:7], env_ids)
+        write_root_pose(self.carton, state["carton_root"][:, 0:7], env_ids)
         self.carton.write_root_velocity_to_sim(state["carton_root"][:, 7:13], env_ids)
         self.carton.write_joint_state_to_sim(
             state["carton_joint_pos"], state["carton_joint_vel"], env_ids=env_ids
         )
         for name, egg in self.eggs.items():
-            egg.write_root_state_to_sim(state["eggs"][name], env_ids)
+            write_root_state(egg, state["eggs"][name], env_ids)
 
     # ----- task description --------------------------------------------------------------------
     def describe(self) -> str:
@@ -445,24 +446,24 @@ class EggCartonScene(BaseScene):
     # ----- progress/rubric ---------------------------------------------------------------------
     def lid_pos(self) -> torch.Tensor:
         """(N,) lid angle in radians: -pi/2 is open and 0 is closed."""
-        return self.carton.data.joint_pos[:, self._lid_j]
+        return T(self.carton.data.joint_pos)[:, self._lid_j]
 
     def lid_closed(self) -> torch.Tensor:
         return self.lid_pos().abs() <= math.radians(self.cfg.lid_closed_deg)
 
     def _seat_candidates(self) -> torch.Tensor:
         """(N, E, C) valid egg-to-cavity memberships in the carton base-link frame."""
-        from isaaclab.utils.math import quat_apply, quat_apply_inverse
+        from robobench.core.quat import quat_apply, quat_apply_inverse
 
         c = self.cfg
-        egg_pos = torch.stack([egg.data.root_pos_w for egg in self.eggs.values()], dim=1)
-        egg_quat = torch.stack([egg.data.root_quat_w for egg in self.eggs.values()], dim=1)
+        egg_pos = torch.stack([T(egg.data.root_pos_w) for egg in self.eggs.values()], dim=1)
+        egg_quat = torch.stack([quat_w(egg.data.root_quat_w) for egg in self.eggs.values()], dim=1)
         egg_vel = torch.stack(
-            [egg.data.root_lin_vel_w.norm(dim=-1) for egg in self.eggs.values()], dim=1
+            [T(egg.data.root_lin_vel_w).norm(dim=-1) for egg in self.eggs.values()], dim=1
         )
         n, e = egg_pos.shape[:2]
-        body_pos = self.carton.data.body_pos_w[:, self._body_b]
-        body_quat = self.carton.data.body_quat_w[:, self._body_b]
+        body_pos = T(self.carton.data.body_pos_w)[:, self._body_b]
+        body_quat = quat_w(self.carton.data.body_quat_w)[:, self._body_b]
         bq = body_quat[:, None, :].expand(n, e, 4).reshape(n * e, 4)
         local_pos = quat_apply_inverse(
             bq, (egg_pos - body_pos[:, None, :]).reshape(n * e, 3)
@@ -491,9 +492,9 @@ class EggCartonScene(BaseScene):
     def settled(self) -> torch.Tensor:
         """(N,) all eggs and the lid are quiet."""
         egg_still = torch.stack(
-            [egg.data.root_lin_vel_w.norm(dim=-1) for egg in self.eggs.values()], dim=1
+            [T(egg.data.root_lin_vel_w).norm(dim=-1) for egg in self.eggs.values()], dim=1
         ).amax(dim=1) < self.cfg.settle_speed
-        lid_still = self.carton.data.joint_vel[:, self._lid_j].abs() < self.cfg.settle_joint_speed
+        lid_still = T(self.carton.data.joint_vel)[:, self._lid_j].abs() < self.cfg.settle_joint_speed
         return egg_still & lid_still
 
     def _stages_complete(self) -> torch.Tensor:

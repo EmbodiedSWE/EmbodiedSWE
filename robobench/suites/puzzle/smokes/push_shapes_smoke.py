@@ -24,19 +24,26 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, state_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False)
 parser.add_argument("--record_every", type=int, default=4)
 parser.add_argument("--out", type=str, default="push_shapes_frames.npz")
 parser.add_argument("--video", type=str, default="push_shapes_smoke.mp4")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
 if not getattr(args, "kit_args", None):
     args.kit_args = "--/rtx/verifyDriverVersion/enabled=false"
 
+# Isaac Lab 3.0's Kit launcher reads a truthy `video` attribute as "record a video" (needs MoviePy);
+# this smoke's --video is its OWN output path — keep it out of the launcher's sight.
+_video_out = args.video
+args.video = None
 app = AppLauncher(args).app
+args.video = _video_out
 
 import math  # noqa: E402
 import os  # noqa: E402
@@ -62,7 +69,7 @@ def main() -> bool:
     all_ids = torch.arange(count, device=device)
     no_action = torch.empty(0, device=device)
 
-    from isaaclab.utils.math import quat_mul
+    from robobench.core.quat import quat_mul
 
     checks: list[tuple[str, bool]] = []
 
@@ -152,24 +159,24 @@ def main() -> bool:
         state[:, 7] = linear_speed
         # Cancel one gravity kick while the oracle re-pins a sliding body.
         state[:, 9] = 9.81 * physics_dt
-        scene.blocks[key].write_root_state_to_sim(state, all_ids)
+        write_root_state(scene.blocks[key], state, all_ids)
         env.iscene.update(0.0)
 
     def pad_pose(key: str) -> tuple[torch.Tensor, torch.Tensor]:
         pad = scene.pads[key].data
-        return pad.root_pos_w[:, :2].clone(), pad.root_quat_w.clone()
+        return T(pad.root_pos_w)[:, :2].clone(), quat_w(pad.root_quat_w).clone()  # wxyz
 
     def yaw_delta(key: str, degrees: float) -> torch.Tensor:
         radians = math.radians(degrees)
         delta = torch.tensor(
             [math.cos(radians / 2), 0.0, 0.0, math.sin(radians / 2)], device=device
         ).expand(count, 4)
-        return quat_mul(scene.pads[key].data.root_quat_w, delta)
+        return quat_mul(quat_w(scene.pads[key].data.root_quat_w), delta)
 
     def slerp_to(key: str, goal_xy: torch.Tensor, goal_quat: torch.Tensor,
                  steps: int) -> None:
         """Carry one piece to a pose over `steps`, so the motion is visible on camera."""
-        start = scene.blocks[key].data.root_state_w.clone()
+        start = state_w(scene.blocks[key].data.root_state_w).clone()
         start_xy = start[:, 0:2].clone()
         start_quat = start[:, 3:7].clone()
         for index in range(steps):
@@ -194,7 +201,7 @@ def main() -> bool:
 
     for order, key in enumerate(PIECES):
         pad_xy, pad_quat = pad_pose(key)
-        block_xy = scene.blocks[key].data.root_pos_w[:, :2].clone()
+        block_xy = T(scene.blocks[key].data.root_pos_w)[:, :2].clone()
         # Sub-skill 1: pivot in place to the pad's yaw.
         slerp_to(key, block_xy, pad_quat, 45)
         step(20)

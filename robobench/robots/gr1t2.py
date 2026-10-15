@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, rot_cfg, set_fix_root_link, state_w, write_root_state
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -104,9 +105,9 @@ class GR1T2Robot(BaseRobot):
         robot = GR1T2_HIGH_PD_CFG.copy()  # type: ignore[attr-defined]
         robot.prim_path = f"{{ENV_REGEX_NS}}/{self.prim_name}"  # cfg.name-namespaced (default "Robot")
         robot.spawn.usd_path = c.gr1t2_usd
-        robot.spawn.articulation_props.fix_root_link = c.fixed_base
+        set_fix_root_link(robot.spawn, c.fixed_base)
         robot.init_state.pos = c.base_pos
-        robot.init_state.rot = c.base_rot
+        robot.init_state.rot = rot_cfg(c.base_rot)
         for grp in ("right-arm", "left-arm"):
             robot.actuators[grp].stiffness = c.arm_stiffness
             robot.actuators[grp].damping = c.arm_damping
@@ -166,14 +167,14 @@ class GR1T2Robot(BaseRobot):
         """Home pose: default joint state, all targets held at default (un-driven joints stay put),
         root written to the (fixed) spawn pose + env origin."""
         art = self.articulation
-        jp = art.data.default_joint_pos[env_ids].clone()
-        jv = art.data.default_joint_vel[env_ids].clone()
+        jp = T(art.data.default_joint_pos)[env_ids].clone()
+        jv = T(art.data.default_joint_vel)[env_ids].clone()
         art.write_joint_state_to_sim(jp, jv, env_ids=env_ids)
         art.set_joint_position_target(jp, env_ids=env_ids)
         art.set_joint_effort_target(torch.zeros_like(jp), env_ids=env_ids)
-        root = art.data.default_root_state[env_ids].clone()
+        root = state_w(art.data.default_root_state)[env_ids].clone()
         root[:, 0:3] += self.env.iscene.env_origins[env_ids]
-        art.write_root_state_to_sim(root, env_ids)
+        write_root_state(art, root, env_ids)
         if self.controller is not None:
             self.controller.reset(env_ids)
 

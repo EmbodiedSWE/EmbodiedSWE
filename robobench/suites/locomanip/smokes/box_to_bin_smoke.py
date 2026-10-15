@@ -32,9 +32,11 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args, write_root_state  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -84,7 +86,7 @@ def main() -> None:
         st = torch.zeros(n, 13, device=device)
         st[:, 0:3] = scene.env_origins + torch.tensor((xy[0], xy[1], z), device=device)
         st[:, 3] = 1.0  # identity quat -> flat, as it started
-        scene.box.write_root_state_to_sim(st, all_ids)
+        write_root_state(scene.box, st, all_ids)
 
     fails = []
     board_rest_mm = None

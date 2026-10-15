@@ -20,6 +20,7 @@ Success = `sliced` read when the delivery finishes.
 from __future__ import annotations
 
 from robobench.core import BaseGrader
+from robobench.core.isaaclab_compat import T
 from robobench.suites.cutting.scenes.slice_food import SliceFoodScene
 
 
@@ -55,7 +56,7 @@ class SliceFoodGrader(BaseGrader):
         return target - 1
 
     def setup(self) -> None:
-        self._knife_z0 = self.scene.knife.data.root_pos_w[:, 2].clone()  # resting on the rails
+        self._knife_z0 = T(self.scene.knife.data.root_pos_w)[:, 2].clone()  # resting on the rails
         self._target = self._cuts_needed(self.scene) + 1
 
     def check_success(self):
@@ -71,7 +72,7 @@ class SliceFoodGrader(BaseGrader):
         hx, hy = s.cfg.board_size[0] / 2, s.cfg.board_size[1] / 2
         ok = torch.ones(s.env.num_envs, dtype=torch.bool, device=s.env.device)
         for pc in s.pieces:
-            rel = pc.data.root_pos_w - s.env_origins
+            rel = T(pc.data.root_pos_w) - s.env_origins
             ok &= (rel[:, 0].abs() < hx) & (rel[:, 1].abs() < hy) & (rel[:, 2] > s._board_top)
         return ok
 
@@ -80,7 +81,7 @@ class SliceFoodGrader(BaseGrader):
 
     # ---- rubric stages — each returns a (num_envs,) value in [0, 1] ---------------------
     def knife_taken(self):
-        rise = self.scene.knife.data.root_pos_w[:, 2] - self._knife_z0
+        rise = T(self.scene.knife.data.root_pos_w)[:, 2] - self._knife_z0
         return (rise >= self.scene.cfg.rest_rail_h).float()
 
     def planes_cut(self):

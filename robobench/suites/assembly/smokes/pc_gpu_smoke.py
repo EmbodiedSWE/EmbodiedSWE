@@ -31,11 +31,13 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--video", type=str, default="", help="save an mp4 here (needs --headless --enable_cameras)")
 parser.add_argument("--cap", type=int, default=8, help="with --video: capture one frame every N steps (8 at dt=1/240 -> real-time at 30 fps)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -48,7 +50,7 @@ import torch  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 
 import robobench  # noqa: E402
-from isaaclab.utils.math import axis_angle_from_quat, quat_apply_inverse  # noqa: E402
+from robobench.core.quat import axis_angle_from_quat, quat_apply_inverse  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
 from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
@@ -115,7 +117,7 @@ def main() -> None:
     env.sim.reset()  # re-parse physics so the camera (if any) is picked up
     env.reset()
 
-    case_pos = case.data.root_pos_w.clone()  # (n, 3): origin ON the board face, at its centre
+    case_pos = T(case.data.root_pos_w).clone()  # (n, 3): origin ON the board face, at its centre
     board_z = case_pos[:, 2].clone()
     seat_w = case_pos + torch.tensor(sc.cfg.seat_pos, device=device)  # (n, 3) seated origin, world
     place_w = seat_w.clone()  # placement point INSIDE the case: bracket forward of the rear panel
@@ -134,33 +136,33 @@ def main() -> None:
     def rot_err() -> torch.Tensor:
         """Axis-angle error (n, 3) from the card's current orientation to the seated one (world
         identity — the case spawns unrotated), expressed in the WORLD frame."""
-        return axis_angle_from_quat(card.data.root_quat_w)
+        return axis_angle_from_quat(quat_w(card.data.root_quat_w))
 
     def card_wrench(f: torch.Tensor, t: torch.Tensor) -> None:
         """Apply a WORLD wrench to the card in its CURRENT link frame."""
-        qc = card.data.root_link_quat_w
+        qc = quat_w(card.data.root_link_quat_w)
         card.set_external_force_and_torque(quat_apply_inverse(qc, f).unsqueeze(1),
                                            quat_apply_inverse(qc, t).unsqueeze(1))
 
     def hand(tgt_pos: torch.Tensor, right: bool = True) -> None:
         """One force-only 'hand' update: clamped PD toward a world position target around the
         weight feedforward, plus (optionally) a PD righting the card to the seated orientation."""
-        pos = card.data.root_link_pos_w
-        vel = card.data.root_link_lin_vel_w
+        pos = T(card.data.root_link_pos_w)
+        vel = T(card.data.root_link_lin_vel_w)
         f = -KP_XY * (pos - tgt_pos) - KD_XY * vel
         f[:, 2] = -KP_Z * (pos[:, 2] - tgt_pos[:, 2]) - KD_Z * vel[:, 2]
         f[:, 0:2] = f[:, 0:2].clamp(-F_XY_CAP, F_XY_CAP)
         f[:, 2] = f[:, 2].clamp(-F_Z_CAP, F_Z_CAP) + weight
         t = torch.zeros_like(f)
         if right:
-            t = (-KP_ROT * rot_err() - KD_ROT * card.data.root_ang_vel_w).clamp(-T_CAP, T_CAP)
+            t = (-KP_ROT * rot_err() - KD_ROT * T(card.data.root_ang_vel_w)).clamp(-T_CAP, T_CAP)
         card_wrench(f, t)
 
     def depth() -> torch.Tensor:  # tab depth below the slot mouth (m), per env
         return sc.engaged()
 
     def xy_err() -> torch.Tensor:
-        return (card.data.root_link_pos_w[:, 0:2] - seat_w[:, 0:2]).norm(dim=-1)
+        return (T(card.data.root_link_pos_w)[:, 0:2] - seat_w[:, 0:2]).norm(dim=-1)
 
     def step(i: int) -> None:
         capture = writer is not None and i % args.cap == 0
@@ -192,17 +194,17 @@ def main() -> None:
         i += 1
         if phase == "show":
             if i >= show_end:
-                lift_from = card.data.root_link_pos_w.clone()
+                lift_from = T(card.data.root_link_pos_w).clone()
                 phase, marker = "lift", i
         elif phase == "lift":  # rise off the table to the rim-crossing height while righting
             s = smoothstep((i - marker) / lift_steps)
             tgt = lift_from.clone()
             tgt[:, 2] = lift_from[:, 2] + s * (board_z + CROSS_Z - lift_from[:, 2])
             hand(tgt)
-            up_here = (board_z + CROSS_Z - card.data.root_link_pos_w[:, 2]).abs() < 0.005
+            up_here = (board_z + CROSS_Z - T(card.data.root_link_pos_w)[:, 2]).abs() < 0.005
             upright = rot_err().norm(dim=-1) < math.radians(5.0)
             if bool((up_here & upright).all()) or i - marker >= 2 * lift_steps:
-                cross_from = card.data.root_link_pos_w[:, 0:2].clone()
+                cross_from = T(card.data.root_link_pos_w)[:, 0:2].clone()
                 phase, marker = "cross", i
         elif phase == "cross":  # glide over the rim to the PLACEMENT point, at crossing height
             s = smoothstep((i - marker) / cross_steps)
@@ -210,9 +212,9 @@ def main() -> None:
             tgt[:, 0:2] = cross_from + s * (place_w[:, 0:2] - cross_from)
             tgt[:, 2] = board_z + CROSS_Z
             hand(tgt)
-            arrived = (card.data.root_link_pos_w[:, 0:2] - place_w[:, 0:2]).norm(dim=-1) < 0.003
+            arrived = (T(card.data.root_link_pos_w)[:, 0:2] - place_w[:, 0:2]).norm(dim=-1) < 0.003
             if (i - marker >= cross_steps and bool(arrived.all())) or i - marker >= 2 * cross_steps:
-                drop_from = card.data.root_link_pos_w[:, 2].clone()
+                drop_from = T(card.data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "drop", i
         elif phase == "drop":  # place the card INSIDE the case, bracket forward of the rear panel
             s = smoothstep((i - marker) / drop_steps)
@@ -225,8 +227,8 @@ def main() -> None:
             tgt = place_w.clone()
             tgt[:, 2] = board_z + SLIDE_Z
             hand(tgt)
-            perr = (card.data.root_link_pos_w[:, 0:2] - place_w[:, 0:2]).norm(dim=-1)
-            still = card.data.root_link_lin_vel_w.norm(dim=-1) < 0.01
+            perr = (T(card.data.root_link_pos_w)[:, 0:2] - place_w[:, 0:2]).norm(dim=-1)
+            still = T(card.data.root_link_lin_vel_w).norm(dim=-1) < 0.01
             ok = (perr < ALIGN_XY_TOL) & (rot_err().norm(dim=-1) < ALIGN_ROT_TOL) & still
             if bool(ok.all()) or i - marker >= 2 * align_steps:
                 phase, marker = "slide", i
@@ -236,10 +238,10 @@ def main() -> None:
             tgt[:, 0] = place_w[:, 0] + s * SLIDE_OFF
             tgt[:, 2] = board_z + SLIDE_Z
             hand(tgt)
-            still = card.data.root_link_lin_vel_w.norm(dim=-1) < 0.01
+            still = T(card.data.root_link_lin_vel_w).norm(dim=-1) < 0.01
             if (i - marker >= slide_steps and bool(((xy_err() < ALIGN_XY_TOL) & still).all())) \
                     or i - marker >= 2 * slide_steps:
-                press_from = card.data.root_link_pos_w[:, 2].clone()
+                press_from = T(card.data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "press", i
         elif phase == "press":  # straight down; the channel funnel guides the last 5 mm
             s = smoothstep((i - marker) / press_steps)
@@ -264,7 +266,7 @@ def main() -> None:
             tgt[:, 2] = board_z + SLIDE_Z
             hand(tgt)
             if i - marker >= align_steps:
-                press_from = card.data.root_link_pos_w[:, 2].clone()
+                press_from = T(card.data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "press", i
         else:  # settle: hands off — the seated card must hold on its own
             if i - marker >= settle_steps:

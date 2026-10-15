@@ -30,6 +30,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, physx_view, quat_w, rot_cfg, state_w, write_root_pose, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -205,7 +206,7 @@ class PcGpuRamAssemblyScene(BaseScene):
             ),
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=preset["orient"]),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=rot_cfg(preset["orient"])),
                 spawn=table_spawn,
             ),
             # The case: kinematic; the invisible fixtures inside it (PCIe channel + rear cutout
@@ -240,7 +241,7 @@ class PcGpuRamAssemblyScene(BaseScene):
                     mass_props=sim_utils.MassPropertiesCfg(mass=c.card_mass),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(wx + cx, wy + cy, c.surface_z + c.card_init_z), rot=c.card_init_quat
+                    pos=(wx + cx, wy + cy, c.surface_z + c.card_init_z), rot=rot_cfg(c.card_init_quat)
                 ),
             ),
         }
@@ -257,7 +258,7 @@ class PcGpuRamAssemblyScene(BaseScene):
                     mass_props=sim_utils.MassPropertiesCfg(mass=c.ram_mass),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(wx + ix, wy + iy, c.surface_z + c.ram_init_z), rot=c.ram_init_quat
+                    pos=(wx + ix, wy + iy, c.surface_z + c.ram_init_z), rot=rot_cfg(c.ram_init_quat)
                 ),
             )
         foam = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.17, 0.17, 0.2), roughness=0.9)
@@ -385,9 +386,9 @@ class PcGpuRamAssemblyScene(BaseScene):
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
+        mats = physx_view(asset).get_material_properties()
         mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
+        physx_view(asset).set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: the case pinned at spawn, the card and both sticks loose on
@@ -405,28 +406,28 @@ class PcGpuRamAssemblyScene(BaseScene):
             st[:, 0:3] = origin + torch.tensor((wx + ix, wy + iy, c.surface_z + iz), device=dev)
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 3:7] = torch.tensor(quat, device=dev)
-            part.write_root_state_to_sim(st, env_ids)
+            write_root_state(part, st, env_ids)
         self.grasp_weld.release_all(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         """Restorable scene state: world root states (13) of the case, the card and both sticks."""
         out = {
-            "case": self.case.data.root_state_w[env_ids].clone(),
-            "card": self.card.data.root_state_w[env_ids].clone(),
+            "case": state_w(self.case.data.root_state_w)[env_ids].clone(),
+            "card": state_w(self.card.data.root_state_w)[env_ids].clone(),
         }
         for k, ram in enumerate(self.rams):
-            out[f"ram_{k}"] = ram.data.root_state_w[env_ids].clone()
+            out[f"ram_{k}"] = state_w(ram.data.root_state_w)[env_ids].clone()
         out.update(self.grasp_weld.state(env_ids))
         return out
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         """Restore what `get_state` returned. A part's insertion depth is fully captured by its
         root state, so its channel holds it on restore."""
-        self.case.write_root_pose_to_sim(state["case"][:, 0:7], env_ids)
-        self.card.write_root_state_to_sim(state["card"], env_ids)
+        write_root_pose(self.case, state["case"][:, 0:7], env_ids)
+        write_root_state(self.card, state["card"], env_ids)
         for k, ram in enumerate(self.rams):
-            ram.write_root_state_to_sim(state[f"ram_{k}"], env_ids)
+            write_root_state(ram, state[f"ram_{k}"], env_ids)
         self.grasp_weld.restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
@@ -518,22 +519,22 @@ class PcGpuRamAssemblyScene(BaseScene):
 
     def _card_offset_in_case(self) -> torch.Tensor:
         """The card origin's offset from its seated point, in the case's local frame, (n, 3)."""
-        from isaaclab.utils.math import quat_apply_inverse
+        from robobench.core.quat import quat_apply_inverse
 
         rel = quat_apply_inverse(
-            self.case.data.root_quat_w, self.card.data.root_pos_w - self.case.data.root_pos_w
+            quat_w(self.case.data.root_quat_w), T(self.card.data.root_pos_w) - T(self.case.data.root_pos_w)
         )
         return rel - torch.tensor(self.cfg.gpu_seat_pos, device=rel.device)
 
     def _ram_offsets_in_case(self) -> torch.Tensor:
         """Each stick origin's offset from its seated point, in the case's local frame,
         (n, num_slots, 3)."""
-        from isaaclab.utils.math import quat_apply_inverse
+        from robobench.core.quat import quat_apply_inverse
 
         out = []
         for k, ram in enumerate(self.rams):
             rel = quat_apply_inverse(
-                self.case.data.root_quat_w, ram.data.root_pos_w - self.case.data.root_pos_w
+                quat_w(self.case.data.root_quat_w), T(ram.data.root_pos_w) - T(self.case.data.root_pos_w)
             )
             out.append(rel - torch.tensor(self.cfg.ram_seat_pos[k], device=rel.device))
         return torch.stack(out, dim=1)
@@ -541,13 +542,13 @@ class PcGpuRamAssemblyScene(BaseScene):
     def _part_axis_cos(self, part, axis: int) -> torch.Tensor:
         """cos of the angle between `part`'s and the case's local `axis`, shape (num_envs,).
         Seated orientation = the case's own axes."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         e = torch.zeros(3, device=self.env.device)
         e[axis] = 1.0
         e = e.expand(self.env.num_envs, 3)
-        case_ax = quat_apply(self.case.data.root_quat_w, e)
-        part_ax = quat_apply(part.data.root_quat_w, e)
+        case_ax = quat_apply(quat_w(self.case.data.root_quat_w), e)
+        part_ax = quat_apply(quat_w(part.data.root_quat_w), e)
         return (part_ax * case_ax).sum(dim=-1)
 
     # Grasp-weld contract: composed `GraspWeldContract` (robobench.core.grasp_weld),

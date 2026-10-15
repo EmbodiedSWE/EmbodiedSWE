@@ -18,6 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # rl/ on the path 
 
 from isaaclab.app import AppLauncher  # noqa: E402
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--task", default="bulb_franka_osc")
 ap.add_argument("--reward", default="progress")
@@ -26,7 +28,7 @@ ap.add_argument("--steps", type=int, default=200)
 ap.add_argument("--action_scale", type=float, default=0.3, help="random action magnitude in [-1,1] units")
 ap.add_argument("--set", nargs="*", default=[], help="config overrides key=value")
 ap.add_argument("--profile", action="store_true", help="cProfile the stepping loop; print the top entries")
-AppLauncher.add_app_launcher_args(ap)
+add_app_launcher_args(ap)
 args = ap.parse_args()
 app = AppLauncher(args).app
 

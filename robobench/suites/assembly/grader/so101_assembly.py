@@ -32,6 +32,7 @@ not yet home" state is not a rung: the auto-driver takes it from engaged to fast
 from __future__ import annotations
 
 from robobench.core import BaseGrader
+from robobench.core.isaaclab_compat import T, quat_w
 from robobench.suites.assembly.scenes.so101_assembly import SO101AssemblyScene
 
 
@@ -75,12 +76,12 @@ class SO101AssemblyGrader(BaseGrader):
     def _motor_seated(self):
         import math
 
-        from isaaclab.utils.math import quat_error_magnitude
+        from robobench.core.quat import quat_error_magnitude
 
         s, c = self.scene, self.scene.cfg
         ap, aq = s.upper_arm_pose()
-        return (((s.motor.data.root_pos_w - ap).norm(dim=-1) < c.motor_align_pos)
-                & (quat_error_magnitude(s.motor.data.root_quat_w, aq)
+        return (((T(s.motor.data.root_pos_w) - ap).norm(dim=-1) < c.motor_align_pos)
+                & (quat_error_magnitude(quat_w(s.motor.data.root_quat_w), aq)
                    < math.radians(c.motor_align_deg)))
 
     def _fork_seated(self):

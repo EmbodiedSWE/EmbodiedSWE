@@ -23,14 +23,16 @@ import math
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--base_z", type=float, default=-1.0)
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 app = AppLauncher(args).app
 
 import torch  # noqa: E402
-from isaaclab.utils.math import (  # noqa: E402
+from robobench.core.quat import (  # noqa: E402
     axis_angle_from_quat,
     quat_apply,
     quat_conjugate,
@@ -74,7 +76,7 @@ def main() -> None:
     hz = 1.0 / (env.dt * robot.control_period)
     env.reset()
     Z0 = scene.cfg.surface_z
-    base = art.data.root_pos_w[0].clone()
+    base = T(art.data.root_pos_w)[0].clone()
     print(f"[reach] surface_z={Z0}  base=({float(base[0]):.2f},{float(base[1]):.2f},"
           f"{float(base[2]):.2f})", flush=True)
 
@@ -82,7 +84,7 @@ def main() -> None:
         return torch.tensor([float(x), float(y), float(z)], device=dev)
 
     def pose():
-        return art.data.body_pos_w[0, ee], art.data.body_quat_w[0, ee]
+        return T(art.data.body_pos_w)[0, ee], quat_w(art.data.body_quat_w)[0, ee]
 
     def tipz():
         p, q = pose()
@@ -124,7 +126,7 @@ def main() -> None:
             drive(V3(tx, ty, Z0 - 0.05), gq, 6.0)          # then push BELOW the table
             lo = tipz()
             print(f"[reach] {radius:7.2f} {tilt_deg:5d}  {lo:12.3f} "
-                  f"{(lo - Z0) * 1000:9.0f}mm {float(art.data.joint_pos[0, 3]):6.2f}", flush=True)
+                  f"{(lo - Z0) * 1000:9.0f}mm {float(T(art.data.joint_pos)[0, 3]):6.2f}", flush=True)
     print("REACH_DONE", flush=True)
 
 

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from robobench.core import CONTROLLERS, BaseController, BaseControllerCfg
+from robobench.core.isaaclab_compat import T, state_w
 
 if TYPE_CHECKING:
     import torch
@@ -89,7 +90,10 @@ class PinkIKController(BaseController):
         super().bind(robot)  # -> self.joint_ids (the chain), self._sink (position), self.limits
 
         from isaaclab.controllers.pink_ik import PinkIKController as _IsaacPinkIK
-        from isaaclab.controllers.pink_ik.local_frame_task import LocalFrameTask
+        try:  # Isaac Lab 3.0 moved the task classes into pink_tasks
+            from isaaclab.controllers.pink_ik.pink_tasks import LocalFrameTask
+        except ImportError:  # Isaac Lab 2.3
+            from isaaclab.controllers.pink_ik.local_frame_task import LocalFrameTask
         from isaaclab.controllers.pink_ik.null_space_posture_task import NullSpacePostureTask
         from isaaclab.controllers.pink_ik.pink_ik_cfg import PinkIKControllerCfg as _IsaacCfg
 
@@ -98,28 +102,58 @@ class PinkIKController(BaseController):
         all_names = list(art.data.joint_names)  # USD joint order
         controlled_names = [all_names[i] for i in self.joint_ids]  # same order as joint_ids
 
+        try:  # Isaac Lab 3.0: tasks are declared as cfg dataclasses; the controller instantiates them
+            from isaaclab.controllers.pink_ik.pink_task_cfg import LocalFrameTaskCfg, NullSpacePostureTaskCfg
+        except ImportError:  # Isaac Lab 2.3: task objects are built here
+            LocalFrameTaskCfg = NullSpacePostureTaskCfg = None
+
         def make_cfg():  # fresh task objects per env (targets are set per-env on these)
-            tasks: list[Any] = [
-                LocalFrameTask(
-                    f.link,
-                    base_link_frame_name=c.base_link_frame,
-                    position_cost=f.position_cost,
-                    orientation_cost=f.orientation_cost,
-                    lm_damping=f.lm_damping,
-                    gain=f.gain,
-                )
-                for f in c.frames
-            ]
-            if c.nullspace_joints:
-                tasks.append(
-                    NullSpacePostureTask(
-                        cost=c.nullspace_cost,
-                        lm_damping=c.nullspace_lm_damping,
-                        controlled_frames=[f.link for f in c.frames],
-                        controlled_joints=list(c.nullspace_joints),
-                        gain=c.nullspace_gain,
+            if LocalFrameTaskCfg is not None:
+                tasks: list[Any] = [
+                    LocalFrameTaskCfg(
+                        frame=f.link,
+                        base_link_frame_name=c.base_link_frame,
+                        position_cost=f.position_cost,
+                        orientation_cost=f.orientation_cost,
+                        lm_damping=f.lm_damping,
+                        gain=f.gain,
                     )
-                )
+                    for f in c.frames
+                ]
+                if c.nullspace_joints:
+                    tasks.append(
+                        NullSpacePostureTaskCfg(
+                            cost=c.nullspace_cost,
+                            lm_damping=c.nullspace_lm_damping,
+                            controlled_frames=[f.link for f in c.frames],
+                            controlled_joints=list(c.nullspace_joints),
+                            gain=c.nullspace_gain,
+                        )
+                    )
+            else:
+                tasks = [
+                    LocalFrameTask(
+                        f.link,
+                        base_link_frame_name=c.base_link_frame,
+                        position_cost=f.position_cost,
+                        orientation_cost=f.orientation_cost,
+                        lm_damping=f.lm_damping,
+                        gain=f.gain,
+                    )
+                    for f in c.frames
+                ]
+                if c.nullspace_joints:
+                    tasks.append(
+                        NullSpacePostureTask(
+                            cost=c.nullspace_cost,
+                            lm_damping=c.nullspace_lm_damping,
+                            controlled_frames=[f.link for f in c.frames],
+                            controlled_joints=list(c.nullspace_joints),
+                            gain=c.nullspace_gain,
+                        )
+                    )
+            # (3.0 replaces cfg.variable_input_tasks with the instantiated tasks, so the per-env
+            # target loop below sees LocalFrameTask objects on both stacks.)
             return _IsaacCfg(
                 articulation_name="robot",
                 base_link_name=c.base_link,
@@ -147,8 +181,11 @@ class PinkIKController(BaseController):
         base-link frame, set the per-env frame-task targets, solve one QP per env, return (n, |chain|)
         joint position targets."""
         import torch
-        from isaaclab.controllers.pink_ik.local_frame_task import LocalFrameTask
-        from isaaclab.utils import math as mu
+        try:  # Isaac Lab 3.0 moved the task classes into pink_tasks
+            from isaaclab.controllers.pink_ik.pink_tasks import LocalFrameTask
+        except ImportError:  # Isaac Lab 2.3
+            from isaaclab.controllers.pink_ik.local_frame_task import LocalFrameTask
+        from robobench.core import quat as mu  # wxyz math on both stacks (3.0 utils.math is xyzw; the data above is wxyz)
 
         if self._joint_position_override is not None:
             return self._joint_position_override
@@ -157,7 +194,7 @@ class PinkIKController(BaseController):
         n = action.shape[0]
 
         # Base-link pose in the env frame, then its inverse (world->base).
-        base_w = art.data.body_link_state_w[:, self._base_idx, :7]  # (n, 7) pos+quat in world
+        base_w = state_w(art.data.body_link_state_w)[:, self._base_idx, :7]  # (n, 7) pos+quat in world
         base_pos = base_w[:, :3] - self.robot.env.iscene.env_origins
         base_inv = mu.pose_inv(mu.make_pose(base_pos, mu.matrix_from_quat(base_w[:, 3:7])))  # (n, 4, 4)
 
@@ -173,7 +210,7 @@ class PinkIKController(BaseController):
         # Per env: set the frame-task targets, then solve. THIS LOOP IS THE SERIAL PART (one QP per
         # env, ~linear in num_envs — see the module docstring's PARALLELISM note); the prep above is
         # batched. A batched controller (diff_ik / pyroki) is the future swap for throughput.
-        cur_all = art.data.joint_pos.cpu().numpy()  # (n, num_joints)
+        cur_all = T(art.data.joint_pos).cpu().numpy()  # (n, num_joints)
         out = []
         for env_i in range(n):
             ctrl = self._controllers[env_i]

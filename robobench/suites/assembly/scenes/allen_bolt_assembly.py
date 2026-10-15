@@ -21,6 +21,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, physx_view, quat_w, rot_cfg, state_w, write_root_pose, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -177,7 +178,7 @@ class AllenBoltAssemblyScene(BaseScene):
             ),
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=preset["orient"]),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=rot_cfg(preset["orient"])),
                 spawn=table_spawn,
             ),
         }
@@ -210,7 +211,7 @@ class AllenBoltAssemblyScene(BaseScene):
                     mass_props=sim_utils.MassPropertiesCfg(mass=c.bolt_mass),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(wx + bx, wy + by, c.surface_z + c.bolt_init_z), rot=c.bolt_init_quat
+                    pos=(wx + bx, wy + by, c.surface_z + c.bolt_init_z), rot=rot_cfg(c.bolt_init_quat)
                 ),
             )
             # Key contact offset must stay well below the key<->socket clearance (0.75 mm/side) or
@@ -233,7 +234,7 @@ class AllenBoltAssemblyScene(BaseScene):
                     mass_props=sim_utils.MassPropertiesCfg(mass=c.key_mass),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(wx + kx, wy + ky, c.surface_z + c.key_init_z), rot=c.key_init_quat
+                    pos=(wx + kx, wy + ky, c.surface_z + c.key_init_z), rot=rot_cfg(c.key_init_quat)
                 ),
             )
         return out
@@ -298,9 +299,9 @@ class AllenBoltAssemblyScene(BaseScene):
 
     def _set_friction(self, asset, value: float) -> None:
         """Overwrite the static + dynamic friction on every shape of `asset` (across all envs)."""
-        mats = asset.root_physx_view.get_material_properties()
+        mats = physx_view(asset).get_material_properties()
         mats[..., 0:2] = value  # [static, dynamic, restitution]
-        asset.root_physx_view.set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
+        physx_view(asset).set_material_properties(mats, torch.arange(self.env.num_envs, device="cpu"))
 
     def reset(self, env_ids: torch.Tensor) -> None:
         """Fresh, unassembled start: platforms pinned at spawn, bolts + keys lying on their sides
@@ -321,7 +322,7 @@ class AllenBoltAssemblyScene(BaseScene):
                 )
                 st[:, 3] = math.cos(half)
                 st[:, 6] = math.sin(half)
-                bolt.write_root_state_to_sim(st, env_ids)
+                write_root_state(bolt, st, env_ids)
             part_rows = ((self.keys, c.key_init_xy, c.key_init_z, c.key_init_quat),)
         else:
             part_rows = (
@@ -336,16 +337,16 @@ class AllenBoltAssemblyScene(BaseScene):
                 st[:, 0:3] = origin + torch.tensor((wx + x, wy + y, c.surface_z + init_z), device=dev)
                 st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
                 st[:, 3:7] = quat
-                part.write_root_state_to_sim(st, env_ids)
+                write_root_state(part, st, env_ids)
         self.grasp_weld.release_all(env_ids)
 
     # ----- state (full, restorable) -------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         """Restorable scene state: world root states (13) of each platform, bolt, and key."""
         return {
-            "platforms": torch.stack([p.data.root_state_w[env_ids].clone() for p in self.platforms], dim=1),
-            "bolts": torch.stack([b.data.root_state_w[env_ids].clone() for b in self.bolts], dim=1),
-            "keys": torch.stack([k.data.root_state_w[env_ids].clone() for k in self.keys], dim=1),
+            "platforms": torch.stack([state_w(p.data.root_state_w)[env_ids].clone() for p in self.platforms], dim=1),
+            "bolts": torch.stack([state_w(b.data.root_state_w)[env_ids].clone() for b in self.bolts], dim=1),
+            "keys": torch.stack([state_w(k.data.root_state_w)[env_ids].clone() for k in self.keys], dim=1),
             **self.grasp_weld.state(env_ids),
         }
 
@@ -353,11 +354,11 @@ class AllenBoltAssemblyScene(BaseScene):
         """Restore what `get_state` returned. The bolt's threaded depth is fully captured by its
         root state, so thread friction holds it on restore."""
         for i, platform in enumerate(self.platforms):
-            platform.write_root_pose_to_sim(state["platforms"][:, i, 0:7], env_ids)
+            write_root_pose(platform, state["platforms"][:, i, 0:7], env_ids)
         for i, bolt in enumerate(self.bolts):
-            bolt.write_root_state_to_sim(state["bolts"][:, i], env_ids)
+            write_root_state(bolt, state["bolts"][:, i], env_ids)
         for i, key in enumerate(self.keys):
-            key.write_root_state_to_sim(state["keys"][:, i], env_ids)
+            write_root_state(key, state["keys"][:, i], env_ids)
         self.grasp_weld.restore(state, env_ids)
 
     # ----- description --------------------------------------------------------------------------
@@ -425,24 +426,24 @@ class AllenBoltAssemblyScene(BaseScene):
         """Each bolt's position in each platform's local frame, shape (num_envs, num_bolts,
         num_platforms, 3): xy = lateral offset from the hole axis, z = tip height above the
         platform origin (the bolt origin IS the tip)."""
-        from isaaclab.utils.math import quat_apply_inverse
+        from robobench.core.quat import quat_apply_inverse
 
-        pp = torch.stack([p.data.root_pos_w for p in self.platforms], dim=1)  # (n, P, 3)
-        pq = torch.stack([p.data.root_quat_w for p in self.platforms], dim=1)  # (n, P, 4)
+        pp = torch.stack([T(p.data.root_pos_w) for p in self.platforms], dim=1)  # (n, P, 3)
+        pq = torch.stack([quat_w(p.data.root_quat_w) for p in self.platforms], dim=1)  # (n, P, 4)
         cols = []
         for bolt in self.bolts:
-            rel = bolt.data.root_pos_w[:, None, :] - pp  # (n, P, 3)
+            rel = T(bolt.data.root_pos_w)[:, None, :] - pp  # (n, P, 3)
             cols.append(quat_apply_inverse(pq, rel))
         return torch.stack(cols, dim=1)  # (n, B, P, 3)
 
     def _bolt_axis_cos(self) -> torch.Tensor:
         """cos of the angle between each bolt's screw axis (local +z) and the nearest platform's
         hole axis (its local +z), shape (num_envs, num_pairs)."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         ez = torch.tensor([0.0, 0.0, 1.0], device=self.env.device).expand(self.env.num_envs, 3)
-        plat_up = torch.stack([quat_apply(p.data.root_quat_w, ez) for p in self.platforms], dim=1)  # (n, P, 3)
-        bolt_up = torch.stack([quat_apply(b.data.root_quat_w, ez) for b in self.bolts], dim=1)  # (n, B, 3)
+        plat_up = torch.stack([quat_apply(quat_w(p.data.root_quat_w), ez) for p in self.platforms], dim=1)  # (n, P, 3)
+        bolt_up = torch.stack([quat_apply(quat_w(b.data.root_quat_w), ez) for b in self.bolts], dim=1)  # (n, B, 3)
         off = self._bolt_offsets_in_platform()
         near = off[..., :2].norm(dim=-1).argmin(dim=-1)  # (n, B)
         chosen_up = torch.gather(plat_up, 1, near.unsqueeze(-1).expand(-1, -1, 3))  # (n, B, 3)

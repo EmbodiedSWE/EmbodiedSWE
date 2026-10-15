@@ -53,6 +53,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, state_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False,
@@ -98,7 +100,7 @@ parser.add_argument("--repeat", type=int, default=3,
                     help="serve-chain repeat count for the determinism phase")
 parser.add_argument("--drive_mass", type=float, default=0.75,
                     help="effective held-tool mass used by the NullRobot fixture (kg)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
 # RTX recipe (same as the render server): kit mis-decodes the L20 driver version and
@@ -248,7 +250,7 @@ def main() -> None:
             if hold_pin is not None:
                 pre = hold_write.clone()
                 pre[:, 9] += g_dt  # cancel the gravity kick on top of the transport vel
-                scene.spatula.write_root_state_to_sim(pre, all_ids)
+                write_root_state(scene.spatula, pre, all_ids)
                 hold_write = hold_pin.clone()  # transport used once; then hold station
             env.step(no_action, render=render)
             if hold_pin is not None:
@@ -265,7 +267,7 @@ def main() -> None:
                     frames.append(arr[..., :3].astype(np.uint8).copy())
             step_i += 1
         if hold_pin is not None:
-            scene.spatula.write_root_state_to_sim(hold_pin, all_ids)
+            write_root_state(scene.spatula, hold_pin, all_ids)
             env.iscene.update(0.0)
 
     def make_state(pos, quat=(1.0, 0.0, 0.0, 0.0)) -> torch.Tensor:
@@ -330,8 +332,8 @@ def main() -> None:
     pen_stat = {"worst": -1.0, "steps": 0, "idx": -1, "step": -1}
 
     def pen_check() -> None:
-        st = scene.spatula.data.root_state_w[0, 0:7].detach().cpu().numpy()
-        pan = scene.pan.data.root_pos_w[0].detach().cpu().numpy()
+        st = state_w(scene.spatula.data.root_state_w)[0, 0:7].detach().cpu().numpy()
+        pan = T(scene.pan.data.root_pos_w)[0].detach().cpu().numpy()
         w, x, y, z = st[3:7]
         ex = np.array([1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)])
         ez = np.array([2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)])
@@ -360,20 +362,20 @@ def main() -> None:
 
     def bread_pos():
         b = scene.breads[names[pi()]]
-        return (b.data.root_pos_w[0] - env.iscene.env_origins[0]).tolist()
+        return (T(b.data.root_pos_w)[0] - env.iscene.env_origins[0]).tolist()
 
     def plate_pos():
-        return (scene.plate.data.root_pos_w[0] - env.iscene.env_origins[0]).tolist()
+        return (T(scene.plate.data.root_pos_w)[0] - env.iscene.env_origins[0]).tolist()
 
     def pan_xy():
         """LIVE pan centre: the pan is a free body in this build (pan_dynamic=True) and
         jab reactions scoot it — aim built on the config constant lands beside the bowl
         after a few contacts (measured: two flips missed the drifted pan)."""
-        p = (scene.pan.data.root_pos_w[0] - env.iscene.env_origins[0]).tolist()
+        p = (T(scene.pan.data.root_pos_w)[0] - env.iscene.env_origins[0]).tolist()
         return p[0], p[1]
 
     def spatula_pose():
-        st = scene.spatula.data.root_state_w[0]
+        st = state_w(scene.spatula.data.root_state_w)[0]
         pos = (st[0:3] - env.iscene.env_origins[0]).tolist()
         return pos, tuple(st[3:7].tolist())
 
@@ -411,9 +413,9 @@ def main() -> None:
         i = pi()
         loc = scene._bread_in_blade_frame()[0, i]
         up_z = float(scene._bread_up()[0, i, 2])
-        pw = (scene.breads[names[i]].data.root_pos_w[0]
+        pw = (T(scene.breads[names[i]].data.root_pos_w)[0]
               - env.iscene.env_origins[0]).tolist()
-        tw = (scene.spatula.data.root_pos_w[0] - env.iscene.env_origins[0]).tolist()
+        tw = (T(scene.spatula.data.root_pos_w)[0] - env.iscene.env_origins[0]).tolist()
         print(f"[smoke]   . {tag:14s} pw=({pw[0]:+.3f},{pw[1]:+.3f},{pw[2]:+.3f}) "
               f"bf=({float(loc[0]) * 1000:+4.0f},{float(loc[1]) * 1000:+4.0f},"
               f"{(float(loc[2]) - c.bread_h(i) / 2) * 1000:+4.0f})mm up_z={up_z:+.2f} "
@@ -901,7 +903,7 @@ def main() -> None:
     pl = plate_pos()
     i = pi()
     st = make_state((pl[0], pl[1], c.plate_rest_z + c.bread_h(i) / 2 + 0.001))
-    scene.breads[names[i]].write_root_state_to_sim(st, all_ids)
+    write_root_state(scene.breads[names[i]], st, all_ids)
     env.iscene.update(0.0)
     step(80)
     report("teleport")
@@ -925,7 +927,7 @@ def main() -> None:
     i = pi()
     r_i = c.bread_r(i)
     st = make_state((*pan_xy(), PAN_FLOOR + r_i + 0.001), qx(90.0))
-    scene.breads[names[i]].write_root_state_to_sim(st, all_ids)
+    write_root_state(scene.breads[names[i]], st, all_ids)
     env.iscene.update(0.0)
     check("bread on edge: flipped_now rejects (under-rotation)",
           not bool(scene.flipped_now()[0, i]))

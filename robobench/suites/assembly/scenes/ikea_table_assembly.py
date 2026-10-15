@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, quat_w, state_w, write_root_state
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -209,7 +210,7 @@ class IkeaTableAssemblyScene(BaseScene):
         tbl = torch.zeros(m, 13, device=dev)
         tbl[:, 0:3] = origin + torch.tensor((tx, ty, slab_top), device=dev)
         tbl[:, 3] = 1.0  # identity quat
-        self.table.write_root_state_to_sim(tbl, env_ids)
+        write_root_state(self.table, tbl, env_ids)
 
         # Legs: each at its configured start pose (leg_init_xy/_z/_quat, workbench-relative) + a small
         # xy jitter. Default is lying in a row near the centre; tune the cfg's leg_row_* / leg_init_*.
@@ -220,7 +221,7 @@ class IkeaTableAssemblyScene(BaseScene):
             st[:, 0:3] = origin + torch.tensor((wx + x, wy + y, c.surface_z + c.leg_init_z), device=dev)
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_pos_jitter
             st[:, 3:7] = quat
-            leg.write_root_state_to_sim(st, env_ids)
+            write_root_state(leg, st, env_ids)
 
         self._reconcile_welds(env_ids, torch.zeros(m, c.num_legs, dtype=torch.bool, device=dev))
 
@@ -234,17 +235,17 @@ class IkeaTableAssemblyScene(BaseScene):
         """Restorable scene state for `env_ids`: world root states (pos+quat+lin/ang vel, 13) of the
         table and each leg, plus the per-leg weld flags."""
         return {
-            "table": self.table.data.root_state_w[env_ids].clone(),
-            "legs": torch.stack([leg.data.root_state_w[env_ids].clone() for leg in self.legs], dim=1),
+            "table": state_w(self.table.data.root_state_w)[env_ids].clone(),
+            "legs": torch.stack([state_w(leg.data.root_state_w)[env_ids].clone() for leg in self.legs], dim=1),
             "welded": self.welded[env_ids].clone(),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         """Restore what `get_state` returned: write the bodies, then reconcile the welds to exactly
         the recorded flags — from the restored poses, since handle `.data` is stale after a write."""
-        self.table.write_root_state_to_sim(state["table"], env_ids)
+        write_root_state(self.table, state["table"], env_ids)
         for i, leg in enumerate(self.legs):
-            leg.write_root_state_to_sim(state["legs"][:, i], env_ids)
+            write_root_state(leg, state["legs"][:, i], env_ids)
         self._reconcile_welds(env_ids, state["welded"], table_state=state["table"], leg_states=state["legs"])
 
     # ----- description --------------------------------------------------------------------------
@@ -288,19 +289,19 @@ class IkeaTableAssemblyScene(BaseScene):
         """Each leg's position in the tabletop's local frame, shape (num_envs, num_legs, 3): xy = its
         place in the slab plane (compare to the stud xy), z = height above the slab top. Measured in
         the table frame, so it is correct however the assembly is oriented (tilted, flipped, …)."""
-        from isaaclab.utils.math import quat_apply_inverse
+        from robobench.core.quat import quat_apply_inverse
 
-        tp, tq = self.table.data.root_pos_w, self.table.data.root_quat_w
-        return torch.stack([quat_apply_inverse(tq, leg.data.root_pos_w - tp) for leg in self.legs], dim=1)
+        tp, tq = T(self.table.data.root_pos_w), quat_w(self.table.data.root_quat_w)
+        return torch.stack([quat_apply_inverse(tq, T(leg.data.root_pos_w) - tp) for leg in self.legs], dim=1)
 
     def _leg_axis_cos(self) -> torch.Tensor:
         """cos of the angle between each leg's screw axis (its local +z) and the stud axis (the
         table's local +z), shape (num_envs, num_legs); 1.0 = perfectly aligned."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         ez = torch.tensor([0.0, 0.0, 1.0], device=self.env.device).expand(self.env.num_envs, 3)
-        table_up = quat_apply(self.table.data.root_quat_w, ez)  # (n, 3)
-        legs_up = torch.stack([quat_apply(leg.data.root_quat_w, ez) for leg in self.legs], dim=1)
+        table_up = quat_apply(quat_w(self.table.data.root_quat_w), ez)  # (n, 3)
+        legs_up = torch.stack([quat_apply(quat_w(leg.data.root_quat_w), ez) for leg in self.legs], dim=1)
         return (legs_up * table_up[:, None, :]).sum(dim=-1)
 
     # ----- weld machinery (private; the auto-weld-on-seat sim-hack, not an agent action) --------
@@ -313,7 +314,7 @@ class IkeaTableAssemblyScene(BaseScene):
         Monotonic: a leg welds once it is seated AND settling, and stays welded until reset (so a
         welded leg follows the table through any later motion, e.g. a flip). This is the single
         place that decides *when to auto-weld* — refine the criterion here."""
-        settling = torch.stack([leg.data.root_lin_vel_w[:, 2].abs() for leg in self.legs], dim=-1)
+        settling = torch.stack([T(leg.data.root_lin_vel_w)[:, 2].abs() for leg in self.legs], dim=-1)
         return self.welded | (self.seated() & (settling < self.cfg.seat_speed))
 
     def _reconcile_welds(self, env_ids, target, *, table_state=None, leg_states=None) -> None:
@@ -330,9 +331,9 @@ class IkeaTableAssemblyScene(BaseScene):
                 tpos, tquat = table_state[:, 0:3], table_state[:, 3:7]
                 lpos, lquat = leg_states[:, :, 0:3], leg_states[:, :, 3:7]
             else:  # live poses from the handles
-                tpos, tquat = self.table.data.root_pos_w[env_ids], self.table.data.root_quat_w[env_ids]
-                lpos = torch.stack([leg.data.root_pos_w[env_ids] for leg in self.legs], dim=1)
-                lquat = torch.stack([leg.data.root_quat_w[env_ids] for leg in self.legs], dim=1)
+                tpos, tquat = T(self.table.data.root_pos_w)[env_ids], quat_w(self.table.data.root_quat_w)[env_ids]
+                lpos = torch.stack([T(leg.data.root_pos_w)[env_ids] for leg in self.legs], dim=1)
+                lquat = torch.stack([quat_w(leg.data.root_quat_w)[env_ids] for leg in self.legs], dim=1)
             for row, k in to_weld.nonzero(as_tuple=False).tolist():
                 self._weld_pair(int(env_ids[row]), k, tpos[row], tquat[row], lpos[row, k], lquat[row, k])
         for row, k in to_unweld.nonzero(as_tuple=False).tolist():
@@ -360,7 +361,7 @@ class IkeaTableAssemblyScene(BaseScene):
         """Lock (env_i, leg_k) to the table at the relative pose implied by world poses tp/tq (table)
         and lp/lq (leg). Each arg is a length-3 (pos) / length-4 (quat, wxyz) tensor."""
         from pxr import Gf, UsdPhysics
-        from isaaclab.utils.math import quat_apply, quat_conjugate, quat_mul
+        from robobench.core.quat import quat_apply, quat_conjugate, quat_mul
 
         q1c = quat_conjugate(lq.unsqueeze(0))
         rel_pos = quat_apply(q1c, (tp - lp).unsqueeze(0))[0]

@@ -27,6 +27,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False,
@@ -38,7 +40,7 @@ parser.add_argument("--record_every", type=int, default=8)
 parser.add_argument("--out", type=str, default="coffee_smoke_frames.npz")
 parser.add_argument("--hdfs_dir", type=str, default="",
                     help="optional HDFS dir to upload the frames npz to ('' = no upload)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
 if not getattr(args, "kit_args", None):
@@ -150,7 +152,7 @@ def main() -> None:
             step(1)
         scene.cover_drive[0] = 0.0
         settle_until(lambda: bool(scene.cover_closed()[0])
-                     and abs(float(scene.cover.data.root_lin_vel_w[0, 1])) < 0.02, 240)
+                     and abs(float(T(scene.cover.data.root_lin_vel_w)[0, 1])) < 0.02, 240)
         return bool(scene.cover_closed()[0])
 
     def press(force: float = 3.0, guard: int = 120) -> float:
@@ -184,7 +186,7 @@ def main() -> None:
             z = c.surface_z + c.tray_h + c.pod_h / 2 + 0.003
         st[:, 0:3] = env.iscene.env_origins + torch.tensor([x, y, z], device=device)
         st[:, 3] = 1.0
-        scene.pod.write_root_state_to_sim(st, torch.arange(env.num_envs, device=device))
+        write_root_state(scene.pod, st, torch.arange(env.num_envs, device=device))
         step(40)
 
     def put_cup(under_spout: bool = True, pos: tuple | None = None,
@@ -203,7 +205,7 @@ def main() -> None:
             z = c.surface_z + c.tray_h + c.cup_h / 2 + 0.003
         st[:, 0:3] = env.iscene.env_origins + torch.tensor([x, y, z], device=device)
         st[:, 3] = 1.0
-        scene.cup.write_root_state_to_sim(st, torch.arange(env.num_envs, device=device))
+        write_root_state(scene.cup, st, torch.arange(env.num_envs, device=device))
         step(40)
 
     def run_brew_wait(guard_extra: int = 400) -> bool:
@@ -247,7 +249,7 @@ def main() -> None:
             for _ in range(60):
                 scene.btn_drive[0] = force
                 step(1)
-                disp = float(scene._btn_home_z[0] - scene.button.data.root_pos_w[0, 2])
+                disp = float(scene._btn_home_z[0] - T(scene.button.data.root_pos_w)[0, 2])
                 dmin, dmax = min(dmin, disp), max(dmax, disp)
             reg = bool(scene._btn_pressed[0])
             scene.btn_drive[0] = 0.0
@@ -399,7 +401,7 @@ def main() -> None:
         rf0 = int(scene._refusals[0])
         press()
         accepted = bool(scene._running[0])
-        meas = float((scene.cup.data.root_pos_w[0, :2]
+        meas = float((T(scene.cup.data.root_pos_w)[0, :2]
                       - scene._spout_axis_xy()[0]).norm()) * 100
         print(f"[coffee-smoke]   off={off_cm:.1f}cm: accepted={accepted} "
               f"meas={meas:.2f}cm cup_ok={bool(scene.cup_under_spout()[0])} "

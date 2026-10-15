@@ -29,6 +29,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args, write_root_state  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False,
@@ -38,7 +40,7 @@ parser.add_argument("--record_every", type=int, default=8)
 parser.add_argument("--no_video", action="store_true", default=False,
                     help="skip all rendering (predicate-only verify on a render-broken box)")
 parser.add_argument("--out", type=str, default="stack_blocks_frames.npz")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
 # RTX recipe: kit can mis-decode the driver version and silently reject RTX -> annotator
@@ -164,12 +166,12 @@ def main() -> None:
             qw, qx, qy, qz = q
             tw, tx = math.cos(half_t), math.sin(half_t)
             q = (tw * qw - tx * qx, tw * qx + tx * qw, tw * qy + tx * qz, tw * qz - tx * qy)
-        scene.blocks[name].write_root_state_to_sim(block_state(xy, slot_z(level) + gap, q), all_ids)
+        write_root_state(scene.blocks[name], block_state(xy, slot_z(level) + gap, q), all_ids)
 
     def topple_flat(name: str, xy) -> None:
         """Lay a block on its side, flat on the surface at xy (a knocked-over block)."""
         a = math.pi / 4  # 90 deg about world +x -> a face turns vertical
-        scene.blocks[name].write_root_state_to_sim(
+        write_root_state(scene.blocks[name], 
             block_state(xy, c.surface_z + s / 2, (math.cos(a), math.sin(a), 0.0, 0.0)), all_ids)
 
     # =========================== 1. show ====================================================

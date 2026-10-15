@@ -25,12 +25,14 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--holes", type=int, default=0, help="fasten only the first N holes (0 = all)")
 parser.add_argument("--video", type=str, default="", help="save an mp4 here (needs --headless --enable_cameras)")
 parser.add_argument("--cap", type=int, default=8, help="with --video: capture one frame every N steps (8 at dt=1/240 -> real-time at 30 fps)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -43,7 +45,7 @@ import torch  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 
 import robobench  # noqa: E402
-from isaaclab.utils.math import axis_angle_from_quat, quat_apply_inverse  # noqa: E402
+from robobench.core.quat import axis_angle_from_quat, quat_apply_inverse  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
 from robobench.suites.assembly.scenes import PcMotherboardGpuRamAssemblySceneCfg  # noqa: E402
 from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
@@ -176,7 +178,7 @@ def main() -> None:
     env.sim.reset()  # re-parse physics so the USD edits (and camera) are picked up
     env.reset()
 
-    case_pos = case.data.root_pos_w.clone()  # (n, 3): origin ON the board face, at its centre
+    case_pos = T(case.data.root_pos_w).clone()  # (n, 3): origin ON the board face, at its centre
     board_z = case_pos[:, 2].clone()
     table_z = board_z - sc.cfg.case_lift
     holes_w = case_pos[:, None, :2] + torch.tensor(sc.cfg.hole_xy, device=device)[None, :B]  # (n, B, 2)
@@ -184,7 +186,7 @@ def main() -> None:
     gpu_seat_w = case_pos + torch.tensor(sc.cfg.gpu_seat_pos, device=device)
     gpu_place_w = gpu_seat_w.clone()  # placement point INSIDE the case: bracket forward of the panel
     gpu_place_w[:, 0] -= GPU_SLIDE_OFF
-    park_xy = key.data.root_pos_w[:, 0:2].clone()  # the key parks back at its spawn spot
+    park_xy = T(key.data.root_pos_w)[:, 0:2].clone()  # the key parks back at its spawn spot
 
     # ----- camera: one anchor per leg, eased between legs (a slow dolly during transitions) ------
     cam_pose = None
@@ -212,11 +214,11 @@ def main() -> None:
 
     # ----- leg-1 helpers: the force-only key hand -------------------------------------------------
     def bolt_depth(b: int) -> torch.Tensor:  # bolt b's tip depth below the board face (m), per env
-        return board_z - bolts[b].data.root_pos_w[:, 2]
+        return board_z - T(bolts[b].data.root_pos_w)[:, 2]
 
     def key_wrench(f: torch.Tensor, t: torch.Tensor) -> None:
         """Apply a WORLD wrench to the key in its CURRENT link frame."""
-        qk = key.data.root_link_quat_w
+        qk = quat_w(key.data.root_link_quat_w)
         key.set_external_force_and_torque(quat_apply_inverse(qk, f).unsqueeze(1),
                                           quat_apply_inverse(qk, t).unsqueeze(1))
 
@@ -226,45 +228,45 @@ def main() -> None:
         tip onto the socket axis and the key's axis onto the bolt's."""
         press, w_tgt, t_cap = DRIVE_CTL
         bolt = bolts[b]
-        up_b = up_axis_of(bolt.data.root_quat_w)
+        up_b = up_axis_of(quat_w(bolt.data.root_quat_w))
         f = torch.zeros(n, 3, device=device)
         t = torch.zeros(n, 3, device=device)
         f[:, :] = -press * ramp * up_b
-        wz = key.data.root_ang_vel_w[:, 2]
+        wz = T(key.data.root_ang_vel_w)[:, 2]
         tgt = torch.where(bolt_depth(b) < STOP_DEPTH, -w_tgt * torch.ones_like(wz), torch.zeros_like(wz))
         t[:, 2] = torch.clamp(KW * (tgt - wz), -t_cap * ramp, t_cap * ramp)
-        pos = key.data.root_link_pos_w
-        vel = key.data.root_link_lin_vel_w
+        pos = T(key.data.root_link_pos_w)
+        vel = T(key.data.root_link_lin_vel_w)
         f[:, 0:2] += -K_KP_XY * (pos[:, 0:2] - holes_w[:, b]) - K_KD_XY * vel[:, 0:2]
-        floor_z = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
+        floor_z = T(bolt.data.root_pos_w)[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
         f[:, 2] += -K_KP_ZK * (pos[:, 2] - floor_z) - K_KD_ZK * vel[:, 2]
-        up_k = up_axis_of(key.data.root_quat_w)
-        t[:, 0:2] += K_KP_TILT * torch.cross(up_k, up_b, dim=-1)[:, 0:2] - K_KD_TILT * key.data.root_ang_vel_w[:, 0:2]
+        up_k = up_axis_of(quat_w(key.data.root_quat_w))
+        t[:, 0:2] += K_KP_TILT * torch.cross(up_k, up_b, dim=-1)[:, 0:2] - K_KD_TILT * T(key.data.root_ang_vel_w)[:, 0:2]
         key_wrench(f, t)
 
     def yaw_err_to(b: int) -> torch.Tensor:
         """Smallest key yaw change that matches bolt `b`'s hex clocking (mod 60 deg), (n,)."""
-        d = (STAGE_YAW - sc.screw_turn[:, b] - yaw_of(key.data.root_quat_w)) % (math.pi / 3)
+        d = (STAGE_YAW - sc.screw_turn[:, b] - yaw_of(quat_w(key.data.root_quat_w))) % (math.pi / 3)
         return torch.where(d > math.pi / 6, d - math.pi / 3, d)
 
     def hop_key(tgt_xy: torch.Tensor, tgt_z: torch.Tensor, align_to: int | None = None) -> None:
         """Force-only travel update: PD the key tip toward a world target (no press, tilt righted
         to vertical). The spin is braked, or yaw-servoed onto bolt `align_to`'s hex clocking."""
-        pos = key.data.root_link_pos_w
-        vel = key.data.root_link_lin_vel_w
+        pos = T(key.data.root_link_pos_w)
+        vel = T(key.data.root_link_lin_vel_w)
         f = torch.zeros(n, 3, device=device)
         t = torch.zeros(n, 3, device=device)
         f[:, 0:2] = -K_KP_XY * (pos[:, 0:2] - tgt_xy) - K_KD_XY * vel[:, 0:2]
         f[:, 2] = -K_KP_Z * (pos[:, 2] - tgt_z) - K_KD_Z * vel[:, 2]
-        wz = key.data.root_ang_vel_w[:, 2]
+        wz = T(key.data.root_ang_vel_w)[:, 2]
         if align_to is None:
             t[:, 2] = torch.clamp(KW * (0.0 - wz), -DRIVE_CTL[2], DRIVE_CTL[2])
         else:
             t[:, 2] = torch.clamp(K_KP_YAW * yaw_err_to(align_to) - K_KD_YAW * wz, -DRIVE_CTL[2], DRIVE_CTL[2])
-        up_k = up_axis_of(key.data.root_quat_w)
+        up_k = up_axis_of(quat_w(key.data.root_quat_w))
         ez = torch.zeros_like(up_k)
         ez[:, 2] = 1.0
-        t[:, 0:2] += K_KP_TILT * torch.cross(up_k, ez, dim=-1)[:, 0:2] - K_KD_TILT * key.data.root_ang_vel_w[:, 0:2]
+        t[:, 0:2] += K_KP_TILT * torch.cross(up_k, ez, dim=-1)[:, 0:2] - K_KD_TILT * T(key.data.root_ang_vel_w)[:, 0:2]
         key_wrench(f, t)
 
     def park_key() -> None:
@@ -284,22 +286,22 @@ def main() -> None:
     def rot_err(name: str) -> torch.Tensor:
         """Axis-angle error (n, 3) from the part's current orientation to the seated one (world
         identity — the case spawns unrotated), expressed in the WORLD frame."""
-        return axis_angle_from_quat(part_asset(name).data.root_quat_w)
+        return axis_angle_from_quat(quat_w(part_asset(name).data.root_quat_w))
 
     def part_hand(name: str, tgt_pos: torch.Tensor, right: bool = True) -> None:
         """One force-only 'hand' update on the active part: clamped PD toward a world position
         target around the weight feedforward, plus (optionally) a righting PD."""
         p = part_asset(name)
-        pos = p.data.root_link_pos_w
-        vel = p.data.root_link_lin_vel_w
+        pos = T(p.data.root_link_pos_w)
+        vel = T(p.data.root_link_lin_vel_w)
         f = -P_KP_XY * (pos - tgt_pos) - P_KD_XY * vel
         f[:, 2] = -P_KP_Z * (pos[:, 2] - tgt_pos[:, 2]) - P_KD_Z * vel[:, 2]
         f[:, 0:2] = f[:, 0:2].clamp(-F_XY_CAP, F_XY_CAP)
         f[:, 2] = f[:, 2].clamp(-F_Z_CAP, F_Z_CAP) + part_weight(name)
         t = torch.zeros_like(f)
         if right:
-            t = (-P_KP_ROT * rot_err(name) - P_KD_ROT * p.data.root_ang_vel_w).clamp(-T_CAP, T_CAP)
-        qc = p.data.root_link_quat_w
+            t = (-P_KP_ROT * rot_err(name) - P_KD_ROT * T(p.data.root_ang_vel_w)).clamp(-T_CAP, T_CAP)
+        qc = quat_w(p.data.root_link_quat_w)
         p.set_external_force_and_torque(quat_apply_inverse(qc, f).unsqueeze(1),
                                         quat_apply_inverse(qc, t).unsqueeze(1))
 
@@ -310,7 +312,7 @@ def main() -> None:
         return sc.gpu_engaged()
 
     def part_xy_err(name: str, ref: torch.Tensor) -> torch.Tensor:
-        return (part_asset(name).data.root_link_pos_w[:, 0:2] - ref[:, 0:2]).norm(dim=-1)
+        return (T(part_asset(name).data.root_link_pos_w)[:, 0:2] - ref[:, 0:2]).norm(dim=-1)
 
     def step(i: int) -> None:
         capture = writer is not None and i % args.cap == 0
@@ -361,29 +363,29 @@ def main() -> None:
 
         if phase == "show":
             if i >= show_end:  # the bolts spawned staged; the key flies over from the table
-                prev_key_yaw = yaw_of(key.data.root_quat_w)
+                prev_key_yaw = yaw_of(quat_w(key.data.root_quat_w))
                 phase, marker = "k_lift", i
         # ---- leg 1: the motherboard -------------------------------------------------------------
         elif phase == "k_lift":  # rise (and right itself), rate-limited; the FIRST approach goes
             # to wall-crossing height (the key starts outside the case), later hops stay low
-            pos = key.data.root_link_pos_w
+            pos = T(key.data.root_link_pos_w)
             lift_z = board_z + (KEY_CROSS_Z if active == 0 else TRAVEL_Z)
             tgt_z = torch.minimum(pos[:, 2] + 0.03, lift_z)
             hop_key(pos[:, 0:2], tgt_z)
             up_here = (lift_z - pos[:, 2]) < 0.004
-            upright = up_axis_of(key.data.root_quat_w)[:, 2] > math.cos(math.radians(5.0))
+            upright = up_axis_of(quat_w(key.data.root_quat_w))[:, 2] > math.cos(math.radians(5.0))
             if bool((up_here & upright).all()) or i - marker >= (2 if active == 0 else 1) * k_lift_steps:
-                glide_from = key.data.root_link_pos_w[:, 0:2].clone()
+                glide_from = T(key.data.root_link_pos_w)[:, 0:2].clone()
                 phase, marker = "k_glide", i
         elif phase == "k_glide":  # ease over to the target hole (high on the first, wall-crossing
             # approach; just over the standing heads between holes)
             s = smoothstep((i - marker) / k_glide_steps)
             tgt = glide_from + s * (holes_w[:, active] - glide_from)
             hop_key(tgt, board_z + (KEY_CROSS_Z if active == 0 else TRAVEL_Z))
-            arrived = (key.data.root_link_pos_w[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.003
+            arrived = (T(key.data.root_link_pos_w)[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.003
             if (i - marker >= k_glide_steps and bool(arrived.all())) or i - marker >= 2 * k_glide_steps:
                 phase, marker = ("k_descend" if active == 0 else "k_align"), i
-                drop_from = key.data.root_link_pos_w[:, 2].clone()
+                drop_from = T(key.data.root_link_pos_w)[:, 2].clone()
         elif phase == "k_descend":  # (first hole only) sink from crossing height to travel height
             s = smoothstep((i - marker) / k_descend_steps)
             tgt_z = drop_from + s * (board_z + TRAVEL_Z - drop_from)
@@ -392,19 +394,19 @@ def main() -> None:
                 phase, marker = "k_align", i
         elif phase == "k_align":  # hover over the socket, servo the hex clocking into register
             hop_key(holes_w[:, active], board_z + TRAVEL_Z, align_to=active)
-            centred = (key.data.root_link_pos_w[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.0015
-            aligned = (yaw_err_to(active).abs() < ALIGN_TOL) & (key.data.root_ang_vel_w[:, 2].abs() < 0.5)
+            centred = (T(key.data.root_link_pos_w)[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.0015
+            aligned = (yaw_err_to(active).abs() < ALIGN_TOL) & (T(key.data.root_ang_vel_w)[:, 2].abs() < 0.5)
             if bool((aligned & centred).all()) or i - marker >= k_align_steps:
-                lift_from3[:, 2] = key.data.root_link_pos_w[:, 2]
+                lift_from3[:, 2] = T(key.data.root_link_pos_w)[:, 2]
                 phase, marker = "k_insert", i
         elif phase == "k_insert":  # descend into the open hex, clocking held
             s = smoothstep((i - marker) / k_insert_steps)
-            floor_z = bolts[active].data.root_pos_w[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
+            floor_z = T(bolts[active].data.root_pos_w)[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
             hop_key(holes_w[:, active], lift_from3[:, 2] + s * (floor_z - lift_from3[:, 2]), align_to=active)
-            kgap = key.data.root_link_pos_w[:, 2] - floor_z
-            centred = (key.data.root_link_pos_w[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.0015
+            kgap = T(key.data.root_link_pos_w)[:, 2] - floor_z
+            centred = (T(key.data.root_link_pos_w)[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.0015
             if bool(((kgap.abs() < 0.0005) & centred).all()):
-                prev_key_yaw = yaw_of(key.data.root_quat_w)
+                prev_key_yaw = yaw_of(quat_w(key.data.root_quat_w))
                 key_turn = torch.zeros(n, device=device)
                 phase, marker = "k_drive", i
             elif i - marker >= 2 * k_insert_steps:  # fallback, keeps the smoke robust (logged)
@@ -412,11 +414,11 @@ def main() -> None:
                 yaw = STAGE_YAW - sc.screw_turn[:, active]
                 kt = torch.zeros(n, 13, device=device)
                 kt[:, 0:2] = holes_w[:, active]
-                kt[:, 2] = bolts[active].data.root_pos_w[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
+                kt[:, 2] = T(bolts[active].data.root_pos_w)[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
                 kt[:, 3] = torch.cos(yaw / 2)
                 kt[:, 6] = torch.sin(yaw / 2)
-                key.write_root_state_to_sim(kt, torch.arange(n, device=device))
-                prev_key_yaw = yaw_of(key.data.root_quat_w)
+                write_root_state(key, kt, torch.arange(n, device=device))
+                prev_key_yaw = yaw_of(quat_w(key.data.root_quat_w))
                 key_turn = torch.zeros(n, device=device)
                 phase, marker = "k_drive", i
         elif phase == "k_drive":
@@ -431,26 +433,26 @@ def main() -> None:
                 else:
                     phase, marker = "k_exit", i
         elif phase == "k_exit":  # rise out of the last socket to wall-crossing height
-            pos = key.data.root_link_pos_w
+            pos = T(key.data.root_link_pos_w)
             tgt_z = torch.minimum(pos[:, 2] + 0.03, board_z + KEY_CROSS_Z)
             hop_key(holes_w[:, active], tgt_z)
             if bool(((board_z + KEY_CROSS_Z - pos[:, 2]) < 0.004).all()) or i - marker >= 2 * k_lift_steps:
-                glide_from = key.data.root_link_pos_w[:, 0:2].clone()
+                glide_from = T(key.data.root_link_pos_w)[:, 0:2].clone()
                 phase, marker = "k_park", i
         elif phase == "k_park":  # carry the key back over the wall line to its spawn spot
             s = smoothstep((i - marker) / k_park_steps)
             tgt = glide_from + s * (park_xy - glide_from)
             hop_key(tgt, board_z + KEY_CROSS_Z)
-            arrived = (key.data.root_link_pos_w[:, 0:2] - park_xy).norm(dim=-1) < 0.005
+            arrived = (T(key.data.root_link_pos_w)[:, 0:2] - park_xy).norm(dim=-1) < 0.005
             if (i - marker >= k_park_steps and bool(arrived.all())) or i - marker >= 2 * k_park_steps:
-                drop_from = key.data.root_link_pos_w[:, 2].clone()
+                drop_from = T(key.data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "k_park_drop", i
         elif phase == "k_park_drop":  # set the key down standing at its spawn spot (PD-held)
             s = smoothstep((i - marker) / k_descend_steps)
             hop_key(park_xy, drop_from + s * (table_z + PARK_TIP_Z - drop_from))
             if i - marker >= k_descend_steps + 30:
                 print(f"  board fastened ({B} bolts) — key parked; starting the memory", flush=True)
-                lift_from3 = sc.rams[ram_k].data.root_link_pos_w.clone()
+                lift_from3 = T(sc.rams[ram_k].data.root_link_pos_w).clone()
                 phase, marker = "r_lift", i
         # ---- leg 2: the memory --------------------------------------------------------------------
         elif phase == "r_lift":  # rise off the table to the rim-crossing height while righting
@@ -458,10 +460,10 @@ def main() -> None:
             tgt = lift_from3.clone()
             tgt[:, 2] = lift_from3[:, 2] + s * (board_z + CROSS_Z - lift_from3[:, 2])
             part_hand("ram", tgt)
-            up_here = (board_z + CROSS_Z - sc.rams[ram_k].data.root_link_pos_w[:, 2]).abs() < 0.005
+            up_here = (board_z + CROSS_Z - T(sc.rams[ram_k].data.root_link_pos_w)[:, 2]).abs() < 0.005
             upright = rot_err("ram").norm(dim=-1) < math.radians(5.0)
             if bool((up_here & upright).all()) or i - marker >= 2 * p_lift_steps:
-                cross_from = sc.rams[ram_k].data.root_link_pos_w[:, 0:2].clone()
+                cross_from = T(sc.rams[ram_k].data.root_link_pos_w)[:, 0:2].clone()
                 phase, marker = "r_cross", i
         elif phase == "r_cross":  # glide over the rim to above the slot, at crossing height
             s = smoothstep((i - marker) / p_cross_steps)
@@ -471,7 +473,7 @@ def main() -> None:
             part_hand("ram", tgt)
             arrived = part_xy_err("ram", ram_seats_w[ram_k]) < 0.003
             if (i - marker >= p_cross_steps and bool(arrived.all())) or i - marker >= 2 * p_cross_steps:
-                drop_from = sc.rams[ram_k].data.root_link_pos_w[:, 2].clone()
+                drop_from = T(sc.rams[ram_k].data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "r_drop", i
         elif phase == "r_drop":  # descend over the slot to the hover above the end stops
             s = smoothstep((i - marker) / p_drop_steps)
@@ -485,10 +487,10 @@ def main() -> None:
             tgt[:, 2] = board_z + RAM_ALIGN_Z
             part_hand("ram", tgt)
             perr = part_xy_err("ram", ram_seats_w[ram_k])
-            still = sc.rams[ram_k].data.root_link_lin_vel_w.norm(dim=-1) < 0.01
+            still = T(sc.rams[ram_k].data.root_link_lin_vel_w).norm(dim=-1) < 0.01
             ok = (perr < RAM_ALIGN_XY_TOL) & (rot_err("ram").norm(dim=-1) < P_ALIGN_ROT_TOL) & still
             if bool(ok.all()) or i - marker >= 2 * p_align_steps:
-                press_from = sc.rams[ram_k].data.root_link_pos_w[:, 2].clone()
+                press_from = T(sc.rams[ram_k].data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "r_press", i
         elif phase == "r_press":  # straight down into the slot
             s = smoothstep((i - marker) / press_steps)
@@ -514,19 +516,19 @@ def main() -> None:
             tgt[:, 2] = board_z + RAM_ALIGN_Z
             part_hand("ram", tgt)
             if i - marker >= p_align_steps:
-                press_from = sc.rams[ram_k].data.root_link_pos_w[:, 2].clone()
+                press_from = T(sc.rams[ram_k].data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "r_press", i
         elif phase == "r_handoff":  # hands off this stick; next stick, or the card if both seated
             ram_seq += 1
             if ram_seq < len(RAM_ORDER):
                 ram_k = RAM_ORDER[ram_seq]
                 retries = 0
-                lift_from3 = sc.rams[ram_k].data.root_link_pos_w.clone()
+                lift_from3 = T(sc.rams[ram_k].data.root_link_pos_w).clone()
                 phase, marker = "r_lift", i
             else:
                 print("  memory seated — starting the graphics card", flush=True)
                 retries = 0
-                lift_from3 = card.data.root_link_pos_w.clone()
+                lift_from3 = T(card.data.root_link_pos_w).clone()
                 phase, marker = "g_lift", i
         # ---- leg 3: the graphics card -------------------------------------------------------------
         elif phase == "g_lift":  # rise off the table to the rim-crossing height while righting
@@ -534,10 +536,10 @@ def main() -> None:
             tgt = lift_from3.clone()
             tgt[:, 2] = lift_from3[:, 2] + s * (board_z + CROSS_Z - lift_from3[:, 2])
             part_hand("gpu", tgt)
-            up_here = (board_z + CROSS_Z - card.data.root_link_pos_w[:, 2]).abs() < 0.005
+            up_here = (board_z + CROSS_Z - T(card.data.root_link_pos_w)[:, 2]).abs() < 0.005
             upright = rot_err("gpu").norm(dim=-1) < math.radians(5.0)
             if bool((up_here & upright).all()) or i - marker >= 2 * p_lift_steps:
-                cross_from = card.data.root_link_pos_w[:, 0:2].clone()
+                cross_from = T(card.data.root_link_pos_w)[:, 0:2].clone()
                 phase, marker = "g_cross", i
         elif phase == "g_cross":  # glide over the rim to the PLACEMENT point, at crossing height
             s = smoothstep((i - marker) / p_cross_steps)
@@ -547,7 +549,7 @@ def main() -> None:
             part_hand("gpu", tgt)
             arrived = part_xy_err("gpu", gpu_place_w) < 0.003
             if (i - marker >= p_cross_steps and bool(arrived.all())) or i - marker >= 2 * p_cross_steps:
-                drop_from = card.data.root_link_pos_w[:, 2].clone()
+                drop_from = T(card.data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "g_drop", i
         elif phase == "g_drop":  # place the card INSIDE the case, bracket forward of the rear panel
             s = smoothstep((i - marker) / p_drop_steps)
@@ -561,7 +563,7 @@ def main() -> None:
             tgt[:, 2] = board_z + GPU_SLIDE_Z
             part_hand("gpu", tgt)
             perr = part_xy_err("gpu", gpu_place_w)
-            still = card.data.root_link_lin_vel_w.norm(dim=-1) < 0.01
+            still = T(card.data.root_link_lin_vel_w).norm(dim=-1) < 0.01
             ok = (perr < GPU_ALIGN_XY_TOL) & (rot_err("gpu").norm(dim=-1) < P_ALIGN_ROT_TOL) & still
             if bool(ok.all()) or i - marker >= 2 * p_align_steps:
                 phase, marker = "g_slide", i
@@ -571,10 +573,10 @@ def main() -> None:
             tgt[:, 0] = gpu_place_w[:, 0] + s * GPU_SLIDE_OFF
             tgt[:, 2] = board_z + GPU_SLIDE_Z
             part_hand("gpu", tgt)
-            still = card.data.root_link_lin_vel_w.norm(dim=-1) < 0.01
+            still = T(card.data.root_link_lin_vel_w).norm(dim=-1) < 0.01
             done = (part_xy_err("gpu", gpu_seat_w) < GPU_ALIGN_XY_TOL) & still
             if (i - marker >= slide_steps and bool(done.all())) or i - marker >= 2 * slide_steps:
-                press_from = card.data.root_link_pos_w[:, 2].clone()
+                press_from = T(card.data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "g_press", i
         elif phase == "g_press":  # straight down into the slot
             s = smoothstep((i - marker) / press_steps)
@@ -600,7 +602,7 @@ def main() -> None:
             tgt[:, 2] = board_z + GPU_SLIDE_Z
             part_hand("gpu", tgt)
             if i - marker >= p_align_steps:
-                press_from = card.data.root_link_pos_w[:, 2].clone()
+                press_from = T(card.data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "g_press", i
         else:  # settle: hands off everything (the key stays PD-parked) — seats must hold
             if i - marker >= settle_steps:
@@ -610,7 +612,7 @@ def main() -> None:
             park_key()  # the gravity-free key needs its hand for the rest of the run
         step(i)
         if phase != "show":  # the scene's mechanic advances the joints; track our own key spin
-            kcur = yaw_of(key.data.root_quat_w)
+            kcur = yaw_of(quat_w(key.data.root_quat_w))
             key_turn = key_turn - _wrap(kcur - prev_key_yaw)
             prev_key_yaw = kcur
 
@@ -648,7 +650,7 @@ def main() -> None:
                         for b in range(B))
     per_slot = " | ".join(
         f"slot{j}: depth {float(ram_d[:, j].mean() * 1e3):+.2f} mm, xy "
-        f"{float((sc.rams[j].data.root_pos_w[:, 0:2] - ram_seats_w[j][:, 0:2]).norm(dim=-1).mean() * 1e3):.2f} mm"
+        f"{float((T(sc.rams[j].data.root_pos_w)[:, 0:2] - ram_seats_w[j][:, 0:2]).norm(dim=-1).mean() * 1e3):.2f} mm"
         for j in range(ns)
     )
     print(f"PC-ALL | complete {int(all_ok.sum())}/{n} envs ({int(seated.sum())}/{(nb + ns + 1) * n} parts: "
@@ -656,7 +658,7 @@ def main() -> None:
           f"{int(seated[:, -1].sum())}/{n} card) | bolts {mm_per_rev:.2f} mm/rev (pitch {PITCH_MM:.1f}), "
           f"last slip {float(slip_last.mean()):+.1f}deg | {per_hole} | {per_slot} | "
           f"card depth {float(sc.gpu_engaged().mean() * 1e3):+.2f} mm, xy "
-          f"{float((card.data.root_pos_w[:, 0:2] - gpu_seat_w[:, 0:2]).norm(dim=-1).mean() * 1e3):.2f} mm | "
+          f"{float((T(card.data.root_pos_w)[:, 0:2] - gpu_seat_w[:, 0:2]).norm(dim=-1).mean() * 1e3):.2f} mm | "
           f"press retries {retries_total}", flush=True)
     close_and_exit(env, app)
 

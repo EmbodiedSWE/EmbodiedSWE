@@ -41,6 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, physx_view, rot_cfg, state_w, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -181,7 +182,7 @@ class _AttachedArmRobot(BaseRobot):
                         fix_root_link=c.fixed_base,
                     ),
                 ),
-                init_state=ArticulationCfg.InitialStateCfg(pos=c.base_pos, rot=c.base_rot, joint_pos=joint_pos),
+                init_state=ArticulationCfg.InitialStateCfg(pos=c.base_pos, rot=rot_cfg(c.base_rot), joint_pos=joint_pos),
                 actuators=actuators,
                 soft_joint_pos_limit_factor=1.0,
             )
@@ -206,9 +207,9 @@ class _AttachedArmRobot(BaseRobot):
         self.articulation: Articulation = env.iscene[self.name]
         if self.cfg.zero_joint_friction:
             art = self.articulation
-            fr = art.root_physx_view.get_dof_friction_coefficients()
+            fr = physx_view(art).get_dof_friction_coefficients()
             fr[:] = 0.0
-            art.root_physx_view.set_dof_friction_coefficients(fr, torch.arange(env.num_envs, device="cpu"))
+            physx_view(art).set_dof_friction_coefficients(fr, torch.arange(env.num_envs, device="cpu"))
 
     def build_controller(self) -> CompositeController:
         torque_mode = self.control_mode in ("impedance", "osc")
@@ -232,14 +233,14 @@ class _AttachedArmRobot(BaseRobot):
 
     def reset(self, env_ids: torch.Tensor) -> None:
         art = self.articulation
-        jp = art.data.default_joint_pos[env_ids].clone()
-        jv = art.data.default_joint_vel[env_ids].clone()
+        jp = T(art.data.default_joint_pos)[env_ids].clone()
+        jv = T(art.data.default_joint_vel)[env_ids].clone()
         art.write_joint_state_to_sim(jp, jv, env_ids=env_ids)
         art.set_joint_position_target(jp, env_ids=env_ids)
         art.set_joint_effort_target(torch.zeros_like(jp), env_ids=env_ids)
-        root = art.data.default_root_state[env_ids].clone()
+        root = state_w(art.data.default_root_state)[env_ids].clone()
         root[:, 0:3] += self.env.iscene.env_origins[env_ids]
-        art.write_root_state_to_sim(root, env_ids)
+        write_root_state(art, root, env_ids)
         if self.controller is not None:
             self.controller.reset(env_ids)
 

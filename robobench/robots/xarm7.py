@@ -36,6 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, physx_view, rot_cfg, state_w, write_root_state
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -240,7 +241,7 @@ class XArm7Robot(BaseRobot):
                 ),
                 init_state=ArticulationCfg.InitialStateCfg(
                     pos=c.base_pos,
-                    rot=c.base_rot,
+                    rot=rot_cfg(c.base_rot),
                     joint_pos={
                         **{f"joint{i + 1}": float(q) for i, q in enumerate(c.default_dof_pos)},
                         **{gj: grip_pos for gj in self.GRIPPER_JOINTS},
@@ -263,9 +264,9 @@ class XArm7Robot(BaseRobot):
         # coefficients at the authored 1.0 (`art.data.joint_friction_coeff` then reads 0.0 while
         # the brake is still live). Same escape hatch `AttachedArmRobot.on_bind` uses.
         art = self.articulation
-        fr = art.root_physx_view.get_dof_friction_coefficients()
+        fr = physx_view(art).get_dof_friction_coefficients()
         fr[:] = 0.0
-        art.root_physx_view.set_dof_friction_coefficients(fr, torch.arange(env.num_envs, device="cpu"))
+        physx_view(art).set_dof_friction_coefficients(fr, torch.arange(env.num_envs, device="cpu"))
 
     def build_controller(self) -> CompositeController:
         """`composite([<arm controller>, joint(gripper)])` for the active mode — same shape as
@@ -293,14 +294,14 @@ class XArm7Robot(BaseRobot):
         """Home pose: default joint state; hold all joint position targets at default (the gripper PD
         holds, the arm targets are inert in torque mode). Root written to the fixed spawn pose + origin."""
         art = self.articulation
-        jp = art.data.default_joint_pos[env_ids].clone()
-        jv = art.data.default_joint_vel[env_ids].clone()
+        jp = T(art.data.default_joint_pos)[env_ids].clone()
+        jv = T(art.data.default_joint_vel)[env_ids].clone()
         art.write_joint_state_to_sim(jp, jv, env_ids=env_ids)
         art.set_joint_position_target(jp, env_ids=env_ids)
         art.set_joint_effort_target(torch.zeros_like(jp), env_ids=env_ids)
-        root = art.data.default_root_state[env_ids].clone()
+        root = state_w(art.data.default_root_state)[env_ids].clone()
         root[:, 0:3] += self.env.iscene.env_origins[env_ids]
-        art.write_root_state_to_sim(root, env_ids)
+        write_root_state(art, root, env_ids)
         if self.controller is not None:
             self.controller.reset(env_ids)
 

@@ -33,6 +33,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False,
@@ -42,7 +44,7 @@ parser.add_argument("--record_every", type=int, default=8)
 parser.add_argument("--out", type=str, default="tool_packing_frames.npz")
 parser.add_argument("--hdfs_dir", type=str, default="",
                     help="optional HDFS dir to upload the frames npz to ('' = no upload)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
 # RTX recipe (render-server provenance): kit mis-decodes the L20 driver version and silently
@@ -72,7 +74,7 @@ def main() -> None:
     no_action = torch.empty(0, device=device)
     all_ids = torch.arange(n, device=device)
 
-    from isaaclab.utils.math import quat_apply
+    from robobench.core.quat import quat_apply
 
     # --- recording (viewport rgb annotator, the proven server mechanism) ---
     frames: list[np.ndarray] = []
@@ -114,8 +116,8 @@ def main() -> None:
     from pxr import Usd as _Usd
     from pxr import UsdGeom as _UsdGeom
 
-    from isaaclab.utils.math import quat_apply as _qa
-    from isaaclab.utils.math import quat_apply_inverse as _qai
+    from robobench.core.quat import quat_apply as _qa
+    from robobench.core.quat import quat_apply_inverse as _qai
 
     def _stage_points(root_path: str, want: str | None = None, cap: int = 800) -> torch.Tensor:
         root = env.stage.GetPrimAtPath(root_path)
@@ -242,18 +244,18 @@ def main() -> None:
     def _world_pts(entry) -> torch.Tensor:
         kind, ref, grid = entry
         if kind == "link":
-            p = scene.box.data.body_pos_w[0, ref]
-            q = scene.box.data.body_quat_w[0, ref]
+            p = T(scene.box.data.body_pos_w)[0, ref]
+            q = quat_w(scene.box.data.body_quat_w)[0, ref]
         else:
-            p = ref.data.root_pos_w[0]
-            q = ref.data.root_quat_w[0]
+            p = T(ref.data.root_pos_w)[0]
+            q = quat_w(ref.data.root_quat_w)[0]
         return p + _qa(q.expand(len(grid), 4), grid)
 
     def _check_separation(at_frame: bool) -> None:
         """Track the worst MARGIN = sdf + slab allowance (negative = beyond what that
         slab's thickness/rest tolerances explain = a real crossing) plus the raw min."""
-        pos = scene.box.data.body_pos_w[0]
-        quat = scene.box.data.body_quat_w[0]
+        pos = T(scene.box.data.body_pos_w)[0]
+        quat = quat_w(scene.box.data.body_quat_w)[0]
         bbody = _B(c.box_body)
         worst_m, worst_v, worst_pair = float("inf"), float("inf"), ""
 
@@ -295,7 +297,7 @@ def main() -> None:
                     st[:, 0:7] = pose
                     # cancel gravity integration: a zero-velocity re-pin free-falls g*dt
                     st[:, 9] = 9.81 * env.sim.get_physics_dt()
-                    scene.items[name].write_root_state_to_sim(st, all_ids)
+                    write_root_state(scene.items[name], st, all_ids)
             env.step(no_action)
             at_frame = annot is not None and step_i % args.record_every == 0
             _check_separation(at_frame)
@@ -317,11 +319,11 @@ def main() -> None:
     def set_joint(j_col: int, target: float, ramp: int = 60) -> None:
         """Sweep ONE articulation joint to `target` with incremental state writes (the
         passive drives then hold it: damping, no stiffness)."""
-        start = float(scene.box.data.joint_pos[0, j_col])
+        start = float(T(scene.box.data.joint_pos)[0, j_col])
         for k in range(ramp):
             a = (k + 1) / ramp
-            jp = scene.box.data.joint_pos.clone()
-            jv = scene.box.data.joint_vel.clone()
+            jp = T(scene.box.data.joint_pos).clone()
+            jv = T(scene.box.data.joint_vel).clone()
             jp[:, j_col] = start + (target - start) * a
             jv[:, j_col] = 0.0
             scene.box.write_joint_state_to_sim(jp, jv, env_ids=all_ids)
@@ -353,11 +355,11 @@ def main() -> None:
         long axis across the tray. The tray centre is no good as a target: it sits 0.137
         behind the drawer face, i.e. mostly UNDER the shell roof even at full pull — the
         first smoke dropped the stapler onto the roof, where it slid off to the table."""
-        from isaaclab.utils.math import quat_mul
+        from robobench.core.quat import quat_mul
 
         b = scene._drawer_b[d]
-        bp = scene.box.data.body_pos_w[:, b]
-        bq = scene.box.data.body_quat_w[:, b]
+        bp = T(scene.box.data.body_pos_w)[:, b]
+        bq = quat_w(scene.box.data.body_quat_w)[:, b]
         target = torch.tensor((0.0, DROP_Y[name], 0.0), device=device).expand(n, 3)
         half = DROP_YAW[name] / 2
         qz = torch.tensor((math.cos(half), 0.0, 0.0, math.sin(half)), device=device).expand(n, 4)
@@ -397,10 +399,10 @@ def main() -> None:
 
     def diagnose() -> None:
         """Every item's position in its ASSIGNED drawer's frame vs the tray box."""
-        from isaaclab.utils.math import quat_apply_inverse
+        from robobench.core.quat import quat_apply_inverse
 
-        pos = scene.box.data.body_pos_w
-        quat = scene.box.data.body_quat_w
+        pos = T(scene.box.data.body_pos_w)
+        quat = quat_w(scene.box.data.body_quat_w)
         print("[smoke]   links: " + " ".join(
             f"{nm}@z={pos[0, k, 2]:.3f}" for k, nm in enumerate(scene.box.body_names)), flush=True)
         print(f"[smoke]   joint order: {scene.box.joint_names} "
@@ -409,11 +411,11 @@ def main() -> None:
         for i, (name, drawer, _m, _s, _z) in enumerate(c.manifest):
             b = scene._drawer_b[scene._assigned[i]]
             item = scene.items[name]
-            loc = quat_apply_inverse(quat[0, b], item.data.root_pos_w[0] - pos[0, b])
-            print(f"[smoke]   {name}: world={[round(v, 3) for v in item.data.root_pos_w[0].tolist()]} "
+            loc = quat_apply_inverse(quat[0, b], T(item.data.root_pos_w)[0] - pos[0, b])
+            print(f"[smoke]   {name}: world={[round(v, 3) for v in T(item.data.root_pos_w)[0].tolist()]} "
                   f"{drawer}-frame={[round(v, 3) for v in loc.tolist()]} "
                   f"tray c={c.tray_center} h={c.tray_half} "
-                  f"|v|={item.data.root_lin_vel_w[0].norm().item():.3f}", flush=True)
+                  f"|v|={T(item.data.root_lin_vel_w)[0].norm().item():.3f}", flush=True)
 
     def save_frames() -> None:
         if frames:
@@ -526,7 +528,7 @@ def main() -> None:
         roof[:, 2] = c.surface_z + (0.40 if CHEST else 0.32)  # just above the cabinet top
         roof[:, 3] = 1.0
         roof[:, 0:3] += env.iscene.env_origins
-        scene.items["stapler"].write_root_state_to_sim(roof, all_ids)
+        write_root_state(scene.items["stapler"], roof, all_ids)
         step(40)
         expect(not bool(scene.stowed()[0, 0]), "an item on the roof must NOT count")
         report("negative C (roof) OK")

@@ -69,10 +69,13 @@ def main() -> None:
 
     from isaaclab.app import AppLauncher
 
-    AppLauncher.add_app_launcher_args(parser)
+    from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
+    add_app_launcher_args(parser)
     args = parser.parse_args()
     # Capture render intent BEFORE AppLauncher(args) — the launcher consumes/strips these attrs.
-    want_render = (not args.headless) or args.livestream > 0
+    want_render = (not args.headless) or args.livestream > 0 \
+        or bool(getattr(args, "visualizer", None) and "none" not in args.visualizer)
 
     import robobench
 

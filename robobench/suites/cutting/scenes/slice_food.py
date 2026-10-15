@@ -28,6 +28,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, physx_view, quat_w, rot_cfg, state_w, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -305,7 +306,7 @@ class SliceFoodScene(BaseScene):
                 ),
                 mass_props=sim_utils.MassPropertiesCfg(mass=c.knife_mass),
             ),
-            init_state=RigidObjectCfg.InitialStateCfg(pos=root, rot=tuple(c.knife_rot)),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=root, rot=rot_cfg(tuple(c.knife_rot))),
         )
         return out
 
@@ -375,13 +376,13 @@ class SliceFoodScene(BaseScene):
             st[:, 0:3] = origin + torch.tensor((px, py, pz + food_z), device=dev)
             st[:, 0:2] += jit
             st[:, 3:7] = qf
-            pc.write_root_state_to_sim(st, env_ids)
+            write_root_state(pc, st, env_ids)
         # the knife back on its rest
         root, _, _ = self._rest_layout()
         ks = torch.zeros(m, 13, device=dev)
         ks[:, 0:3] = origin + torch.tensor(root, device=dev)
         ks[:, 3:7] = torch.tensor(c.knife_rot, device=dev)
-        self.knife.write_root_state_to_sim(ks, env_ids)
+        write_root_state(self.knife, ks, env_ids)
         self._reconcile_cuts(env_ids, torch.zeros(m, len(self.planes), dtype=torch.bool, device=dev))
 
     def post_step(self, env_ids: torch.Tensor | None = None) -> None:
@@ -391,15 +392,15 @@ class SliceFoodScene(BaseScene):
     # ----- state ----------------------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         return {
-            "pieces": torch.stack([p.data.root_state_w[env_ids].clone() for p in self.pieces], dim=1),
-            "knife": self.knife.data.root_state_w[env_ids].clone(),
+            "pieces": torch.stack([state_w(p.data.root_state_w)[env_ids].clone() for p in self.pieces], dim=1),
+            "knife": state_w(self.knife.data.root_state_w)[env_ids].clone(),
             "cut": self.cut[env_ids].clone(),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         for k, pc in enumerate(self.pieces):
-            pc.write_root_state_to_sim(state["pieces"][:, k], env_ids)
-        self.knife.write_root_state_to_sim(state["knife"], env_ids)
+            write_root_state(pc, state["pieces"][:, k], env_ids)
+        write_root_state(self.knife, state["knife"], env_ids)
         self._reconcile_cuts(env_ids, state["cut"])
 
     # ----- description / observables --------------------------------------------------------
@@ -425,10 +426,10 @@ class SliceFoodScene(BaseScene):
             raise ValueError(f"unknown physical params: {unknown}")
 
         def _set_friction(asset, vals):
-            mats = asset.root_physx_view.get_material_properties()
+            mats = physx_view(asset).get_material_properties()
             v = torch.as_tensor(vals, dtype=mats.dtype).view(-1, 1, 1)
             mats[:, :, 0:2] = v
-            asset.root_physx_view.set_material_properties(mats, torch.arange(mats.shape[0]))
+            physx_view(asset).set_material_properties(mats, torch.arange(mats.shape[0]))
 
         if "piece_friction" in values:
             for pc in self.pieces:
@@ -445,17 +446,17 @@ class SliceFoodScene(BaseScene):
         `plane_tol` of the plane, within `flesh_radius` of the centre along the blade,
         blade normal aligned with the plane axis, pressed below the release depth, with the
         food settled and the knife pressing (not rising)."""
-        from isaaclab.utils.math import quat_apply, quat_apply_inverse
+        from robobench.core.quat import quat_apply, quat_apply_inverse
 
         c = self.cfg
         dev = self.env.device
         n = self.env.num_envs
         ref = self.pieces[len(self.pieces) // 2]
-        rp, rq = ref.data.root_pos_w, ref.data.root_quat_w
+        rp, rq = T(ref.data.root_pos_w), quat_w(ref.data.root_quat_w)
         ref_cent = torch.tensor(self._cents[len(self.pieces) // 2], device=dev)
 
-        kp = self.knife.data.root_pos_w
-        kq = self.knife.data.root_quat_w
+        kp = T(self.knife.data.root_pos_w)
+        kq = quat_w(self.knife.data.root_quat_w)
         # the real edge, all samples into world: (n, N, 3)
         N = self._edge_local.shape[0]
         kq_rep = kq.unsqueeze(1).expand(n, N, 4).reshape(-1, 4)
@@ -467,11 +468,11 @@ class SliceFoodScene(BaseScene):
 
         settled = torch.ones(n, dtype=torch.bool, device=dev)
         for pc in self.pieces:
-            settled &= pc.data.root_lin_vel_w.norm(dim=-1) < c.food_settle_speed
+            settled &= T(pc.data.root_lin_vel_w).norm(dim=-1) < c.food_settle_speed
         # release only while the blade PRESSES, never while it rises out of the kerf —
         # otherwise a press that keeps the food above the settle speed releases at lift
         # start instead, and the split appears while the knife is already in the air
-        pressing = self.knife.data.root_lin_vel_w[:, 2] < c.press_vz_max
+        pressing = T(self.knife.data.root_lin_vel_w)[:, 2] < c.press_vz_max
 
         cos_tol = math.cos(math.radians(c.blade_align_deg))
         target = self.cut.clone()

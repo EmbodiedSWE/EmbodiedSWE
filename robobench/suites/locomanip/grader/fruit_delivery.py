@@ -22,6 +22,7 @@ on the plate, read on the final state.
 from __future__ import annotations
 
 from robobench.core import BaseGrader
+from robobench.core.isaaclab_compat import T, quat_w
 from robobench.suites.locomanip.scenes.fruit_delivery import FruitDeliveryScene
 
 
@@ -50,13 +51,13 @@ class FruitDeliveryGrader(BaseGrader):
         """(num_envs, n_items) radial xy distance of every item from the plate's GEOMETRIC centre,
         in the plate's body frame — the same measure the scene's `_on_plate` footprint test uses."""
         import torch
-        from isaaclab.utils.math import quat_apply_inverse
+        from robobench.core.quat import quat_apply_inverse
 
         s = self.scene
-        pp, pq = s.plate.data.root_pos_w, s.plate.data.root_quat_w
+        pp, pq = T(s.plate.data.root_pos_w), quat_w(s.plate.data.root_quat_w)
         cols = []
         for name in s.names:
-            loc = quat_apply_inverse(pq, s.items[name].data.root_pos_w - pp)
+            loc = quat_apply_inverse(pq, T(s.items[name].data.root_pos_w) - pp)
             cols.append((loc[:, :2] - s._plate_center).norm(dim=-1))
         return torch.stack(cols, dim=1)
 
@@ -70,7 +71,7 @@ class FruitDeliveryGrader(BaseGrader):
         import torch
 
         s = self.scene
-        z = torch.stack([s.items[n].data.root_pos_w[:, 2] for n in s.names], dim=1)[:, s._fruit_idx]
+        z = torch.stack([T(s.items[n].data.root_pos_w)[:, 2] for n in s.names], dim=1)[:, s._fruit_idx]
         z = z - s.env_origins[:, 2:3]
         return self._frac_present(z > s.cfg.surface_z + s.cfg.plate_rim_z)
 

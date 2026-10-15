@@ -21,9 +21,11 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -33,7 +35,7 @@ from typing import TYPE_CHECKING
 
 import torch  # noqa: E402
 
-from isaaclab.utils.math import quat_apply, quat_apply_inverse  # noqa: E402
+from robobench.core.quat import quat_apply, quat_apply_inverse  # noqa: E402
 
 import robobench  # noqa: E402
 from robobench.core import ENVS  # noqa: E402
@@ -70,8 +72,8 @@ def main() -> None:
     def leg_offsets() -> torch.Tensor:
         # Each leg's position in the table frame, (num_envs, nlegs, 3). Constant while a leg stays
         # rigidly welded; growing == the leg is slipping off (firmness failing).
-        tp, tq = scene.table.data.root_pos_w, scene.table.data.root_quat_w
-        return torch.stack([quat_apply_inverse(tq, leg.data.root_pos_w - tp) for leg in scene.legs], dim=1)
+        tp, tq = T(scene.table.data.root_pos_w), quat_w(scene.table.data.root_quat_w)
+        return torch.stack([quat_apply_inverse(tq, T(leg.data.root_pos_w) - tp) for leg in scene.legs], dim=1)
 
     env.reset()
     base_pos: torch.Tensor | None = None  # table rest pose, captured after the settle (hold target)
@@ -98,33 +100,33 @@ def main() -> None:
                 tbl = torch.zeros(n, 13, device=device)  # stand each leg upright on its (now centred) stud
                 tbl[:, 0:3] = env.iscene.env_origins + table_center
                 tbl[:, 3] = 1.0
-                scene.table.write_root_state_to_sim(tbl, all_ids)
+                write_root_state(scene.table, tbl, all_ids)
                 for k, leg in enumerate(scene.legs):
                     st = torch.zeros(n, 13, device=device)
                     st[:, 0:3] = env.iscene.env_origins + stud_xyz[k]
                     st[:, 3] = 1.0
-                    leg.write_root_state_to_sim(st, all_ids)
+                    write_root_state(leg, st, all_ids)
         elif i < ASSEMBLE_END:  # press + twist each leg onto its stud (the scene auto-welds on seat)
             for k, leg in enumerate(scene.legs):
                 f, t = leg_wrench[k]
                 f[:, 2] = PRESS
-                spin = leg.data.root_ang_vel_w[:, 2] > TARGET_WZ
+                spin = T(leg.data.root_ang_vel_w)[:, 2] > TARGET_WZ
                 t[spin, 2] = TWIST
         elif i == ASSEMBLE_END:
             ref_off = leg_offsets().clone()  # reference offsets once assembled + welded, before the lift
         elif i == SETTLE_END:  # capture the rest pose, then hold its xy through the lift + flip
-            base_pos = scene.table.data.root_pos_w.clone()
+            base_pos = T(scene.table.data.root_pos_w).clone()
         elif base_pos is not None:  # i > SETTLE_END: hold xy, ramp z up, then roll it over in place
             ramp = min(1.0, (i - SETTLE_END) / (RAISE_END - SETTLE_END))
             target = base_pos.clone()
             target[:, 2] = base_pos[:, 2] + LIFT * ramp
-            pos = scene.table.data.root_pos_w
-            vel = scene.table.data.root_lin_vel_w
-            w = scene.table.data.root_ang_vel_w
+            pos = T(scene.table.data.root_pos_w)
+            vel = T(scene.table.data.root_lin_vel_w)
+            w = T(scene.table.data.root_ang_vel_w)
             table_f = KP * (target - pos) - KD * vel  # PD-hold position so it can't drift / fly off
             table_f[:, 2] += assembly_m * G           # + feed-forward gravity on the z axis
             if i <= RAISE_END:  # lift straight up, kept level
-                up = quat_apply(scene.table.data.root_quat_w, ez)
+                up = quat_apply(quat_w(scene.table.data.root_quat_w), ez)
                 table_t = KLVL * torch.cross(up, ez, dim=-1) - KDLVL * w
             else:  # roll about world-x to turn it over; damp the other two axes so it rolls cleanly
                 table_t = -KDLVL * w

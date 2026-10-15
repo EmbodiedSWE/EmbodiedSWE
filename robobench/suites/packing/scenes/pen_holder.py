@@ -58,6 +58,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, quat_w, rot_cfg, state_w, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -238,7 +239,7 @@ class PenHolderScene(BaseScene):
             ),
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=preset["orient"]),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=rot_cfg(preset["orient"])),
                 spawn=table_spawn,
             ),
         }
@@ -299,7 +300,7 @@ class PenHolderScene(BaseScene):
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
                     pos=(cx + r * math.cos(ang), cy + r * math.sin(ang), z0 + pen_r + 0.003),
-                    rot=(math.cos(math.pi / 4), 0.0, math.sin(math.pi / 4), 0.0),  # lying flat
+                    rot=rot_cfg((math.cos(math.pi / 4), 0.0, math.sin(math.pi / 4), 0.0)),  # lying flat
                 ),
             )
         return out
@@ -369,7 +370,7 @@ class PenHolderScene(BaseScene):
         st[:, 3] = torch.cos(half)
         st[:, 6] = torch.sin(half)
         st[:, 0:3] += origin
-        self.holder.write_root_state_to_sim(st, env_ids)
+        write_root_state(self.holder, st, env_ids)
 
         # --- pens: arc slot + jitter, lying FLAT with free yaw; absent -> parking depot ---
         # Overlap-rejected placement: a lying pen is a barrel_l-long segment, and tight
@@ -438,20 +439,20 @@ class PenHolderScene(BaseScene):
             st[:, 4] = -torch.sin(half) * c45
             st[:, 5] = torch.cos(half) * c45
             st[:, 6] = torch.sin(half) * c45
-            self.pens[name].write_root_state_to_sim(st, env_ids)
+            write_root_state(self.pens[name], st, env_ids)
 
     # ----- state (full, restorable) --------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         return {
-            "holder": self.holder.data.root_state_w[env_ids].clone(),
-            "pens": {n: b.data.root_state_w[env_ids].clone() for n, b in self.pens.items()},
+            "holder": state_w(self.holder.data.root_state_w)[env_ids].clone(),
+            "pens": {n: state_w(b.data.root_state_w)[env_ids].clone() for n, b in self.pens.items()},
             "present": self.present[env_ids].clone(),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
-        self.holder.write_root_state_to_sim(state["holder"], env_ids)
+        write_root_state(self.holder, state["holder"], env_ids)
         for n, b in self.pens.items():
-            b.write_root_state_to_sim(state["pens"][n], env_ids)
+            write_root_state(b, state["pens"][n], env_ids)
         self.present[env_ids] = state["present"]
 
     # ----- description ---------------------------------------------------------------------------
@@ -478,9 +479,9 @@ class PenHolderScene(BaseScene):
     # ----- progress / rubric ----------------------------------------------------------------------
     def _pen_tensors(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """(pos_w (N,P,3), quat (N,P,4), |lin_vel| (N,P)) for all pens, manifest order."""
-        pos = torch.stack([b.data.root_pos_w for b in self.pens.values()], dim=1)
-        quat = torch.stack([b.data.root_quat_w for b in self.pens.values()], dim=1)
-        vel = torch.stack([b.data.root_lin_vel_w.norm(dim=-1)
+        pos = torch.stack([T(b.data.root_pos_w) for b in self.pens.values()], dim=1)
+        quat = torch.stack([quat_w(b.data.root_quat_w) for b in self.pens.values()], dim=1)
+        vel = torch.stack([T(b.data.root_lin_vel_w).norm(dim=-1)
                            for b in self.pens.values()], dim=1)
         return pos, quat, vel
 
@@ -488,7 +489,7 @@ class PenHolderScene(BaseScene):
         """Pen bottom / tip points in the HOLDER'S BODY FRAME, shapes (N, P, 3). The rubric
         lives in this frame so a held, moving, tilted holder judges identically to a standing
         one (the source fills a held holder)."""
-        from isaaclab.utils.math import quat_apply, quat_apply_inverse
+        from robobench.core.quat import quat_apply, quat_apply_inverse
 
         pos, quat, _v = self._pen_tensors()
         n, p = pos.shape[0], pos.shape[1]
@@ -496,18 +497,18 @@ class PenHolderScene(BaseScene):
         axis = quat_apply(quat.reshape(n * p, 4), ez).reshape(n, p, 3)
         bottom = pos - axis * self._half_l[None, :, None]
         tip = pos + axis * (self._half_l + self.cfg.tip_h)[None, :, None]
-        hq = self.holder.data.root_quat_w[:, None, :].expand(n, p, 4).reshape(n * p, 4)
-        hp = self.holder.data.root_pos_w[:, None, :]
+        hq = quat_w(self.holder.data.root_quat_w)[:, None, :].expand(n, p, 4).reshape(n * p, 4)
+        hp = T(self.holder.data.root_pos_w)[:, None, :]
         b_loc = quat_apply_inverse(hq, (bottom - hp).reshape(n * p, 3)).reshape(n, p, 3)
         t_loc = quat_apply_inverse(hq, (tip - hp).reshape(n * p, 3)).reshape(n, p, 3)
         return b_loc, t_loc
 
     def holder_up(self) -> torch.Tensor:
         """(N,) bool: holder axis within `holder_tilt_max_deg` of world-up (source 45 deg)."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         ez = torch.tensor([0.0, 0.0, 1.0], device=self.env.device).expand(self.env.num_envs, 3)
-        up = quat_apply(self.holder.data.root_quat_w, ez)
+        up = quat_apply(quat_w(self.holder.data.root_quat_w), ez)
         return up[:, 2].clamp(-1.0, 1.0) >= math.cos(math.radians(self.cfg.holder_tilt_max_deg))
 
     def inserted(self) -> torch.Tensor:
@@ -527,7 +528,7 @@ class PenHolderScene(BaseScene):
     def settled(self) -> torch.Tensor:
         """(N, P) bool: pen AND holder |lin vel| below `settle_speed`."""
         _p, _q, vel = self._pen_tensors()
-        holder_still = self.holder.data.root_lin_vel_w.norm(dim=-1) < self.cfg.settle_speed
+        holder_still = T(self.holder.data.root_lin_vel_w).norm(dim=-1) < self.cfg.settle_speed
         return (vel < self.cfg.settle_speed) & holder_still.unsqueeze(-1)
 
     def counted(self) -> torch.Tensor:
@@ -542,15 +543,15 @@ class PenHolderScene(BaseScene):
         """(N,) bool: the loaded holder set down standing upright ON the work surface —
         within `placed_tilt_deg` of vertical, bottom within `placed_z_tol` of the surface,
         settled. The scene-level port of the source's set-down clause."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         c = self.cfg
         ez = torch.tensor([0.0, 0.0, 1.0], device=self.env.device).expand(self.env.num_envs, 3)
-        up = quat_apply(self.holder.data.root_quat_w, ez)
+        up = quat_apply(quat_w(self.holder.data.root_quat_w), ez)
         upright = up[:, 2].clamp(-1.0, 1.0) >= math.cos(math.radians(c.placed_tilt_deg))
-        bottom_z = (self.holder.data.root_pos_w - self.env_origins)[:, 2] - up[:, 2] * c.holder_h / 2
+        bottom_z = (T(self.holder.data.root_pos_w) - self.env_origins)[:, 2] - up[:, 2] * c.holder_h / 2
         on_surface = (bottom_z - c.surface_z).abs() < c.placed_z_tol
-        still = self.holder.data.root_lin_vel_w.norm(dim=-1) < c.settle_speed
+        still = T(self.holder.data.root_lin_vel_w).norm(dim=-1) < c.settle_speed
         return upright & on_surface & still
 
     def score(self) -> torch.Tensor:

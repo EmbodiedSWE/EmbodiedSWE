@@ -35,11 +35,13 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--video", type=str, default="", help="save an mp4 here (needs --headless --enable_cameras)")
 parser.add_argument("--cap", type=int, default=8, help="with --video: capture one frame every N steps (8 at dt=1/240 -> real-time at 30 fps)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -52,7 +54,7 @@ import torch  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 
 import robobench  # noqa: E402
-from isaaclab.utils.math import axis_angle_from_quat, quat_apply_inverse  # noqa: E402
+from robobench.core.quat import axis_angle_from_quat, quat_apply_inverse  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
 from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
 
@@ -118,7 +120,7 @@ def main() -> None:
     env.sim.reset()  # re-parse physics so the camera (if any) is picked up
     env.reset()
 
-    case_pos = case.data.root_pos_w.clone()  # (n, 3): origin ON the board face, at its centre
+    case_pos = T(case.data.root_pos_w).clone()  # (n, 3): origin ON the board face, at its centre
     board_z = case_pos[:, 2].clone()
     # Seated origins (world), one per slot.
     seats_w = [case_pos + torch.tensor(p, device=device) for p in sc.cfg.seat_pos]
@@ -137,11 +139,11 @@ def main() -> None:
     def rot_err(k: int) -> torch.Tensor:
         """Axis-angle error (n, 3) from stick k's current orientation to the seated one (world
         identity — the case spawns unrotated), expressed in the WORLD frame."""
-        return axis_angle_from_quat(sc.rams[k].data.root_quat_w)
+        return axis_angle_from_quat(quat_w(sc.rams[k].data.root_quat_w))
 
     def ram_wrench(k: int, f: torch.Tensor, t: torch.Tensor) -> None:
         """Apply a WORLD wrench to stick k in its CURRENT link frame."""
-        qc = sc.rams[k].data.root_link_quat_w
+        qc = quat_w(sc.rams[k].data.root_link_quat_w)
         sc.rams[k].set_external_force_and_torque(quat_apply_inverse(qc, f).unsqueeze(1),
                                                  quat_apply_inverse(qc, t).unsqueeze(1))
 
@@ -149,22 +151,22 @@ def main() -> None:
         """One force-only 'hand' update on stick k: clamped PD toward a world position target
         around the weight feedforward, plus (optionally) a PD righting the stick upright."""
         ram = sc.rams[k]
-        pos = ram.data.root_link_pos_w
-        vel = ram.data.root_link_lin_vel_w
+        pos = T(ram.data.root_link_pos_w)
+        vel = T(ram.data.root_link_lin_vel_w)
         f = -KP_XY * (pos - tgt_pos) - KD_XY * vel
         f[:, 2] = -KP_Z * (pos[:, 2] - tgt_pos[:, 2]) - KD_Z * vel[:, 2]
         f[:, 0:2] = f[:, 0:2].clamp(-F_XY_CAP, F_XY_CAP)
         f[:, 2] = f[:, 2].clamp(-F_Z_CAP, F_Z_CAP) + weight
         t = torch.zeros_like(f)
         if right:
-            t = (-KP_ROT * rot_err(k) - KD_ROT * ram.data.root_ang_vel_w).clamp(-T_CAP, T_CAP)
+            t = (-KP_ROT * rot_err(k) - KD_ROT * T(ram.data.root_ang_vel_w)).clamp(-T_CAP, T_CAP)
         ram_wrench(k, f, t)
 
     def depth(k: int) -> torch.Tensor:  # blade depth below slot k's mouth (m), per env
         return sc.engaged()[:, k]
 
     def xy_err(k: int) -> torch.Tensor:
-        return (sc.rams[k].data.root_link_pos_w[:, 0:2] - seats_w[k][:, 0:2]).norm(dim=-1)
+        return (T(sc.rams[k].data.root_link_pos_w)[:, 0:2] - seats_w[k][:, 0:2]).norm(dim=-1)
 
     def step(i: int) -> None:
         capture = writer is not None and i % args.cap == 0
@@ -198,17 +200,17 @@ def main() -> None:
         i += 1
         if phase == "show":
             if i >= show_end:
-                lift_from = sc.rams[k].data.root_link_pos_w.clone()
+                lift_from = T(sc.rams[k].data.root_link_pos_w).clone()
                 phase, marker = "lift", i
         elif phase == "lift":  # rise off the table to the rim-crossing height while righting
             s = smoothstep((i - marker) / lift_steps)
             tgt = lift_from.clone()
             tgt[:, 2] = lift_from[:, 2] + s * (board_z + CROSS_Z - lift_from[:, 2])
             hand(k, tgt)
-            up_here = (board_z + CROSS_Z - sc.rams[k].data.root_link_pos_w[:, 2]).abs() < 0.005
+            up_here = (board_z + CROSS_Z - T(sc.rams[k].data.root_link_pos_w)[:, 2]).abs() < 0.005
             upright = rot_err(k).norm(dim=-1) < math.radians(5.0)
             if bool((up_here & upright).all()) or i - marker >= 2 * lift_steps:
-                cross_from = sc.rams[k].data.root_link_pos_w[:, 0:2].clone()
+                cross_from = T(sc.rams[k].data.root_link_pos_w)[:, 0:2].clone()
                 phase, marker = "cross", i
         elif phase == "cross":  # glide over the rim to above slot k, at crossing height
             s = smoothstep((i - marker) / cross_steps)
@@ -216,9 +218,9 @@ def main() -> None:
             tgt[:, 0:2] = cross_from + s * (seats_w[k][:, 0:2] - cross_from)
             tgt[:, 2] = board_z + CROSS_Z
             hand(k, tgt)
-            arrived = (sc.rams[k].data.root_link_pos_w[:, 0:2] - seats_w[k][:, 0:2]).norm(dim=-1) < 0.003
+            arrived = (T(sc.rams[k].data.root_link_pos_w)[:, 0:2] - seats_w[k][:, 0:2]).norm(dim=-1) < 0.003
             if (i - marker >= cross_steps and bool(arrived.all())) or i - marker >= 2 * cross_steps:
-                drop_from = sc.rams[k].data.root_link_pos_w[:, 2].clone()
+                drop_from = T(sc.rams[k].data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "drop", i
         elif phase == "drop":  # descend over the slot to the hover above the end stops
             s = smoothstep((i - marker) / drop_steps)
@@ -231,11 +233,11 @@ def main() -> None:
             tgt = seats_w[k].clone()  # 0.5 mm end-stop play, so the blade enters clean
             tgt[:, 2] = board_z + ALIGN_Z
             hand(k, tgt)
-            perr = (sc.rams[k].data.root_link_pos_w[:, 0:2] - seats_w[k][:, 0:2]).norm(dim=-1)
-            still = sc.rams[k].data.root_link_lin_vel_w.norm(dim=-1) < 0.01
+            perr = (T(sc.rams[k].data.root_link_pos_w)[:, 0:2] - seats_w[k][:, 0:2]).norm(dim=-1)
+            still = T(sc.rams[k].data.root_link_lin_vel_w).norm(dim=-1) < 0.01
             ok = (perr < ALIGN_XY_TOL) & (rot_err(k).norm(dim=-1) < ALIGN_ROT_TOL) & still
             if bool(ok.all()) or i - marker >= 2 * align_steps:
-                press_from = sc.rams[k].data.root_link_pos_w[:, 2].clone()
+                press_from = T(sc.rams[k].data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "press", i
         elif phase == "press":  # straight down; the channel funnel guides the last 4.4 mm
             s = smoothstep((i - marker) / press_steps)
@@ -261,14 +263,14 @@ def main() -> None:
             tgt[:, 2] = board_z + ALIGN_Z
             hand(k, tgt)
             if i - marker >= align_steps:
-                press_from = sc.rams[k].data.root_link_pos_w[:, 2].clone()
+                press_from = T(sc.rams[k].data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "press", i
         elif phase == "handoff":  # hands off this stick; next stick, or settle if it was the last
             seq += 1
             if seq < len(ORDER):
                 k = ORDER[seq]
                 retries = 0
-                lift_from = sc.rams[k].data.root_link_pos_w.clone()
+                lift_from = T(sc.rams[k].data.root_link_pos_w).clone()
                 phase, marker = "lift", i
             else:
                 phase, marker = "settle", i

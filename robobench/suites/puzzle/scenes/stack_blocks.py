@@ -34,6 +34,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, quat_w, rot_cfg, state_w, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -167,7 +168,7 @@ class StackBlocksScene(BaseScene):
             ),
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=preset["orient"]),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=rot_cfg(preset["orient"])),
                 spawn=table_spawn,
             ),
         }
@@ -292,16 +293,16 @@ class StackBlocksScene(BaseScene):
             st[:, 3] = torch.cos(half)
             st[:, 6] = torch.sin(half)
             st[:, 0:3] += origin
-            self.blocks[name].write_root_state_to_sim(st, env_ids)
+            write_root_state(self.blocks[name], st, env_ids)
 
     # ----- state (full, restorable) --------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
-        return {"blocks": {n: b.data.root_state_w[env_ids].clone()
+        return {"blocks": {n: state_w(b.data.root_state_w)[env_ids].clone()
                            for n, b in self.blocks.items()}}
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         for n, b in self.blocks.items():
-            b.write_root_state_to_sim(state["blocks"][n], env_ids)
+            write_root_state(b, state["blocks"][n], env_ids)
 
     # ----- description ---------------------------------------------------------------------------
     def describe(self) -> str:
@@ -319,16 +320,16 @@ class StackBlocksScene(BaseScene):
     # ----- progress / rubric ---------------------------------------------------------------------
     def _block_tensors(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """(pos_w (N,B,3), quat_wxyz (N,B,4), |lin_vel| (N,B)) for all blocks, cfg order."""
-        pos = torch.stack([b.data.root_pos_w for b in self.blocks.values()], dim=1)
-        quat = torch.stack([b.data.root_quat_w for b in self.blocks.values()], dim=1)
-        vel = torch.stack([b.data.root_lin_vel_w.norm(dim=-1)
+        pos = torch.stack([T(b.data.root_pos_w) for b in self.blocks.values()], dim=1)
+        quat = torch.stack([quat_w(b.data.root_quat_w) for b in self.blocks.values()], dim=1)
+        vel = torch.stack([T(b.data.root_lin_vel_w).norm(dim=-1)
                            for b in self.blocks.values()], dim=1)
         return pos, quat, vel
 
     def _upright(self, quat: torch.Tensor) -> torch.Tensor:
         """(N,B) bool: a cube face is level with the ground — i.e. one body axis is within
         `upright_max_deg` of world-up. Rejects a cube resting on an edge or corner."""
-        from isaaclab.utils.math import matrix_from_quat
+        from robobench.core.quat import matrix_from_quat
 
         n, bch = quat.shape[0], quat.shape[1]
         rot = matrix_from_quat(quat.reshape(n * bch, 4)).reshape(n, bch, 3, 3)

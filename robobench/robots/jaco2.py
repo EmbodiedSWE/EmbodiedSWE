@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, rot_cfg, set_effort_limit, set_fix_root_link, state_w, write_root_state
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -155,9 +156,9 @@ class Jaco2N7Robot(BaseRobot):
         robot = KINOVA_JACO2_N7S300_CFG.copy()  # type: ignore[attr-defined]
         robot.prim_path = f"{{ENV_REGEX_NS}}/{self.prim_name}"  # cfg.name-namespaced (default "Robot")
         robot.spawn.usd_path = c.jaco2_usd  # vendored local copy (resolved in cfg.__post_init__)
-        robot.spawn.articulation_props.fix_root_link = c.fixed_base
+        set_fix_root_link(robot.spawn, c.fixed_base)
         robot.init_state.pos = c.base_pos
-        robot.init_state.rot = c.base_rot
+        robot.init_state.rot = rot_cfg(c.base_rot)
         robot.init_state.joint_pos = {
             **{f"j2n7s300_joint_{i + 1}": float(q) for i, q in enumerate(c.default_dof_pos)},
             "j2n7s300_joint_finger_[1-3]": c.default_gripper_pos,
@@ -167,11 +168,11 @@ class Jaco2N7Robot(BaseRobot):
         robot.actuators["arm"].stiffness = 0.0 if torque_mode else c.arm_stiffness
         robot.actuators["arm"].damping = 0.0 if torque_mode else c.arm_damping
         if c.arm_effort_limit is not None:
-            robot.actuators["arm"].effort_limit_sim = c.arm_effort_limit
+            set_effort_limit(robot.actuators["arm"], c.arm_effort_limit)
         robot.actuators["gripper"].stiffness = c.gripper_stiffness
         robot.actuators["gripper"].damping = c.gripper_damping
         if c.gripper_effort_limit is not None:
-            robot.actuators["gripper"].effort_limit_sim = c.gripper_effort_limit
+            set_effort_limit(robot.actuators["gripper"], c.gripper_effort_limit)
         if c.gravity_compensation:
             import isaaclab.sim as sim_utils
 
@@ -210,14 +211,14 @@ class Jaco2N7Robot(BaseRobot):
         """Home pose: default joint state; hold all joint position targets at default (the finger PD
         holds, the arm targets are inert in torque mode). Root written to the fixed spawn pose + origin."""
         art = self.articulation
-        jp = art.data.default_joint_pos[env_ids].clone()
-        jv = art.data.default_joint_vel[env_ids].clone()
+        jp = T(art.data.default_joint_pos)[env_ids].clone()
+        jv = T(art.data.default_joint_vel)[env_ids].clone()
         art.write_joint_state_to_sim(jp, jv, env_ids=env_ids)
         art.set_joint_position_target(jp, env_ids=env_ids)
         art.set_joint_effort_target(torch.zeros_like(jp), env_ids=env_ids)
-        root = art.data.default_root_state[env_ids].clone()
+        root = state_w(art.data.default_root_state)[env_ids].clone()
         root[:, 0:3] += self.env.iscene.env_origins[env_ids]
-        art.write_root_state_to_sim(root, env_ids)
+        write_root_state(art, root, env_ids)
         if self.controller is not None:
             self.controller.reset(env_ids)
 

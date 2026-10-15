@@ -25,6 +25,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, state_w # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--env", type=str, required=True,
                     help="registered env name, e.g. puzzle.syringe.franka.osc")
@@ -44,7 +46,7 @@ parser.add_argument("--max_step", type=float, default=0.008)
 parser.add_argument("--out", type=str, default="robot_binding_frames.npz")
 parser.add_argument("--hdfs_dir", type=str, default="",
                     help="optional HDFS dir to upload the frames npz to ('' = no upload)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args, _unknown = parser.parse_known_args()
 args.enable_cameras = True
 if not getattr(args, "kit_args", None):
@@ -138,12 +140,12 @@ def main() -> None:
     ee_i = art.find_bodies(ee_body)[0][0]
     grip_ctrl = env.robot.controller.controllers[-1]
     grip_ids = grip_ctrl.joint_ids
-    grip0 = art.data.joint_pos[:, grip_ids].clone()
-    ee0 = art.data.body_link_state_w[:, ee_i, :7].clone()
+    grip0 = T(art.data.joint_pos)[:, grip_ids].clone()
+    ee0 = state_w(art.data.body_link_state_w)[:, ee_i, :7].clone()
     if getattr(env.robot, "EE_BODIES", None):  # humanoids only (pink_ik uses the LEFT wrist pose);
         # single-arm grippers carry EE_BODY alone
         li = art.find_bodies(env.robot.EE_BODIES[0])[0][0]
-        l0 = art.data.body_link_state_w[:, li, :7].clone()
+        l0 = state_w(art.data.body_link_state_w)[:, li, :7].clone()
     arm_ids = (env.robot.controller.controllers[0].joint_ids
                if mode == "joint" else None)
 
@@ -159,7 +161,7 @@ def main() -> None:
         if mode in ("osc", "diff_ik"):
             return torch.cat([ee_pos_delta_or_abs,
                               torch.zeros(1, 3, device=device), grips], dim=1)
-        return torch.cat([art.data.joint_pos[:, arm_ids], grips], dim=1)
+        return torch.cat([T(art.data.joint_pos)[:, arm_ids], grips], dim=1)
 
     def hold_action() -> torch.Tensor:
         if mode == "pink_ik":
@@ -169,15 +171,15 @@ def main() -> None:
         return build_action(None, grip0)
 
     # 1. boot
-    q = art.data.joint_pos
+    q = T(art.data.joint_pos)
     check("boot-no-nan", bool(torch.isfinite(q).all()),
-          f"root_h={float(art.data.root_pos_w[0, 2]):.2f}")
+          f"root_h={float(T(art.data.root_pos_w)[0, 2]):.2f}")
 
     # 2. hold home
-    before = art.data.body_link_state_w[:, ee_i, :3].clone()
+    before = state_w(art.data.body_link_state_w)[:, ee_i, :3].clone()
     step(hold_action(), 80)
-    drift = float((art.data.body_link_state_w[:, ee_i, :3] - before).norm())
-    check("hold-home", drift < 0.05 and bool(torch.isfinite(art.data.joint_pos).all()),
+    drift = float((state_w(art.data.body_link_state_w)[:, ee_i, :3] - before).norm())
+    check("hold-home", drift < 0.05 and bool(torch.isfinite(T(art.data.joint_pos)).all()),
           f"ee drift {drift * 100:.1f}cm")
 
     # 3. hand/gripper wiggle at home. GR1T2's *_intermediate_* / thumb_distal joints
@@ -190,26 +192,26 @@ def main() -> None:
     drive_mask = torch.tensor(
         [not ("intermediate" in nm or "thumb_distal" in nm) for nm in names],
         dtype=torch.bool, device=device)
-    lo = art.data.soft_joint_pos_limits[:, grip_ids, 0]
-    hi = art.data.soft_joint_pos_limits[:, grip_ids, 1]
+    lo = T(art.data.soft_joint_pos_limits)[:, grip_ids, 0]
+    hi = T(art.data.soft_joint_pos_limits)[:, grip_ids, 1]
     lim = torch.where((grip0 - lo).abs() > (grip0 - hi).abs(), lo, hi)
     far = grip0 + 0.6 * (lim - grip0)
     far = torch.where(drive_mask.view(1, -1), far, grip0)
 
     def grip_step(target: torch.Tensor) -> None:
         if mode == "pink_ik":
-            cur = art.data.body_link_state_w[:, ee_i, :3] - origins
+            cur = state_w(art.data.body_link_state_w)[:, ee_i, :3] - origins
             step(build_action(cur, target), 120)
         elif mode in ("osc", "diff_ik"):
             step(build_action(torch.zeros(1, 3, device=device), target), 120)
         else:
             step(build_action(None, target), 120)
 
-    start = art.data.joint_pos[:, grip_ids].clone()
+    start = T(art.data.joint_pos)[:, grip_ids].clone()
     grip_step(far)
-    at_far = art.data.joint_pos[:, grip_ids].clone()
+    at_far = T(art.data.joint_pos)[:, grip_ids].clone()
     grip_step(grip0)
-    at_back = art.data.joint_pos[:, grip_ids].clone()
+    at_back = T(art.data.joint_pos)[:, grip_ids].clone()
     # Criterion: ACTUATION, not convergence — commanded travel must be substantially
     # followed on average (>=50% toward far, >=70% of the way back home). Absolute
     # convergence over-fails dexterous hands whose fingers legitimately stop on
@@ -232,14 +234,14 @@ def main() -> None:
     # crate smoke's method): marching from the LIVE wrist throttles progress by the
     # tracking lag every step and stalls short (first generic version).
     if args.reach_body and mode in ("pink_ik", "osc", "diff_ik"):
-        body_pos = env.iscene[args.reach_body].data.root_pos_w.clone() - origins
+        body_pos = T(env.iscene[args.reach_body].data.root_pos_w).clone() - origins
         off = torch.tensor([[float(v) for v in args.hover.split(",")]], device=device)
         goals = []
         if args.via:
             voff = torch.tensor([[float(v) for v in args.via.split(",")]], device=device)
             goals.append(body_pos + voff)
         goals.append(body_pos + off)
-        cur = (art.data.body_link_state_w[:, ee_i, :3] - origins).clone()
+        cur = (state_w(art.data.body_link_state_w)[:, ee_i, :3] - origins).clone()
         print(f"[binding-smoke] reach start: ee={[round(float(v), 3) for v in cur[0]]} "
               f"goals={[[round(float(v), 3) for v in g[0]] for g in goals]}", flush=True)
         it_tot = 0
@@ -261,23 +263,23 @@ def main() -> None:
                     # show up in this trajectory instead of a stale hardcode.
                     arm_cfg = env.robot.controller.controllers[0].cfg
                     pos_scale = float(getattr(arm_cfg, "pos_scale", 0.02))
-                    live = art.data.body_link_state_w[:, ee_i, :3] - origins
+                    live = state_w(art.data.body_link_state_w)[:, ee_i, :3] - origins
                     act = ((cur - live) / pos_scale).clamp(-1.0, 1.0)
                     step(build_action(act, grip0))
                 if it_tot % 80 == 0:
-                    live = art.data.body_link_state_w[:, ee_i, :3] - origins
+                    live = state_w(art.data.body_link_state_w)[:, ee_i, :3] - origins
                     print(f"[binding-smoke]   reach t={it_tot}: ee="
                           f"{[round(float(v), 3) for v in live[0]]} carrier="
                           f"{[round(float(v), 3) for v in cur[0]]} goal_i={gi}", flush=True)
         goal = goals[-1]
-        live = art.data.body_link_state_w[:, ee_i, :3] - origins
+        live = state_w(art.data.body_link_state_w)[:, ee_i, :3] - origins
         resid = float((live - goal).norm())
         dax = (live - goal)[0]
         if robot_name == "franka":
             arm_ids7 = env.robot.controller.controllers[0].joint_ids
-            jp = art.data.joint_pos[0, arm_ids7]
-            jlo = art.data.soft_joint_pos_limits[0, arm_ids7, 0]
-            jhi = art.data.soft_joint_pos_limits[0, arm_ids7, 1]
+            jp = T(art.data.joint_pos)[0, arm_ids7]
+            jlo = T(art.data.soft_joint_pos_limits)[0, arm_ids7, 0]
+            jhi = T(art.data.soft_joint_pos_limits)[0, arm_ids7, 1]
             at_lim = [(art.joint_names[j], round(float(q), 2))
                       for j, q, lo, hi in zip(arm_ids7, jp, jlo, jhi)
                       if float(q - lo) < 0.05 or float(hi - q) < 0.05]

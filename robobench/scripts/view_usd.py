@@ -18,11 +18,13 @@ import sys
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("usd", type=str, help="path (or URI) to the USD stage to open")
 parser.add_argument("--colliders", action="store_true",
                     help="overlay PhysX collision geometry (wireframe) on top of the visual mesh")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 
 app = AppLauncher(args).app

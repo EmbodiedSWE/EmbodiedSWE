@@ -26,6 +26,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, quat_w, state_w, write_root_state
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -325,11 +326,11 @@ class PushShapesScene(BaseScene):
             block_yaw = pad_yaw + offset + jitter
             # Pads take NO positional jitter: they mark the board's cutouts, which are
             # authored geometry and cannot move with them.
-            self.pads[key].write_root_state_to_sim(
+            write_root_state(self.pads[key], 
                 pose(station_x, station_y, c.surface_z + c.pad_lift, pad_yaw,
                      pos_jitter=0.0), env_ids
             )
-            self.blocks[key].write_root_state_to_sim(
+            write_root_state(self.blocks[key], 
                 pose(spawn_x, spawn_y, c.slide_z + c.block_reset_clearance, block_yaw,
                      pos_jitter=c.reset_pos_jitter),
                 env_ids,
@@ -339,14 +340,14 @@ class PushShapesScene(BaseScene):
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         state: dict[str, Any] = {"flags": self._flags[env_ids].clone()}
         for key in PIECES:
-            state[f"block_{key}"] = self.blocks[key].data.root_state_w[env_ids].clone()
-            state[f"pad_{key}"] = self.pads[key].data.root_state_w[env_ids].clone()
+            state[f"block_{key}"] = state_w(self.blocks[key].data.root_state_w)[env_ids].clone()
+            state[f"pad_{key}"] = state_w(self.pads[key].data.root_state_w)[env_ids].clone()
         return state
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         for key in PIECES:
-            self.blocks[key].write_root_state_to_sim(state[f"block_{key}"], env_ids)
-            self.pads[key].write_root_state_to_sim(state[f"pad_{key}"], env_ids)
+            write_root_state(self.blocks[key], state[f"block_{key}"], env_ids)
+            write_root_state(self.pads[key], state[f"pad_{key}"], env_ids)
         if "flags" in state:
             self._flags[env_ids] = state["flags"].to(self._flags.device)
 
@@ -369,20 +370,20 @@ class PushShapesScene(BaseScene):
     # ----- per-piece measurements -----------------------------------------------------
     def position_error(self, key: str) -> torch.Tensor:
         """Planar centre distance between one block and its pad, in metres."""
-        block = self.blocks[key].data.root_pos_w[:, :2]
-        pad = self.pads[key].data.root_pos_w[:, :2]
+        block = T(self.blocks[key].data.root_pos_w)[:, :2]
+        pad = T(self.pads[key].data.root_pos_w)[:, :2]
         return (block - pad).norm(dim=1)
 
     def orientation_error(self, key: str) -> torch.Tensor:
         """Shortest full 3-D quaternion error between one block and its pad, in radians."""
         dot = (
-            self.blocks[key].data.root_quat_w * self.pads[key].data.root_quat_w
+            quat_w(self.blocks[key].data.root_quat_w) * quat_w(self.pads[key].data.root_quat_w)
         ).sum(dim=1)
         return 2.0 * torch.acos(dot.abs().clamp(max=1.0))
 
     def block_bottom_z(self, key: str) -> torch.Tensor:
         """Height of the block's underside above the env origin."""
-        local_z = (self.blocks[key].data.root_pos_w - self.env_origins)[:, 2]
+        local_z = (T(self.blocks[key].data.root_pos_w) - self.env_origins)[:, 2]
         return local_z - self.cfg.block_half_height * self.cfg.piece_scale
 
     def not_lifted(self, key: str) -> torch.Tensor:
@@ -401,8 +402,8 @@ class PushShapesScene(BaseScene):
 
     def settled(self, key: str) -> torch.Tensor:
         block = self.blocks[key].data
-        return (block.root_lin_vel_w.norm(dim=1) < self.cfg.settle_linear_speed) & (
-            block.root_ang_vel_w.norm(dim=1) < self.cfg.settle_angular_speed
+        return (T(block.root_lin_vel_w).norm(dim=1) < self.cfg.settle_linear_speed) & (
+            T(block.root_ang_vel_w).norm(dim=1) < self.cfg.settle_angular_speed
         )
 
     def yaw_matched(self, key: str) -> torch.Tensor:

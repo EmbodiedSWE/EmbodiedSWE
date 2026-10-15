@@ -20,6 +20,7 @@ a batch's noise replays from its recorded seed; executed dims clamp to +-1.
 """
 
 from __future__ import annotations
+from robobench.core.isaaclab_compat import T
 
 import torch
 
@@ -70,7 +71,7 @@ class NoisyActionEnv:
         noisy = (self._left > 0) & active
         self._left -= (self._left > 0).long()
         if self._gate_idx is not None:  # height gate: suppress noise in the low, precision phases
-            hand_z = self._env.robot.articulation.data.body_pos_w[:, self._gate_idx, 2].cpu()
+            hand_z = T(self._env.robot.articulation.data.body_pos_w)[:, self._gate_idx, 2].cpu()
             noisy &= hand_z > self._gate_z
 
         noise = torch.randn(*a.shape, generator=self._rng) * self._sigma * noisy.unsqueeze(1)

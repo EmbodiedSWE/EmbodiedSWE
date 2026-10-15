@@ -62,9 +62,11 @@ import math
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -134,7 +136,7 @@ def _amp_vec(art, device) -> torch.Tensor:
 
 
 def main() -> None:
-    from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_mul
+    from robobench.core.quat import quat_apply, quat_apply_inverse, quat_mul
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     robobench.discover()  # registers "assembly.so101" (via the suite's configs/envs.py)
@@ -209,22 +211,22 @@ def main() -> None:
                 st = torch.zeros(n, 13, device=dev)
                 st[:, 0:3] = arm_target_pos
                 st[:, 3:7] = arm_target_quat
-                scene.proximal.write_root_state_to_sim(st, None)
+                write_root_state(scene.proximal, st, None)
             if steady_arm:
                 zj = torch.zeros(n, scene.proximal.num_joints, device=dev)
                 scene.proximal.write_joint_state_to_sim(zj, zj)
             if grasp_offset[0] is not None and grasp_mode[0] == "hold":
                 st = torch.zeros(n, 13, device=dev)
-                st[:, 0:3] = scene.proximal.data.body_pos_w[:, scene.b_ua]
-                st[:, 3:7] = scene.proximal.data.body_quat_w[:, scene.b_ua]
-                scene.motor.write_root_state_to_sim(st, None)
+                st[:, 0:3] = T(scene.proximal.data.body_pos_w)[:, scene.b_ua]
+                st[:, 3:7] = quat_w(scene.proximal.data.body_quat_w)[:, scene.b_ua]
+                write_root_state(scene.motor, st, None)
             elif grasp_offset[0] is not None:
                 ap_, aq_ = scene.upper_arm_pose()
-                mp_, mq_ = scene.motor.data.root_pos_w, scene.motor.data.root_quat_w
+                mp_, mq_ = T(scene.motor.data.root_pos_w), quat_w(scene.motor.data.root_quat_w)
                 off_l = grasp_vec.expand(n, 3)
                 com_target = ap_ + quat_apply(aq_, off_l + COM_B)
                 com_now = mp_ + quat_apply(mq_, COM_B.expand(n, 3))
-                f_w = KP * (com_target - com_now) - KD * scene.motor.data.root_lin_vel_w
+                f_w = KP * (com_target - com_now) - KD * T(scene.motor.data.root_lin_vel_w)
                 f_mag = f_w.norm(dim=-1, keepdim=True)
                 f_w = torch.where(f_mag > F_MAX, f_w * (F_MAX / f_mag), f_w)
                 f_w[:, 2] += 0.061 * 9.81  # the hand carries the servo's weight
@@ -234,15 +236,15 @@ def main() -> None:
                 st_ = torch.zeros(n, 13, device=dev)  # orientation held by the grip
                 st_[:, 0:3] = mp_
                 st_[:, 3:7] = aq_
-                st_[:, 7:10] = scene.motor.data.root_lin_vel_w
-                scene.motor.write_root_state_to_sim(st_, None)
+                st_[:, 7:10] = T(scene.motor.data.root_lin_vel_w)
+                write_root_state(scene.motor, st_, None)
             if hold_fork:  # the fork hand: the fork rides its live seat, offset by fork_off
                 seat_p, seat_q = scene.lower_arm_seat_w()
                 off = torch.tensor((-fork_off["slide"], 0.0, -fork_off["lift"]), device=dev)
                 st = torch.zeros(n, 13, device=dev)
                 st[:, 0:3] = seat_p + quat_apply(seat_q, off.expand(n, 3))
                 st[:, 3:7] = seat_q
-                scene.distal.write_root_state_to_sim(st, None)
+                write_root_state(scene.distal, st, None)
                 zj = torch.zeros(n, scene.distal.num_joints, device=dev)
                 scene.distal.write_joint_state_to_sim(zj, zj)
             if pick["anchor"] is not None:  # pickup: the bit descends vertically onto the
@@ -252,7 +254,7 @@ def main() -> None:
                 st[:, 0:3] = tip_target - quat_apply(q_drill, torch.tensor(
                     cfg.bit_tip, device=dev).expand(n, 3))
                 st[:, 3:7] = q_drill
-                scene.drill.write_root_state_to_sim(st, None)
+                write_root_state(scene.drill, st, None)
             if track_drill:
                 s, a = seat_axis()
                 st = torch.zeros(n, 13, device=dev)
@@ -260,7 +262,7 @@ def main() -> None:
                 st[:, 0:3] = tip_target - quat_apply(q_drill, torch.tensor(
                     cfg.bit_tip, device=dev).expand(n, 3))
                 st[:, 3:7] = q_drill
-                scene.drill.write_root_state_to_sim(st, None)
+                write_root_state(scene.drill, st, None)
             scene.drill.set_joint_effort_target(finger, joint_ids=[scene.i_trig])
             scene.proximal.set_joint_position_target(j2_target)
             scene.distal.set_joint_position_target(distal_target)
@@ -268,9 +270,9 @@ def main() -> None:
             stepno += 1
             if stepno % (sps // 4) == 0:
                 s, a = seat_axis()
-                t_a = ((scene.screws[cur["screw"]].data.root_pos_w - s) * a).sum(-1)[0].item()
-                tq = math.degrees(scene.drill.data.joint_pos[0, scene.i_trig].item())
-                bv = scene.drill.data.joint_vel[0, scene.i_bit].item()
+                t_a = ((T(scene.screws[cur["screw"]].data.root_pos_w) - s) * a).sum(-1)[0].item()
+                tq = math.degrees(T(scene.drill.data.joint_pos)[0, scene.i_trig].item())
+                bv = T(scene.drill.data.joint_vel)[0, scene.i_bit].item()
                 print(f"  step {stepno:5d} [{phase:9s}] {STATE_NAMES[scene.state[0]]:8s} "
                       f"{cur['group']}{cur['hole']} depth-above-seat {t_a * 1000:+7.2f} mm | "
                       f"trigger {tq:+6.2f} deg | bit {bv:+6.2f} rad/s | fastened "
@@ -291,11 +293,11 @@ def main() -> None:
             (SERVO_SEAT_POS[0], SERVO_SEAT_POS[1] - SERVO_START_OFFSET, SERVO_SEAT_POS[2]),
             device=dev)
         st[:, 3:7] = torch.tensor(SERVO_SEAT_QUAT, device=dev)
-        scene.motor.write_root_state_to_sim(st, None)
+        write_root_state(scene.motor, st, None)
 
     def motor_rel_err() -> torch.Tensor:
         ap, aq = scene.upper_arm_pose()
-        return quat_apply_inverse(aq, scene.motor.data.root_pos_w - ap).norm(dim=-1)
+        return quat_apply_inverse(aq, T(scene.motor.data.root_pos_w) - ap).norm(dim=-1)
 
     def screws_rel_err() -> torch.Tensor:
         """Max distance of any fastened tab screw from its own hole's seat (m)."""
@@ -303,7 +305,7 @@ def main() -> None:
         errs = []
         for s in range(cfg.num_elbow_screws):
             h = scene.fastened[:, s].clamp_min(0)
-            err = (scene.screws[s].data.root_pos_w
+            err = (T(scene.screws[s].data.root_pos_w)
                    - seats[torch.arange(n, device=dev), h]).norm(dim=-1)
             errs.append(torch.where(scene.fastened[:, s] >= 0, err, torch.zeros_like(err)))
         return torch.stack(errs, dim=1).max(dim=1).values
@@ -311,7 +313,7 @@ def main() -> None:
     def la_err() -> torch.Tensor:
         """Distance of the forearm fork from its seat on the motor's horn (m)."""
         exp_p, _ = scene.lower_arm_seat_w()
-        return (scene.distal.data.root_pos_w - exp_p).norm(dim=-1)
+        return (T(scene.distal.data.root_pos_w) - exp_p).norm(dim=-1)
 
     def m3_rel_err() -> torch.Tensor:
         """Max distance of any fastened M3 from its own hole's seat (m)."""
@@ -321,7 +323,7 @@ def main() -> None:
         for k in range(cfg.num_horn_screws):
             i_s = cfg.num_elbow_screws + k
             h = (scene.fastened[:, i_s] - cfg.num_elbow_holes).clamp_min(0)
-            err = (scene.screws[i_s].data.root_pos_w - seats[arange, h]).norm(dim=-1)
+            err = (T(scene.screws[i_s].data.root_pos_w) - seats[arange, h]).norm(dim=-1)
             errs.append(torch.where(scene.fastened[:, i_s] >= 0, err, torch.zeros_like(err)))
         return torch.stack(errs, dim=1).max(dim=1).values
 
@@ -331,7 +333,7 @@ def main() -> None:
         st = torch.zeros(n, 13, device=dev)
         st[:, 0:3] = origin + torch.tensor(DRILL_PARK, device=dev)
         st[:, 3] = 1.0
-        scene.drill.write_root_state_to_sim(st, None)
+        write_root_state(scene.drill, st, None)
 
     def grab(joint2_deg: float, base_quat: torch.Tensor, height: float) -> None:
         """Teleport the arm to a working pose (base at the anchor in `base_quat`; shoulder_lift =
@@ -353,7 +355,7 @@ def main() -> None:
         st = torch.zeros(n, 13, device=dev)
         st[:, 0:3] = origin + torch.tensor((0.0, 0.0, height), device=dev)
         st[:, 3:7] = base_quat
-        scene.proximal.write_root_state_to_sim(st, None)
+        write_root_state(scene.proximal, st, None)
         jq = torch.zeros(n, scene.proximal.num_joints, device=dev)
         jq[:, i_j2] = math.radians(joint2_deg)
         scene.proximal.write_joint_state_to_sim(jq, torch.zeros_like(jq))
@@ -398,8 +400,8 @@ def main() -> None:
     j2_target = torch.zeros(n, scene.proximal.num_joints, device=dev)
     distal_target = torch.zeros(n, scene.distal.num_joints, device=dev)
     step(sps // 4, "A return")
-    jp = scene.proximal.data.joint_pos.abs().max().item()
-    jd = scene.distal.data.joint_pos.abs().max().item()
+    jp = T(scene.proximal.data.joint_pos).abs().max().item()
+    jd = T(scene.distal.data.joint_pos).abs().max().item()
     print(f"[A] returned to zero: max|q| proximal={jp:.3f} distal={jd:.3f} rad", flush=True)
 
     # ============ B) INSERT: grab the arm, then the hand pushes the servo into the pocket =======
@@ -431,12 +433,12 @@ def main() -> None:
         st = torch.zeros(n, 13, device=dev)
         st[:, 0:3] = ap0 + quat_apply(aq0, rel.expand(n, 3))
         st[:, 3:7] = aq0
-        scene.motor.write_root_state_to_sim(st, None)
+        write_root_state(scene.motor, st, None)
         step(1, "B slide")
     ins_err = motor_rel_err()
     print(f"[B] servo seated {ins_err.mean() * 1000:.2f} mm from its seat — INSERTED", flush=True)
     scene.proximal.write_joint_state_to_sim(
-        scene.proximal.data.joint_pos.clone(), torch.zeros_like(scene.proximal.data.joint_vel))
+        T(scene.proximal.data.joint_pos).clone(), torch.zeros_like(T(scene.proximal.data.joint_vel)))
     grasp_offset[0] = 1.0
     grasp_mode[0] = "hold"  # the hand PRESSES the servo in place until the first screw bites
     step(sps // 4, "B align")
@@ -459,7 +461,7 @@ def main() -> None:
         nonlocal track_drill
         print(f"[D] {cur['group']} hole {cur['hole']}: the drill picks screw {i_s} up with its "
               f"magnetic bit", flush=True)
-        pick["anchor"] = scene.screws[i_s].data.root_pos_w.clone()  # the lying screw
+        pick["anchor"] = T(scene.screws[i_s].data.root_pos_w).clone()  # the lying screw
         track_drill = False
         standoff[:] = HOVER
         step(sps // 8, "D hover")
@@ -491,7 +493,7 @@ def main() -> None:
             # the bit rides just above the screw's live depth — following it down as it drives
             # in, or back up as a deep-lying screw is drawn to its seat
             s_, a_ = seat_axis()
-            t_live = ((scene.screws[i_s].data.root_pos_w - s_) * a_).sum(-1)
+            t_live = ((T(scene.screws[i_s].data.root_pos_w) - s_) * a_).sum(-1)
             standoff[:] = torch.maximum(t_live + 0.0004, torch.full_like(t_live, BIT_STOP))
             step(1, "F drive")
             if fastened_at < 0 and bool((scene.fastened[:, i_s] >= 0).all()):
@@ -614,7 +616,7 @@ def main() -> None:
                                * math.sin(2.0 * math.pi * (j + 1) / (3.0 * sps)))
         step(1, "J elbow")
         _, sq_ = scene.lower_arm_seat_w()
-        qz_, _ = scene._elbow_angle_split(scene.distal.data.root_quat_w, sq_)
+        qz_, _ = scene._elbow_angle_split(quat_w(scene.distal.data.root_quat_w), sq_)
         elbow_max = max(elbow_max, abs(math.degrees(
             2.0 * math.atan2(qz_[0, 3].item(), qz_[0, 0].item()))))
     scene.set_elbow_target(0.0)

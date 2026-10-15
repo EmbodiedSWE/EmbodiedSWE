@@ -40,6 +40,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False,
@@ -49,7 +51,7 @@ parser.add_argument("--record_every", type=int, default=8)
 parser.add_argument("--out", type=str, default="pen_holder_frames.npz")
 parser.add_argument("--hdfs_dir", type=str, default="",
                     help="optional HDFS dir to upload the frames npz to ('' = no upload)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
 # RTX recipe (same as the render server): kit mis-decodes the L20 driver version and
@@ -88,7 +90,7 @@ def main() -> None:
     names = [name for name, _f, _r, _l in c.manifest]
     half_l = {name: l / 2 for name, _f, _r, l in c.manifest}
 
-    from isaaclab.utils.math import (
+    from robobench.core.quat import (
         quat_apply,
         quat_apply_inverse,
         quat_from_angle_axis,
@@ -136,7 +138,7 @@ def main() -> None:
             if hold_state is not None:
                 pre = hold_state.clone()
                 pre[:, 9] += g_dt  # cancel the gravity kick -> truly static platform
-                scene.holder.write_root_state_to_sim(pre, all_ids)
+                write_root_state(scene.holder, pre, all_ids)
             env.step(no_action, render=render)
             if annot is not None and step_i % args.record_every == 0:
                 for _f in range(3):  # flush accumulated history (ghosting fix)
@@ -151,7 +153,7 @@ def main() -> None:
         if hold_state is not None:
             # Re-pin at ZERO velocity before judging (the compensated pre-step write would
             # otherwise leave +g*dt in the holder's judged buffer).
-            scene.holder.write_root_state_to_sim(hold_state, all_ids)
+            write_root_state(scene.holder, hold_state, all_ids)
             env.iscene.update(0.0)
 
     def report(tag: str) -> None:
@@ -188,13 +190,13 @@ def main() -> None:
         return st
 
     def teleport_pen(name: str, pos, quat=(1.0, 0.0, 0.0, 0.0)) -> None:
-        scene.pens[name].write_root_state_to_sim(make_state(pos, quat), all_ids)
+        write_root_state(scene.pens[name], make_state(pos, quat), all_ids)
 
     def holder_axis_and_mouth() -> tuple[torch.Tensor, torch.Tensor]:
         """Holder up-axis (3,) and mouth-centre world position (3,) for env 0 (local coords)."""
-        q = scene.holder.data.root_quat_w[0:1]
+        q = quat_w(scene.holder.data.root_quat_w)[0:1]
         axis = quat_apply(q, torch.tensor([[0.0, 0.0, 1.0]], device=device))[0]
-        mouth = (scene.holder.data.root_pos_w[0] - env.iscene.env_origins[0]
+        mouth = (T(scene.holder.data.root_pos_w)[0] - env.iscene.env_origins[0]
                  + axis * c.holder_h / 2)
         return axis, mouth
 
@@ -262,8 +264,8 @@ def main() -> None:
         protruding tops), the shaft leaning gently INWARD. Released with zero energy it
         slides down the wall to the floor — no ricochet, nothing to knock the neighbours
         out. Returns (pos, quat) world tuples for teleport_pen."""
-        hq_t = scene.holder.data.root_quat_w[0:1]
-        hp_w = scene.holder.data.root_pos_w[0] - env.iscene.env_origins[0]
+        hq_t = quat_w(scene.holder.data.root_quat_w)[0:1]
+        hp_w = T(scene.holder.data.root_pos_w)[0] - env.iscene.env_origins[0]
         if gap_ang == "center":  # occupants hold the corners; the axis floor is free
             r_b, gap_ang = 0.0, 0.0
         else:  # gap_ang points at a hexagon corner — use the corner's deeper reach
@@ -318,7 +320,7 @@ def main() -> None:
         gap_ang = entry_plan(name) if planned else None
         if planned and gap_ang is None:
             xy_off = (SLIDE_OFF * math.cos(base_ang), SLIDE_OFF * math.sin(base_ang))
-        hq = scene.holder.data.root_quat_w[0].tolist()
+        hq = quat_w(scene.holder.data.root_quat_w)[0].tolist()
         if tip_down:  # flip 180 deg about the holder-local x: q_h * (0,1,0,0)
             w, x, y, z = hq
             hq = [-x, w, z, -y]
@@ -493,7 +495,7 @@ def main() -> None:
     env.reset()
     step(40)
     axis, mouth = holder_axis_and_mouth()
-    hq = scene.holder.data.root_quat_w[0].tolist()  # pen axis -> holder-local x: q_h * q_y(90)
+    hq = quat_w(scene.holder.data.root_quat_w)[0].tolist()  # pen axis -> holder-local x: q_h * q_y(90)
     w, x, y, z = hq
     c45 = math.cos(math.pi / 4)
     q_across = (c45 * (w - y), c45 * (x - z), c45 * (y + w), c45 * (z + x))
@@ -525,8 +527,8 @@ def main() -> None:
     # holder-relative pose: nothing changed in the judging frame, so the score collapse is
     # pinned on the holder_up gate ALONE — and the pens then spill under real physics.
     b = math.radians(80.0)  # on its side, well past the gate
-    hp = scene.holder.data.root_pos_w.clone()
-    hq = scene.holder.data.root_quat_w.clone()
+    hp = T(scene.holder.data.root_pos_w).clone()
+    hq = quat_w(scene.holder.data.root_quat_w).clone()
     side_state = make_state(
         (c.holder_pos[0], c.holder_pos[1], c.surface_z + c.holder_outer_r + 0.006),
         (math.cos(b / 2), math.sin(b / 2), 0.0, 0.0))
@@ -534,15 +536,15 @@ def main() -> None:
     hq_conj[:, 1:] = -hq_conj[:, 1:]
     pen_states = {}
     for name in names:
-        p_loc = quat_apply_inverse(hq, scene.pens[name].data.root_pos_w - hp)
-        q_loc = quat_mul(hq_conj, scene.pens[name].data.root_quat_w)
+        p_loc = quat_apply_inverse(hq, T(scene.pens[name].data.root_pos_w) - hp)
+        q_loc = quat_mul(hq_conj, quat_w(scene.pens[name].data.root_quat_w))
         st = torch.zeros(n, 13, device=device)
         st[:, 0:3] = side_state[:, 0:3] + quat_apply(side_state[:, 3:7], p_loc)
         st[:, 3:7] = quat_mul(side_state[:, 3:7], q_loc)
         pen_states[name] = st
-    scene.holder.write_root_state_to_sim(side_state, all_ids)
+    write_root_state(scene.holder, side_state, all_ids)
     for name, st in pen_states.items():
-        scene.pens[name].write_root_state_to_sim(st, all_ids)
+        write_root_state(scene.pens[name], st, all_ids)
     env.iscene.update(0.0)
     check("tipped: holder_up gate rejects", not bool(scene.holder_up()[0]))
     check("tipped: score collapses to 0", int(scene.score()[0]) == 0)

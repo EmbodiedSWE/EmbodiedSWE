@@ -24,11 +24,13 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--video", type=str, default="", help="save an mp4 here (needs --headless --enable_cameras)")
 parser.add_argument("--cap", type=int, default=8, help="with --video: capture one frame every N steps (8 at dt=1/240 -> real-time at 30 fps)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -41,7 +43,7 @@ import torch  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 
 import robobench  # noqa: E402
-from isaaclab.utils.math import quat_apply_inverse  # noqa: E402
+from robobench.core.quat import quat_apply_inverse  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
 from robobench.suites.assembly.scenes import AllenBoltAssemblySceneCfg  # noqa: E402
 from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
@@ -128,11 +130,11 @@ def main() -> None:
     env.sim.reset()  # re-parse physics so the mass edit (and camera) are picked up
     env.reset()
 
-    hole_xy = plat.data.root_pos_w[:, :2].clone()  # insert bore axis == platform origin (bore-centred)
-    plat_z = plat.data.root_pos_w[:, 2].clone()
+    hole_xy = T(plat.data.root_pos_w)[:, :2].clone()  # insert bore axis == platform origin (bore-centred)
+    plat_z = T(plat.data.root_pos_w)[:, 2].clone()
 
     if cam is not None:
-        p0 = plat.data.root_pos_w[0]
+        p0 = T(plat.data.root_pos_w)[0]
         eye = torch.tensor([[p0[0] + 0.35, p0[1] - 0.35, p0[2] + 0.28]], dtype=torch.float32, device=device)
         tgt = torch.tensor([[p0[0], p0[1], p0[2] + 0.07]], dtype=torch.float32, device=device)
         cam.set_world_poses_from_view(eye, tgt)
@@ -145,24 +147,24 @@ def main() -> None:
         st[:, 0:2] = hole_xy
         st[:, 2] = plat_z + plate_top + STAGE_GAP
         st[:, 3] = 1.0
-        bolt.write_root_state_to_sim(st, ids)
+        write_root_state(bolt, st, ids)
         kt = torch.zeros(n, 13, device=device)
         kt[:, 0:2] = hole_xy
         kt[:, 2] = st[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
         kt[:, 3] = 1.0  # same hex clocking as the socket (both author corners at k*60 deg)
-        key.write_root_state_to_sim(kt, ids)
+        write_root_state(key, kt, ids)
 
     def depth() -> torch.Tensor:  # bolt tip depth below the plate top (m), per env
-        return plat_z + plate_top - bolt.data.root_pos_w[:, 2]
+        return plat_z + plate_top - T(bolt.data.root_pos_w)[:, 2]
 
     def reseat_key() -> None:
         """Teleport the key into the socket of the bolt AS NESTED — tip 0.1 mm off the floor along
         the bolt's own axis, hex clocking matched — so the drive starts with zero contact preload."""
-        up_b = up_axis_of(bolt.data.root_quat_w)
+        up_b = up_axis_of(quat_w(bolt.data.root_quat_w))
         kt = torch.zeros(n, 13, device=device)
-        kt[:, 0:3] = bolt.data.root_pos_w + up_b * (SOCKET_FLOOR_Z + KEY_TIP_HOVER)
-        kt[:, 3:7] = bolt.data.root_quat_w
-        key.write_root_state_to_sim(kt, ids)
+        kt[:, 0:3] = T(bolt.data.root_pos_w) + up_b * (SOCKET_FLOOR_Z + KEY_TIP_HOVER)
+        kt[:, 3:7] = quat_w(bolt.data.root_quat_w)
+        write_root_state(key, kt, ids)
 
     def drive_key(ctl: tuple[float, float, float], ramp: float) -> None:
         """One force-only 'hand' update on the key, everything in the SOCKET frame: ramped press
@@ -170,25 +172,25 @@ def main() -> None:
         onto the socket axis and the key's axis onto the bolt's. `ctl` = (press N, spin target
         rad/s, twist cap N m)."""
         press, w_tgt, t_cap = ctl
-        up_b = up_axis_of(bolt.data.root_quat_w)
+        up_b = up_axis_of(quat_w(bolt.data.root_quat_w))
         f = torch.zeros(n, 1, 3, device=device)
         t = torch.zeros(n, 1, 3, device=device)
         f[:, 0, :] = -press * ramp * up_b
         # servo the spin toward -w_tgt (screw-in), authority t_cap; target 0 once travel is done
-        wz = key.data.root_ang_vel_w[:, 2]
+        wz = T(key.data.root_ang_vel_w)[:, 2]
         tgt = torch.where(depth() < STOP_DEPTH, -w_tgt * torch.ones_like(wz), torch.zeros_like(wz))
         t[:, 0, 2] = torch.clamp(KW * (tgt - wz), -t_cap * ramp, t_cap * ramp)
         # soft PD pulling the key tip onto the socket axis (at the tip's height)
-        pos = key.data.root_link_pos_w
-        vel = key.data.root_link_lin_vel_w
-        rel = pos - bolt.data.root_pos_w
-        axis_pt = bolt.data.root_pos_w + (rel * up_b).sum(-1, keepdim=True) * up_b  # tip proj. on axis
+        pos = T(key.data.root_link_pos_w)
+        vel = T(key.data.root_link_lin_vel_w)
+        rel = pos - T(bolt.data.root_pos_w)
+        axis_pt = T(bolt.data.root_pos_w) + (rel * up_b).sum(-1, keepdim=True) * up_b  # tip proj. on axis
         f[:, 0, 0:2] += -KP_XY * (pos[:, 0:2] - axis_pt[:, 0:2]) - KD_XY * vel[:, 0:2]
         # soft tilt righting toward the BOLT's axis; damping only on wx/wy — yaw + spin stay free
-        up_k = up_axis_of(key.data.root_quat_w)
-        t[:, 0, 0:2] += KP_TILT * torch.cross(up_k, up_b, dim=-1)[:, 0:2] - KD_TILT * key.data.root_ang_vel_w[:, 0:2]
+        up_k = up_axis_of(quat_w(key.data.root_quat_w))
+        t[:, 0, 0:2] += KP_TILT * torch.cross(up_k, up_b, dim=-1)[:, 0:2] - KD_TILT * T(key.data.root_ang_vel_w)[:, 0:2]
         # apply the wrench in the key's CURRENT link frame
-        qk = key.data.root_link_quat_w
+        qk = quat_w(key.data.root_link_quat_w)
         key.set_external_force_and_torque(quat_apply_inverse(qk, f[:, 0]).unsqueeze(1),
                                           quat_apply_inverse(qk, t[:, 0]).unsqueeze(1))
 
@@ -211,12 +213,12 @@ def main() -> None:
     log_every = max(1, int(300 * ts))
 
     def on_axis() -> torch.Tensor:  # a fallen/ejected bolt can read "deep"; require it in the hole
-        return (bolt.data.root_pos_w[:, 0:2] - hole_xy).norm(dim=-1) < 0.004
+        return (T(bolt.data.root_pos_w)[:, 0:2] - hole_xy).norm(dim=-1) < 0.004
 
     bolt_turn = torch.zeros(n, device=device)  # cumulative screw-in rotation (rad, +ve = descending)
     key_turn = torch.zeros(n, device=device)
-    prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
-    prev_key_yaw = yaw_of(key.data.root_quat_w)
+    prev_bolt_yaw = yaw_of(quat_w(bolt.data.root_quat_w))
+    prev_key_yaw = yaw_of(quat_w(key.data.root_quat_w))
     handoff_depth = None
     phase, i, marker = "show", 0, 0
     while True:
@@ -225,13 +227,13 @@ def main() -> None:
         if phase == "show":
             if i >= show_end:
                 stage_parts()
-                prev_bolt_yaw = yaw_of(bolt.data.root_quat_w)
-                prev_key_yaw = yaw_of(key.data.root_quat_w)
+                prev_bolt_yaw = yaw_of(quat_w(bolt.data.root_quat_w))
+                prev_key_yaw = yaw_of(quat_w(key.data.root_quat_w))
                 phase, marker = "stage", i
         elif phase == "stage":  # hands off: let the bolt drop the 1.5 mm gap and nest on the crests
             if i - marker >= stage_settle:
                 reseat_key()  # re-seat on the bolt as nested — zero preload at handoff
-                prev_key_yaw = yaw_of(key.data.root_quat_w)
+                prev_key_yaw = yaw_of(quat_w(key.data.root_quat_w))
                 handoff_depth = depth().clone()
                 phase, marker = "engage", i
         elif phase == "engage":  # gentle press + slow servo spin until the thread captures
@@ -250,22 +252,22 @@ def main() -> None:
 
         step(i)
         if phase != "show":
-            cur = yaw_of(bolt.data.root_quat_w)
+            cur = yaw_of(quat_w(bolt.data.root_quat_w))
             bolt_turn = bolt_turn - _wrap(cur - prev_bolt_yaw)
             prev_bolt_yaw = cur
-            kcur = yaw_of(key.data.root_quat_w)
+            kcur = yaw_of(quat_w(key.data.root_quat_w))
             key_turn = key_turn - _wrap(kcur - prev_key_yaw)
             prev_key_yaw = kcur
 
         if i % log_every == 0:
             d = depth() * 1e3
             slip = torch.rad2deg(key_turn - bolt_turn)
-            tilt = torch.rad2deg(torch.acos(up_axis_of(bolt.data.root_quat_w)[:, 2].clamp(-1, 1)))
-            xy = (bolt.data.root_pos_w[:, 0:2] - hole_xy).norm(dim=-1) * 1e3
+            tilt = torch.rad2deg(torch.acos(up_axis_of(quat_w(bolt.data.root_quat_w))[:, 2].clamp(-1, 1)))
+            xy = (T(bolt.data.root_pos_w)[:, 0:2] - hole_xy).norm(dim=-1) * 1e3
             print(f"  step {i:5d} [{phase:6s}] | tip depth {d.mean():+6.2f}mm | bolt "
                   f"{torch.rad2deg(bolt_turn).mean():+7.0f}deg | key-bolt slip {slip.mean():+6.1f}deg | "
                   f"tilt {tilt.max():4.1f}deg | xy {xy.max():4.2f}mm", flush=True)
-            if phase != "show" and (not torch.isfinite(bolt.data.root_pos_w).all() or float(xy.max()) > 50.0):
+            if phase != "show" and (not torch.isfinite(T(bolt.data.root_pos_w)).all() or float(xy.max()) > 50.0):
                 print("  ABORT: bolt left the hole region (ejected or blew up)", flush=True)
                 break
 

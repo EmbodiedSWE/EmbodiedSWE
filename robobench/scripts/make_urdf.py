@@ -30,6 +30,8 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 ASSETS = Path(__file__).resolve().parent.parent / "robots" / "assets"
 # robot -> (source USD, output kinematics URDF), both relative to robots/assets/.
 SPECS = {
@@ -38,7 +40,7 @@ SPECS = {
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--robot", choices=sorted(SPECS), default=None, help="which robot (default: all)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 app = AppLauncher(args).app
 

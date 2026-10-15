@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from isaaclab.app import AppLauncher  # noqa: E402
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--solution", required=True)
@@ -29,7 +30,7 @@ ap.add_argument("--seed", type=int, default=0)
 ap.add_argument("--trace", action="store_true", help="print env 0's dense terms + grader stages once per second")
 ap.add_argument("--warm", action="store_true", help="warm-start diagnostic instead of the grading protocol")
 ap.add_argument("--episodes", type=int, default=1, help="--warm: repeat until env 0 picks")
-AppLauncher.add_app_launcher_args(ap)
+add_app_launcher_args(ap)
 args = ap.parse_args()
 app = AppLauncher(args).app
 

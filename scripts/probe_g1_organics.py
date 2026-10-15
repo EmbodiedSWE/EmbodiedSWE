@@ -35,17 +35,19 @@ import math
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, physx_view, quat_w # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--phase", type=str, default="info",
                     help="info | aperture | reach | grasp | all")
 parser.add_argument("--item", type=str, default="lemon_01", help="grasp-phase target item")
 parser.add_argument("--env_name", type=str, default="packing.clear_organic_objects.g1.joint")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args, _unknown = parser.parse_known_args()
 app = AppLauncher(args).app
 
 import torch  # noqa: E402
-import isaaclab.utils.math as mu  # noqa: E402
+import robobench.core.quat as mu  # noqa: E402
 from isaaclab.controllers.differential_ik import DifferentialIKController  # noqa: E402
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg  # noqa: E402
 
@@ -98,20 +100,20 @@ def main() -> None:  # noqa: C901, PLR0915
         DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False,
                                     ik_method="dls", ik_params={"lambda_val": 0.05}),
         num_envs=1, device=dev)
-    limits = art.data.joint_pos_limits[:, arm_ids, :]
+    limits = T(art.data.joint_pos_limits)[:, arm_ids, :]
 
     env.reset()
-    home = art.data.joint_pos[0].clone()
-    q_ref = art.data.joint_pos[:, arm_ids].clone()
+    home = T(art.data.joint_pos)[0].clone()
+    q_ref = T(art.data.joint_pos)[:, arm_ids].clone()
 
     def V3(x, y, z):
         return torch.tensor([float(x), float(y), float(z)], device=dev)
 
     def wrist_pose_w():
-        return (art.data.body_pos_w[:, wrist_i], art.data.body_quat_w[:, wrist_i])
+        return (T(art.data.body_pos_w)[:, wrist_i], quat_w(art.data.body_quat_w)[:, wrist_i])
 
     def wrist_env():
-        return art.data.body_pos_w[0, wrist_i] - origin, art.data.body_quat_w[0, wrist_i]
+        return T(art.data.body_pos_w)[0, wrist_i] - origin, quat_w(art.data.body_quat_w)[0, wrist_i]
 
     def tips_local():
         """Estimated pad positions of (index, middle, thumb) in the right-wrist frame."""
@@ -119,8 +121,8 @@ def main() -> None:  # noqa: C901, PLR0915
         Rw = mu.matrix_from_quat(wq.unsqueeze(0))[0]
         out = []
         for bi in tip_i:
-            bp = art.data.body_pos_w[0, bi] - origin
-            R = mu.matrix_from_quat(art.data.body_quat_w[0, bi].unsqueeze(0))[0]
+            bp = T(art.data.body_pos_w)[0, bi] - origin
+            R = mu.matrix_from_quat(quat_w(art.data.body_quat_w)[0, bi].unsqueeze(0))[0]
             out.append(Rw.T @ ((bp + TIP_OUT * R[:, 0]) - wp))
         return out
 
@@ -148,15 +150,15 @@ def main() -> None:  # noqa: C901, PLR0915
         """One DLS IK step of the right arm toward a world-frame wrist pose; other arm+waist
         joints stay at home."""
         nonlocal q_ref
-        root_p, root_q = art.data.root_pos_w, art.data.root_quat_w
+        root_p, root_q = T(art.data.root_pos_w), quat_w(art.data.root_quat_w)
         tp, tq = mu.subtract_frame_transforms(root_p, root_q,
                                               goal_p.unsqueeze(0), goal_q.unsqueeze(0))
         ee_p, ee_q = mu.subtract_frame_transforms(root_p, root_q, *wrist_pose_w())
         ik.set_command(torch.cat([tp, tq], dim=-1), ee_p, ee_q)
-        J = art.root_physx_view.get_jacobians()[:, jac_i][:, :, arm_ids]
+        J = physx_view(art).get_jacobians()[:, jac_i][:, :, arm_ids]
         R = mu.matrix_from_quat(mu.quat_inv(root_q))
         J = torch.cat([torch.bmm(R, J[:, :3, :]), torch.bmm(R, J[:, 3:, :])], dim=1)
-        q_arm = art.data.joint_pos[:, arm_ids]
+        q_arm = T(art.data.joint_pos)[:, arm_ids]
         q_des = ik.compute(ee_p, ee_q, J, q_arm)
         q_new = (q_ref + (q_des - q_ref).clamp(-MAX_DQ, MAX_DQ)).clamp(limits[..., 0],
                                                                       limits[..., 1])
@@ -182,7 +184,7 @@ def main() -> None:  # noqa: C901, PLR0915
     def rehome():
         nonlocal q_ref
         robot.reset(torch.tensor([0], device=dev, dtype=torch.long))
-        q_ref = art.data.joint_pos[:, arm_ids].clone()
+        q_ref = T(art.data.joint_pos)[:, arm_ids].clone()
         ik.reset()
 
     def jaw_quat(azimuth: float, tilt: float) -> torch.Tensor:
@@ -217,7 +219,7 @@ def main() -> None:  # noqa: C901, PLR0915
         print(f"[g1] surface_z={c.surface_z} bin_pos={c.bin_pos} bin_scale={c.bin_scale}",
               flush=True)
         wp, _ = wrist_env()
-        shp = art.data.body_pos_w[0, art.body_names.index("right_shoulder_pitch_link")] - origin
+        shp = T(art.data.body_pos_w)[0, art.body_names.index("right_shoulder_pitch_link")] - origin
         idx, mid, thb = tips_local()
         print(f"[g1] right shoulder @ ({float(shp[0]):.3f},{float(shp[1]):.3f},{float(shp[2]):.3f})"
               f"  home wrist @ ({float(wp[0]):.3f},{float(wp[1]):.3f},{float(wp[2]):.3f})",
@@ -230,7 +232,7 @@ def main() -> None:  # noqa: C901, PLR0915
               f" middle {tuple(round(float(v), 3) for v in mid)}"
               f" thumb {tuple(round(float(v), 3) for v in thb)}", flush=True)
         for nm in scene.names:
-            p = scene.items[nm].data.root_pos_w[0] - origin
+            p = T(scene.items[nm].data.root_pos_w)[0] - origin
             print(f"[g1]   item {nm:24s} @ ({float(p[0]):6.3f},{float(p[1]):6.3f},"
                   f"{float(p[2]):6.3f})  d_shoulder_xy="
                   f"{float(((p[:2] - shp[:2])**2).sum().sqrt()):.3f}", flush=True)
@@ -320,7 +322,7 @@ def main() -> None:  # noqa: C901, PLR0915
                         scene.reset(torch.tensor([0], device=dev, dtype=torch.long))
                         rehome()
                         settle(1.5)
-                        ip = (item.data.root_pos_w[0] - origin).clone()
+                        ip = (T(item.data.root_pos_w)[0] - origin).clone()
                         gq = jaw_quat(math.radians(az_deg), math.radians(tilt_deg))
                         Rg = mu.matrix_from_quat(gq.unsqueeze(0))[0]
                         off = Rg @ V3(*GRASP_CENTRE)
@@ -330,7 +332,7 @@ def main() -> None:  # noqa: C901, PLR0915
                         drive(tgt - off, gq, 3.0, open_h)
                         # how far the OPEN hand shoved the fruit on the way in — separates
                         # "knocked away during the descent" from "slipped during the lift"
-                        ipd = item.data.root_pos_w[0] - origin
+                        ipd = T(item.data.root_pos_w)[0] - origin
                         pre = float(((ipd[:2] - ip[:2]) ** 2).sum().sqrt())
                         # what the wrist ACHIEVED vs what was commanded, at the grip pose
                         wp, wq = wrist_env()
@@ -340,7 +342,7 @@ def main() -> None:  # noqa: C901, PLR0915
                         for close in (0.35, 0.7, grip):  # cage, then squeeze
                             drive(tgt - off, gq, 0.7, hand_cmd(close))
                         drive(tgt + V3(0, 0, 0.20) - off, gq, 3.0, hand_cmd(grip))
-                        ip2 = item.data.root_pos_w[0] - origin
+                        ip2 = T(item.data.root_pos_w)[0] - origin
                         lift = float(ip2[2] - ip[2])
                         print(f"[g1] {tilt_deg:5d} {dz:6.3f} {grip:5.2f} {az_deg:4d} "
                               f"{pos_res * 1000:7.0f}mm {rot_err:7.1f}d "
@@ -373,7 +375,7 @@ def main() -> None:  # noqa: C901, PLR0915
                 scene.reset(torch.tensor([0], device=dev, dtype=torch.long))
                 rehome()
                 settle(1.5)
-                ip = (item.data.root_pos_w[0] - origin).clone()
+                ip = (T(item.data.root_pos_w)[0] - origin).clone()
                 gq = jaw_quat(math.radians(az_deg), math.radians(tilt_deg))
                 off = mu.matrix_from_quat(gq.unsqueeze(0))[0] @ V3(*GRASP_CENTRE)
                 tgt = ip + V3(0, 0, 0.012)
@@ -384,13 +386,13 @@ def main() -> None:  # noqa: C901, PLR0915
                 def in_wrist():
                     wp, wq = wrist_env()
                     R = mu.matrix_from_quat(wq.unsqueeze(0))[0]
-                    return R.T @ ((item.data.root_pos_w[0] - origin) - wp)
+                    return R.T @ ((T(item.data.root_pos_w)[0] - origin) - wp)
 
                 pre_v = in_wrist()
                 for close in (0.35, 0.7, 1.15):
                     drive(tgt - off, gq, 0.7, hand_cmd(close))
                 drive(tgt + V3(0, 0, 0.20) - off, gq, 3.0, hand_cmd(1.15))
-                ip2 = item.data.root_pos_w[0] - origin
+                ip2 = T(item.data.root_pos_w)[0] - origin
                 lift = float(ip2[2] - ip[2])
                 held_v = in_wrist()
                 print(f"[g1] {nm:>14s} {az_deg:4d} {tilt_deg:5d} "

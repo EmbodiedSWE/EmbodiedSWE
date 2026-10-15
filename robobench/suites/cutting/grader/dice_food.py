@@ -18,6 +18,7 @@ Success = `diced` read on the final state.
 from __future__ import annotations
 
 from robobench.core import BaseGrader
+from robobench.core.isaaclab_compat import T
 from robobench.suites.cutting.scenes.dice_food import DiceFoodScene
 
 
@@ -36,7 +37,7 @@ class DiceFoodGrader(BaseGrader):
     scene: DiceFoodScene
 
     def setup(self) -> None:
-        self._knife_z0 = self.scene.knife.data.root_pos_w[:, 2].clone()  # resting in the notches
+        self._knife_z0 = T(self.scene.knife.data.root_pos_w)[:, 2].clone()  # resting in the notches
 
     def check_success(self):
         return self._diced()
@@ -52,7 +53,7 @@ class DiceFoodGrader(BaseGrader):
         hx, hy = s.cfg.board_size[0] / 2, s.cfg.board_size[1] / 2
         ok = torch.ones(s.env.num_envs, dtype=torch.bool, device=s.env.device)
         for pc in s.pieces:
-            rel = pc.data.root_pos_w - s.env_origins
+            rel = T(pc.data.root_pos_w) - s.env_origins
             ok &= (rel[:, 0].abs() < hx) & (rel[:, 1].abs() < hy) & (rel[:, 2] > s._board_top)
         return ok
 
@@ -61,7 +62,7 @@ class DiceFoodGrader(BaseGrader):
 
     # ---- rubric stages — each returns a (num_envs,) value in [0, 1] -----------------------
     def knife_taken(self):
-        z = self.scene.knife.data.root_pos_w[:, 2]
+        z = T(self.scene.knife.data.root_pos_w)[:, 2]
         return (z > self._knife_z0 + self.scene.cfg.rest_rail_h).float()
 
     def pairs_cut(self):

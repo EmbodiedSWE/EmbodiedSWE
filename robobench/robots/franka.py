@@ -32,6 +32,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, rot_cfg, set_effort_limit, set_fix_root_link, set_spawn_prop, state_w, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -152,15 +153,29 @@ class FrankaRobot(BaseRobot):
         """The Franka articulation (`FRANKA_PANDA_HIGH_PD_CFG`), base fixed per `cfg.fixed_base`, spawned
         at the configured pose. In the torque modes ("impedance"/"osc") the arm actuators are set to
         torque mode (zero stiffness/damping); in "diff_ik"/"joint" mode they keep position PD. The gripper is always PD."""
-        from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG
+        try:
+            # Isaac Lab 3.0 rebuilt FRANKA_PANDA_HIGH_PD_CFG on a new panda layout (one `panda_arm` group,
+            # a passive finger2); the 2.3 layout this class tunes (`panda_shoulder` / `panda_forearm` /
+            # `panda_hand`) lives on as the LEGACY cfg — same joints and gains. Our vendored USD replaces
+            # its usd_path either way.
+            from isaaclab_assets.robots.franka import FRANKA_PANDA_LEGACY_HIGH_PD_CFG as FRANKA_PANDA_HIGH_PD_CFG
+            legacy_30 = True
+        except ImportError:  # Isaac Lab 2.3
+            from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG
+            legacy_30 = False
 
         c = self.cfg
         robot = FRANKA_PANDA_HIGH_PD_CFG.copy()  # type: ignore[attr-defined]
+        if legacy_30:
+            # The 3.0 legacy cfg adds `armature=1e-3` on the arm groups (2.3 left armature to the USD).
+            # Keep the 5.1-era dynamics: this branch exists to reproduce main's tasks, not retune them.
+            for arm_act in ("panda_shoulder", "panda_forearm"):
+                robot.actuators[arm_act].armature = None
         robot.prim_path = f"{{ENV_REGEX_NS}}/{self.prim_name}"  # cfg.name-namespaced (default "Robot")
         robot.spawn.usd_path = c.franka_usd  # vendored local panda (resolved in cfg.__post_init__)
-        robot.spawn.articulation_props.fix_root_link = c.fixed_base
+        set_fix_root_link(robot.spawn, c.fixed_base)
         robot.init_state.pos = c.base_pos
-        robot.init_state.rot = c.base_rot
+        robot.init_state.rot = rot_cfg(c.base_rot)
         # Home the 7 arm joints to cfg.default_dof_pos (reset() reads this via default_joint_pos);
         # keep the gripper-finger defaults.
         robot.init_state.joint_pos = {
@@ -172,11 +187,11 @@ class FrankaRobot(BaseRobot):
             robot.actuators[arm_act].stiffness = 0.0 if torque_mode else c.arm_stiffness
             robot.actuators[arm_act].damping = 0.0 if torque_mode else c.arm_damping
             if c.arm_effort_limit is not None:
-                robot.actuators[arm_act].effort_limit_sim = c.arm_effort_limit
+                set_effort_limit(robot.actuators[arm_act], c.arm_effort_limit)
         robot.actuators["panda_hand"].stiffness = c.gripper_stiffness
         robot.actuators["panda_hand"].damping = c.gripper_damping
         if c.gripper_effort_limit is not None:
-            robot.actuators["panda_hand"].effort_limit_sim = c.gripper_effort_limit
+            set_effort_limit(robot.actuators["panda_hand"], c.gripper_effort_limit)
         if c.gravity_compensation is not None:
             # Newton-backend gravity compensation: swap in the MuJoCo rigid-body schema carrying
             # `gravcomp` (imported lazily so the PhysX/2.x venv never touches isaaclab_newton).
@@ -184,7 +199,7 @@ class FrankaRobot(BaseRobot):
 
             robot.spawn.rigid_props = MujocoRigidBodyPropertiesCfg(gravcomp=c.gravity_compensation)
         if c.disable_arm_gravity:
-            robot.spawn.rigid_props.disable_gravity = True
+            set_spawn_prop(robot.spawn, "rigid_props", "disable_gravity", True)
         return {self.name: robot}
 
     # ----- lifecycle (hooks; the base orchestrates bind -> on_bind -> build_controller) ---------
@@ -245,14 +260,14 @@ class FrankaRobot(BaseRobot):
         """Home pose: default joint state; hold all joint position targets at default (the gripper PD
         holds, the arm targets are inert in torque mode). Root written to the fixed spawn pose + origin."""
         art = self.articulation
-        jp = art.data.default_joint_pos[env_ids].clone()
-        jv = art.data.default_joint_vel[env_ids].clone()
+        jp = T(art.data.default_joint_pos)[env_ids].clone()
+        jv = T(art.data.default_joint_vel)[env_ids].clone()
         art.write_joint_state_to_sim(jp, jv, env_ids=env_ids)
         art.set_joint_position_target(jp, env_ids=env_ids)
         art.set_joint_effort_target(torch.zeros_like(jp), env_ids=env_ids)
-        root = art.data.default_root_state[env_ids].clone()
+        root = state_w(art.data.default_root_state)[env_ids].clone()
         root[:, 0:3] += self.env.iscene.env_origins[env_ids]
-        art.write_root_state_to_sim(root, env_ids)
+        write_root_state(art, root, env_ids)
         if self.controller is not None:
             self.controller.reset(env_ids)
 

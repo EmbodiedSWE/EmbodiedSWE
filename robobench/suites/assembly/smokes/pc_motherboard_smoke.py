@@ -29,12 +29,14 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--holes", type=int, default=0, help="fasten only the first N holes (0 = all)")
 parser.add_argument("--video", type=str, default="", help="save an mp4 here (needs --headless --enable_cameras)")
 parser.add_argument("--cap", type=int, default=8, help="with --video: capture one frame every N steps (8 at dt=1/240 -> real-time at 30 fps)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -47,7 +49,7 @@ import torch  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 
 import robobench  # noqa: E402
-from isaaclab.utils.math import quat_apply_inverse  # noqa: E402
+from robobench.core.quat import quat_apply_inverse  # noqa: E402
 from robobench.core import EnvCfg  # noqa: E402
 from robobench.suites.assembly.scenes import PcMotherboardAssemblySceneCfg  # noqa: E402
 from robobench.suites.assembly.smokes import close_and_exit  # noqa: E402
@@ -152,7 +154,7 @@ def main() -> None:
     env.sim.reset()  # re-parse physics so the USD edits (and camera) are picked up
     env.reset()
 
-    case_pos = case.data.root_pos_w.clone()  # (n, 3): origin ON the board face, at its centre
+    case_pos = T(case.data.root_pos_w).clone()  # (n, 3): origin ON the board face, at its centre
     board_z = case_pos[:, 2].clone()
     holes_w = case_pos[:, None, :2] + torch.tensor(sc.cfg.hole_xy, device=device)[None, :B]  # (n, B, 2)
 
@@ -169,7 +171,7 @@ def main() -> None:
     # the bolts spawned already staged in their holes at reset.
 
     def depth(b: int) -> torch.Tensor:  # bolt b's tip depth below the board face (m), per env
-        return board_z - bolts[b].data.root_pos_w[:, 2]
+        return board_z - T(bolts[b].data.root_pos_w)[:, 2]
 
     def reseat_key(b: int) -> None:
         """FALLBACK ONLY (logged): teleport the key into bolt `b`'s socket if a PD insertion ever
@@ -177,14 +179,14 @@ def main() -> None:
         yaw = STAGE_YAW - sc.screw_turn[:, b]
         kt = torch.zeros(n, 13, device=device)
         kt[:, 0:2] = holes_w[:, b]
-        kt[:, 2] = bolts[b].data.root_pos_w[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
+        kt[:, 2] = T(bolts[b].data.root_pos_w)[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
         kt[:, 3] = torch.cos(yaw / 2)
         kt[:, 6] = torch.sin(yaw / 2)
-        key.write_root_state_to_sim(kt, ids)
+        write_root_state(key, kt, ids)
 
     def key_wrench(f: torch.Tensor, t: torch.Tensor) -> None:
         """Apply a WORLD wrench to the key in its CURRENT link frame."""
-        qk = key.data.root_link_quat_w
+        qk = quat_w(key.data.root_link_quat_w)
         key.set_external_force_and_torque(quat_apply_inverse(qk, f).unsqueeze(1),
                                           quat_apply_inverse(qk, t).unsqueeze(1))
 
@@ -194,48 +196,48 @@ def main() -> None:
         tip onto the socket axis and the key's axis onto the bolt's."""
         press, w_tgt, t_cap = DRIVE_CTL
         bolt = bolts[b]
-        up_b = up_axis_of(bolt.data.root_quat_w)
+        up_b = up_axis_of(quat_w(bolt.data.root_quat_w))
         f = torch.zeros(n, 3, device=device)
         t = torch.zeros(n, 3, device=device)
         f[:, :] = -press * ramp * up_b
         # servo the spin toward -w_tgt (screw-in), authority t_cap; target 0 once travel is done
-        wz = key.data.root_ang_vel_w[:, 2]
+        wz = T(key.data.root_ang_vel_w)[:, 2]
         tgt = torch.where(depth(b) < STOP_DEPTH, -w_tgt * torch.ones_like(wz), torch.zeros_like(wz))
         t[:, 2] = torch.clamp(KW * (tgt - wz), -t_cap * ramp, t_cap * ramp)
         # soft PD pulling the key tip onto the socket axis and riding the descending floor
-        pos = key.data.root_link_pos_w
-        vel = key.data.root_link_lin_vel_w
+        pos = T(key.data.root_link_pos_w)
+        vel = T(key.data.root_link_lin_vel_w)
         f[:, 0:2] += -KP_XY * (pos[:, 0:2] - holes_w[:, b]) - KD_XY * vel[:, 0:2]
-        floor_z = bolt.data.root_pos_w[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
+        floor_z = T(bolt.data.root_pos_w)[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
         f[:, 2] += -KP_ZK * (pos[:, 2] - floor_z) - KD_ZK * vel[:, 2]
         # soft tilt righting toward the BOLT's axis; damping only on wx/wy — yaw + spin stay free
-        up_k = up_axis_of(key.data.root_quat_w)
-        t[:, 0:2] += KP_TILT * torch.cross(up_k, up_b, dim=-1)[:, 0:2] - KD_TILT * key.data.root_ang_vel_w[:, 0:2]
+        up_k = up_axis_of(quat_w(key.data.root_quat_w))
+        t[:, 0:2] += KP_TILT * torch.cross(up_k, up_b, dim=-1)[:, 0:2] - KD_TILT * T(key.data.root_ang_vel_w)[:, 0:2]
         key_wrench(f, t)
 
     def yaw_err_to(b: int) -> torch.Tensor:
         """Smallest key yaw change that matches bolt `b`'s hex clocking (mod 60 deg), (n,)."""
-        d = (STAGE_YAW - sc.screw_turn[:, b] - yaw_of(key.data.root_quat_w)) % (math.pi / 3)
+        d = (STAGE_YAW - sc.screw_turn[:, b] - yaw_of(quat_w(key.data.root_quat_w))) % (math.pi / 3)
         return torch.where(d > math.pi / 6, d - math.pi / 3, d)
 
     def hop_key(tgt_xy: torch.Tensor, tgt_z: torch.Tensor, align_to: int | None = None) -> None:
         """Force-only travel update: PD the key tip toward a world target (no press, tilt righted
         to vertical). The spin is braked, or yaw-servoed onto bolt `align_to`'s hex clocking."""
-        pos = key.data.root_link_pos_w
-        vel = key.data.root_link_lin_vel_w
+        pos = T(key.data.root_link_pos_w)
+        vel = T(key.data.root_link_lin_vel_w)
         f = torch.zeros(n, 3, device=device)
         t = torch.zeros(n, 3, device=device)
         f[:, 0:2] = -KP_XY * (pos[:, 0:2] - tgt_xy) - KD_XY * vel[:, 0:2]
         f[:, 2] = -KP_Z * (pos[:, 2] - tgt_z) - KD_Z * vel[:, 2]
-        wz = key.data.root_ang_vel_w[:, 2]
+        wz = T(key.data.root_ang_vel_w)[:, 2]
         if align_to is None:
             t[:, 2] = torch.clamp(KW * (0.0 - wz), -DRIVE_CTL[2], DRIVE_CTL[2])
         else:
             t[:, 2] = torch.clamp(KP_YAW * yaw_err_to(align_to) - KD_YAW * wz, -DRIVE_CTL[2], DRIVE_CTL[2])
-        up_k = up_axis_of(key.data.root_quat_w)
+        up_k = up_axis_of(quat_w(key.data.root_quat_w))
         ez = torch.zeros_like(up_k)
         ez[:, 2] = 1.0
-        t[:, 0:2] += KP_TILT * torch.cross(up_k, ez, dim=-1)[:, 0:2] - KD_TILT * key.data.root_ang_vel_w[:, 0:2]
+        t[:, 0:2] += KP_TILT * torch.cross(up_k, ez, dim=-1)[:, 0:2] - KD_TILT * T(key.data.root_ang_vel_w)[:, 0:2]
         key_wrench(f, t)
 
     def step(i: int) -> None:
@@ -269,45 +271,45 @@ def main() -> None:
         ramp = min(1.0, (i - marker) / ramp_steps) if ramp_steps > 0 else 1.0
         if phase == "show":
             if i >= show_end:  # the bolts spawned staged; the key flies over from the table
-                prev_key_yaw = yaw_of(key.data.root_quat_w)
+                prev_key_yaw = yaw_of(quat_w(key.data.root_quat_w))
                 phase, marker = "lift", i
         elif phase == "lift":  # rise (and right itself) to the travel height, rate-limited
-            pos = key.data.root_link_pos_w
+            pos = T(key.data.root_link_pos_w)
             tgt_z = torch.minimum(pos[:, 2] + 0.03, board_z + TRAVEL_Z)
             hop_key(pos[:, 0:2], tgt_z)
             up_here = (board_z + TRAVEL_Z - pos[:, 2]) < 0.004
-            upright = up_axis_of(key.data.root_quat_w)[:, 2] > math.cos(math.radians(5.0))
+            upright = up_axis_of(quat_w(key.data.root_quat_w))[:, 2] > math.cos(math.radians(5.0))
             if bool((up_here & upright).all()) or i - marker >= lift_steps:
-                glide_from = key.data.root_link_pos_w[:, 0:2].clone()
+                glide_from = T(key.data.root_link_pos_w)[:, 0:2].clone()
                 phase, marker = "glide", i
         elif phase == "glide":  # ease over to the target hole at travel height
             s = smoothstep((i - marker) / glide_steps)
             tgt = glide_from + s * (holes_w[:, active] - glide_from)
             hop_key(tgt, board_z + TRAVEL_Z)
-            arrived = (key.data.root_link_pos_w[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.003
+            arrived = (T(key.data.root_link_pos_w)[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.003
             if (i - marker >= glide_steps and bool(arrived.all())) or i - marker >= 2 * glide_steps:
                 phase, marker = "align", i
         elif phase == "align":  # hover over the socket, servo the hex clocking into register
             hop_key(holes_w[:, active], board_z + TRAVEL_Z, align_to=active)
-            centred = (key.data.root_link_pos_w[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.0015
-            aligned = (yaw_err_to(active).abs() < ALIGN_TOL) & (key.data.root_ang_vel_w[:, 2].abs() < 0.5)
+            centred = (T(key.data.root_link_pos_w)[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.0015
+            aligned = (yaw_err_to(active).abs() < ALIGN_TOL) & (T(key.data.root_ang_vel_w)[:, 2].abs() < 0.5)
             if bool((aligned & centred).all()) or i - marker >= align_steps:
-                insert_from = key.data.root_link_pos_w[:, 2].clone()
+                insert_from = T(key.data.root_link_pos_w)[:, 2].clone()
                 phase, marker = "insert", i
         elif phase == "insert":  # descend into the open hex, clocking held
             s = smoothstep((i - marker) / insert_steps)
-            floor_z = bolts[active].data.root_pos_w[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
+            floor_z = T(bolts[active].data.root_pos_w)[:, 2] + SOCKET_FLOOR_Z + KEY_TIP_HOVER
             hop_key(holes_w[:, active], insert_from + s * (floor_z - insert_from), align_to=active)
-            kgap = key.data.root_link_pos_w[:, 2] - floor_z
-            centred = (key.data.root_link_pos_w[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.0015
+            kgap = T(key.data.root_link_pos_w)[:, 2] - floor_z
+            centred = (T(key.data.root_link_pos_w)[:, 0:2] - holes_w[:, active]).norm(dim=-1) < 0.0015
             if bool(((kgap.abs() < 0.0005) & centred).all()):
-                prev_key_yaw = yaw_of(key.data.root_quat_w)
+                prev_key_yaw = yaw_of(quat_w(key.data.root_quat_w))
                 key_turn = torch.zeros(n, device=device)
                 phase, marker = "drive", i
             elif i - marker >= 2 * insert_steps:  # fallback, keeps the smoke robust
                 print(f"  WARN: insertion at hole {active} timed out — reseating by teleport", flush=True)
                 reseat_key(active)
-                prev_key_yaw = yaw_of(key.data.root_quat_w)
+                prev_key_yaw = yaw_of(quat_w(key.data.root_quat_w))
                 key_turn = torch.zeros(n, device=device)
                 phase, marker = "drive", i
         elif phase == "drive":
@@ -327,14 +329,14 @@ def main() -> None:
 
         step(i)
         if phase != "show":  # the scene's mechanic advances the joints; track our own key spin
-            kcur = yaw_of(key.data.root_quat_w)
+            kcur = yaw_of(quat_w(key.data.root_quat_w))
             key_turn = key_turn - _wrap(kcur - prev_key_yaw)
             prev_key_yaw = kcur
 
         if i % log_every == 0:
             d = depth(active) * 1e3
             slip = torch.rad2deg(key_turn - sc.screw_turn[:, active])
-            kgap = (key.data.root_link_pos_w[:, 2] - bolts[active].data.root_pos_w[:, 2] - SOCKET_FLOOR_Z) * 1e3
+            kgap = (T(key.data.root_link_pos_w)[:, 2] - T(bolts[active].data.root_pos_w)[:, 2] - SOCKET_FLOOR_Z) * 1e3
             print(f"  step {i:5d} [{phase:6s}] hole {active} | tip depth {d.mean():+6.2f}mm | bolt "
                   f"{torch.rad2deg(sc.screw_turn[:, active]).mean():+7.0f}deg | key-bolt slip {slip.mean():+6.1f}deg | "
                   f"key-floor {kgap.mean():+5.2f}mm", flush=True)

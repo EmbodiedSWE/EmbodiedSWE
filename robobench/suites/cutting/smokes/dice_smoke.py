@@ -19,6 +19,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--env", default="cutting.dice")
 parser.add_argument("--food", default="", help="override the scene's food (e.g. potato)")
@@ -26,7 +28,7 @@ parser.add_argument("--planes", type=int, default=0, help="stop after this many 
 parser.add_argument("--gate", nargs="*", default=[], metavar="KEY=VAL",
                     help="scene cfg overrides, e.g. depth_past_center=0.01")
 parser.add_argument("--num_envs", type=int, default=1)
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -95,11 +97,11 @@ def main() -> None:
 
     def gate_forensics(idx):
         """The scene gate's terms for env 0, per weld pair of a plane."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         c = scene.cfg
         axis, p = scene.planes[idx]
-        kp, kq = scene.knife.data.root_pos_w[:1], scene.knife.data.root_quat_w[:1]
+        kp, kq = T(scene.knife.data.root_pos_w)[:1], quat_w(scene.knife.data.root_quat_w)[:1]
         N = scene._edge_local.shape[0]
         pts = kp + quat_apply(kq.expand(N, 4), scene._edge_local)
         bn = quat_apply(kq, torch.tensor([[0.0, 0.0, 1.0]], device=device))[0]
@@ -128,7 +130,7 @@ def main() -> None:
         st[:, 0:3] = root + env.iscene.env_origins
         st[:, 3:7] = torch.tensor(cur_q[0], device=device)
         st[:, 7:] = 0.0
-        scene.knife.write_root_state_to_sim(st)
+        write_root_state(scene.knife, st)
 
     def advance(seconds, target=None, stop_on_cut=None):
         a = list(cur)

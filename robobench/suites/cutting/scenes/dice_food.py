@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import torch
 
 from robobench.core import SCENES, BaseScene
+from robobench.core.isaaclab_compat import T, quat_w, state_w
 
 from .slice_food import SliceFoodScene, SliceFoodSceneCfg
 
@@ -128,11 +129,11 @@ class DiceFoodScene(SliceFoodScene):
     def _pair_geometry(self):
         """Per weld pair, LIVE: its cut point (n, P, 3) and cut-plane normal (n, P, 3), each
         carried rigidly by the pair's two pieces and averaged (identical while still welded)."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         n, P = self.env.num_envs, len(self.pairs)
-        pos = torch.stack([pc.data.root_pos_w for pc in self.pieces], dim=1)  # (n, K, 3)
-        quat = torch.stack([pc.data.root_quat_w for pc in self.pieces], dim=1)  # (n, K, 4)
+        pos = torch.stack([T(pc.data.root_pos_w) for pc in self.pieces], dim=1)  # (n, K, 3)
+        quat = torch.stack([quat_w(pc.data.root_quat_w) for pc in self.pieces], dim=1)  # (n, K, 4)
         qa = quat[:, self._pair_a].reshape(-1, 4)
         qb = quat[:, self._pair_b].reshape(-1, 4)
         oa = self._pair_off_a.unsqueeze(0).expand(n, P, 3).reshape(-1, 3)
@@ -158,8 +159,8 @@ class DiceFoodScene(SliceFoodScene):
     # ----- state ----------------------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         return {
-            "pieces": torch.stack([p.data.root_state_w[env_ids].clone() for p in self.pieces], dim=1),
-            "knife": self.knife.data.root_state_w[env_ids].clone(),
+            "pieces": torch.stack([state_w(p.data.root_state_w)[env_ids].clone() for p in self.pieces], dim=1),
+            "knife": state_w(self.knife.data.root_state_w)[env_ids].clone(),
             "cut": self.pair_cut[env_ids].clone(),  # per weld pair
         }
 
@@ -205,12 +206,12 @@ class DiceFoodScene(SliceFoodScene):
         pair's plane normal, pressed below the release depth (the cut point minus
         `depth_past_center`, or bottomed on the board), both pieces settled, and the knife
         pressing (not rising)."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         c = self.cfg
         dev = self.env.device
         n = self.env.num_envs
-        kp, kq = self.knife.data.root_pos_w, self.knife.data.root_quat_w
+        kp, kq = T(self.knife.data.root_pos_w), quat_w(self.knife.data.root_quat_w)
         N = self._edge_local.shape[0]
         kq_rep = kq.unsqueeze(1).expand(n, N, 4).reshape(-1, 4)
         el_rep = self._edge_local.unsqueeze(0).expand(n, N, 3).reshape(-1, 3)
@@ -229,11 +230,11 @@ class DiceFoodScene(SliceFoodScene):
         depth_thresh = torch.maximum(aim[..., 2] - c.depth_past_center,
                                      torch.full_like(aim[..., 2], self._board_top + 0.0015))
         pressed = ep[..., 2] < depth_thresh
-        speed = torch.stack([pc.data.root_lin_vel_w.norm(dim=-1) for pc in self.pieces], dim=1)
+        speed = torch.stack([T(pc.data.root_lin_vel_w).norm(dim=-1) for pc in self.pieces], dim=1)
         settled = (speed[:, self._pair_a] < c.food_settle_speed) & \
                   (speed[:, self._pair_b] < c.food_settle_speed)
         # release only while the blade PRESSES, never while it rises out of the kerf
-        pressing = (self.knife.data.root_lin_vel_w[:, 2] < c.press_vz_max).unsqueeze(1)
+        pressing = (T(self.knife.data.root_lin_vel_w)[:, 2] < c.press_vz_max).unsqueeze(1)
         return self.pair_cut | (near & at_flesh & aligned & pressed & settled & pressing)
 
     def _reconcile_cuts(self, env_ids, target) -> None:

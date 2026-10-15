@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from robobench.core import CONTROLLERS, BaseController, BaseControllerCfg
+from robobench.core.isaaclab_compat import T, physx_view, quat_w
 
 if TYPE_CHECKING:
     import torch
@@ -74,7 +75,7 @@ class _TaskSpaceController(BaseController):
         self._q_default = (
             torch.tensor(c.nullspace_dof_pos, device=dev)
             if c.nullspace_dof_pos
-            else art.data.default_joint_pos[0, self.joint_ids].clone()
+            else T(art.data.default_joint_pos)[0, self.joint_ids].clone()
         )
         self._n_arm = len(self.joint_ids)
         # prev-action buffer iff smoothing is on (else stateless)
@@ -120,7 +121,7 @@ class _TaskSpaceController(BaseController):
         """Latch the EE pose target (current pose + scaled delta) from `action`, held until the next
         latch. EMA smoothing lives here so it runs at the control rate, not per physics step."""
         import torch
-        from isaaclab.utils.math import quat_from_angle_axis, quat_mul
+        from robobench.core.quat import quat_from_angle_axis, quat_mul
 
         art = self._robot.articulation
         c = self.cfg
@@ -128,8 +129,8 @@ class _TaskSpaceController(BaseController):
             action = c.ema_factor * action + (1.0 - c.ema_factor) * self._prev_action
             self._prev_action.copy_(action)
 
-        ee_pos = art.data.body_pos_w[:, self._ee_idx]
-        ee_quat = art.data.body_quat_w[:, self._ee_idx]
+        ee_pos = T(art.data.body_pos_w)[:, self._ee_idx]
+        ee_quat = quat_w(art.data.body_quat_w)[:, self._ee_idx]
         self._target_pos = ee_pos + action[:, 0:3] * c.pos_scale
         rot_action = action[:, 3:6].clone()
         if c.unidirectional_rot:
@@ -142,16 +143,16 @@ class _TaskSpaceController(BaseController):
     def _compute_torque(self) -> "torch.Tensor":
         """Joint torque toward the latched target from the LIVE state — runs every physics step."""
         import torch
-        from isaaclab.utils.math import axis_angle_from_quat, quat_conjugate, quat_mul
+        from robobench.core.quat import axis_angle_from_quat, quat_conjugate, quat_mul
 
         art = self._robot.articulation
         c = self.cfg
         jids = self.joint_ids
 
         # current end-effector pose / velocity (world)
-        ee_pos = art.data.body_pos_w[:, self._ee_idx]
-        ee_quat = art.data.body_quat_w[:, self._ee_idx]
-        ee_vel = torch.cat((art.data.body_lin_vel_w[:, self._ee_idx], art.data.body_ang_vel_w[:, self._ee_idx]), dim=-1)
+        ee_pos = T(art.data.body_pos_w)[:, self._ee_idx]
+        ee_quat = quat_w(art.data.body_quat_w)[:, self._ee_idx]
+        ee_vel = torch.cat((T(art.data.body_lin_vel_w)[:, self._ee_idx], T(art.data.body_ang_vel_w)[:, self._ee_idx]), dim=-1)
 
         # task-space pose error to the latched target (pos + axis-angle, shortest path vs the LIVE pose)
         target_quat = torch.where((self._target_quat * ee_quat).sum(-1, keepdim=True) >= 0, self._target_quat, -self._target_quat)
@@ -159,15 +160,15 @@ class _TaskSpaceController(BaseController):
         pose_error = torch.cat((self._target_pos - ee_pos, axis_angle_from_quat(quat_error)), dim=-1)  # (n, 6)
 
         # Jacobian, mass matrix, op-space inertia Λ (all from live state)
-        jac = art.root_physx_view.get_jacobians()[:, self._jac_ee_idx, 0:6, :][:, :, jids]  # (n, 6, n_arm)
+        jac = physx_view(art).get_jacobians()[:, self._jac_ee_idx, 0:6, :][:, :, jids]  # (n, 6, n_arm)
         jac_T = jac.transpose(1, 2)
-        mass = art.root_physx_view.get_generalized_mass_matrices()[:, jids][:, :, jids]  # (n, n_arm, n_arm)
+        mass = physx_view(art).get_generalized_mass_matrices()[:, jids][:, :, jids]  # (n, n_arm, n_arm)
         mass_inv = torch.inverse(mass)
         lambda_task = torch.inverse(jac @ mass_inv @ jac_T)  # Λ = (J M⁻¹ Jᵀ)⁻¹
 
         # task torque (the two forms differ in `_task_force`) + dynamically-consistent nullspace posture
         tau = (jac_T @ self._task_force(pose_error, ee_vel, lambda_task).unsqueeze(-1)).squeeze(-1)
-        dof_pos, dof_vel = art.data.joint_pos[:, jids], art.data.joint_vel[:, jids]
+        dof_pos, dof_vel = T(art.data.joint_pos)[:, jids], T(art.data.joint_vel)[:, jids]
         # NO wrap on the posture error: every arm this drives has limited-range
         # joints (no continuous rotation), so the true error is the plain
         # difference — wrapping to [-pi, pi] REVERSES the pull for a joint wound

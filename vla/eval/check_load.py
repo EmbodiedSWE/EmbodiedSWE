@@ -37,7 +37,9 @@ parser.add_argument("--out", default=str(Path(__file__).parent / "_out"))
 
 from isaaclab.app import AppLauncher  # noqa: E402
 
-AppLauncher.add_app_launcher_args(parser)
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
+add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
 

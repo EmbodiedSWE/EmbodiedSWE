@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # rl/ -> robobench
 
 from isaaclab.app import AppLauncher  # noqa: E402
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--task", required=True)
 ap.add_argument("--reward", default="progress")
@@ -29,7 +31,7 @@ ap.add_argument("--set", nargs="*", default=[], help="config overrides key=value
 ap.add_argument("--name", default="", help="suffix for the run dir")
 ap.add_argument("--runs_dir", default=str(Path(__file__).resolve().parents[1] / "runs"))
 ap.add_argument("--resume", default="", help="model_<it>.pt to load before training")
-AppLauncher.add_app_launcher_args(ap)
+add_app_launcher_args(ap)
 args = ap.parse_args()
 app = AppLauncher(args).app
 

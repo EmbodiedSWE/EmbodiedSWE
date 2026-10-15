@@ -80,6 +80,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from robobench.core import CONTROLLERS, BaseController, BaseControllerCfg
+from robobench.core.isaaclab_compat import T
 
 if TYPE_CHECKING:
     import torch
@@ -171,7 +172,7 @@ class LocoPolicyController(BaseController):
                 f"{tuple(out.shape)[1]}. Re-vendor with robots/assets/fetch_g1_locomotion.py"
             )
 
-        self._offset = art.data.default_joint_pos[:, self.joint_ids].clone()
+        self._offset = T(art.data.default_joint_pos)[:, self.joint_ids].clone()
         self._last_action = torch.zeros(robot.env.num_envs, len(self.joint_ids), device=device)
         clip = torch.tensor(self.cfg.command_clip, dtype=torch.float32, device=device)  # (4, 2)
         self._clip_lo, self._clip_hi = clip[:, 0], clip[:, 1]
@@ -198,8 +199,8 @@ class LocoPolicyController(BaseController):
                 d.root_lin_vel_b,
                 d.root_ang_vel_b,
                 d.projected_gravity_b,
-                d.joint_pos[:, jids] - d.default_joint_pos[:, jids],
-                (d.joint_vel[:, jids] - d.default_joint_vel[:, jids]) * 0.1,
+                T(d.joint_pos)[:, jids] - T(d.default_joint_pos)[:, jids],
+                (T(d.joint_vel)[:, jids] - T(d.default_joint_vel)[:, jids]) * 0.1,
                 self._last_action,
             ),
             dim=-1,

@@ -67,6 +67,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, physx_view, quat_w, rot_cfg, state_w, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -364,7 +365,7 @@ class FruitsOnPlateScene(BaseScene):
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
                 init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z),
-                                                       rot=preset["orient"]),
+                                                       rot=rot_cfg(preset["orient"])),
                 spawn=table_spawn,
             ),
             "plate": RigidObjectCfg(
@@ -385,7 +386,7 @@ class FruitsOnPlateScene(BaseScene):
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
                     pos=(wx + pox, wy + poy, z0),
-                    rot=self._yaw_quat(c.plate_yaw_deg)),
+                    rot=rot_cfg(self._yaw_quat(c.plate_yaw_deg))),
             ),
         }
         for i, (name, key, _fruit, scale, mass) in enumerate(c.manifest):
@@ -411,7 +412,7 @@ class FruitsOnPlateScene(BaseScene):
                     # spawn yaw matters for the long utensils: at their authored yaw the spatula
                     # crosses the whole far edge, so the first frame — before `reset()` runs —
                     # would start it inside its neighbour
-                    rot=self._yaw_quat((self._fixed_pose(name) or (0, 0, 0.0))[2])),
+                    rot=rot_cfg(self._yaw_quat((self._fixed_pose(name) or (0, 0, 0.0))[2]))),
             )
         return out
 
@@ -533,7 +534,7 @@ class FruitsOnPlateScene(BaseScene):
         # pads is mu ~0.8-1.2.
         if not self._friction_written:
             for body in self.items.values():
-                view = body.root_physx_view
+                view = physx_view(body)
                 mp = view.get_material_properties().clone()  # (N, shapes, 3)
                 mp[..., 0] = c.item_static_friction
                 mp[..., 1] = c.item_dynamic_friction
@@ -561,7 +562,7 @@ class FruitsOnPlateScene(BaseScene):
         proot[:, 3] = q[0]
         proot[:, 6] = q[3]
         proot[:, 0:3] += origin
-        self.plate.write_root_state_to_sim(proot, env_ids)
+        write_root_state(self.plate, proot, env_ids)
 
         # --- items: grid slot (optionally permuted) + jitter + free yaw; absent -> depot ---
         n = len(c.manifest)
@@ -613,20 +614,20 @@ class FruitsOnPlateScene(BaseScene):
                 st[absent, 1] = wy + 1.2 + 0.16 * (i // 3)
                 st[absent, 2] = self._ground_z() + 0.05
             st[:, 0:3] += origin
-            self.items[name].write_root_state_to_sim(st, env_ids)
+            write_root_state(self.items[name], st, env_ids)
 
     # ----- state (full, restorable) -----------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         return {
-            "plate": self.plate.data.root_state_w[env_ids].clone(),
-            "items": {n: b.data.root_state_w[env_ids].clone() for n, b in self.items.items()},
+            "plate": state_w(self.plate.data.root_state_w)[env_ids].clone(),
+            "items": {n: state_w(b.data.root_state_w)[env_ids].clone() for n, b in self.items.items()},
             "present": self.present[env_ids].clone(),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
-        self.plate.write_root_state_to_sim(state["plate"], env_ids)
+        write_root_state(self.plate, state["plate"], env_ids)
         for n, b in self.items.items():
-            b.write_root_state_to_sim(state["items"][n], env_ids)
+            write_root_state(b, state["items"][n], env_ids)
         self.present[env_ids] = state["present"]
 
     # ----- description ------------------------------------------------------------------------
@@ -662,13 +663,13 @@ class FruitsOnPlateScene(BaseScene):
         """(N, n_items) bool: each item's origin inside the counted plate volume, computed in the
         plate's body frame (plate motion is irrelevant) and measured radially from the plate's
         GEOMETRIC CENTRE."""
-        from isaaclab.utils.math import quat_apply_inverse
+        from robobench.core.quat import quat_apply_inverse
 
-        pp = self.plate.data.root_pos_w  # (N, 3) — the prim origin, not the dish centre
-        pq = self.plate.data.root_quat_w  # (N, 4)
+        pp = T(self.plate.data.root_pos_w)  # (N, 3) — the prim origin, not the dish centre
+        pq = quat_w(self.plate.data.root_quat_w)  # (N, 4)
         cols = []
         for name in self.names:
-            loc = quat_apply_inverse(pq, self.items[name].data.root_pos_w - pp)
+            loc = quat_apply_inverse(pq, T(self.items[name].data.root_pos_w) - pp)
             radial = (loc[:, :2] - self._plate_center).norm(dim=-1)
             inside_xy = radial <= self._plate_r
             inside_z = (loc[:, 2] >= self._plate_floor) & (loc[:, 2] <= self._plate_ceil)
@@ -677,7 +678,7 @@ class FruitsOnPlateScene(BaseScene):
 
     def _speed(self) -> torch.Tensor:
         """(N, n_items) |lin vel| per item."""
-        return torch.stack([b.data.root_lin_vel_w.norm(dim=-1)
+        return torch.stack([T(b.data.root_lin_vel_w).norm(dim=-1)
                             for b in self.items.values()], dim=1)
 
     def placed(self) -> torch.Tensor:

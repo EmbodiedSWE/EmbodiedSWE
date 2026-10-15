@@ -28,6 +28,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, rot_cfg, state_w, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -155,7 +156,7 @@ class ClassifyObjectsScene(BaseScene):
             ),
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=preset["orient"]),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=rot_cfg(preset["orient"])),
                 spawn=table_spawn,
             ),
         }
@@ -264,16 +265,16 @@ class ClassifyObjectsScene(BaseScene):
             st[:, 3] = torch.cos(half)
             st[:, 6] = torch.sin(half)
             st[:, 0:3] += origin
-            self.blocks[name].write_root_state_to_sim(st, env_ids)
+            write_root_state(self.blocks[name], st, env_ids)
 
     # ----- state (full, restorable) --------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
-        return {"blocks": {n: b.data.root_state_w[env_ids].clone() for n, b in self.blocks.items()},
+        return {"blocks": {n: state_w(b.data.root_state_w)[env_ids].clone() for n, b in self.blocks.items()},
                 "zones": self._zones[env_ids].clone()}
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         for n, b in self.blocks.items():
-            b.write_root_state_to_sim(state["blocks"][n], env_ids)
+            write_root_state(b, state["blocks"][n], env_ids)
         self._zones[env_ids] = state["zones"]
 
     # ----- description ---------------------------------------------------------------------------
@@ -293,8 +294,8 @@ class ClassifyObjectsScene(BaseScene):
     # ----- progress / rubric ----------------------------------------------------------------------
     def _block_tensors(self) -> tuple[torch.Tensor, torch.Tensor]:
         """(pos_w (N,B,3), |lin_vel| (N,B)) for all blocks, manifest order."""
-        pos = torch.stack([b.data.root_pos_w for b in self.blocks.values()], dim=1)
-        vel = torch.stack([b.data.root_lin_vel_w.norm(dim=-1) for b in self.blocks.values()], dim=1)
+        pos = torch.stack([T(b.data.root_pos_w) for b in self.blocks.values()], dim=1)
+        vel = torch.stack([T(b.data.root_lin_vel_w).norm(dim=-1) for b in self.blocks.values()], dim=1)
         return pos, vel
 
     def sorted_mask(self) -> torch.Tensor:

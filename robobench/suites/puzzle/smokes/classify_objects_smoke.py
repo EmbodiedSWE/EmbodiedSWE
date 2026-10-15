@@ -16,6 +16,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args, write_root_state  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--demo", action="store_true", default=False)
@@ -23,7 +25,7 @@ parser.add_argument("--record_every", type=int, default=8)
 parser.add_argument("--no_video", action="store_true", default=False,
                     help="skip all rendering (predicate-only verify on a render-broken box)")
 parser.add_argument("--out", type=str, default="classify_objects_frames.npz")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
 if not getattr(args, "kit_args", None):
@@ -120,7 +122,7 @@ def main() -> None:
         st[:, 2] = c.surface_z + s / 2
         st[:, 3] = 1.0
         st[:, 0:3] += env.iscene.env_origins
-        scene.blocks[name].write_root_state_to_sim(st, all_ids)
+        write_root_state(scene.blocks[name], st, all_ids)
 
     # 1. show
     env.reset()
@@ -174,7 +176,7 @@ def main() -> None:
     st = torch.zeros(n, 13, device=device)
     st[:, 0] = zc[0]; st[:, 1] = zc[1]; st[:, 2] = c.surface_z + s / 2; st[:, 3] = 1.0
     st[:, 0:3] += env.iscene.env_origins
-    scene.blocks[probe].write_root_state_to_sim(st, all_ids)
+    write_root_state(scene.blocks[probe], st, all_ids)
     env.iscene.update(0.0)
     check("off-zone: block between zones not counted", not bool(scene.sorted_mask()[0, 0]))
     step(40)

@@ -20,9 +20,11 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1)
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -75,15 +77,15 @@ def main() -> None:
     for i in range(1, END + 1):
         if i == SHOW_END:  # stage each bolt upright, tip just above its platform's thread entry
             for k, bolt in enumerate(scene.bolts):
-                plat_pos = scene.platforms[k].data.root_pos_w  # (n, 3), world (incl. env origin)
+                plat_pos = T(scene.platforms[k].data.root_pos_w)  # (n, 3), world (incl. env origin)
                 st = torch.zeros(n, 13, device=device)
                 st[:, 0:3] = plat_pos
                 st[:, 2] += scene.cfg.plate_top + STAGE_GAP  # bolt origin is its TIP
                 st[:, 3] = 1.0  # identity quat -> head up, thread down, aligned with the hole
-                bolt.write_root_state_to_sim(st, all_ids)
+                write_root_state(bolt, st, all_ids)
                 if k == 0:
                     print(f"  staged | platform0 w={plat_pos[0].tolist()} bolt0 w={st[0, 0:3].tolist()}", flush=True)
-            prev_yaw = yaw_of(scene.bolts[0].data.root_quat_w)
+            prev_yaw = yaw_of(quat_w(scene.bolts[0].data.root_quat_w))
         elif SHOW_END < i < ASSEMBLE_END:  # press + twist (capped spin) to screw each bolt down
             f = torch.zeros(n, 3, device=device)
             f[:, 2] = PRESS
@@ -91,10 +93,10 @@ def main() -> None:
             for k, bolt in enumerate(scene.bolts):
                 t = torch.zeros(n, 3, device=device)
                 # Gate the twist short of the head stop (the head bottoms out at 24.8 mm tip depth).
-                drive = (bolt.data.root_ang_vel_w[:, 2] > TARGET_WZ) & (engaged[:, k] < STOP_DEPTH)
+                drive = (T(bolt.data.root_ang_vel_w)[:, 2] > TARGET_WZ) & (engaged[:, k] < STOP_DEPTH)
                 t[drive, 2] = TWIST
                 bolt.set_external_force_and_torque(f.unsqueeze(1), t.unsqueeze(1))
-            yaw = yaw_of(scene.bolts[0].data.root_quat_w)
+            yaw = yaw_of(quat_w(scene.bolts[0].data.root_quat_w))
             d = yaw - prev_yaw
             turn += torch.abs(d - 2 * torch.pi * torch.round(d / (2 * torch.pi)))  # wrapped |delta|
             prev_yaw = yaw

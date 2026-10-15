@@ -47,6 +47,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from robobench.core.assets import asset_path
+from robobench.core.isaaclab_compat import T, physx_view, quat_w, rot_cfg, state_w, write_root_pose, write_root_state
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
@@ -235,7 +236,7 @@ class ToolPackingScene(BaseScene):
             ),
             "workbench": AssetBaseCfg(
                 prim_path="{ENV_REGEX_NS}/Table",
-                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=preset["orient"]),
+                init_state=AssetBaseCfg.InitialStateCfg(pos=(wx, wy, table_z), rot=rot_cfg(preset["orient"])),
                 spawn=table_spawn,
             ),
             "toolbox": ArticulationCfg(
@@ -261,7 +262,7 @@ class ToolPackingScene(BaseScene):
                 ),
                 init_state=ArticulationCfg.InitialStateCfg(
                     pos=(wx + c.box_pos[0], wy + c.box_pos[1], c.surface_z),
-                    rot=(math.cos(half), 0.0, 0.0, math.sin(half)),
+                    rot=rot_cfg((math.cos(half), 0.0, 0.0, math.sin(half))),
                     joint_pos={".*": 0.0},
                     joint_vel={".*": 0.0},
                 ),
@@ -397,7 +398,7 @@ class ToolPackingScene(BaseScene):
             fr[:, j] = 0.3
         for j in self._drawer_j:
             fr[:, j] = 0.3
-        self.box.root_physx_view.set_dof_friction_coefficients(
+        physx_view(self.box).set_dof_friction_coefficients(
             fr, torch.arange(self.box.num_instances, device="cpu"))
 
         # --- toolbox: joints shut; root at nominal pose + jitter (root write also covers
@@ -412,7 +413,7 @@ class ToolPackingScene(BaseScene):
         root[:, 3] = torch.cos(half)
         root[:, 6] = torch.sin(half)
         root[:, 0:3] += origin
-        self.box.write_root_pose_to_sim(root[:, 0:7], env_ids)
+        write_root_pose(self.box, root[:, 0:7], env_ids)
         self.box.write_root_velocity_to_sim(torch.zeros(m, 6, device=dev), env_ids)
         nj = self.box.num_joints
         self.box.write_joint_state_to_sim(
@@ -436,24 +437,24 @@ class ToolPackingScene(BaseScene):
             st[:, 3] = torch.cos(h)
             st[:, 6] = torch.sin(h)
             st[:, 0:3] += origin
-            self.items[name].write_root_state_to_sim(st, env_ids)
+            write_root_state(self.items[name], st, env_ids)
 
     # ----- state (full, restorable) -----------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         return {
-            "box_root": self.box.data.root_state_w[env_ids].clone(),
-            "box_joint_pos": self.box.data.joint_pos[env_ids].clone(),
-            "box_joint_vel": self.box.data.joint_vel[env_ids].clone(),
-            "items": {n: b.data.root_state_w[env_ids].clone() for n, b in self.items.items()},
+            "box_root": state_w(self.box.data.root_state_w)[env_ids].clone(),
+            "box_joint_pos": T(self.box.data.joint_pos)[env_ids].clone(),
+            "box_joint_vel": T(self.box.data.joint_vel)[env_ids].clone(),
+            "items": {n: state_w(b.data.root_state_w)[env_ids].clone() for n, b in self.items.items()},
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
-        self.box.write_root_pose_to_sim(state["box_root"][:, 0:7], env_ids)
+        write_root_pose(self.box, state["box_root"][:, 0:7], env_ids)
         self.box.write_root_velocity_to_sim(state["box_root"][:, 7:13], env_ids)
         self.box.write_joint_state_to_sim(
             state["box_joint_pos"], state["box_joint_vel"], env_ids=env_ids)
         for n, b in self.items.items():
-            b.write_root_state_to_sim(state["items"][n], env_ids)
+            write_root_state(b, state["items"][n], env_ids)
 
     # ----- description --------------------------------------------------------------------------
     def describe(self) -> str:
@@ -486,28 +487,28 @@ class ToolPackingScene(BaseScene):
     def _item_in_tray(self) -> torch.Tensor:
         """(N, I) bool: each item's origin inside its ASSIGNED drawer's tray-interior box,
         computed in that drawer's body frame (drawer slide position is irrelevant)."""
-        from isaaclab.utils.math import quat_apply_inverse
+        from robobench.core.quat import quat_apply_inverse
 
-        pos = self.box.data.body_pos_w  # (N, B, 3)
-        quat = self.box.data.body_quat_w  # (N, B, 4)
+        pos = T(self.box.data.body_pos_w)  # (N, B, 3)
+        quat = quat_w(self.box.data.body_quat_w)  # (N, B, 4)
         cols = []
         for i, (name, _d, _m, _s, _z) in enumerate(self.cfg.manifest):
             b = self._drawer_b[self._assigned[i]]
-            loc = quat_apply_inverse(quat[:, b], self.items[name].data.root_pos_w - pos[:, b])
+            loc = quat_apply_inverse(quat[:, b], T(self.items[name].data.root_pos_w) - pos[:, b])
             cols.append(((loc - self._tray_c).abs() <= self._tray_h).all(dim=-1))
         return torch.stack(cols, dim=1)
 
     def drawer_pos(self) -> torch.Tensor:
         """(N, 3) drawer joint positions, rubric order (0 = shut, -travel = fully out)."""
-        return self.box.data.joint_pos[:, self._drawer_j]
+        return T(self.box.data.joint_pos)[:, self._drawer_j]
 
     def door_pos(self) -> torch.Tensor:
         """(N, 2) door joint angles in rad (0 = shut; left opens negative, right positive)."""
-        return self.box.data.joint_pos[:, self._door_j]
+        return T(self.box.data.joint_pos)[:, self._door_j]
 
     def stowed(self) -> torch.Tensor:
         """(N, I) bool: item settled inside its assigned drawer's tray."""
-        vel = torch.stack([b.data.root_lin_vel_w.norm(dim=-1) for b in self.items.values()], dim=1)
+        vel = torch.stack([T(b.data.root_lin_vel_w).norm(dim=-1) for b in self.items.values()], dim=1)
         return self._item_in_tray() & (vel < self.cfg.settle_speed)
 
     def drawers_closed(self) -> torch.Tensor:
@@ -521,8 +522,8 @@ class ToolPackingScene(BaseScene):
     def settled(self) -> torch.Tensor:
         """(N,) bool: items and box joints all quiet."""
         item_v = torch.stack(
-            [b.data.root_lin_vel_w.norm(dim=-1) for b in self.items.values()], dim=1)
-        jv = self.box.data.joint_vel
+            [T(b.data.root_lin_vel_w).norm(dim=-1) for b in self.items.values()], dim=1)
+        jv = T(self.box.data.joint_vel)
         drawers_still = jv[:, self._drawer_j].abs().amax(dim=1) < self.cfg.settle_joint_speed
         doors_still = (jv[:, self._door_j].abs().amax(dim=1) < self.cfg.settle_joint_speed * 10
                        if len(self._door_j) else torch.ones_like(drawers_still))

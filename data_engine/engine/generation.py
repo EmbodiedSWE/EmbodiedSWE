@@ -46,6 +46,7 @@ bands declared -> nominal at every index, exactly as before.
 """
 
 from __future__ import annotations
+from robobench.core.isaaclab_compat import T
 
 import importlib.util
 import json
@@ -480,8 +481,8 @@ class Recorder:
             )
         if self._intent_ok:
             art = self._raw.robot.articulation
-            if art.data.joint_pos_target is not None:
-                self.joint_targets.append(art.data.joint_pos_target.detach().cpu().clone())
+            if T(art.data.joint_pos_target) is not None:
+                self.joint_targets.append(T(art.data.joint_pos_target).detach().cpu().clone())
         return ret
 
 

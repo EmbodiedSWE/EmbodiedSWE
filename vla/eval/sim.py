@@ -14,6 +14,7 @@ Module imports are app-free; load_sim() needs a running AppLauncher.
 """
 
 from __future__ import annotations
+from robobench.core.isaaclab_compat import T, quat_w
 
 import json
 import sys
@@ -569,7 +570,7 @@ class EvalSim:
 
     # ----- obs ------------------------------------------------------------------------------------
     def _q(self):
-        return self.env.robot.articulation.data.joint_pos
+        return T(self.env.robot.articulation.data.joint_pos)
 
     def _closedness(self):
         q = self._q()
@@ -668,8 +669,8 @@ class EvalSim:
                 for f in leaf.cfg.frames:
                     link = f["link"] if isinstance(f, dict) else f.link
                     b = art.body_names.index(link)
-                    parts.append(art.data.body_pos_w[:, b] - self.env.iscene.env_origins)
-                    parts.append(art.data.body_quat_w[:, b])
+                    parts.append(T(art.data.body_pos_w)[:, b] - self.env.iscene.env_origins)
+                    parts.append(quat_w(art.data.body_quat_w)[:, b])
             else:
                 parts.append(torch.zeros((self.env.num_envs, leaf.action_dim),
                                          device=self.env.device))
@@ -701,7 +702,7 @@ class EvalSim:
             if self.env.robot.controller is not None:
                 self.env.robot.controller.reset(None)
         if self._base_pos is None:
-            self._base_pos = self.env.robot.articulation.data.root_pos_w.clone()
+            self._base_pos = T(self.env.robot.articulation.data.root_pos_w).clone()
         self._setup_grader()
         return self._warmup()
 
@@ -752,7 +753,7 @@ class EvalSim:
         t0s += [t0s[-1]] * (len(dirs) - len(t0s))
         if self._base_pos is None:
             self.env.reset(seed=0)
-            self._base_pos = self.env.robot.articulation.data.root_pos_w.clone()
+            self._base_pos = T(self.env.robot.articulation.data.root_pos_w).clone()
         datas = [np.load(d / "traj.npz") for d in dirs]
         keys = [k for k in datas[0].files if k != "action" and not k.startswith("robot/controller")]
         for d, dd in zip(dirs[1:], datas[1:]):

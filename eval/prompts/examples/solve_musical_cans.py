@@ -25,13 +25,15 @@ import math
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args, quat_w  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--max_sec", type=float, default=500.0, help="sim-time budget per episode (s)")
 parser.add_argument("--episodes", type=int, default=1, help="episodes to run (each is a fresh reset)")
 parser.add_argument("--video", action="store_true", help="record an mp4 of the run")
 parser.add_argument("--video_path", type=str, default="simgen_tasks/musical_cans/solve_video.mp4")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 if args.video:
     args.enable_cameras = True
@@ -39,7 +41,7 @@ if args.video:
 app = AppLauncher(args).app
 
 import torch  # noqa: E402
-from isaaclab.utils.math import (  # noqa: E402
+from robobench.core.quat import (  # noqa: E402
     axis_angle_from_quat,
     quat_conjugate,
     quat_from_matrix,
@@ -136,7 +138,7 @@ def main() -> None:
 
     # ----- low-level servo (pen_holder lineage) ----------------------------------------
     def ee_pose():
-        return art.data.body_pos_w[0, ee_idx], art.data.body_quat_w[0, ee_idx]
+        return art.data.body_pos_w[0, ee_idx], quat_w(art.data.body_quat_w)[0, ee_idx]
 
     def width():
         return 2.0 * art.data.joint_pos[0, fj1].item()
@@ -168,7 +170,7 @@ def main() -> None:
         row += [hp[0].item(), hp[1].item(), hp[2].item(),
                 2.0 * art.data.joint_pos[0, fj1].item()]
         for b in scene.cans:
-            row += b.data.root_pos_w[0].tolist() + b.data.root_quat_w[0].tolist()
+            row += b.data.root_pos_w[0].tolist() + quat_w(b.data.root_quat_w)[0].tolist()
         row.append(float(scene.score()[0].item()))
         log_rows.append(row)
 

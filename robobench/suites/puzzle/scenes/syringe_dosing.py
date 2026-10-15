@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from robobench.core import SCENES, BaseCfg, BaseScene, SimCfg
+from robobench.core.isaaclab_compat import T, physx_view, quat_w, rot_cfg, set_external_force_and_torque, state_w, write_root_state
 from robobench.core.assets import asset_path
 
 if TYPE_CHECKING:
@@ -262,7 +263,7 @@ class SyringeDosingScene(BaseScene):
                 ),
             ),
             init_state=ArticulationCfg.InitialStateCfg(
-                pos=(hx, hy, bz), rot=lie, joint_pos={"joint_plunger": 0.0}),
+                pos=(hx, hy, bz), rot=rot_cfg(lie), joint_pos={"joint_plunger": 0.0}),
             actuators={
                 "plunger": ImplicitActuatorCfg(
                     joint_names_expr=["joint_plunger"],
@@ -354,7 +355,7 @@ class SyringeDosingScene(BaseScene):
         st[:, 0:3] = self.env_origins[env_ids] + torch.tensor(
             (hx, hy, bz), device=dev)
         st[:, 3:7] = torch.tensor(lie, device=dev)
-        self.syringe.write_root_state_to_sim(st, env_ids)
+        write_root_state(self.syringe, st, env_ids)
         jp = torch.zeros(m, 1, device=dev)
         self.syringe.write_joint_state_to_sim(jp, jp.clone(), env_ids=env_ids)
         self.syringe.set_joint_effort_target(jp.clone(), env_ids=env_ids)
@@ -365,7 +366,7 @@ class SyringeDosingScene(BaseScene):
         # toolbox doors (2026-08-07): write dof friction/damping at reset via
         # root_physx_view with CPU tensors.
         n_all = self.env.num_envs
-        view = self.syringe.root_physx_view
+        view = physx_view(self.syringe)
         all_cpu = torch.arange(n_all, device="cpu", dtype=torch.int32)
         view.set_dof_friction_coefficients(
             torch.full((n_all, 1), c.plunger_friction, device="cpu"), all_cpu)
@@ -388,7 +389,7 @@ class SyringeDosingScene(BaseScene):
             st[:, 0:3] = self.env_origins[env_ids] + torch.tensor(pos, device=dev)
             st[:, 0:2] += (torch.rand(m, 2, device=dev) * 2 - 1) * c.reset_jitter
             st[:, 3] = 1.0
-            body.write_root_state_to_sim(st, env_ids)
+            write_root_state(body, st, env_ids)
 
         put_j(self.rack, (c.rack_pos[0], c.rack_pos[1], z0))
         put_j(self.reservoir, (c.res_pos[0], c.res_pos[1], z0 + c.res_h / 2))
@@ -416,26 +417,26 @@ class SyringeDosingScene(BaseScene):
     # ----- geometry helpers ---------------------------------------------------------------------
     def barrel_axis(self) -> torch.Tensor:
         """The barrel's +z (plunger-out) direction in world."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         ez = torch.tensor([0.0, 0.0, 1.0], device=self.env.device).expand(self.env.num_envs, 3)
-        return quat_apply(self.syringe.data.root_quat_w, ez)
+        return quat_apply(quat_w(self.syringe.data.root_quat_w), ez)
 
     def travel(self) -> torch.Tensor:
         """Plunger travel (m): + = drawn out, 0 = fully pushed. MEASURED — the
         prismatic joint position (a second arm pulling the plate moves it; joint
         friction holds it wherever it lands)."""
-        return self.syringe.data.joint_pos[:, self._joint_id[0]].clone()
+        return T(self.syringe.data.joint_pos)[:, self._joint_id[0]].clone()
 
     def tip_pos(self) -> torch.Tensor:
         """The nozzle tip point (world)."""
         c = self.cfg
-        return self.syringe.data.root_pos_w - self.barrel_axis() * (
+        return T(self.syringe.data.root_pos_w) - self.barrel_axis() * (
             c.barrel_l / 2 + c.nozzle_l)
 
     def plunger_top_w(self) -> torch.Tensor:
         """Thumb-plate centre (world) — the hook-grasp handle on the plunger link."""
-        return (self.syringe.data.body_pos_w[:, self._plunger_body]
+        return (T(self.syringe.data.body_pos_w)[:, self._plunger_body]
                 + self.barrel_axis() * (self.cfg.plunger_l / 2))
 
     def _seated_on(self, target_pos: torch.Tensor, rim_z: torch.Tensor) -> torch.Tensor:
@@ -453,16 +454,16 @@ class SyringeDosingScene(BaseScene):
         return (lat <= c.seat_tol) & (dz >= -0.012) & (dz <= c.seat_band) & upright
 
     def seated_reservoir(self) -> torch.Tensor:
-        r = self.reservoir.data.root_pos_w
+        r = T(self.reservoir.data.root_pos_w)
         return self._seated_on(r, r[:, 2] + self.cfg.res_h / 2)
 
     def well_mouths(self) -> torch.Tensor:
         """(num_envs, n_wells, 3) tube mouth centres in world (rim plane)."""
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         c = self.cfg
-        rp = self.rack.data.root_pos_w
-        rq = self.rack.data.root_quat_w
+        rp = T(self.rack.data.root_pos_w)
+        rq = quat_w(self.rack.data.root_quat_w)
         out = []
         for mx, my in c.tube_mouths:
             off = torch.tensor([mx, my, c.tube_rim_dz], device=self.env.device)
@@ -567,16 +568,16 @@ class SyringeDosingScene(BaseScene):
             sr.Set(Gf.Vec3f(1.0, 1.0, hr))
 
     def post_step(self) -> None:
-        from isaaclab.utils.math import quat_apply
+        from robobench.core.quat import quat_apply
 
         c = self.cfg
         dev = self.env.device
         n = self.env.num_envs
         all_ids = torch.arange(n, device=dev)
 
-        bp_f = self.syringe.data.root_pos_w
-        bv_f = self.syringe.data.root_lin_vel_w
-        bw_f = self.syringe.data.root_ang_vel_w
+        bp_f = T(self.syringe.data.root_pos_w)
+        bv_f = T(self.syringe.data.root_lin_vel_w)
+        bw_f = T(self.syringe.data.root_ang_vel_w)
         ax = self.barrel_axis()
 
         # --- plunger_drive: a REAL joint effort now (N along the prismatic axis;
@@ -596,9 +597,9 @@ class SyringeDosingScene(BaseScene):
         # (bisected 2026-08-10 on the cart, which is now STATIC instead). The
         # no-op pose write each step is the wake signal PhysX expects.
         for body in (self.rack, self.reservoir):
-            st = body.data.root_state_w.clone()
+            st = state_w(body.data.root_state_w).clone()
             st[:, 7:13] = 0.0
-            body.write_root_state_to_sim(st, all_ids)
+            write_root_state(body, st, all_ids)
 
         x = self.travel().clamp(0.0, c.stroke)
         dx_raw = x - self._travel_prev
@@ -680,8 +681,8 @@ class SyringeDosingScene(BaseScene):
             on = self._fix_on.view(n, 1).float()
             f_bar = f_bar + on * f_fix
             tq_bar = on * tq_fix
-        self.syringe.set_external_force_and_torque(
-            f_bar.view(n, 1, 3), tq_bar.view(n, 1, 3), body_ids=[0], is_global=True)
+        set_external_force_and_torque(  # world-frame wrench; rotated into the body frame on Isaac Lab 3.0
+            self.syringe, f_bar.view(n, 1, 3), tq_bar.view(n, 1, 3), body_ids=[0], is_global=True)
         self._update_liquid_viz()
 
     def fixture(self, on: bool = True, env_ids: torch.Tensor | None = None) -> None:
@@ -691,7 +692,7 @@ class SyringeDosingScene(BaseScene):
         ids = slice(None) if env_ids is None else env_ids
         self._fix_on[ids] = bool(on)
         if on:
-            self._fix_pos[ids] = self.syringe.data.root_pos_w[ids]
+            self._fix_pos[ids] = T(self.syringe.data.root_pos_w)[ids]
             self._fix_ax[ids] = self.barrel_axis()[ids]
 
     # ----- state ---------------------------------------------------------------------------------
@@ -707,21 +708,21 @@ class SyringeDosingScene(BaseScene):
 
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         return {
-            "bodies": {n: b.data.root_state_w[env_ids].clone()
+            "bodies": {n: state_w(b.data.root_state_w)[env_ids].clone()
                        for n, b in self._bodies().items()},
             "syringe": {
-                "root": self.syringe.data.root_state_w[env_ids].clone(),
-                "joint_pos": self.syringe.data.joint_pos[env_ids].clone(),
-                "joint_vel": self.syringe.data.joint_vel[env_ids].clone(),
+                "root": state_w(self.syringe.data.root_state_w)[env_ids].clone(),
+                "joint_pos": T(self.syringe.data.joint_pos)[env_ids].clone(),
+                "joint_vel": T(self.syringe.data.joint_vel)[env_ids].clone(),
             },
             "dose": {k: getattr(self, k)[env_ids].clone() for k in self._STATE_KEYS},
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         for n, b in self._bodies().items():
-            b.write_root_state_to_sim(state["bodies"][n], env_ids)
+            write_root_state(b, state["bodies"][n], env_ids)
         s = state["syringe"]
-        self.syringe.write_root_state_to_sim(s["root"], env_ids)
+        write_root_state(self.syringe, s["root"], env_ids)
         self.syringe.write_joint_state_to_sim(
             s["joint_pos"], s["joint_vel"], env_ids=env_ids)
         for k, v in state["dose"].items():
@@ -777,12 +778,12 @@ class SyringeDosingScene(BaseScene):
         """Syringe laid back down at its home spot: near home_pos, LYING (no stand),
         on the shelf, settled."""
         c = self.cfg
-        p = self.syringe.data.root_pos_w - self.env_origins
+        p = T(self.syringe.data.root_pos_w) - self.env_origins
         hx, hy = c.home_pos
         near = (p[:, :2] - torch.tensor([hx, hy], device=self.env.device)).norm(dim=-1) < 0.06
         lying = self.barrel_axis()[:, 2].abs() < 0.35
         on_shelf = (p[:, 2] - c.surface_z).abs() < 0.08
-        settled = self.syringe.data.root_lin_vel_w.norm(dim=-1) < 0.05
+        settled = T(self.syringe.data.root_lin_vel_w).norm(dim=-1) < 0.05
         return near & lying & on_shelf & settled
 
     def success(self) -> torch.Tensor:

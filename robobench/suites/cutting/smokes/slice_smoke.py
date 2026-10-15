@@ -20,6 +20,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import T, add_app_launcher_args, quat_w, write_root_state # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--env", default="cutting.slice")
 parser.add_argument("--food", default="", help="override the scene's food (e.g. banana)")
@@ -27,7 +29,7 @@ parser.add_argument("--planes", type=int, default=0, help="stop after this many 
 parser.add_argument("--gate", nargs="*", default=[], metavar="KEY=VAL",
                     help="scene cfg overrides, e.g. depth_past_center=0.01")
 parser.add_argument("--num_envs", type=int, default=1)
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 args = parser.parse_args()
 livestream_on = args.livestream > 0
 
@@ -92,8 +94,8 @@ def main() -> None:
 
     def live_plane(idx):
         """Env-0 world xy of the plane's flesh centre + blade yaw, in the LIVE food frame."""
-        rq = scene.pieces[ref_i].data.root_quat_w[0]
-        rp = scene.pieces[ref_i].data.root_pos_w[0]
+        rq = quat_w(scene.pieces[ref_i].data.root_quat_w)[0]
+        rp = T(scene.pieces[ref_i].data.root_pos_w)[0]
         R = _rotmat(rq)
         world = rp + R @ (scene._plane_aims[idx] - ref_cent)
         nx = R @ torch.tensor([1.0, 0.0, 0.0], device=device)
@@ -110,7 +112,7 @@ def main() -> None:
         st[:, 0:3] = root + env.iscene.env_origins
         st[:, 3:7] = torch.tensor(cur_q[0], device=device)
         st[:, 7:] = 0.0
-        scene.knife.write_root_state_to_sim(st)
+        write_root_state(scene.knife, st)
 
     def advance(seconds, target=None, stop_on_cut=None):
         a = list(cur)
