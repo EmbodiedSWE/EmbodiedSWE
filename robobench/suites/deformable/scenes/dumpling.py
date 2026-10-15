@@ -397,9 +397,9 @@ class DumplingScene(BaseScene):
         from newton import eval_fk
         from isaaclab_newton.physics.newton_manager import NewtonManager
 
-        solver, state = NewtonManager._solver, NewtonManager._state_0
+        solver, state = NewtonManager._solver, NewtonManager.backend.state_0
         if solver is not None and state is not None and hasattr(solver, "_last_step_data"):
-            eval_fk(NewtonManager._model, state.joint_q, state.joint_qd, state, None)
+            eval_fk(NewtonManager.backend.model, state.joint_q, state.joint_qd, state, None)
             solver._last_step_data.save_collider_current_position(state.body_q)
 
     # ----- auto-weld grasp contract + actual-pose tracking ----------------------------------------
@@ -434,7 +434,7 @@ class DumplingScene(BaseScene):
             self._auto_dead = True
             self._auto_ready = True
             return
-        body_labels = [str(b or "") for b in Mgr._model.body_label]
+        body_labels = [str(b or "") for b in Mgr.backend.model.body_label]
 
         def body_idx(suffix: str) -> int:
             matches = [i for i, b in enumerate(body_labels) if b.endswith(suffix)]
@@ -478,7 +478,7 @@ class DumplingScene(BaseScene):
             return  # fingers not squeezing — cheap early-out before any pose math
         # fresh view every tick — never cache it: the solver ping-pongs state_0/state_1, so a
         # cached view pins one buffer and the machine reads frozen poses
-        body_q = wp.to_torch(Mgr._state_0.body_q)
+        body_q = wp.to_torch(Mgr.backend.state_0.body_q)
         tip_local = torch.tensor([[0.0, 0.0, 0.113]], device=body_q.device)
         pinch = body_q[self._hand_body, :3] + math_utils.quat_apply(body_q[self._hand_body, 3:][None], tip_local)[0]
         best = None

@@ -64,7 +64,9 @@ class RodSimCfg(SimCfg):
 
     def to_isaaclab(self, device: str) -> Any:
         """Build the isaaclab `SimulationCfg` with a standalone-VBD Newton backend + rod hooks."""
-        from isaaclab.sim.simulation_cfg import RenderCfg, SimulationCfg
+        from isaaclab.sim.simulation_cfg import SimulationCfg
+
+        from robobench.core.config import apply_render_settings
         from isaaclab.utils.configclass import configclass
         from isaaclab_newton.physics import NewtonCfg
 
@@ -94,6 +96,5 @@ class RodSimCfg(SimCfg):
             collision_decimation=self.collision_decimation,
             use_cuda_graph=self.use_cuda_graph,
         )
-        return SimulationCfg(
-            device=device, dt=self.dt, gravity=self.gravity, physics=physics, render=RenderCfg(**self.render)
-        )
+        apply_render_settings(self.render)  # Isaac Lab 3.0: RTX globals are carb settings, not SimulationCfg.render
+        return SimulationCfg(device=device, dt=self.dt, gravity=self.gravity, physics=physics)

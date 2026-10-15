@@ -180,7 +180,7 @@ class NewtonLaceCoupledManager(NewtonManager):
         # Keep joint_q consistent with the stepped body poses for ALL joints (the upstream
         # example's cadence): articulation views read the robot's joint coordinates, and the
         # manager's masked FK-before-step then round-trips instead of stomping rod poses.
-        eval_ik(cls._model, state_1, state_1.joint_q, state_1.joint_qd)
+        eval_ik(cls.backend.model, state_1, state_1.joint_q, state_1.joint_qd)
 
     @classmethod
     def _supports_cuda_graph_capture(cls) -> bool:

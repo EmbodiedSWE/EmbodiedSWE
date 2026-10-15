@@ -21,6 +21,8 @@ Requires the Newton venv (`env_newton`, see the README). Heavy imports are defer
 
 from __future__ import annotations
 
+import dataclasses
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -69,7 +71,9 @@ class DoughSimCfg(SimCfg):
 
     def to_isaaclab(self, device: str) -> Any:
         """Build the isaaclab `SimulationCfg` with the Newton implicit-MPM backend."""
-        from isaaclab.sim.simulation_cfg import RenderCfg, SimulationCfg
+        from isaaclab.sim.simulation_cfg import SimulationCfg
+
+        from robobench.core.config import apply_render_settings
         from isaaclab.utils.configclass import configclass
         from isaaclab_newton.physics import MPMSolverCfg, NewtonCfg
 
@@ -115,8 +119,10 @@ class DoughSimCfg(SimCfg):
             solver_cfg=solver_cfg,
             num_substeps=num_substeps,
             use_cuda_graph=self.use_cuda_graph,
-            simplify_meshes=False,  # keep the pin barrel's exact round collider
+            # June-develop `simplify_meshes=False` kept exact mesh colliders (thin cup walls / the pin barrel).
+            # Isaac Lab 3.0 dropped the global knob: Newton approximates a collider only where
+            # `physics:approximation` is authored on it, so unauthored colliders stay exact anyway.
+            **({"simplify_meshes": False} if "simplify_meshes" in {fld.name for fld in dataclasses.fields(NewtonCfg)} else {}),
         )
-        return SimulationCfg(
-            device=device, dt=self.dt, gravity=self.gravity, physics=physics, render=RenderCfg(**self.render)
-        )
+        apply_render_settings(self.render)  # Isaac Lab 3.0: RTX globals are carb settings, not SimulationCfg.render
+        return SimulationCfg(device=device, dt=self.dt, gravity=self.gravity, physics=physics)

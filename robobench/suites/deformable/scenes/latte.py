@@ -553,7 +553,7 @@ class LatteScene(BaseScene):
 
         from robobench.suites.deformable.newton.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
 
-        model = Mgr._model
+        model = Mgr.backend.model
         device = self.env.device
         body_labels = [str(b or "") for b in model.body_label]
 
@@ -590,7 +590,7 @@ class LatteScene(BaseScene):
 
         from robobench.suites.deformable.newton.coupled_manager import NewtonCoupledMJWarpMPMManager as Mgr
 
-        body_q = wp.to_torch(Mgr._state_0.body_q)
+        body_q = wp.to_torch(Mgr.backend.state_0.body_q)
         held_vessels = {v for (h, v), lbl in self.AUTO_PAIRS.items() if self._auto_state.get(lbl)}
         busy_hands = {h for (h, v), lbl in self.AUTO_PAIRS.items() if self._auto_state.get(lbl)}
         tip_local = torch.tensor([[0.0, 0.0, 0.113]], device=body_q.device)

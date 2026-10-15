@@ -17,8 +17,8 @@ from typing import Any
 
 from isaaclab.physics import PhysicsManager
 from isaaclab.utils.configclass import configclass
-from isaaclab_contrib.deformable.newton_manager_cfg import VBDSolverCfg
-from isaaclab_contrib.deformable.vbd_manager import NewtonVBDManager
+from isaaclab_newton.physics.vbd_manager import NewtonVBDManager  # Isaac Lab 3.0: VBD moved out of contrib
+from isaaclab_newton.physics.vbd_manager_cfg import VBDSolverCfg
 from isaaclab_newton.physics.newton_collision_cfg import NewtonCollisionPipelineCfg
 from isaaclab_newton.physics.newton_manager import NewtonManager
 
@@ -72,15 +72,15 @@ class NewtonLaceVBDManager(NewtonVBDManager):
 
         for i in range(cls._num_substeps):
             for ctl in controls:
-                ctl(cls._state_0, cls._state_1, cls._solver_dt)
+                ctl(cls.backend.state_0, cls.backend.state_1, cls._solver_dt)
             if collide:
-                cls._collision_pipeline.collide(cls._state_0, contacts)
-            cls._step_solver(cls._state_0, cls._state_1, cls._control, contacts, cls._solver_dt)
+                cls._collision_pipeline.collide(cls.backend.state_0, contacts)
+            cls._step_solver(cls.backend.state_0, cls.backend.state_1, cls.backend.control, contacts, cls._solver_dt)
             if need_copy_on_last and i == cls._num_substeps - 1:
-                cls._state_0.assign(cls._state_1)
+                cls.backend.state_0.assign(cls.backend.state_1)
             else:
-                NewtonManager._state_0, NewtonManager._state_1 = cls._state_1, cls._state_0
-            cls._state_0.clear_forces()
+                NewtonManager.backend.state_0, NewtonManager.backend.state_1 = cls.backend.state_1, cls.backend.state_0
+            cls.backend.state_0.clear_forces()
 
     @classmethod
     def _solver_specific_clear(cls) -> None:

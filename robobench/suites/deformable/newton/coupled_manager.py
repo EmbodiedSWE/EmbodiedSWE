@@ -108,6 +108,29 @@ def _subtract_fluid_velocity(
     body_qd_res[body_id] = body_qd[body_id] - wp.spatial_vector(delta_v, delta_w)
 
 
+
+def _mesh_the_convex_shapes(model) -> int:
+    """Rewrite CONVEX_MESH collider shapes of a finalized Newton model to MESH, for the MPM rasterizer.
+
+    Isaac Lab 3.0 honours each collider's authored `physics:approximation`, so robot links arrive as
+    CONVEX_MESH shapes (the June-develop `simplify_meshes=False` this suite was validated on made
+    every mesh collider an exact MESH). newton 1.6.1's implicit-MPM collider setup meshes MESH and
+    the primitives but raises on CONVEX_MESH ("Shape type 10 not supported"). A convex shape's
+    `shape_source` is its hull Mesh — exactly what the rasterizer wants — so flipping the type is
+    lossless for MPM; the MuJoCo half was already built from the model (and convex-hulls meshes
+    internally anyway). Returns the number of shapes rewritten."""
+    import newton
+    import numpy as np
+
+    types = model.shape_type.numpy()
+    convex = [int(i) for i in np.flatnonzero(types == int(newton.GeoType.CONVEX_MESH))
+              if hasattr(model.shape_source[int(i)], "vertices")]
+    if convex:
+        types[convex] = int(newton.GeoType.MESH)
+        model.shape_type.assign(types)
+        print(f"[coupled_manager] {len(convex)} CONVEX_MESH collider(s) -> MESH for the MPM rasterizer", flush=True)
+    return len(convex)
+
 class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
     """MJWarp + implicit-MPM coupled manager (one-way rigid -> fluid).
 
@@ -231,6 +254,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
 
         # MPM half — same construction as NewtonMPMManager._build_solver.
         mpm_cfg = solver_cfg.mpm_solver_cfg
+        _mesh_the_convex_shapes(model)
         cls._mpm_solver = SolverImplicitMPM(model, _make_solver_config(mpm_cfg), temporary_store=TemporaryStore())
         cls._project_outside_colliders = mpm_cfg.project_outside_colliders
         # One-way coupling: re-register every collider as kinematic/infinite-mass (Newton's
@@ -238,7 +262,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
         # velocity mode) from the FK'd state rather than the identity-posed model arrays.
         cls._mpm_solver.setup_collider(
             body_mass=wp.zeros_like(model.body_mass),
-            body_q=NewtonManager._state_0.body_q,
+            body_q=NewtonManager.backend.state_0.body_q,
         )
 
         # 1.5-way liquid->rigid feedback: the MPM solve itself stays one-way (infinite-mass
@@ -251,8 +275,8 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
             cls._fb_ids = wp.full(max_nodes, value=-1, dtype=int, device=device)
             cls._fb_impulses = wp.zeros(max_nodes, dtype=wp.vec3, device=device)
             cls._fb_pos = wp.zeros(max_nodes, dtype=wp.vec3, device=device)
-            cls._fluid_forces = wp.zeros_like(NewtonManager._state_0.body_f)
-            cls._qd_backup = wp.zeros_like(NewtonManager._state_0.body_qd)
+            cls._fluid_forces = wp.zeros_like(NewtonManager.backend.state_0.body_f)
+            cls._qd_backup = wp.zeros_like(NewtonManager.backend.state_0.body_qd)
             cls._fb_collider_body = cls._mpm_solver.collider_body_index
             cls._fb_clamp = float(getattr(solver_cfg, "liquid_force_clamp", 10.0))
             print(f"[coupled] liquid->rigid feedback ON (per-node clamp {cls._fb_clamp} N)", flush=True)
@@ -279,7 +303,7 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
                 rigid_contact_max=int(getattr(rigid_cfg, "nconmax", 300) or 300),
                 soft_contact_max=0,
                 device=PhysicsManager._device,
-                requested_attributes=cls._model.get_requested_contact_attributes(),
+                requested_attributes=cls.backend.model.get_requested_contact_attributes(),
             )
 
     # ----- stepping -------------------------------------------------------------------------------
@@ -309,41 +333,41 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
                         cls._fb_impulses,
                         cls._fb_pos,
                         cls._fb_collider_body,
-                        cls._state_0.body_q,
-                        cls._model.body_com,
-                        cls._state_0.body_f,
+                        cls.backend.state_0.body_q,
+                        cls.backend.model.body_com,
+                        cls.backend.state_0.body_f,
                     ],
-                    device=cls._state_0.body_f.device,
+                    device=cls.backend.state_0.body_f.device,
                 )
                 if i == 0:
-                    cls._fluid_forces.assign(cls._state_0.body_f)  # pure fluid wrench, for the MPM correction
-            cls._solver.step(cls._state_0, cls._state_0, cls._control, contacts, cls._solver_dt)
-            cls._state_0.clear_forces()
+                    cls._fluid_forces.assign(cls.backend.state_0.body_f)  # pure fluid wrench, for the MPM correction
+            cls._solver.step(cls.backend.state_0, cls.backend.state_0, cls.backend.control, contacts, cls._solver_dt)
+            cls.backend.state_0.clear_forces()
             if collide_mid_loop and (i + 1) % collide_every == 0 and i + 1 < cls._num_substeps:
-                cls._collision_pipeline.collide(cls._state_0, contacts)
+                cls._collision_pipeline.collide(cls.backend.state_0, contacts)
         if cls._fb_enabled:
             # MPM sees collider velocities MINUS the fluid-force contribution (no double count)
-            cls._qd_backup.assign(cls._state_0.body_qd)
+            cls._qd_backup.assign(cls.backend.state_0.body_qd)
             wp.launch(
                 _subtract_fluid_velocity,
-                dim=cls._state_0.body_qd.shape[0],
+                dim=cls.backend.state_0.body_qd.shape[0],
                 inputs=[
                     mpm_dt,
-                    cls._state_0.body_q,
-                    cls._state_0.body_qd,
+                    cls.backend.state_0.body_q,
+                    cls.backend.state_0.body_qd,
                     cls._fluid_forces,
-                    cls._model.body_inv_inertia,
-                    cls._model.body_inv_mass,
-                    cls._state_0.body_qd,
+                    cls.backend.model.body_inv_inertia,
+                    cls.backend.model.body_inv_mass,
+                    cls.backend.state_0.body_qd,
                 ],
-                device=cls._state_0.body_qd.device,
+                device=cls.backend.state_0.body_qd.device,
             )
-        cls._mpm_solver.step(cls._state_0, cls._state_0, None, None, mpm_dt)
+        cls._mpm_solver.step(cls.backend.state_0, cls.backend.state_0, None, None, mpm_dt)
         if cls._project_outside_colliders:
-            cls._mpm_solver.project_outside(cls._state_0, cls._state_0, mpm_dt)
+            cls._mpm_solver.project_outside(cls.backend.state_0, cls.backend.state_0, mpm_dt)
         if cls._fb_enabled:
-            cls._state_0.body_qd.assign(cls._qd_backup)
-            imp, pos, ids = cls._mpm_solver.collect_collider_impulses(cls._state_0)
+            cls.backend.state_0.body_qd.assign(cls._qd_backup)
+            imp, pos, ids = cls._mpm_solver.collect_collider_impulses(cls.backend.state_0)
             cls._fb_ids.fill_(-1)
             n = min(imp.shape[0], cls._fb_impulses.shape[0])
             cls._fb_impulses[:n].assign(imp[:n])
@@ -374,14 +398,14 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
 
         import isaaclab.utils.math as math_utils
 
-        model = cls._model
+        model = cls.backend.model
         labels = list(model.mujoco.equality_constraint_label)
         if label not in labels:
             raise ValueError(f"unknown weld label {label!r}; builder welds: {labels}")
         eq_idx = labels.index(label)
         device = model.device
         if active:
-            body_q = wp.to_torch(cls._state_0.body_q)  # (nbody, 7) [pos, quat-xyzw], warp layout
+            body_q = wp.to_torch(cls.backend.state_0.body_q)  # (nbody, 7) [pos, quat-xyzw], warp layout
             b1 = int(model.mujoco.equality_constraint_body1.numpy()[eq_idx])
             b2 = int(model.mujoco.equality_constraint_body2.numpy()[eq_idx])
             p, q = math_utils.subtract_frame_transforms(
@@ -404,11 +428,11 @@ class NewtonCoupledMJWarpMPMManager(NewtonMJWarpManager):
         previous step's snapshot, so an unsynced teleport reads as a (jump/dt) collider velocity
         that violently kicks the liquid for one tick. Do NOT call per scripted per-tick pose
         write — the finite difference IS the vessel velocity the liquid must see."""
-        if cls._mpm_solver is not None and cls._state_0 is not None:
+        if cls._mpm_solver is not None and cls.backend.state_0 is not None:
             # Reset writes land in joint_q immediately, but body_q only refreshes at the NEXT
             # step's masked FK — run a full FK first so the snapshot holds the POST-teleport poses.
-            eval_fk(cls._model, cls._state_0.joint_q, cls._state_0.joint_qd, cls._state_0, None)
-            cls._mpm_solver._last_step_data.save_collider_current_position(cls._state_0.body_q)
+            eval_fk(cls.backend.model, cls.backend.state_0.joint_q, cls.backend.state_0.joint_qd, cls.backend.state_0, None)
+            cls._mpm_solver._last_step_data.save_collider_current_position(cls.backend.state_0.body_q)
 
     # ----- capture / teardown ---------------------------------------------------------------------
     @classmethod

@@ -25,6 +25,8 @@ import sys
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1, help="MPM grid is scene-wide; keep 1")
 parser.add_argument("--lift", type=float, default=0.06, help="vessel lift height [m]")
@@ -36,7 +38,7 @@ parser.add_argument("--dump_states", type=str, default=None,
                     help="record body_q + particle positions every --dump_every steps into this .npz "
                          "for offline replay rendering (LIVE rendering corrupts the coupled physics)")
 parser.add_argument("--dump_every", type=int, default=7, help="state-dump cadence [steps]; 7 ~= 30 fps at 200 Hz")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 if "--enable_cameras" in sys.argv:
     sys.argv = [a for a in sys.argv if a != "--headless"]
     parser.set_defaults(headless=True, visualizer=["kit"])
@@ -203,7 +205,7 @@ def main() -> None:
             import warp as _wp
 
             dump_frames["body_q"].append(
-                _wp.to_torch(Mgr._state_0.body_q).detach().cpu().numpy().astype(_np.float32))
+                _wp.to_torch(Mgr.backend.state_0.body_q).detach().cpu().numpy().astype(_np.float32))
             dump_frames["coffee"].append(
                 scene.coffee.data.nodal_pos_w.torch[0].detach().cpu().numpy().astype(_np.float16))
             dump_frames["milk"].append(

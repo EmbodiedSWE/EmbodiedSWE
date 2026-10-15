@@ -32,12 +32,14 @@ import time
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--validate-only", action="store_true", help="author + validate the lace curves, no sim")
 parser.add_argument("--num_envs", type=int, default=1, help="rod control drives global body indices; keep 1")
 parser.add_argument("--print_every", type=int, default=60, help="progress print period [frames]")
 parser.add_argument("--max_steps", type=int, default=None, help="cap total frames (debugging)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 if "--enable_cameras" in sys.argv:
     sys.argv = [a for a in sys.argv if a != "--headless"]
     parser.set_defaults(headless=True, visualizer=["kit"])
@@ -170,7 +172,7 @@ class KnotDriver:
         self.duration = 15.0
 
         nm = scene._nm
-        q0 = nm._state_0.body_q.numpy()
+        q0 = nm.backend.state_0.body_q.numpy()
         pa = q0[self.ends[0], :3].copy()
         pb = q0[self.ends[1], :3].copy()
         self.roots_pos = np.array([q0[self.roots[0], :3], q0[self.roots[1], :3]])
@@ -268,7 +270,7 @@ class KnotDriver:
         dz = np.array([0.0, 0.0, 1.0])
         stage = P - 0.045 * n_h - 0.018 * dz
         t = self.sim_time
-        q = self.scene._nm._state_0.body_q.numpy()
+        q = self.scene._nm.backend.state_0.body_q.numpy()
         pa_end = q[self.ends[0], :3]
         pb_end = q[self.ends[1], :3]
         self.traj_ends[0] = HandleTrajectory([(t, pa_end), (t + 0.7, self.W(stage)), (self.duration, self.W(stage))])
@@ -298,7 +300,7 @@ class KnotDriver:
 
         dz = np.array([0.0, 0.0, 1.0])
         t = self.sim_time
-        q = self.scene._nm._state_0.body_q.numpy()
+        q = self.scene._nm.backend.state_0.body_q.numpy()
         pa_end = q[self.ends[0], :3]
         keys = [
             (t, pa_end),
@@ -331,7 +333,7 @@ class KnotDriver:
         ]
         seat = np.array([P[0], 0.030, 0.122])
         low = seat
-        q = self.scene._nm._state_0.body_q.numpy()
+        q = self.scene._nm.backend.state_0.body_q.numpy()
         for i in (0, 1):
             end = q[self.ends[i], :3].copy()
             tgt = jams[i]
@@ -457,8 +459,8 @@ def main() -> None:
           f"lengths {[round(L, 3) for L in scene.rope_lens]} m; RTX visuals: {visuals is not None}")
 
     def check_state() -> None:
-        q = scene._nm._state_0.body_q.numpy()
-        qd = scene._nm._state_0.body_qd.numpy()
+        q = scene._nm.backend.state_0.body_q.numpy()
+        qd = scene._nm.backend.state_0.body_qd.numpy()
         assert np.isfinite(q).all(), "non-finite body_q"
         assert np.isfinite(qd).all(), "non-finite body_qd"
         assert np.abs(qd).max() < 1.0e3, f"velocity blow-up: {np.abs(qd).max():.1f}"

@@ -153,7 +153,7 @@ class ShoeKnotGrader(BaseGrader):
             self._lace_visuals = (ops, np.array(bodies), mat4)
             print(f"[knot grader] authored {len(ops)} lace visual capsules under {root}", flush=True)
         ops, bodies, mat4 = self._lace_visuals
-        q = scene._nm._state_0.body_q.numpy()[bodies]
+        q = scene._nm.backend.state_0.body_q.numpy()[bodies]
         with Sdf.ChangeBlock():
             for op, row in zip(ops, q):
                 op.Set(mat4(row[:3], row[3:7]))

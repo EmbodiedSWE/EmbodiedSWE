@@ -24,13 +24,15 @@ import sys
 
 from isaaclab.app import AppLauncher
 
+from robobench.core.isaaclab_compat import add_app_launcher_args  # --headless/--enable_cameras no-ops on Isaac Lab 3.0
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=1, help="the demo driver is single-env; keep 1")
 parser.add_argument("--lift", type=float, default=0.18, help="fingertip lift height above the table top [m]")
 parser.add_argument("--hold", type=float, default=1.5, help="hold time at the top of the lift [s]")
 parser.add_argument("--print_every", type=int, default=120, help="progress print period [steps]")
 parser.add_argument("--max_steps", type=int, default=None, help="cap total steps (debugging)")
-AppLauncher.add_app_launcher_args(parser)
+add_app_launcher_args(parser)
 if "--enable_cameras" in sys.argv:
     # Recording path (scripts/record_video.py): rendering on develop is pumped by visualizers, and
     # an explicit --headless force-disables them — so make headless+kit-visualizer the DEFAULTS.

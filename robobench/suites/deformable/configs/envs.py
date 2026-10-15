@@ -164,10 +164,8 @@ _register(
         control_mode="joint",
         robot_cfg=FrankaRobotCfg(
             base_pos=(-0.5, -0.5, 0.0),
-            # isaaclab develop uses **xyzw** quats: identity = (0,0,0,1). The robobench default
-            # (1,0,0,0) is the 2.x wxyz identity — under develop it reads as a 180° X-flip and
-            # mounts the arm upside-down beneath the world.
-            base_rot=(0.0, 0.0, 0.0, 1.0),
+            # wxyz identity (robobench convention; the robot converts at the Isaac Lab boundary).
+            base_rot=(1.0, 0.0, 0.0, 0.0),
             default_dof_pos=(0.0, 0.0, 0.0, -1.59695, 0.0, 2.5307, 0.0),  # elbow-bent ready pose over the table
             gripper_effort_limit=500.0,  # strong pinch for cloth
             arm_effort_limit=300.0,  # scripted joint tracking must not crawl at the real Panda limits
@@ -194,14 +192,14 @@ _register(
 # effort 300 N*m so tracking never crawls at the real Panda limits, gripper effort 500 N for
 # firm pinches. Quats are develop-xyzw: identity = (0,0,0,1); bases face +y via Rz(+90).
 # -> "deformable.latte.bimanual_franka.joint"
-_RZ90_XYZW = (0.0, 0.0, 0.70710678, 0.70710678)
+_RZ90_WXYZ = (0.70710678, 0.0, 0.0, 0.70710678)  # wxyz: yaw +90 deg
 _HOME = (0.0, 0.0, 0.0, -1.59695, 0.0, 2.5307, 0.0)
 
 
 def _dyn_franka(base_pos: tuple[float, float, float]) -> FrankaRobotCfg:
     return FrankaRobotCfg(
         base_pos=base_pos,
-        base_rot=_RZ90_XYZW,
+        base_rot=_RZ90_WXYZ,
         default_dof_pos=_HOME,
         gravity_compensation=1.0,
         arm_effort_limit=300.0,
@@ -263,7 +261,7 @@ _register(
         env_spacing=3,
         robot_cfg=FrankaRobotCfg(
             base_pos=(-0.50, 0.0, 0.0),
-            base_rot=(0.0, 0.0, 0.0, 1.0),
+            base_rot=(1.0, 0.0, 0.0, 0.0),  # wxyz identity
             default_dof_pos=_HOME,
             gravity_compensation=1.0,
             arm_effort_limit=300.0,
@@ -334,14 +332,14 @@ _register(
             # 0.97 (= pi/2 - 0.6) points the gripper straight down
             "left": ("wx250s", Wx250sRobotCfg(
                 base_pos=(-0.42, 0.0, 0.2005),
-                base_rot=(0.0, 0.0, 0.0, 1.0),  # xyzw identity: faces +x
+                base_rot=(1.0, 0.0, 0.0, 0.0),  # wxyz identity: faces +x
                 default_dof_pos=(0.0, 0.4, 0.2, 0.0, 0.97, 0.0),
                 gripper_stiffness=6000.0,
                 gripper_damping=200.0,
             )),
             "right": ("wx250s", Wx250sRobotCfg(
                 base_pos=(0.42, 0.0, 0.2005),
-                base_rot=(0.0, 0.0, 1.0, 0.0),  # xyzw yaw 180 deg: faces -x
+                base_rot=(0.0, 0.0, 0.0, 1.0),  # wxyz yaw 180 deg: faces -x
                 default_dof_pos=(0.0, 0.4, 0.2, 0.0, 0.97, 0.0),
                 gripper_stiffness=6000.0,
                 gripper_damping=200.0,

@@ -660,12 +660,12 @@ class ShoeKnotScene(BaseScene):
         super().bind(env)
         self._nm = NewtonManager
         assert self.lace_bodies_w, "builder hook never ran — no laces were injected into the Newton model"
-        self._default_body_q = wp.clone(NewtonManager._state_0.body_q)
-        self._default_body_qd = wp.clone(NewtonManager._state_0.body_qd)
+        self._default_body_q = wp.clone(NewtonManager.backend.state_0.body_q)
+        self._default_body_qd = wp.clone(NewtonManager.backend.state_0.body_qd)
 
     def lace_points(self, i: int, world: int = 0) -> np.ndarray:
         """Live centerline of lace `i` (world frame; body origins are segment midpoints)."""
-        q = self._nm._state_0.body_q.numpy()
+        q = self._nm.backend.state_0.body_q.numpy()
         return q[self.lace_bodies_w[world][i], :3]
 
     def reset(self, env_ids: torch.Tensor) -> None:
@@ -673,27 +673,27 @@ class ShoeKnotScene(BaseScene):
         # layer, so the manager's FK-reset mask stays clean and FK never stomps these poses.
         import warp as wp
 
-        wp.copy(self._nm._state_0.body_q, self._default_body_q)
-        wp.copy(self._nm._state_0.body_qd, self._default_body_qd)
-        wp.copy(self._nm._state_1.body_q, self._default_body_q)
-        wp.copy(self._nm._state_1.body_qd, self._default_body_qd)
+        wp.copy(self._nm.backend.state_0.body_q, self._default_body_q)
+        wp.copy(self._nm.backend.state_0.body_qd, self._default_body_qd)
+        wp.copy(self._nm.backend.state_1.body_q, self._default_body_q)
+        wp.copy(self._nm.backend.state_1.body_qd, self._default_body_qd)
 
     # ----- state ----------------------------------------------------------------------------------
     def get_state(self, env_ids: torch.Tensor) -> dict[str, Any]:
         import warp as wp
 
         return {
-            "body_q": wp.clone(self._nm._state_0.body_q),
-            "body_qd": wp.clone(self._nm._state_0.body_qd),
+            "body_q": wp.clone(self._nm.backend.state_0.body_q),
+            "body_qd": wp.clone(self._nm.backend.state_0.body_qd),
         }
 
     def set_state(self, state: dict[str, Any], env_ids: torch.Tensor) -> None:
         import warp as wp
 
-        wp.copy(self._nm._state_0.body_q, state["body_q"])
-        wp.copy(self._nm._state_0.body_qd, state["body_qd"])
-        wp.copy(self._nm._state_1.body_q, state["body_q"])
-        wp.copy(self._nm._state_1.body_qd, state["body_qd"])
+        wp.copy(self._nm.backend.state_0.body_q, state["body_q"])
+        wp.copy(self._nm.backend.state_0.body_qd, state["body_qd"])
+        wp.copy(self._nm.backend.state_1.body_q, state["body_q"])
+        wp.copy(self._nm.backend.state_1.body_qd, state["body_qd"])
 
     # ----- metrics --------------------------------------------------------------------------------
     def knot_winding(self, world: int = 0) -> float:
@@ -820,7 +820,7 @@ class LaceVisuals:
         return m
 
     def sync(self) -> None:
-        q = self.scene._nm._state_0.body_q.numpy()[self.bodies_arr]
+        q = self.scene._nm.backend.state_0.body_q.numpy()[self.bodies_arr]
         with self._Sdf.ChangeBlock():
             for op, row in zip(self.ops, q):
                 op.Set(self._mat4(row[:3], row[3:7]))

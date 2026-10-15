@@ -54,33 +54,34 @@ class NewtonSimCfg(SimCfg):
 
     def to_isaaclab(self, device: str) -> Any:
         """Build the isaaclab `SimulationCfg` with a coupled MJWarp+VBD Newton backend."""
-        from isaaclab.sim.simulation_cfg import RenderCfg, SimulationCfg
+        from isaaclab.sim.simulation_cfg import SimulationCfg
         from isaaclab.utils.configclass import configclass
-        from isaaclab_contrib.deformable.newton_manager_cfg import (
-            CoupledFeatherstoneVBDSolverCfg,
-            CoupledMJWarpVBDSolverCfg,
-            NewtonModelCfg,
+        from isaaclab_contrib.custom_coupling.newton_manager_cfg import CoupledMJWarpVBDSolverCfg
+        from isaaclab_newton.physics import (
+            MJWarpSolverCfg,
+            NewtonCfg,
+            NewtonCollisionPipelineCfg,
+            NewtonShapeCfg,
+            NewtonSoftContactCfg,
             VBDSolverCfg,
         )
-        from isaaclab_newton.physics import FeatherstoneSolverCfg, MJWarpSolverCfg, NewtonCfg, NewtonCollisionPipelineCfg
 
-        # Same trick as the in-tree cloth task's `DeformableNewtonCfg` (franka_soft_env_cfg.py):
-        # the coupled deformable managers consume an optional `model_cfg` attribute (hasattr), and
-        # the kitless check matches class NAMES ("NewtonCfg"/"OvPhysxCfg") — a subclass name forces
-        # Kit to launch, which the USD deformable spawn path requires. Defined here (not module
-        # level) so this module imports without the Newton stack installed.
+        from robobench.core.config import apply_render_settings
+
+        # Same trick as the in-tree cloth task's `DeformableNewtonCfg` (franka_soft_env_cfg.py): the
+        # kitless check matches class NAMES ("NewtonCfg"/"OvPhysxCfg") — a subclass name forces Kit to
+        # launch, which the USD deformable spawn path requires. Defined here (not module level) so
+        # this module imports without the Newton stack installed.
         @configclass
         class FoldingNewtonCfg(NewtonCfg):
-            model_cfg: Any = None
+            pass
 
         if self.coupled and self.rigid_solver == "featherstone":
-            solver_cfg: Any = CoupledFeatherstoneVBDSolverCfg(
-                rigid_solver_cfg=FeatherstoneSolverCfg(),
-                soft_solver_cfg=VBDSolverCfg(integrate_with_external_rigid_solver=True, **self.vbd),
-                coupling_mode=self.coupling_mode,
-            )
-        elif self.coupled:
-            solver_cfg = CoupledMJWarpVBDSolverCfg(
+            # Isaac Lab 3.0 ships only the MJWarp+VBD coupled manager (isaaclab_contrib.custom_coupling);
+            # the Featherstone+VBD one was dropped upstream. The tshirt task runs on mjwarp.
+            raise NotImplementedError("rigid_solver='featherstone' is unavailable on Isaac Lab 3.0; use 'mjwarp'")
+        if self.coupled:
+            solver_cfg: Any = CoupledMJWarpVBDSolverCfg(
                 rigid_solver_cfg=MJWarpSolverCfg(**{**_MJWARP_DEFAULTS, **self.mjwarp}),
                 soft_solver_cfg=VBDSolverCfg(integrate_with_external_rigid_solver=True, **self.vbd),
                 coupling_mode=self.coupling_mode,
@@ -89,13 +90,21 @@ class NewtonSimCfg(SimCfg):
             # Robot-less scene: standalone VBD integrates everything itself (MuJoCo conversion
             # rejects a model with zero joints, so the coupled manager cannot be used here).
             solver_cfg = VBDSolverCfg(**self.vbd)
+        # Isaac Lab 3.0 split the June-develop `NewtonModelCfg` (soft_contact_* + shape_material_*) into
+        # `NewtonCfg.soft_contact_cfg` (body<->particle contact) and `NewtonCfg.default_shape_cfg` (the
+        # per-shape material ke/kd/mu defaults). Same knobs, new homes.
+        soft = {k: v for k, v in self.model.items() if k.startswith("soft_contact_")}
+        shape = {k[len("shape_material_"):]: v for k, v in self.model.items() if k.startswith("shape_material_")}
+        unknown = set(self.model) - set(soft) - {f"shape_material_{k}" for k in shape}
+        if unknown:
+            raise ValueError(f"NewtonSimCfg.model: unknown keys {sorted(unknown)} (soft_contact_* / shape_material_*)")
         physics = FoldingNewtonCfg(
             solver_cfg=solver_cfg,
-            model_cfg=NewtonModelCfg(**self.model),
+            soft_contact_cfg=NewtonSoftContactCfg(**soft) if soft else None,
+            default_shape_cfg=NewtonShapeCfg(**shape),
             collision_cfg=NewtonCollisionPipelineCfg(**self.collision) if self.collision else None,
             num_substeps=self.num_substeps,
             use_cuda_graph=self.use_cuda_graph,
         )
-        return SimulationCfg(
-            device=device, dt=self.dt, gravity=self.gravity, physics=physics, render=RenderCfg(**self.render)
-        )
+        apply_render_settings(self.render)  # Isaac Lab 3.0: RTX globals are carb settings, not SimulationCfg.render
+        return SimulationCfg(device=device, dt=self.dt, gravity=self.gravity, physics=physics)
