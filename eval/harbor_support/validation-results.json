@@ -1,0 +1,1005 @@
+{
+  "validated_at_utc": "2026-10-22T04:31:31.381450+00:00",
+  "harbor_version": "0.24.0",
+  "cpu_tests": {
+    "passed": 117,
+    "subtests_passed": 2
+  },
+  "gpu": {
+    "model": "NVIDIA RTX 4090",
+    "memory_gb": 24,
+    "driver": "595.91.07",
+    "os": "Ubuntu 24.04"
+  },
+  "harbor_real_export_tasks_validated": 28,
+  "tasks": [
+    {
+      "task": "assembly.allen_bolt",
+      "preset": "assembly.allen_bolt.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000002",
+      "smoke_reward": {
+        "score": 0.0002,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "assembly.bulb",
+      "preset": "assembly.bulb.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "assembly.ikea_table",
+      "preset": "assembly.ikea_table.bimanual_franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "assembly.so101",
+      "preset": "assembly.so101.bimanual_franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "assembly.nut_thread",
+      "preset": "assembly.nut_thread.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "assembly.pc_gpu",
+      "preset": "assembly.pc_gpu.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "assembly.pc_gpu_ram",
+      "preset": "assembly.pc_gpu_ram.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "assembly.pc_motherboard",
+      "preset": "assembly.pc_motherboard.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "assembly.pc_ram",
+      "preset": "assembly.pc_ram.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "packing.pen_holder",
+      "preset": "packing.pen_holder.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "packing.tool_packing",
+      "preset": "packing.tool_packing.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "packing.egg_carton",
+      "preset": "packing.egg_carton.g1.pink_ik",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "packing.clear_organic_objects",
+      "preset": "packing.clear_organic_objects.g1.pink_ik",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "puzzle.coffee",
+      "preset": "puzzle.coffee.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "puzzle.spatula",
+      "preset": "puzzle.spatula.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "puzzle.syringe",
+      "preset": "puzzle.syringe.bimanual_franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "puzzle.push_shapes",
+      "preset": "puzzle.push_shapes.g1.pink_ik",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "puzzle.classify_objects",
+      "preset": "puzzle.classify_objects.g1.pink_ik",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "puzzle.stack_blocks",
+      "preset": "puzzle.stack_blocks.g1.pink_ik",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "deformable.tshirt",
+      "preset": "deformable.tshirt.franka.joint",
+      "backend": "newton",
+      "build_reset": "passed",
+      "real_frame_capture": "passed",
+      "injected_judge_failure_rejected": true,
+      "live_judge": "not_run"
+    },
+    {
+      "task": "deformable.latte",
+      "preset": "deformable.latte.bimanual_franka.joint",
+      "backend": "newton",
+      "build_reset": "passed",
+      "real_frame_capture": "passed",
+      "injected_judge_failure_rejected": true,
+      "live_judge": "not_run"
+    },
+    {
+      "task": "deformable.dumpling",
+      "preset": "deformable.dumpling.franka.joint",
+      "backend": "newton",
+      "build_reset": "passed",
+      "real_frame_capture": "passed",
+      "injected_judge_failure_rejected": true,
+      "live_judge": "not_run"
+    },
+    {
+      "task": "deformable.knot",
+      "preset": "deformable.knot.aloha.joint",
+      "backend": "newton",
+      "build_reset": "passed",
+      "real_frame_capture": "passed",
+      "injected_judge_failure_rejected": true,
+      "live_judge": "not_run"
+    },
+    {
+      "task": "cutting.slice",
+      "preset": "cutting.slice.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "cutting.dice",
+      "preset": "cutting.dice.franka.osc",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "locomanip.fruit_delivery",
+      "preset": "locomanip.fruit_delivery.g1.loco_pink_ik",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "locomanip.box_to_bin",
+      "preset": "locomanip.box_to_bin.g1.loco_pink_ik",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    },
+    {
+      "task": "locomanip.wheel_carry",
+      "preset": "locomanip.wheel_carry.g1.loco_pink_ik",
+      "backend": "physx",
+      "build_reset": "passed",
+      "checkpoint_final_smoke": "passed",
+      "native_rollouts": 2,
+      "seeds": [
+        0
+      ],
+      "selected_submission": "000001",
+      "smoke_reward": {
+        "score": 0.0,
+        "success": 0.0
+      }
+    }
+  ],
+  "additional_two_seed_check": {
+    "task": "assembly.bulb",
+    "seeds": [
+      0,
+      1
+    ],
+    "native_rollouts": 4,
+    "statuses": [
+      "graded",
+      "graded",
+      "duplicate"
+    ],
+    "reward": {
+      "score": 0.0,
+      "success": 0.0
+    }
+  },
+  "unverified": [
+    "GPU execution together with the evaluator's production bridge/egress and resource-enforcement policies on one host; GPU and standard-Docker CPU checks were performed separately."
+  ],
+  "modal_validation": {
+    "at_utc": "2026-10-22T13:51:03.382782+00:00",
+    "gpu": {
+      "model": "NVIDIA L4",
+      "driver": "610.57.04",
+      "os": "Ubuntu 24.04",
+      "docker": "28.3.3",
+      "compose": "2.39.2",
+      "nvidia_container_toolkit": "1.20.1"
+    },
+    "runtime_images": {
+      "physx": {
+        "id": "sha256:7dd2a9f9903d531cc159ab493bb59e616f2aa7b6c6a10ac0e394669c5085437a",
+        "size_bytes": 41960925301,
+        "architecture": "amd64"
+      },
+      "newton": {
+        "id": "sha256:e4f8816272a6ecd75f14f7813ca9986bb2ebf5bd83d3ecbcab9a7acb64c85181",
+        "size_bytes": 28835807100,
+        "architecture": "amd64"
+      }
+    },
+    "worlds_built_reset": 28,
+    "full_export_tasks_validated": 28,
+    "network_mode": "host (test-only override required by nested Modal gVisor; production export remains default bridge)",
+    "physx_reference_replay": [
+      {
+        "task": "assembly.bulb",
+        "seeds": [
+          0,
+          1
+        ],
+        "num_envs": 2,
+        "native_rollouts": 4,
+        "harbor_rollouts": 4,
+        "deliveries_compared": 3,
+        "final_duplicate": true,
+        "selected_submission": "000001",
+        "reward": {
+          "score": 0.0,
+          "success": 0.0
+        },
+        "maximum_per_trajectory_score_delta": 0.0
+      },
+      {
+        "task": "assembly.allen_bolt",
+        "seeds": [
+          0,
+          1
+        ],
+        "num_envs": 1,
+        "native_rollouts": 4,
+        "harbor_rollouts": 4,
+        "deliveries_compared": 3,
+        "final_duplicate": true,
+        "selected_submission": "000002",
+        "reward": {
+          "score": 0.0002,
+          "success": 0.0
+        },
+        "maximum_per_trajectory_score_delta": 0.0
+      }
+    ],
+    "reference_scope": "No-op and one-action transport/physics probes; no full-task successful-solution certification",
+    "newton_container_boots": {
+      "status": "incomplete_due_to_provider_preemption",
+      "completed_trials": [
+        {
+          "task": "deformable.dumpling",
+          "status": "complete",
+          "separate_verification": "passed",
+          "reward": {
+            "score": 0.0,
+            "success": 0.0
+          }
+        }
+      ],
+      "gpu_boot_presets": [
+        "deformable.dumpling.franka.joint",
+        "deformable.knot.aloha.joint"
+      ],
+      "harbor_version": "0.24.0",
+      "python": "3.12.1",
+      "gpu": "NVIDIA A10",
+      "host_memory_mb": 65536,
+      "declared_task_memory_mb": 32768,
+      "image_id": "sha256:54723844df47e259a39c5edd50f4ff0d0276d267f72c9317535c9d0cd5fc7650",
+      "source_files_verified": 16,
+      "native_grader_calls": 0,
+      "provider_reason": "Container terminated due to preemption. Sandboxes may be preempted if GPU requirements are set.",
+      "incomplete_full_trials": [
+        "deformable.knot",
+        "deformable.latte",
+        "deformable.tshirt"
+      ],
+      "earlier_l4_attempt": "Kit crash; root cause not established"
+    },
+    "live_visual_judge": "out_of_scope_by_request; native judge unchanged",
+    "remaining_release_gates_at_that_time": [
+      "Complete GPU container coverage for all 28 tasks, including all four Newton tasks",
+      "Evaluator production Docker networking and resource enforcement with immutable runtime images"
+    ]
+  },
+  "updated_at_utc": "2026-10-22T21:45:37.073126+00:00",
+  "out_of_scope": [
+    "Live visual-judge evaluation, per user request",
+    "Adversarial isolation of submitted Python; the native in-process trust model is retained",
+    "Reviewed successful/unsuccessful reference-solution parity across the full roster (benchmark quality; not Harbor infrastructure acceptance)"
+  ],
+  "cloud_cleanup": {
+    "at_utc": "2026-10-22T21:45:08.740555+00:00",
+    "validation_sandboxes_terminated": true,
+    "validation_apps_stopped": true,
+    "temporary_volume_deleted": true,
+    "temporary_snapshot_images_deleted": 5,
+    "temporary_modal_credential_removed": true,
+    "runpod_host_deleted": true,
+    "environments": {
+      "main": {
+        "active_apps": 0,
+        "containers": 0
+      },
+      "datagen": {
+        "active_apps": 0,
+        "containers": 0
+      }
+    }
+  },
+  "standard_docker_cpu_vm": {
+    "status": "passed",
+    "scope": "Standard Docker bridge and resource enforcement through Harbor 0.24.0; CPU-only probe explicitly removes GPU devices. GPU simulation is checked separately.",
+    "docker": "28.3.3",
+    "kernel": "7.2.9",
+    "cgroup_version": 2,
+    "template_sha256": "a3076396278043b52d36377d5739aa60577019f670c6ffd611812a90ca10e44a",
+    "image": "python@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2",
+    "checks": {
+      "limits_and_bridge": {
+        "passed": true,
+        "memory_bytes": 134217728,
+        "nano_cpus": 1000000000,
+        "network": "robobench-vm-check_default"
+      },
+      "cgroup_files": "134217728\n100000 100000\n",
+      "bridge_peer_dns_http": {
+        "passed": true
+      },
+      "public_egress": {
+        "passed": true
+      },
+      "cpu_throttling": {
+        "before": {
+          "usage_usec": 442503,
+          "user_usec": 381608,
+          "system_usec": 60894,
+          "nice_usec": 0,
+          "nr_periods": 11,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "after": {
+          "usage_usec": 3533955,
+          "user_usec": 3469975,
+          "system_usec": 63979,
+          "nice_usec": 0,
+          "nr_periods": 42,
+          "nr_throttled": 31,
+          "throttled_usec": 6036574,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        }
+      },
+      "memory_overallocation": {
+        "passed": true,
+        "exit_code": 137
+      },
+      "memory_events": {
+        "low": "0",
+        "high": "0",
+        "max": "55",
+        "oom": "1",
+        "oom_kill": "1",
+        "oom_group_kill": "0",
+        "sock_throttled": "0"
+      }
+    }
+  },
+  "completion_validation": {
+    "status": "passed_tested_infrastructure_profiles",
+    "at_utc": "2026-10-22T21:44:29.383968+00:00",
+    "harbor_version": "0.24.0",
+    "gpu": {
+      "model": "NVIDIA A10",
+      "driver": "610.57.04",
+      "memory_mib": 23028
+    },
+    "sandbox_memory_request_mb": 49152,
+    "sandbox_memory_limit_mb": 98304,
+    "declared_task_memory_mb": 32768,
+    "runtime_images": {
+      "physx": {
+        "id": "sha256:e40ed9f821a82f4dc5446303cd46cfb1282e1bad5b8fec09e5c5378fcd879f46",
+        "digest": "localhost:5000/robobench-physx@sha256:a65fc27a3da4f8be1dc27f75ae2f95f8d5e534c293114a40ef2e0595f866a7c5",
+        "size": 41960856495
+      },
+      "newton": {
+        "id": "sha256:fb0a66b79e1e6647cdda78d85da96d91b28639058cc1b0adeb96a4722207b03e",
+        "digest": "localhost:5000/robobench-newton@sha256:6c2b1e91900295827b9c8f839eddac0be4dc884d87c4ed047386d786d18a80d2",
+        "size": 55240800603
+      }
+    },
+    "worlds_built_reset": 28,
+    "full_export_tasks_validated": 28,
+    "completed_harbor_container_trials": 28,
+    "failed_trials": 0,
+    "native_grader_calls_in_boot_matrix": 0,
+    "live_visual_judge_calls": 0,
+    "network_mode": "host (explicit Modal-only override; original and tested receipts retained)",
+    "source_files_verified": 30,
+    "tested_source_hashes": {
+      "eval/envbuild/__init__.py": "e7ce63cfee6a2adcb0c4d485875a001e760df363e934ea258c73779dcc475cfe",
+      "eval/envbuild/build.py": "6287d26b505c08683f1c9d558b1cf975065981c3379fdc9cae139e8746bdf724",
+      "eval/envbuild/condition.py": "cf4fd195fda3368bb28017d894daff0238e490e78dfbb14e2119062befa0f164",
+      "eval/envbuild/extract.py": "10432ae2bee40f9b8338abd82100243b0464528032c5820c2ff3933eacb950c0",
+      "eval/envbuild/manifest.py": "9fd126db77a3a44211fb5de3a1031b5651cc3d642bde817bb79756d6eef1518d",
+      "eval/envbuild/patch.py": "9f62cd5e00e3e6297ccda4ed9c66072846d344d54d5ccd9a949e801659353dab",
+      "eval/envbuild/prompts.py": "66fdc0d53bb0915c489fd4b36eb8324067d88c8827d06200b417225a1d8d2f24",
+      "eval/envbuild/resolve.py": "315cbf1ab3479acc249bddf6dad84c78601553b3fea12c27edc270401700eb27",
+      "eval/envbuild/tools.py": "09c1b9b8797af2ed947bead7336e68020766119895de6167c5318c119922c8b9",
+      "eval/envbuild/validate.py": "128dd73a6ea31aa7453bb5d52b11a7282646a443a3ff17eaa049a4bd6aa1edbd",
+      "eval/grader/grade.py": "5a9c4ac6868fc623de06418ad703a86e4399602e3136685dad882b078783e5a1",
+      "eval/harbor_support/__init__.py": "84e68b95cd34d77d6c064d31ec7423b4e081f81f9fdc2118289166fc3d85fa20",
+      "eval/harbor_support/boot_agent.py": "deca5bf89b17e1d2e4f0f27332a1d65e55a0f73b7d36109028cb2e928d18b9fe",
+      "eval/harbor_support/catalog.py": "2361084e8ebe8c499092fbdb14f445fb19e22de381e0cc3f00e4d86ed897c425",
+      "eval/harbor_support/export.py": "d71d073ef49cbdffdd6ebc228d4345a014a6f191c5b91fad34e519979bbbfcf8",
+      "eval/harbor_support/files.py": "1bb25f40aa7a15851ff55f1cfc7bd36ca461b72b6c5ebfd05d8c3bb639122dd7",
+      "eval/harbor_support/prepare.py": "6bbbbe38d5fc2c98deeff9c5b212b7823007ce19ce0b7c05957f9084b30911b9",
+      "eval/harbor_support/reference.py": "6dbeb5af48fe3665b43289af677badee49ef0992d2283f901f62e66e6394e2b9",
+      "eval/harbor_support/replay_agent.py": "99b32263c5aaa4f083127b52936f85690e9aab60b55769c181fe1a8c2b06e731",
+      "eval/harbor_support/report.py": "76913dbcd80a5ce2a6f70d0aad812c1ba03ca9e03247af4e92d5aa7b92a66bb8",
+      "eval/harbor_support/submit.py": "c924d9d921b337e93335afeb31458251ea841bbffea3f7fc97b9513649e06ec7",
+      "eval/harbor_support/templates/contract.md": "8e0a6dcb431701b68f31d3153b505e3ea0c1e65a0031a73470ca064933502e5d",
+      "eval/harbor_support/templates/docker-compose.yaml": "a3076396278043b52d36377d5739aa60577019f670c6ffd611812a90ca10e44a",
+      "eval/harbor_support/templates/test.sh": "c078411349a7b6bb0d5dc5eb9e4e54ac4abb4d4740e3cd75e3f106b2d04cf08e",
+      "eval/harbor_support/validate.py": "e72ca5db10292b72cc811fdd5c8db53b9520d02e92b34a89e11f79cc1489c460",
+      "eval/harbor_support/verifier.py": "2ccbf0e8b9926a48c5c5d28336c075b77300be81f51c30a85e1379d57a231c33",
+      "eval/scripts/harbor_acceptance.py": "58e5400ce92935e07383eac82acbaf81c3f84b4096857197425d3b1621d5ca07",
+      "eval/scripts/harbor_benchmark.py": "c1c95154dd5da8b612e6fe9b67154ef6e6230c71744840af4d222e4a3ed40920",
+      "eval/scripts/harbor_container_smoke.py": "4b2e2a2bd87a374a6e646d1040b5ddb20f74f2f651ee6a0294493c89d4174701",
+      "eval/scripts/harbor_gpu_smoke.py": "6e3d4c3511b443f49db11c52f000d7eb18aca7461ae5ec4e6037450cb2a57f3f"
+    },
+    "retained_evidence_sha256": "9f74a455b62afc150ac77afe704b5a8615a2c924add2e4b259245d530281c1a0",
+    "tasks": [
+      {
+        "task": "assembly.allen_bolt",
+        "preset": "assembly.allen_bolt.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "9682f2be-29e5-48e4-bef8-dc7c8736fb16",
+        "task_checksum": "5742e9ec4095d675188b48be21e0e86eb67b08e0dbd403ba8644bba307e6f0fd"
+      },
+      {
+        "task": "assembly.bulb",
+        "preset": "assembly.bulb.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "42aa1211-7067-403c-9cb1-efe37e11e319",
+        "task_checksum": "731e9da0b905c3b2d65389d4b686cfcf41147c0455081a0cdc87c5fa12604d7b"
+      },
+      {
+        "task": "assembly.ikea_table",
+        "preset": "assembly.ikea_table.bimanual_franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "a56d1d69-dcc8-45a3-b575-5e10fc091e72",
+        "task_checksum": "e211e5df00214b35943cd6b775ca5fec2ca91b9a65da1521f6a784614e0fc1d1"
+      },
+      {
+        "task": "assembly.so101",
+        "preset": "assembly.so101.bimanual_franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "bc675fe6-b794-4f44-b1d8-d15ea9bae7b9",
+        "task_checksum": "bbca741cbdcd82684a4d6f66b244dea9e708a02cc569a3dd6b577bf3b4c74c80"
+      },
+      {
+        "task": "assembly.nut_thread",
+        "preset": "assembly.nut_thread.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "1a677f12-971d-4901-9173-996d5fe7d8c3",
+        "task_checksum": "6f6c1c8c046fbc9b3a2a60536840286e04b11ffec0e29d3f1e419f4b828af410"
+      },
+      {
+        "task": "assembly.pc_gpu",
+        "preset": "assembly.pc_gpu.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "e9788cb7-096b-4fad-b97d-d58818289ce1",
+        "task_checksum": "b1ec476e4c9c587a8c783be6d7c0ba27f12ff7d7501c3f7e90326e6bd5896842"
+      },
+      {
+        "task": "assembly.pc_gpu_ram",
+        "preset": "assembly.pc_gpu_ram.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "bc60b0ab-1481-4c21-a917-2c5fa78af4cc",
+        "task_checksum": "84e84d72aad5afdfe3b5a157d33342106ff526e33eae7fc9c1ee23084272591c"
+      },
+      {
+        "task": "assembly.pc_motherboard",
+        "preset": "assembly.pc_motherboard.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "a0497eaf-aa54-4054-bf8c-0f2839ff0620",
+        "task_checksum": "93a1e0ecd35868a9035f81c4865da8a8474cb8810b033c1c90fc6c9dd8e54656"
+      },
+      {
+        "task": "assembly.pc_ram",
+        "preset": "assembly.pc_ram.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "ce1ebf3b-3530-4058-bfdc-221b13ec609f",
+        "task_checksum": "b08de185640aefb0892428e2bf8a4875847859b55dc8d304f681ea3c262ab0b1"
+      },
+      {
+        "task": "packing.pen_holder",
+        "preset": "packing.pen_holder.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "878374ae-e02a-41a1-96be-1bccce35e240",
+        "task_checksum": "cedff050e65d795f712ac763b590ce2e48766815259fff0dfe9ce22a3a0e4c59"
+      },
+      {
+        "task": "packing.tool_packing",
+        "preset": "packing.tool_packing.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "fd2c4617-6f65-4f96-a7b6-fd3f4e714216",
+        "task_checksum": "96b84c1fd20e9dc319d4c88c1f7fe77a112457d5a4e3bea9caa092795e8030fb"
+      },
+      {
+        "task": "packing.egg_carton",
+        "preset": "packing.egg_carton.g1.pink_ik",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "caf69fe5-0ce9-4709-afda-e25cafe31c19",
+        "task_checksum": "d35c7126f2e20ca2fb2dd52de3b0a3adbc01129a33147ea0b94156cd9eb8aa0c"
+      },
+      {
+        "task": "packing.clear_organic_objects",
+        "preset": "packing.clear_organic_objects.g1.pink_ik",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "345a97a3-3888-4dbf-936d-5a6b961d228d",
+        "task_checksum": "294718ca0562be28ab1b68d1c9a164486d8ddfb8453cc25bab8bb25f6e24be16"
+      },
+      {
+        "task": "puzzle.coffee",
+        "preset": "puzzle.coffee.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "ca1dae26-5155-416a-bde4-ae471e5ba89a",
+        "task_checksum": "6b3eba6cfc04bb1eae830de5c14023a72eb82e0acb95482d645f44376ee5492a"
+      },
+      {
+        "task": "puzzle.spatula",
+        "preset": "puzzle.spatula.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "05c6865e-ff98-4e32-b743-50109a150962",
+        "task_checksum": "2df5a373334635f1609355387950d031c087325ef861c194e67b6c47e1229201"
+      },
+      {
+        "task": "puzzle.syringe",
+        "preset": "puzzle.syringe.bimanual_franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "5dd413f4-3da1-4199-850d-6cea531585e8",
+        "task_checksum": "6fe0e39a0863fab7d4b73254f3bf1bf604d287f7236df924d4392f0ced82787f"
+      },
+      {
+        "task": "puzzle.push_shapes",
+        "preset": "puzzle.push_shapes.g1.pink_ik",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "bd777d9c-482b-4021-a25e-4a14d986acac",
+        "task_checksum": "4f350966c009acd2fb0a45ef183a5fed224cdf6b2067b1d84f159fae0f78b6a0"
+      },
+      {
+        "task": "puzzle.classify_objects",
+        "preset": "puzzle.classify_objects.g1.pink_ik",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "05748fde-18fa-42c7-8cdb-2895e9430b31",
+        "task_checksum": "fd181447d6aecfd15ac9d2399183f7e177aededa8961648d2c432b7ed610a97e"
+      },
+      {
+        "task": "puzzle.stack_blocks",
+        "preset": "puzzle.stack_blocks.g1.pink_ik",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "de6cc17f-cfff-46a4-800e-dd8edb74e231",
+        "task_checksum": "21ee56b9d7f54e06f3ae50e88decf38e54e51c7828bf4db61a662cd9003218f8"
+      },
+      {
+        "task": "deformable.tshirt",
+        "preset": "deformable.tshirt.franka.joint",
+        "backend": "newton",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "b6898085-c1e8-480d-bdd8-457a7bb54de5",
+        "task_checksum": "52b2fae440e244402e804b25c02b615db3410a874348a9a651b0023af74c6130"
+      },
+      {
+        "task": "deformable.latte",
+        "preset": "deformable.latte.bimanual_franka.joint",
+        "backend": "newton",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "3104bebb-040b-4036-ba11-ce08fbe6f8b6",
+        "task_checksum": "05c54d7d72f95d1de69aba6ebde842ffa2ee6fc61727a212897ccdc5e85b1c09"
+      },
+      {
+        "task": "deformable.dumpling",
+        "preset": "deformable.dumpling.franka.joint",
+        "backend": "newton",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "8bb1cc51-322e-45bb-9ec0-45072ac5c3c3",
+        "task_checksum": "fbfd3e3e0d23c66b90052946c458f09b17096531d364e94d81a62f96f8c6e51f"
+      },
+      {
+        "task": "deformable.knot",
+        "preset": "deformable.knot.aloha.joint",
+        "backend": "newton",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "c2dec0a7-3eae-4598-b6c6-997bd48b6150",
+        "task_checksum": "56e2f74652ff9d6ecdb110465f63fa19957c0c1f0b398d5443a6498f2e94d1e8"
+      },
+      {
+        "task": "cutting.slice",
+        "preset": "cutting.slice.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "1895fa21-228a-4b36-b5d2-6928fd873789",
+        "task_checksum": "7447ec2f93254684c3036bdfa50f2d702ccf98cf78de4956646560c54fb04442"
+      },
+      {
+        "task": "cutting.dice",
+        "preset": "cutting.dice.franka.osc",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "2c6b928b-753b-4a6f-84a4-a50391ee0931",
+        "task_checksum": "1e0f90fc1778c69a6076829c1faf64d7501ab10873cf21cb609ec3d72a3b472c"
+      },
+      {
+        "task": "locomanip.fruit_delivery",
+        "preset": "locomanip.fruit_delivery.g1.loco_pink_ik",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "ff0bd584-0a4c-487e-bbe6-758c5240b585",
+        "task_checksum": "8c709f8d5416c0e53e856c37bffcd005f9f18c3b0006c68b4576d7aab907bb98"
+      },
+      {
+        "task": "locomanip.box_to_bin",
+        "preset": "locomanip.box_to_bin.g1.loco_pink_ik",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "b65748ae-2b7c-4c69-ade5-07aea97d48ce",
+        "task_checksum": "1cf8ec75c78afffa0bb768647086252f54bfd97be141a880f3ce3d5c17275f89"
+      },
+      {
+        "task": "locomanip.wheel_carry",
+        "preset": "locomanip.wheel_carry.g1.loco_pink_ik",
+        "backend": "physx",
+        "build_reset": "passed",
+        "separate_verification": "passed",
+        "trial_id": "01994857-bbc7-4b56-b653-fb398a090c0b",
+        "task_checksum": "2ec0176a4133c532aa202ed233275c6af33339c8cc9f12360aeba77f91e7e5ff"
+      }
+    ],
+    "physx_reference_replay": [
+      {
+        "task": "assembly.bulb",
+        "seeds": [
+          0,
+          1
+        ],
+        "num_envs": 2,
+        "native_rollouts": 4,
+        "harbor_rollouts": 4,
+        "deliveries_compared": 3,
+        "selected_submission": "000001",
+        "reward": {
+          "score": 0.0,
+          "success": 0.0
+        },
+        "maximum_per_trajectory_score_delta": 0.0,
+        "score_tolerance": 0.0
+      },
+      {
+        "task": "assembly.allen_bolt",
+        "seeds": [
+          0,
+          1
+        ],
+        "num_envs": 1,
+        "native_rollouts": 4,
+        "harbor_rollouts": 4,
+        "deliveries_compared": 3,
+        "selected_submission": "000002",
+        "reward": {
+          "score": 0.0002,
+          "success": 0.0
+        },
+        "maximum_per_trajectory_score_delta": 0.0,
+        "score_tolerance": 0.0
+      }
+    ],
+    "scope": "GPU build/reset and empty separate verification for all 28 tasks; fresh native/Harbor score parity for two PhysX transport fixtures. Standard Docker bridge and cgroup enforcement were validated separately on a CPU VM."
+  }
+}

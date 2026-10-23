@@ -1,0 +1,14 @@
+services:
+  main:
+    # Harbor's resource overlay precedes this file. Clear its legacy GPU
+    # reservation: requesting both legacy injection and CDI breaks Vulkan.
+    deploy:
+      resources:
+        reservations:
+          devices: !reset []
+    devices:
+      - "nvidia.com/gpu=${ROBOBENCH_GPU:-0}"
+    shm_size: "2gb"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: void
+      NVIDIA_DRIVER_CAPABILITIES: all

@@ -54,6 +54,7 @@ def build_experiment(
     condition: Condition,
     out_root: Path = Path("experiments"),
     seed: int = 0,
+    python_executable: Path | None = None,
 ) -> Path:
     """Build one world under `condition`. Which code features are blocked comes from the
     condition's `features:`; each blocked feature maps to one `patch.py` function."""
@@ -83,7 +84,8 @@ def build_experiment(
         for _ in range(8):  # each boot reveals ONE missing reference; a scene reaching several
             # assets through constants/cfg fields (cutting: food, knife, island, board) needs a few
             try:
-                describe_text = validate.boot_preset(bench, preset, seed=seed)
+                describe_text = validate.boot_preset(bench, preset, seed=seed,
+                                                    python_executable=python_executable)
                 break
             except validate.MissingAssets as exc:
                 supplied = extract.copy_missing(bench, exc.paths)

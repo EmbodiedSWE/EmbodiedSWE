@@ -1,7 +1,8 @@
 """Minimal robobench tree for one stage: over-approximate code, under-approximate assets.
 
 All .py of core/controllers/robots/<suite> ship (their __init__ files hard-import
-everything, and .py is cheap); other suites and every smokes/ dir are dropped;
+everything, and .py is cheap); imported shared suites are retained, while
+unrelated suites and every smokes/ dir are dropped;
 assets are copied only for what the stage's scene file references plus the
 stage's robot (composites resolved). Solve-provenance comments are scrubbed.
 Asset detection is a heuristic — validate.boot_preset() is what proves it.
@@ -9,6 +10,8 @@ Asset detection is a heuristic — validate.boot_preset() is what proves it.
 
 from __future__ import annotations
 
+import ast
+import importlib.util
 import re
 import shutil
 from pathlib import Path
@@ -38,22 +41,61 @@ LEAK_RE = re.compile(
 ASSET_REF_RE = re.compile(r'assets"?\s*/\s*"([A-Za-z0-9_\-.]+)"', re.I)
 
 
+def _suite_closure(suite: str) -> set[str]:
+    """Keep transitive cross-suite Python imports, excluding privileged code.
+
+    Suite initializers import their scene/config modules eagerly. A dependency
+    anywhere in that public code is therefore needed even for another scene in
+    the suite (e.g. locomanip's fruit_delivery inherits a packing scene).
+    """
+    pending, included = [suite], set()
+    while pending:
+        current = pending.pop()
+        if current in included:
+            continue
+        included.add(current)
+        root = SRC / "suites" / current
+        for path in root.rglob("*.py"):
+            relative = path.relative_to(root)
+            if {"grader", "smokes", "assets", "__pycache__"} & set(relative.parts):
+                continue
+            package = ".".join(("robobench", "suites", current, *relative.parts[:-1]))
+            for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+                if isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    module = node.module or ""
+                    if node.level:
+                        module = importlib.util.resolve_name("." * node.level + module, package)
+                    modules = [module] + [module + "." + alias.name for alias in node.names]
+                else:
+                    continue
+                for module in modules:
+                    parts = module.split(".")
+                    if len(parts) > 2 and parts[:2] == ["robobench", "suites"]:
+                        dependency = parts[2]
+                        if (SRC / "suites" / dependency).is_dir() and dependency not in included:
+                            pending.append(dependency)
+    return included
+
+
 def minimal_tree(dst: Path, suite: str, scene: str, robot: str, keep_smokes: bool = False) -> list[str]:
     """Copy the minimal tree into dst/robobench; return the asset subtrees copied."""
+    suites = _suite_closure(suite)
 
     def ignore(dirpath: str, names: list[str]) -> set[str]:
         d = Path(dirpath)
         skip = {n for n in names if n == "__pycache__" or n.endswith(".egg-info")}
         if d == SRC / "suites":
-            skip |= {n for n in names if (d / n).is_dir() and n != suite}
-        if d.name == suite and d.parent == SRC / "suites" and not keep_smokes:
+            skip |= {n for n in names if (d / n).is_dir() and n not in suites}
+        if d.parent == SRC / "suites" and not keep_smokes:
             skip |= {n for n in names if n == "smokes"}
         # graders are privileged: never in an agent-facing tree, no opt-out
         if d.parent == SRC / "suites":
             skip |= {n for n in names if n == "grader"}
         if d == SRC / "robots" and "assets" in names:
             skip.add("assets")
-        if d == SRC / "suites" / suite and "assets" in names:
+        if d.parent == SRC / "suites" and "assets" in names:
             skip.add("assets")
         return skip
 
@@ -183,11 +225,19 @@ def copy_missing(dst: Path, paths: list[str]) -> list[str]:
             continue
         sub = Path(*rel.parts[: rel.parts.index("assets") + 2])
         src, out = SRC.parent / sub, dst / sub
-        if out.exists():
-            print(f"[extract] {sub} is already here yet {Path(p).name} is not — check the source")
+        if not (SRC.parent / rel).exists():
+            print(f"[extract] no source for {rel} in {SRC}")
             continue
         if src.is_dir():
-            shutil.copytree(src, out)
+            # Asset fetching can create the directory with its binary files
+            # before a Git-tracked text manifest is requested. Merge missing
+            # files without overwriting fetched or already validated content.
+            def copy_if_missing(source, target):
+                if not Path(target).exists():
+                    shutil.copy2(source, target)
+                return str(target)
+
+            shutil.copytree(src, out, dirs_exist_ok=True, copy_function=copy_if_missing)
         elif src.is_file():  # a single file straight under assets/ (e.g. cutting's kitchen_island.usd)
             out.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, out)

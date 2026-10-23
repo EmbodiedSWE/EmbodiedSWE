@@ -246,6 +246,7 @@ rl/runs/
 
 # lerobot venv (scripts/bootstrap_lerobot.sh) — py3.12, separate from the Isaac .venv
 .venv-lerobot/
+.venv-harbor/
 
 # Large binary assets (USD, textures, policies, reference videos) live on Hugging Face
 # (EmbodiedSWE/robobench-assets) and are fetched to these exact paths by

@@ -30,7 +30,8 @@ class MissingAssets(Exception):
         self.paths = paths
 
 
-def boot_preset(tree: Path, preset: str, seed: int = 0) -> str:
+def boot_preset(tree: Path, preset: str, seed: int = 0,
+                python_executable: Path | None = None) -> str:
     """Build + reset the registered env from `tree`; return a sectioned
     markdown description (scene / robot) from the live objects.
 
@@ -94,7 +95,7 @@ print('{_D1}')
 print('BOOT_OK', flush=True)
 os._exit(0)
 """
-    py = VENV_PY if VENV_PY.exists() else Path(sys.executable)
+    py = python_executable or (VENV_PY if VENV_PY.exists() else Path(sys.executable))
     print(f"[validate] booting registered preset '{preset}' from the extracted tree ...")
     r = subprocess.run(
         [str(py), "-c", code],

@@ -51,6 +51,7 @@ def render_task_dir(
     condition: Condition,
     carryover: bool = False,
     budget_min: float | None = None,
+    seed: int | None = None,
 ) -> Path:
     """Write the complete /task folder for one run under `condition`.
 
@@ -72,7 +73,7 @@ def render_task_dir(
         "```python",
         "import robobench; robobench.discover()",
         "from robobench.core.registries import ENVS",
-        f"env = ENVS.get('{preset}')().build(num_envs=1)",
+        f"env = ENVS.get('{preset}')().build(num_envs=1{f', seed={seed}' if seed is not None else ''})",
         "```",
         "",
     ]

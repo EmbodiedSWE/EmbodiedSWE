@@ -109,6 +109,10 @@ Prompt conditions (hints, rules, blocked features) are authored yaml files in `e
 `eval/prompts/`. Docker images and the container contract are documented in
 [`eval/docker/README.md`](eval/docker/README.md).
 
+For Harbor-based agent evaluation, see [RoboBench on Harbor](eval/harbor_support/README.md).
+The adapter exports the explicit 28-task roster, preserves submitted checkpoints,
+and grades the best solution in a separate verifier environment on evaluator-provided GPUs.
+
 ## Data engine
 
 Once a task is solved, `data_engine/` turns that one verified solution into a large, diverse,

@@ -1,0 +1,3 @@
+# Host-side exporter and compatibility test target. Simulator venvs stay separate.
+harbor==0.24.0
+PyYAML==6.0.3

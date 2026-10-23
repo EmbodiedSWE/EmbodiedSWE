@@ -1,0 +1,6 @@
+# Same frozen-controller world as the standard baseline; Harbor owns the lifecycle.
+rules: []
+skills: [staged_planning]
+tools: []
+features:
+  control_mode: false

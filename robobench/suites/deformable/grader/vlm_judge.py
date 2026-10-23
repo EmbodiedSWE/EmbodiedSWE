@@ -43,7 +43,7 @@ MODEL = "model_hub/robo_g56_terra"   # gpt-5.6-terra
 READ_TIMEOUT = 150  # s per attempt (the laptop bridge's proven value)
 MAX_ATTEMPTS = 4  # bounded: transient 5xx / 429 / timeouts retry, then raise
 RETRY_STATUSES = (429, 500, 502, 503, 504)
-OUT_DIR = Path("/out")  # the grading container's verdict mount (eval/grader/grade.py)
+OUT_DIR = Path(os.environ.get("ROBOBENCH_GRADE_OUT", "/out"))
 
 SYSTEM_PROMPT = (
     "You are a strict visual inspector for a robotics benchmark. You are shown ONE rendered image "

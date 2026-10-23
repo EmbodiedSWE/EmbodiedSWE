@@ -145,6 +145,9 @@ def main() -> None:
     ap.add_argument("--num-envs", type=int, default=1,
                     help="envs graded together, each with independently randomized "
                          "spawns; each env's trajectory is scored and judged separately")
+    ap.add_argument("--solution", type=Path, default=Path(SOLUTION), help="solve.py entry point")
+    ap.add_argument("--graders", type=Path, default=GRADERS_DIR, help="privileged grader package")
+    ap.add_argument("--out", type=Path, default=OUT, help="rollout artifact directory")
     ap.add_argument("--render", action="store_true",
                     help="render the run: /out/frames/*.jpg + frames.jsonl + render.json")
     ap.add_argument("--cameras", action="store_true",
@@ -152,8 +155,17 @@ def main() -> None:
                          "final-frame VLM gate needs (omni.replicator only exists with cameras on); "
                          "the Newton coupled solvers cannot take per-step rendering, this they can")
     args = ap.parse_args()
-    out = OUT
+    out = args.out
     out.mkdir(parents=True, exist_ok=True)
+    # Final-frame judges use the same per-rollout output directory as the driver.
+    os.environ["ROBOBENCH_GRADE_OUT"] = str(out.resolve())
+
+    def phase(name: str) -> None:
+        path = out / ".phase.json.tmp"
+        path.write_text(json.dumps({"phase": name}) + "\n")
+        path.replace(out / "phase.json")
+
+    phase("booting")
 
     try:  # pink_ik presets need pinocchio imported BEFORE AppLauncher (robobench/controllers/pink_ik.py)
         import pinocchio  # noqa: F401
@@ -179,7 +191,7 @@ def main() -> None:
     from robobench.core.registries import ENVS
 
     env_cfg = ENVS.get(args.preset)()
-    graders = load_graders(GRADERS_DIR)
+    graders = load_graders(args.graders)
     # the preset's scene segment may be a cfg-only variant (EnvCfg.variant: "slice_banana"); the
     # grader belongs to the real scene the cfg names
     grader_cls = graders[args.scene] if args.scene in graders else graders[env_cfg.scene]
@@ -225,6 +237,7 @@ def main() -> None:
     def finalize() -> None:
         """Each traj folder gets its verdict.json; the meta result gets the
         batch statistics."""
+        phase("finalizing")
         per = genv.verdict()
         for e, v in enumerate(per):
             (traj_dirs[e] / "verdict.json").write_text(json.dumps({
@@ -240,9 +253,11 @@ def main() -> None:
                       summary=s, per_traj=per)
 
     try:
-        solve = load_solve(SOLUTION)  # the delivery
+        phase("loading_solution")
+        solve = load_solve(str(args.solution))  # the delivery
 
         t0 = time.monotonic()
+        phase("solving")
         solve(genv)
         result["solve_wall_s"] = round(time.monotonic() - t0, 3)
         result["solve_sim_steps"] = grader.steps
@@ -250,7 +265,7 @@ def main() -> None:
     except TimeoutError:  # verdict from the state at kill — peak score is already real
         result.update(timed_out=True, solve_sim_steps=grader.steps)
         finalize()
-    except Exception:
+    except BaseException:  # submitted code may raise SystemExit; retain its physical progress
         result.update(success=False, score=0.0, error=traceback.format_exc())
         try:
             finalize()  # the per-trajectory state up to the crash is still real
@@ -260,6 +275,7 @@ def main() -> None:
     if flush is not None:
         result["frames"] = flush()  # also on a crashed solve — partial frames show what happened
     (out / "verdict.json").write_text(json.dumps(result, indent=2) + "\n")
+    phase("done")
     s = result.get("summary")
     print(f"GRADE_DONE success={result['success']} score={result['score']}"
           + (f" ({s['successes']}/{s['num_envs']} envs)" if s else ""), flush=True)
